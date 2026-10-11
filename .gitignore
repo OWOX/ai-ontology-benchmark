@@ -1,0 +1,29 @@
+# Agent-local files
+.claude/
+CLAUDE.local.md
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+/venv/
+/env/
+.coverage
+htmlcov/
+build/
+dist/
+.ipynb_checkpoints/
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/
