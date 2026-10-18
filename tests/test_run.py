@@ -301,3 +301,15 @@ def test_estimate_shows_spent_against_budgets(exp, capsys):
     out = capsys.readouterr().out
     assert "spent $0.0300 of per_model_usd 1.0" in out
     assert "spent $0.0300 of per_experiment_usd 10.0" in out
+
+
+def test_budget_checked_before_each_retry(exp, capsys):
+    # Each failed call carries 100 output tokens (0.01 USD). Room for one request only.
+    with_budget(exp, per_model_usd=0.015)
+    models.FAKE_REPLIES[:] = [InfrastructureError("x", 0, 100) for _ in range(10)]
+    assert go("--model", "A") == 1
+    (row,) = records(exp, "A")
+    assert row["outcome"] == "infrastructure_failure" and row["raw_response"] == ""
+    assert (row["retry_input_tokens"], row["retry_output_tokens"]) == (0, 100)
+    assert len(models.FAKE_REPLIES) == 9  # one call made, no retry
+    assert "per_model_usd" in capsys.readouterr().err

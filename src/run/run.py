@@ -92,16 +92,28 @@ def pending_attempts(config: dict, inputs: list[dict], raw_dir: Path, only_model
                         yield row, model, setup, number
 
 
-def call_with_retries(model: dict, prompt: str, config: dict) -> tuple[object, int, int]:
-    """Return (reply or None, retry_input_tokens, retry_output_tokens). Retry only infrastructure errors."""
+def call_with_retries(model: dict, prompt: str, config: dict, can_afford) -> tuple:
+    """Return (reply or None, retry_input_tokens, retry_output_tokens, budget error or None).
+
+    `can_afford(retry_in, retry_out)` raises BudgetError if another call would pass a budget.
+    It runs before every call. A stop before the first call is raised; a stop after failed
+    calls is returned, so the caller can record the paid retry tokens first. Retry only
+    infrastructure errors.
+    """
     retry_in = retry_out = 0
-    for _ in range(config["retry_cap"] + 1):
+    for call_number in range(config["retry_cap"] + 1):
         try:
-            return call_model(model, prompt, config["max_output_tokens"]), retry_in, retry_out
+            can_afford(retry_in, retry_out)
+        except BudgetError as stop:
+            if call_number == 0:
+                raise
+            return None, retry_in, retry_out, stop
+        try:
+            return call_model(model, prompt, config["max_output_tokens"]), retry_in, retry_out, None
         except InfrastructureError as error:
             retry_in += error.input_tokens
             retry_out += error.output_tokens
-    return None, retry_in, retry_out
+    return None, retry_in, retry_out, None
 
 
 def make_record(config, manifest, row, model, setup, number, prompt, versions,
@@ -175,12 +187,19 @@ def run(args: argparse.Namespace) -> int:
             print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}\n{prompt}")
             continue
         worst = worst_case_request_cost(prompt, config["max_output_tokens"], prices[model["name"]])
-        check_spend(config, prices, results / "raw", model["name"], worst, left)
-        reply, retry_in, retry_out = call_with_retries(model, prompt, config)
+        price = prices[model["name"]]
+
+        def can_afford(retry_in: int, retry_out: int) -> None:
+            paid = (retry_in * price["price_input_per_mtok"] + retry_out * price["price_output_per_mtok"]) / 1e6
+            check_spend(config, prices, results / "raw", model["name"], worst + paid, left)
+
+        reply, retry_in, retry_out, stop = call_with_retries(model, prompt, config, can_afford)
         record = make_record(config, manifest, row, model, setup, number, prompt, versions,
                              reply, retry_in, retry_out)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
         outcomes[record["outcome"]] += 1
+        if stop:
+            raise stop
     if not args.dry_run:
         print(f"{sum(outcomes.values())} new attempts: " + ", ".join(f"{k}={v}" for k, v in sorted(outcomes.items())))
     return 0
