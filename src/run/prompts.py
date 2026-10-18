@@ -14,10 +14,11 @@ PLACEHOLDER = re.compile(r"\{[a-z_]+\}")
 
 
 def _read_template(templates_dir: Path, setup: str, puzzle: str) -> str:
-    """Return the template text, or raise ValueError if it is missing or has a bad placeholder."""
+    """Return the template text, or raise ValueError if it is missing, has an unknown placeholder,
+    or lacks a required one ({state} always, {legal_moves} for the prescriptive setup)."""
     path = Path(templates_dir) / setup / f"{puzzle}.txt"
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ValueError(f"{path}: template not found") from None
     allowed = {"{state}"}
@@ -26,6 +27,9 @@ def _read_template(templates_dir: Path, setup: str, puzzle: str) -> str:
     for name in PLACEHOLDER.findall(text):
         if name not in allowed:
             raise ValueError(f"{path}: unknown placeholder {name}")
+    for name in sorted(allowed):
+        if name not in text:
+            raise ValueError(f"{path}: placeholder {name} is missing")
     return text
 
 

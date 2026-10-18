@@ -1,3 +1,6 @@
+# Spec: docs/specs/models.md
+"""Tests for the AI model calls. Every client is faked, so no test uses the network."""
+
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock
 

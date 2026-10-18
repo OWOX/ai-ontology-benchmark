@@ -110,3 +110,17 @@ def test_missing_template_raises(templates):
         build_prompt(templates, row, "prescriptive")
     with pytest.raises(ValueError):
         prompt_versions(templates, INPUTS)
+
+
+def test_template_without_state_refused(templates):
+    (templates / "no_model" / "2x2.txt").write_text("Solve the puzzle.\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="state"):
+        build_prompt(templates, INPUTS[0], "no_model")
+
+
+def test_prescriptive_template_without_legal_moves_refused(templates):
+    (templates / "prescriptive" / "2x2.txt").write_text("{state}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="legal_moves"):
+        build_prompt(templates, INPUTS[0], "prescriptive")
+    with pytest.raises(ValueError, match="legal_moves"):
+        prompt_versions(templates, INPUTS)

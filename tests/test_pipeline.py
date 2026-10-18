@@ -32,7 +32,7 @@ def python_m(repo: Path, module: str, *args: str) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def normalise(text: str) -> str:
+def normalize(text: str) -> str:
     """Drop lines that hold dates and replace every 64-hex hash with a placeholder."""
     dated = ("created_at", "First and last attempt")
     kept = []
@@ -69,8 +69,8 @@ def test_whole_flow(repo):
 
     if os.environ.get("UPDATE_FIXTURES") == "1":
         FIXTURE.parent.mkdir(exist_ok=True)
-        FIXTURE.write_text(normalise(first), encoding="utf-8")
-    assert normalise(first) == FIXTURE.read_text(encoding="utf-8")
+        FIXTURE.write_text(normalize(first), encoding="utf-8")
+    assert normalize(first) == FIXTURE.read_text(encoding="utf-8")
 
     commit_all(repo, "results")
     raw_before = raw_bytes(repo / "results" / "e1" / "raw")

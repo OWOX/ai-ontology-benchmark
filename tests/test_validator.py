@@ -1,3 +1,6 @@
+# Spec: docs/specs/validator.md
+"""Tests for the validator. They use the 2x2 engine and call no AI model."""
+
 import json
 
 import pytest
