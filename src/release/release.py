@@ -153,6 +153,12 @@ def release(bump: str, note: str, releases: Path) -> str:
         raise ReleaseError("git: the working tree has uncommitted changes")
     latest = latest_version(releases)
     version = next_version(latest, bump)
+    if (releases / version).exists():
+        raise ReleaseError(f"{releases / version}: folder already exists")
+    tag = subprocess.run(["git", "rev-parse", "-q", "--verify", f"refs/tags/release-{version}"],
+                         capture_output=True, text=True)
+    if tag.returncode == 0:
+        raise ReleaseError(f"git: tag release-{version} already exists")
     old = json.loads(read_text(releases / latest / "manifest.json")) if latest else None
     if bump == "major":
         release_config = load_release_config(RELEASE_CONFIG)
@@ -179,10 +185,26 @@ def release(bump: str, note: str, releases: Path) -> str:
     readme = build_readme(version, note, created, inputs, versions, assessment, latest)
     folder = releases / version
     write_release(folder, inputs_text, manifest, readme)
-    git("add", str(folder))
-    git("commit", "-m", f"Release {version}: {note}")
-    git("tag", f"release-{version}")
+    commit_release(folder, version, note)
     return version
+
+
+def commit_release(folder: Path, version: str, note: str) -> None:
+    """Commit the folder and tag it. If the commit fails, remove the folder again."""
+    try:
+        git("add", str(folder))
+        git("commit", "-m", f"Release {version}: {note}")
+    except subprocess.CalledProcessError as error:
+        subprocess.run(["git", "reset", "-q", "--", str(folder)], check=False)
+        for path in folder.rglob("*"):
+            if path.is_file():
+                path.chmod(0o644)
+        shutil.rmtree(folder)
+        raise ReleaseError(f"git: commit of {folder} failed, folder removed: {error.stderr or error}")
+    try:
+        git("tag", f"release-{version}")
+    except subprocess.CalledProcessError as error:
+        raise ReleaseError(f"git: commit made but tag release-{version} is missing: {error.stderr or error}")
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -207,3 +207,23 @@ def test_release_files_are_read_only(repo):
         assert not path.stat().st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
         with pytest.raises(PermissionError):
             open(path, "w")
+
+
+def test_existing_tag_blocks_release(repo):
+    git(repo, "tag", "release-1.0.0")
+    result = run_release(repo, "major")
+    assert result.returncode == 1
+    assert "release-1.0.0" in result.stderr
+    assert not (repo / "releases").exists()
+
+
+def test_failing_commit_leaves_nothing_behind(repo):
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    result = run_release(repo, "major")
+    assert result.returncode == 1
+    assert not (repo / "releases" / "1.0.0").exists()
+    assert git(repo, "status", "--porcelain") == ""
+    hook.unlink()
+    release_ok(repo, "major")
