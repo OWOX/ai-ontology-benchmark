@@ -75,6 +75,11 @@ async function api(method, path, body) {
   const res = await fetch(path, opts);
   let data = null;
   try { data = await res.json(); } catch (e) { /* non-JSON body */ }
+  if (res.status === 403 && data && data.error === "missing or wrong X-Token") {
+    S.stale = true;
+    renderBanners();
+    throw new Error("The server restarted. Reload the page.");
+  }
   if (!res.ok) throw new Error((data && data.error) || `${method} ${path} failed (${res.status})`);
   return data;
 }
@@ -443,6 +448,7 @@ function renderProgress() {
 function renderBanners() {
   const box = $("banners");
   box.replaceChildren();
+  if (S.stale) box.append(el("div", { class: "banner" }, el("strong", { text: "The server restarted. Reload the page." })));
   for (const [job, state] of Object.entries(S.jobs)) {
     if (state === "failed") {
       box.append(el("div", { class: "banner" }, el("strong", { text: `${job} failed` }),

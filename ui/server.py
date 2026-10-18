@@ -153,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as error:
         print(f"error: port {args.port}: {error.strerror}", file=sys.stderr)
         return 1
-    print(f"UI at http://127.0.0.1:{server.server_address[1]}/")
+    print(f"UI at http://127.0.0.1:{server.server_address[1]}/", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

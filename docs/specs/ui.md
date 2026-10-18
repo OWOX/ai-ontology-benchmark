@@ -38,7 +38,7 @@ The server uses `http.server.ThreadingHTTPServer` with `daemon_threads = True`. 
 
 1. At start the server makes a token with `secrets.token_urlsafe(24)` and writes it into `index.html` as `<meta name="ui-token" content="...">`.
 2. Every request whose `Host` header is not `127.0.0.1:<port>` or `localhost:<port>` gets 403.
-3. Every `POST` without the header `X-Token: <token>` gets 403.
+3. Every `POST` without the header `X-Token: <token>` gets 403. So does every `GET /api/commit/<id>`, because the preview runs `git fetch`.
 4. Static files come from an allowlist: `/` serves `index.html`, and `/static/app.js` and `/static/style.css`. Any other path gets 404. Nothing outside `ui/static/` is ever served, so `.env` can't be reached.
 5. A `POST` body is JSON of at most 64 KiB, or 400.
 
