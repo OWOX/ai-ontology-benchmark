@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.evaluate import compute, wilson
+from src.evaluate.metrics import compute, wilson
 from src.puzzles.registry import get_engine
 from src.run import models, run as run_module
 from test_release import commit_all, edit, release_ok, repo  # noqa: F401  (repo is a fixture)
@@ -251,18 +251,38 @@ def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
     assert "9.0" in (repo / "results/exp/prices.toml").read_text(encoding="utf-8")
 
 
-def test_torn_line_skipped_and_counted_other_bad_line_refused(repo, monkeypatch, capsys):
+def test_torn_lines_skipped_and_counted(repo, monkeypatch):
     release_ok(repo, "major")
     prepare(repo, monkeypatch)
     raw_file = repo / "results/exp/raw/A.jsonl"
-    original = raw_file.read_text(encoding="utf-8")
-    raw_file.write_text(original + '{"input_id": "torn\n', encoding="utf-8")
+    first, *others = raw_file.read_text(encoding="utf-8").splitlines()
+    torn_in_the_middle = '{"input_id": "x", "n": {"a": 1}'  # ends in "}" but does not parse
+    text = "\n".join([first, torn_in_the_middle, *others]) + '\ngarbage\n{"input_id": "torn\n'
+    raw_file.write_text(text, encoding="utf-8")
     assert go() == 0
-    assert "Torn raw lines skipped: 1." in (repo / "results/exp/1.0.0.md").read_text(encoding="utf-8")
-    raw_file.write_text(original + "garbage\n", encoding="utf-8")
+    assert "Torn raw lines skipped: 3." in (repo / "results/exp/1.0.0.md").read_text(encoding="utf-8")
+
+
+def test_record_missing_a_field_refused(repo, monkeypatch, capsys):
+    release_ok(repo, "major")
+    prepare(repo, monkeypatch)
+    raw_file = repo / "results/exp/raw/A.jsonl"
+    raw_file.write_text(raw_file.read_text(encoding="utf-8") + '{"input_id": "x"}\n', encoding="utf-8")
     assert go() == 1
     err = capsys.readouterr().err
-    assert "A.jsonl" in err and "line" in err
+    assert "A.jsonl" in err and "field" in err
+
+
+def test_duplicate_attempt_refused(repo, monkeypatch, capsys):
+    release_ok(repo, "major")
+    prepare(repo, monkeypatch)
+    raw_file = repo / "results/exp/raw/A.jsonl"
+    first = raw_file.read_text(encoding="utf-8").splitlines()[0]
+    raw_file.write_text(raw_file.read_text(encoding="utf-8") + first + "\n", encoding="utf-8")
+    assert go() == 1
+    err = capsys.readouterr().err
+    assert "A.jsonl" in err and "more than once" in err
+    assert not (repo / "results/exp/1.0.0.md").exists()
 
 
 def test_config_model_without_price_refused_and_nothing_written(repo, monkeypatch, capsys):

@@ -21,7 +21,9 @@ from src.run.prompts import prompt_versions
 
 VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 # Globs for the assessment. src/evaluate/report.py is left out on purpose.
-ASSESSMENT_PATTERNS = ["src/validator.py", "src/puzzles/*.py", "src/evaluate/evaluate.py"]
+ASSESSMENT_PATTERNS = [
+    "src/validator.py", "src/puzzles/*.py", "src/evaluate/evaluate.py", "src/evaluate/metrics.py",
+]
 PROMPTS_DIR = Path("prompts")
 RELEASE_CONFIG = Path("config/release.toml")
 

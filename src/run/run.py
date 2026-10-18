@@ -17,6 +17,7 @@ from src.config import load_experiment_config, load_prices
 from src.release.release import assessment_sha256
 from src.run.models import InfrastructureError, call_model
 from src.run.prompts import SETUPS, build_prompt, prompt_versions
+from src.run.raw import read_raw
 from src.validator import validate
 
 
@@ -59,21 +60,13 @@ def check_experiment_copy(config_path: Path, results: Path) -> None:
 
 def read_done(raw_path: Path) -> set[tuple]:
     """Return the (input_id, setup, model, attempt_number) keys already in a raw file."""
-    if not raw_path.is_file():
-        return set()
-    text = raw_path.read_text(encoding="utf-8")
-    lines = text.splitlines()
+    records, _ = read_raw(raw_path)
     done = set()
-    for number, line in enumerate(lines, start=1):
+    for record in records:
         try:
-            row = json.loads(line)
-            done.add((row["input_id"], row["setup"], row["model"], row["attempt_number"]))
-        except (ValueError, KeyError, TypeError):
-            # A stopped write leaves a fragment that starts with "{" and lacks the closing "}".
-            # append_record ends it with a newline, so it can sit mid-file later: ignore it.
-            if line.startswith("{") and not line.endswith("}"):
-                continue
-            raise RunError(f"{raw_path}: line {number} is not a valid raw record") from None
+            done.add((record["input_id"], record["setup"], record["model"], record["attempt_number"]))
+        except KeyError as error:
+            raise RunError(f"{raw_path}: a record lacks field {error}") from None
     return done
 
 
@@ -101,8 +94,9 @@ def call_with_retries(model: dict, prompt: str, config: dict) -> tuple[object, i
     return None, retry_in, retry_out
 
 
-def make_record(config, manifest, row, model, setup, number, prompt, versions) -> dict:
-    reply, retry_in, retry_out = call_with_retries(model, prompt, config)
+def make_record(config, manifest, row, model, setup, number, prompt, versions,
+                reply, retry_in: int, retry_out: int) -> dict:
+    """Build the raw record of one attempt from the reply (None after an infrastructure failure)."""
     if reply is None:
         text, stop, served, tokens_in, tokens_out, latency = "", "infrastructure_failure", "", 0, 0, None
     else:
@@ -181,7 +175,9 @@ def run(args: argparse.Namespace) -> int:
         if args.dry_run:
             print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}\n{prompt}")
             continue
-        record = make_record(config, manifest, row, model, setup, number, prompt, versions)
+        reply, retry_in, retry_out = call_with_retries(model, prompt, config)
+        record = make_record(config, manifest, row, model, setup, number, prompt, versions,
+                             reply, retry_in, retry_out)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
         outcomes[record["outcome"]] += 1
     if not args.dry_run:

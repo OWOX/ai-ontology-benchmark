@@ -9,7 +9,8 @@ import pytest
 
 from src.run import models, run as run_module
 from src.run.models import InfrastructureError, Reply
-from test_release import edit, release_ok, repo  # noqa: F401  (repo is a fixture)
+from src.run.raw import read_raw
+from test_release import release_ok, repo  # noqa: F401  (repo is a fixture)
 
 EXPERIMENT = (
     'release = "1.0.0"\nattempts = 2\nretry_cap = 3\nmax_output_tokens = 100\n'
@@ -179,14 +180,22 @@ def test_torn_last_line_resumes(exp):
     assert go("--model", "A") == 0  # the fragment does not block later runs
 
 
-def test_bad_middle_line_refused(exp, capsys):
+def test_torn_middle_line_ending_in_brace_resumes(exp):
     go("--model", "A", "--limit", "2")
     path = exp / "results/exp/raw/A.jsonl"
     first, second = path.read_text(encoding="utf-8").splitlines()
-    path.write_text(first + "\nnot json\n" + second + "\n", encoding="utf-8")
-    assert go() == 1
-    err = capsys.readouterr().err
-    assert "A.jsonl" in err and "line 2" in err
+    path.write_text(first + '\n{"input_id": "x", "n": {"a": 1}\n' + second + "\n", encoding="utf-8")
+    assert go("--model", "A", "--limit", "1") == 0
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 4 and lines[1].startswith('{"input_id": "x"')
+    assert json.loads(lines[3])["setup"] == "descriptive"
+
+
+def test_read_raw_skips_and_counts_unparseable_lines(tmp_path):
+    path = tmp_path / "A.jsonl"
+    path.write_text('{"a": 1}\nnot json\n[1]\n{"b": {"c": 2}\n{"d": 3}\n', encoding="utf-8")
+    assert read_raw(path) == ([{"a": 1}, {"d": 3}], 3)
+    assert read_raw(tmp_path / "missing.jsonl") == ([], 0)
 
 
 @pytest.mark.parametrize("field", ["files", "assessment_sha256", "prompt_versions", "input_set_id", "release_config"])
