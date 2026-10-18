@@ -263,3 +263,17 @@ def test_torn_line_skipped_and_counted_other_bad_line_refused(repo, monkeypatch,
     assert go() == 1
     err = capsys.readouterr().err
     assert "A.jsonl" in err and "line" in err
+
+
+def test_config_model_without_price_refused_and_nothing_written(repo, monkeypatch, capsys):
+    release_ok(repo, "major")
+    prepare(repo, monkeypatch)
+    config = repo / "config/experiments/exp.toml"
+    (repo / "results/exp/experiment.toml").write_text(
+        config.read_text(encoding="utf-8")
+        + '[[models]]\nname = "Z"\nprovider = "fake"\napi_model_id = "z-1"\n', encoding="utf-8")
+    assert go() == 1
+    err = capsys.readouterr().err
+    assert "prices.toml" in err and "'Z'" in err
+    for name in ("prices.toml", "1.0.0.md", "1.0.0.metrics.csv"):
+        assert not (repo / "results/exp" / name).exists()
