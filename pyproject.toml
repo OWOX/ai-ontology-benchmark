@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-ontology-hallucination-research"
+version = "0.1.0"
+description = "Scripts for the AI model hallucination on twisty puzzles research project."
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic",
+    "openai",
+    "google-genai",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
