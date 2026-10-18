@@ -1,0 +1,9 @@
+# Model catalogue for the UI (python -m ui.server). Each entry has the same shape as a
+# [[models]] entry in an experiment config, and the UI copies it unchanged.
+# Add real models here, and give each a row in config/prices.toml, or the UI shows it disabled.
+
+[[models]]
+name = "example-model"
+provider = "fake"
+api_model_id = "example-model-2026-01-01"
+params = { temperature = 1.0 }
