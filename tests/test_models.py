@@ -63,12 +63,13 @@ def openai_response(finish="stop"):
               usage=NS(prompt_tokens=11, completion_tokens=7))
 
 
-def google_response(finish="STOP", block=None):
+def google_response(finish="STOP", block=None, thoughts=None):
     candidate = NS(finish_reason=types.FinishReason[finish],
                    content=NS(parts=[NS(text="hi", thought=None)]))
     return NS(candidates=[candidate], model_version="gemini-served",
               prompt_feedback=NS(block_reason=block) if block else None,
-              usage_metadata=NS(prompt_token_count=11, candidates_token_count=7))
+              usage_metadata=NS(prompt_token_count=11, candidates_token_count=7,
+                                     thoughts_token_count=thoughts))
 
 
 def install(monkeypatch, provider, result):
@@ -162,6 +163,7 @@ def test_google_blocked_prompt_is_refused(monkeypatch):
 def sdk_errors(provider):
     if provider == "anthropic":
         return [status_error(anthropic.RateLimitError, 429), status_error(anthropic.InternalServerError, 500),
+                status_error(anthropic.APIStatusError, 529), status_error(anthropic.APIStatusError, 503),
                 anthropic.APITimeoutError(request=REQUEST), anthropic.APIConnectionError(request=REQUEST)]
     if provider == "openai":
         return [status_error(openai.RateLimitError, 429), status_error(openai.InternalServerError, 500),
@@ -170,12 +172,22 @@ def sdk_errors(provider):
             httpx.ReadTimeout("slow"), httpx.ConnectError("down")]
 
 
-@pytest.mark.parametrize("provider", RESPONSES)
-@pytest.mark.parametrize("index", range(4))
+@pytest.mark.parametrize("provider,index", [(p, i) for p in RESPONSES for i in range(6 if p == "anthropic" else 4)])
 def test_infrastructure_errors(monkeypatch, provider, index):
     install(monkeypatch, provider, sdk_errors(provider)[index])
     with pytest.raises(InfrastructureError):
         call_model(entry(provider), "prompt", 50)
+
+
+def test_anthropic_other_client_error_propagates(monkeypatch):
+    install(monkeypatch, "anthropic", status_error(anthropic.BadRequestError, 400))
+    with pytest.raises(anthropic.BadRequestError):
+        call_model(entry("anthropic"), "prompt", 50)
+
+
+def test_google_output_tokens_include_thoughts(monkeypatch):
+    install(monkeypatch, "google", google_response(thoughts=5))
+    assert call_model(entry("google"), "prompt", 50).output_tokens == 12
 
 
 def test_google_other_client_error_propagates(monkeypatch):

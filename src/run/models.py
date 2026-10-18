@@ -48,8 +48,12 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str) -> Re
             messages=[{"role": "user", "content": prompt}],
             **model.get("params", {}),
         )
-    except (anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError) as error:
+    except anthropic.APIConnectionError as error:
         raise InfrastructureError(f"anthropic: {error}") from error
+    except anthropic.APIStatusError as error:
+        if error.status_code == 429 or error.status_code >= 500:
+            raise InfrastructureError(f"anthropic: {error}") from error
+        raise
     latency = time.perf_counter() - start
     stop_reason = {"max_tokens": "truncated", "refusal": "refused"}.get(response.stop_reason, "ok")
     text = "".join(block.text for block in response.content if block.type == "text")
@@ -106,7 +110,8 @@ def _google(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply
     latency = time.perf_counter() - start
     usage = response.usage_metadata
     input_tokens = (usage.prompt_token_count or 0) if usage else 0
-    output_tokens = (usage.candidates_token_count or 0) if usage else 0
+    # Gemini bills thoughts as output; the other providers' counts already include reasoning tokens.
+    output_tokens = ((usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)) if usage else 0
     blocked = response.prompt_feedback is not None and response.prompt_feedback.block_reason is not None
     finish = ""
     if response.candidates and response.candidates[0].finish_reason is not None:

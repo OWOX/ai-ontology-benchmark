@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from src.puzzles.registry import get_engine
 
+STOP_REASONS = ("ok", "truncated", "refused", "infrastructure_failure")
 # One Markdown code fence around the whole response, with an optional language tag.
 FENCE = re.compile(r"^\s*```[A-Za-z]*\s*\n(.*?)\n?\s*```\s*$", re.DOTALL)
 
@@ -48,6 +49,8 @@ def _parse(raw_response: str) -> tuple[list[str], bool] | None:
 
 def validate(input: dict, raw_response: str, stop_reason: str) -> Verdict:
     """Judge one raw response against its input and return the Verdict."""
+    if stop_reason not in STOP_REASONS:
+        raise ValueError(f"unknown stop_reason {stop_reason!r}; expected one of {', '.join(STOP_REASONS)}")
     if stop_reason == "infrastructure_failure":
         return _no_moves("infrastructure_failure")
     if stop_reason in ("truncated", "refused"):

@@ -62,3 +62,8 @@ def test_validate(name):
 
 def test_scramble_is_not_solved_in_one_move():
     assert not ENGINE.is_solved(ENGINE.apply_move(STATE, NO_SOLVE[0]))
+
+
+def test_unknown_stop_reason_raises():
+    with pytest.raises(ValueError, match="stop_reason"):
+        validate(VALID, reply(SOLVE), "stop")
