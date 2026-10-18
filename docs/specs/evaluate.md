@@ -13,7 +13,7 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
 3. The assessment files in the working tree must hash to that release's `assessment_sha256`, and the working tree must render exactly the prompt versions the release froze (the same checks [run](run.md) makes). To score under an older release, check out its tag first.
 4. Token prices. On the first evaluate of an experiment, `config/prices.toml` is copied to `results/<ID>/prices.toml`. Every later evaluate reads the copy, so a price change never rewrites a committed report. To use new prices, delete the copy on purpose.
 5. Every AI model in the experiment config needs a price in the prices file, whether or not it has records.
-6. Raw files are read with the shared `read_raw` helper from [run](run.md): a line that does not parse as a JSON object is skipped and counted, and the count goes to the report as `Torn raw lines skipped`. A record that lacks a required field is a checked error that names the file. A repeated (input id, setup, AI model, attempt number) is also a checked error that names the file.
+6. Raw files are read with the shared `read_raw` helper from [run](run.md) (`src/run/raw.py`, an assessment file): a line that does not parse as a JSON object is skipped and counted, and the count goes to the report as `Torn raw lines skipped`. A record that lacks a required field is a checked error that names the file. A repeated (input id, setup, AI model, attempt number) is also a checked error that names the file.
 7. Optional `--releases`, `--results`, and `--prices` paths, for tests.
 
 `evaluate` exits with code 1 and writes nothing if any check fails.

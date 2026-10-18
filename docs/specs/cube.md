@@ -8,7 +8,7 @@ One [engine](engine.md) for every NxN cube. `CubeEngine(n)` handles the 2x2 and 
 
 ## Inputs
 
-1. `n`: 2, 3, or 5.
+1. `n`: 2 or 3. 5 waits on [open item 5](../../AGENTS.md#open).
 2. A state is a string of 6·n² colour letters, one per sticker, with faces in the order U, R, F, D, L, B and stickers in each face read row by row from the top left. A solved 2x2 is `UUUURRRRFFFFDDDDLLLLBBBB`.
 
 ## Outputs
