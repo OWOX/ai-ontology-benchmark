@@ -1,0 +1,46 @@
+{
+  "assessment_sha256": "001302ee0dd8a40717e70e13110b8f5aa1b82c14e1f58ad6d610c433c376985a",
+  "commit": "3d7d8a6b47b388824400f4e60a09658e43dd64c7",
+  "created_at": "2026-10-18T02:30:37Z",
+  "files": {
+    "README.md": "6c74a7657051ef68bc0450b314bc9dfd0b6ae31888c091577a77ac068eebdc86",
+    "inputs.jsonl": "960e785fb03e10d5d181b4cc592e1f3ab92cf332841ce54441d8cb31fcc9cb6e",
+    "prompts/descriptive/2x2.txt": "50200bb436de9205c97830a71656ddfc69935ab33bb98c53c81285d8b0564ac6",
+    "prompts/descriptive/3x3.txt": "74ea71756cc17cc8650d40da7fac504df9bcb4737cbd6762c8d56355a27d1a09",
+    "prompts/no_model/2x2.txt": "b06dd49e82c9644bde5a3cba77048b3df924f6df874d03194e7e882135138d20",
+    "prompts/no_model/3x3.txt": "83d934e1f7b3d69e95107d8a6a05669a72b2fbea56310b69497ad4d3e2111338",
+    "prompts/prescriptive/2x2.txt": "43921af88dfee6dc0c06d6c59286bf3a8f46b51957e7c7c82d96e861317cd3e9",
+    "prompts/prescriptive/3x3.txt": "aa06bdd30ac42cb570645064d83a87f6c284d852cae1d568a8ff7b2703aa78be"
+  },
+  "input_set_id": "1",
+  "note": "First input set",
+  "prompt_versions": {
+    "descriptive": {
+      "2x2": "61e7b59b5bb8",
+      "3x3": "6a6049173e73"
+    },
+    "no_model": {
+      "2x2": "229878c44c39",
+      "3x3": "5410d22ca457"
+    },
+    "prescriptive": {
+      "2x2": "17ce41141626",
+      "3x3": "dd3c72602b25"
+    }
+  },
+  "release_config": {
+    "puzzles": [
+      "2x2",
+      "3x3"
+    ],
+    "scramble_count": 10,
+    "scramble_depths": [
+      5,
+      10,
+      20
+    ],
+    "seed": 20261017,
+    "valid_invalid_split": 0.5
+  },
+  "release_version": "1.0.0"
+}
