@@ -6,11 +6,12 @@ file, ignoring the lines that hold dates. Set UPDATE_FIXTURES=1 to regenerate th
 """
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
-from test_release import commit_all, edit, git, repo  # noqa: F401  (repo is a fixture)
+from test_release import commit_all, git, repo  # noqa: F401  (repo is a fixture)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "pipeline-1.0.0.md"
 RELEASE_CONFIG = (
@@ -31,10 +32,25 @@ def python_m(repo: Path, module: str, *args: str) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def without_dates(text: str) -> str:
-    """Drop the lines that hold timestamps: the first and last attempt line, and any created_at."""
+def normalise(text: str) -> str:
+    """Drop lines that hold dates and replace every 64-hex hash with a placeholder."""
     dated = ("created_at", "First and last attempt")
-    return "".join(line for line in text.splitlines(keepends=True) if not any(d in line for d in dated))
+    kept = []
+    for line in text.splitlines(keepends=True):
+        if any(marker in line for marker in dated):
+            continue
+        kept.append(re.sub(r"[0-9a-f]{64}", "<hash>", line))
+    return "".join(kept)
+
+
+def assessment_hash(text: str) -> str:
+    match = re.search(r"Assessment hash: `([0-9a-f]{64})`", text)
+    assert match, "no assessment hash line"
+    return match.group(1)
+
+
+def raw_bytes(folder: Path) -> dict:
+    return {path.name: path.read_bytes() for path in sorted(folder.glob("*.jsonl"))}
 
 
 def test_whole_flow(repo):
@@ -53,10 +69,12 @@ def test_whole_flow(repo):
 
     if os.environ.get("UPDATE_FIXTURES") == "1":
         FIXTURE.parent.mkdir(exist_ok=True)
-        FIXTURE.write_text(without_dates(first), encoding="utf-8")
-    assert without_dates(first) == FIXTURE.read_text(encoding="utf-8")
+        FIXTURE.write_text(normalise(first), encoding="utf-8")
+    assert normalise(first) == FIXTURE.read_text(encoding="utf-8")
 
     commit_all(repo, "results")
+    raw_before = raw_bytes(repo / "results" / "e1" / "raw")
+    assert raw_before
     validator = repo / "src" / "validator.py"
     validator.write_text(validator.read_text(encoding="utf-8") + "\n# assessment fix\n", encoding="utf-8")
     commit_all(repo, "validator")
@@ -65,6 +83,8 @@ def test_whole_flow(repo):
 
     assert report.read_text(encoding="utf-8") == first
     second = (repo / "results" / "e1" / "1.0.1.md").read_text(encoding="utf-8")
-    assert "1.0.1" in second
+    assert second.startswith("# Experiment e1 on release 1.0.1")
+    assert assessment_hash(second) != assessment_hash(first)
+    assert raw_bytes(repo / "results" / "e1" / "raw") == raw_before
     assert "mirror of release 1.0.0" in second
     assert git(repo, "tag", "--list") == "release-1.0.0\nrelease-1.0.1"

@@ -4,7 +4,7 @@ Release: [1.0.0, tag `release-1.0.0`](../../releases/1.0.0/README.md)
 
 The experiment ran on release 1.0.0. This report is not a mirror.
 
-Assessment hash: `a9d4f9b2f2cf72ea15baead29b845e8e9c472cc1f17bb1f0c4acc9f019e175e2`
+Assessment hash: `<hash>`
 
 Inputs: [inputs.jsonl](../../releases/1.0.0/inputs.jsonl). Prompts: [prompts/](../../releases/1.0.0/prompts).
 
