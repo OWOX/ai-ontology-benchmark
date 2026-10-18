@@ -20,6 +20,7 @@ EXPECTED = Path(__file__).parent / "fixtures" / "report_expected.md"
 PROMPT_MARKER = "SECRET-PROMPT-TEXT"
 CONFIG = {
     "release": "1.0.0", "attempts": 2, "retry_cap": 1, "max_output_tokens": 100,
+    "budget": {"per_request_usd": 0.5, "per_model_usd": 5.0, "per_experiment_usd": 10.0},
     "models": [{"name": "M", "provider": "fake", "api_model_id": "m-1", "params": {"temperature": 0.5}}],
 }
 PRICES = {"M": {"price_input_per_mtok": 1000.0, "price_output_per_mtok": 2000.0}}
@@ -107,3 +108,10 @@ def test_summary_tables_never_mix_validity(tree):
 def test_changed_outcome_shown_as_stored_arrow_current(tree):
     assert "→" not in build(tree)
     assert "| success → failure |" in build(tree, changed_outcome=True)
+
+
+def test_experiment_section_shows_budgets_and_spend(tree):
+    text = build(tree)
+    assert "Budgets in force (USD): request 0.5, AI model 5.0, experiment 10.0." in text
+    spent = sum(r["cost"] for r in compute(records(), tree[0] / "releases" / "1.0.0", PRICES, ["M"])[0])
+    assert f"| M | {spent:.4f} |" in text and f"| Total | {spent:.4f} |" in text

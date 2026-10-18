@@ -28,6 +28,15 @@ Token prices per million tokens, from [prices.toml](prices.toml):
 |---|---|---|
 | M | 1000.0 | 2000.0 |
 
+Budgets in force (USD): request 0.5, AI model 5.0, experiment 10.0.
+
+Cost spent, at the prices above (USD):
+
+| AI model | Spent |
+|---|---|
+| M | 0.2400 |
+| Total | 0.2400 |
+
 ## Summary
 
 ### M
