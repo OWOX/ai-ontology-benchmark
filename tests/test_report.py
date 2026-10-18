@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from src.evaluate.evaluate import compute
+from src.evaluate.metrics import compute
 from src.evaluate.report import write_report
 from src.run.prompts import SETUPS
 from test_evaluate import answer, make_inputs, raw

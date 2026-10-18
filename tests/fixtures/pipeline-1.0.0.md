@@ -67,7 +67,7 @@ Token prices per million tokens, from [prices.toml](prices.toml):
 
 ### [2x2-d1-001](../../releases/1.0.0/inputs.jsonl#L1) (valid, depth 1)
 
-| AI model | Setup | Attempt | Outcome | Moves | Mismatch | Input tokens | Output tokens | Latency (s) |
+| AI model | Setup | Attempt | Outcome | Moves | Mismatch | Input tokens (excl. retries) | Output tokens (excl. retries) | Latency (s) |
 |---|---|---|---|---|---|---|---|---|
 | A | no_model | 1 | failure |  | false | 0 | 0 | 0.00 |
 | A | no_model | 2 | failure |  | false | 0 | 0 | 0.00 |
@@ -78,7 +78,7 @@ Token prices per million tokens, from [prices.toml](prices.toml):
 
 ### [2x2-d1-001-x](../../releases/1.0.0/inputs.jsonl#L2) (invalid, depth 1)
 
-| AI model | Setup | Attempt | Outcome | Moves | Mismatch | Input tokens | Output tokens | Latency (s) |
+| AI model | Setup | Attempt | Outcome | Moves | Mismatch | Input tokens (excl. retries) | Output tokens (excl. retries) | Latency (s) |
 |---|---|---|---|---|---|---|---|---|
 | A | no_model | 1 | failure |  | false | 0 | 0 | 0.00 |
 | A | no_model | 2 | failure |  | false | 0 | 0 | 0.00 |
@@ -89,7 +89,7 @@ Token prices per million tokens, from [prices.toml](prices.toml):
 
 ### [2x2-d1-002](../../releases/1.0.0/inputs.jsonl#L3) (valid, depth 1)
 
-| AI model | Setup | Attempt | Outcome | Moves | Mismatch | Input tokens | Output tokens | Latency (s) |
+| AI model | Setup | Attempt | Outcome | Moves | Mismatch | Input tokens (excl. retries) | Output tokens (excl. retries) | Latency (s) |
 |---|---|---|---|---|---|---|---|---|
 | A | no_model | 1 | failure |  | false | 0 | 0 | 0.00 |
 | A | no_model | 2 | failure |  | false | 0 | 0 | 0.00 |
