@@ -28,23 +28,29 @@ The study tests whether an [ontology model](docs/definitions.md#setups), meaning
 2. [Methodology](docs/methodology.md): the setups and how each attempt is measured.
 3. [Assumptions](docs/assumptions.md): what the study takes as given.
 4. [Related work](docs/related-work.md): other papers on the same problems, and the gap this study fills.
-5. [AGENTS.md](AGENTS.md): rules for coding agents, including the invariants that keep results reproducible.
+5. [Script specs](docs/specs/README.md): inputs, outputs, and tests for every script, and the commands that run the project.
+6. [AGENTS.md](AGENTS.md): rules for coding agents, including the invariants that keep results reproducible.
 
 ## Structure
 
 Planned layout. Folders appear as the code is written.
 
 ```
-config/            AI models, token prices, attempts, retry cap, scramble counts and depths, seed, and valid/invalid split
+config/
+  release.toml     seed, puzzles, scramble count and depths, and valid/invalid split
+  experiments/     one file per experiment: release, AI models, attempts, and retry cap
+  prices.toml      token prices per AI model
 src/
+  config.py        loads and checks the config files
+  validator.py     turns a raw response into moves, flags, and an outcome
   puzzles/         common interface, one engine per puzzle, registry
-  generate/        builds the frozen input set with each engine's scramble
-  run/             plays frozen inputs against each AI model under the three setups
-  evaluate/        computes the metrics from raw results
-inputs/            frozen, read-only once made
-results/raw/       append-only attempt records
-results/reports/   computed metrics
-prompts/           no-model, descriptive, prescriptive
+  generate/        builds an input set with each engine's scramble
+  release/         freezes inputs, prompts, and assessment into a release
+  run/             plays a release against each AI model under the three setups
+  evaluate/        computes the metrics and writes the experiment report
+prompts/           working templates: no_model, descriptive, prescriptive
+releases/          one read-only folder per release version
+results/           one folder per experiment: raw records and one report per release
 docs/              definitions, methodology, assumptions, related work
 LICENSE            Apache 2.0 licence text
 LICENSE-CC-BY-4.0  CC BY 4.0 licence text

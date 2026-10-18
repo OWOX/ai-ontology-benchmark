@@ -1,0 +1,3 @@
+[example-model]
+price_input_per_mtok = 3.00
+price_output_per_mtok = 15.00

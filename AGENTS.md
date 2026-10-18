@@ -16,22 +16,25 @@ Do not break these. Changing one needs explicit approval from the project owner.
 4. A deterministic validator judges answers. An AI model never judges an AI model.
 5. `generate` and `run` are separate workflows. `generate` builds scrambles and invalid inputs once, records the seed, and freezes the result. `run` only reads frozen inputs. It never generates, scrambles, or edits them.
 6. Every AI model and every setup sees byte-identical inputs.
-7. Frozen inputs are read-only. A new input set gets a new input set id.
+7. Releases are read-only. A new input set means a new major release, a prompt change a new minor release, and an assessment fix a new patch release that mirrors the one before it.
 8. Invalid inputs are extra copies of valid inputs, corrupted by the engine under their own input seed. Every input carries a validity label, and the label is authoritative.
-9. AI model output is structured JSON with a list of moves and a mismatch flag. Output that doesn't parse, is cut off at the token limit, or is a refusal, including a content-filter refusal returned as an API error, gets outcome `malformed_output`, counted apart from failures and hallucinations.
+9. AI model output is the JSON object `{"moves": [string, ...], "mismatch": true|false}` with no other keys. Output that doesn't parse, is cut off at the token limit, or is a refusal, including a content-filter refusal returned as an API error, gets outcome `malformed_output`, counted apart from failures and hallucinations.
 10. Retry only infrastructure failures, up to the retry cap. Never re-ask because an answer is wrong or malformed. When the cap is reached, the attempt still gets a raw record, with outcome `infrastructure_failure`.
-11. `results/raw/` holds one raw record per attempt and is append-only. Nothing edits it.
-12. Everything in `results/reports/` can be recomputed from `results/raw/`, the frozen inputs, and config. `evaluate` re-validates every raw response, so a validator fix means recomputing the reports, never running the AI models again or editing raw records. Metrics, including anything that depends on the reference solver, are never stored in raw records.
-13. Every raw record carries its full context: input id, input set id, puzzle, scramble depth, validity label, setup, prompt version, AI model, seed, input seed, attempt number, raw response, parsed moves, outcome, hallucination flag, mismatch flag, move count, input tokens, output tokens, retry input tokens, retry output tokens, and latency.
+11. `results/<experiment id>/raw/` holds one raw record per attempt and is append-only. Nothing edits it.
+12. Every report can be recomputed from the experiment's raw records, its release, and config. `evaluate` re-validates every raw response, so an assessment fix means a patch release and a new report under it, never running the AI models again or editing raw records. Metrics, including anything that depends on the reference solver, are never stored in raw records.
+13. Every raw record carries its full context: experiment id, release version, input id, input set id, puzzle, scramble depth, validity label, setup, prompt version, AI model, seed, input seed, attempt number, raw response, parsed moves, outcome, hallucination flag, mismatch flag, move count, input tokens, output tokens, retry input tokens, retry output tokens, latency, stop reason, and served model.
 14. `legal_moves()` in each engine is the only definition of a puzzle's move group. The prescriptive move list is exactly that list, and the validator reads it directly with an exact string match. No second copy exists anywhere.
 15. Raw records store token counts as the API returned them, never a cost. Token prices live in config, and reports compute cost from them, so a price change only means recomputing the reports.
 16. The prompt contains the rendered state and never the scramble.
+17. Every experiment report names the release it was scored under and links to that release's inputs and prompts. It never copies them.
 
 ## Structure
 
 The folder layout is in [README.md](README.md#structure). Keep it in that one place.
 
 `prompts/` is top-level because the setup is a variable. Language: Python.
+
+Every script has a spec in [docs/specs/](docs/specs/README.md) and starts with a comment linking to it. Build a script to its spec. If the code needs to differ from the spec, change the spec in the same pull request.
 
 ## Puzzle engine interface
 
@@ -75,7 +78,7 @@ Ask before building anything that depends on these.
 
 1. Exact prompt text for each setup.
 2. Reference solver for each puzzle.
-3. Exact JSON schema for AI model output.
+3. Resolved: the output schema is in invariant 9.
 4. The exact octahedral and tetrahedral puzzles, for example the face-turning octahedron (FTO) and the Pyraminx. Tetrahedral itself still needs confirmation.
 5. Which moves each move group contains: whole-puzzle rotations, slice moves, and wide moves, and how each counts in the half-turn metric.
 6. Repo visibility.

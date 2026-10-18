@@ -34,15 +34,26 @@ Every term below means the same thing in code, configs, records, reports, and do
 5. **Validity label.** The valid or invalid label `generate` gives each input. The label is authoritative. `load_state()` only checks it, and a disagreement raises an error, because it means a bug in the engine or in `generate`.
 6. **Valid/invalid split.** The share of valid inputs for which `generate` also makes an invalid copy. A config parameter.
 7. **Input set.** All inputs made by one `generate` call, under one config.
-8. **Input set id.** The id of an input set. Every input and every raw record carries it.
-9. **Frozen.** Written once by `generate` and never changed again. A different input set needs a new input set id.
+8. **Input set id.** The id of an input set. It is the major number of the release that first holds the input set. Every input and every raw record carries it.
+9. **Frozen.** Written once and never changed again. A different input set needs a new major release.
+
+## Releases and experiments
+
+1. **Release.** A frozen bundle in `releases/<release version>/` that holds everything an AI model sees and everything that judges it: the input set, the prompt templates, and the assessment. Each release has a git tag `release-<release version>`.
+2. **Release version.** `MAJOR.MINOR.PATCH`. A new input set bumps MAJOR. A prompt change with the same input set bumps MINOR. An assessment fix bumps PATCH.
+3. **Mirror.** A patch release is a mirror of the release before it: its input set and every prompt version are identical, and only the assessment differs. Raw records made under one release are scored under any of its mirrors without calling an AI model again.
+4. **Assessment.** The code that judges attempts and computes metrics: the validator, the engines, and `evaluate`. The code that only formats the experiment report isn't part of it. A release pins the assessment as one hash over those files.
+5. **Experiment.** One `run` of every AI model in an experiment config over one release, and the reports computed from it.
+6. **Experiment id.** The name of an experiment config file, without the extension. Every raw record carries it.
+7. **Experiment report.** The Markdown file `results/<experiment id>/<release version>.md`. It starts with the release it was scored under, and it links to the release's inputs and prompts instead of copying them.
 
 ## Workflows
 
-1. **`generate`.** Builds an input set once and freezes it. It never talks to an AI model.
-2. **`run`.** Sends every input to every AI model under every setup, validates each attempt, and appends one raw record per attempt. It never changes inputs.
-3. **`evaluate`.** Re-validates every attempt from its raw response, then computes the metrics into reports. It never edits raw records.
-4. **Validator.** The deterministic code that turns a raw response into parsed moves, flags, a move count, and an outcome. `run` calls it before writing each raw record, and `evaluate` calls it again. If a validator fix changes an outcome, the reports follow the outcome from `evaluate`, and the raw record stays as written. No AI model judges another AI model.
+1. **`generate`.** Builds an input set once. It never talks to an AI model. Only `release` calls it, for a major release.
+2. **`release`.** Freezes a new release from the current input set, prompt templates, and assessment, and refuses if the change doesn't match the version bump.
+3. **`run`.** Sends every input of one release to every AI model under every setup, validates each attempt, and appends one raw record per attempt. It never changes a release.
+4. **`evaluate`.** Re-validates every attempt of one experiment from its raw response under one release, then computes the metrics into reports. It never edits raw records.
+5. **Validator.** The deterministic code that turns a raw response into parsed moves, flags, a move count, and an outcome. `run` calls it before writing each raw record, and `evaluate` calls it again. If a validator fix changes an outcome, the reports follow the outcome from `evaluate`, and the raw record stays as written. No AI model judges another AI model.
 
 ## Setups
 
@@ -53,15 +64,15 @@ Every term below means the same thing in code, configs, records, reports, and do
 5. **Descriptive model.** The setup where the prompt explains the rules: what the puzzle is, how its moves work, and what the notation means. The AI model chooses moves on its own.
 6. **Prescriptive model.** The setup where the prompt lists the puzzle's move group, exactly as `legal_moves()` returns it, and the AI model must pick every move from that list. Only the prompt states the list. The output schema doesn't enforce it, so a move off the list is still possible, and it is an impossible move.
 7. **Prompt.** The full text sent to the AI model for one attempt. It contains the rendered state and never the scramble, because reversing the scramble solves the puzzle. It is the same for every AI model under the same setup and input.
-8. **Prompt version.** The version of the prompt text for one setup and puzzle. Any change to the text means a new version.
+8. **Prompt version.** The version of the prompt text for one setup and puzzle in a release: the first 12 hex characters of one sha256 over every prompt built for that setup and puzzle, in input order. A change to the template, to `render()`, or to `legal_moves()` gives a new version.
 
 ## Attempts and outcomes
 
 1. **Attempt.** One request to one AI model, under one setup, on one input. Each input gets as many attempts per AI model and setup as config says.
 2. **Attempt number.** The position of an attempt among the attempts for the same input, AI model, and setup, starting at 1.
-3. **Raw record.** The stored result of one attempt in `results/raw/`. It is never edited.
+3. **Raw record.** The stored result of one attempt in `results/<experiment id>/raw/`. It is never edited.
 4. **Raw response.** The full text the API returned for an attempt, stored as received.
-5. **Report.** A table of metrics in `results/reports/`, computed by `evaluate` from raw records, frozen inputs, and config.
+5. **Report.** The experiment report and a CSV of its metrics, computed by `evaluate` from raw records, one release, and config.
 6. **Parsed moves.** The list of moves read from the AI model's JSON output, in the order given.
 7. **Malformed output.** A response the validator can't use: it doesn't parse as the required JSON, it was cut off at the token limit, or the AI model or a content filter refused to answer. A content-filter refusal counts here even when the API returns it as an error, and it is never retried.
 8. **Infrastructure failure.** A network error, timeout, or rate limit. `run` retries it up to the retry cap. When the cap is reached, the raw response is empty.
@@ -83,19 +94,29 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 
 1. **Move count.** The number of parsed moves, in the half-turn metric. Each impossible move counts as one. Empty for outcomes `infrastructure_failure` and `malformed_output`.
 2. **Half-turn metric.** The way moves are counted: any turn of one part, including a half turn such as `R2`, counts as one move. How whole-puzzle rotations and wide moves count is still [open](../AGENTS.md#open).
-3. **Input tokens and output tokens.** The token counts the API reports for the call that produced the raw response, stored as returned. Zero for outcome `infrastructure_failure`.
+3. **Input tokens and output tokens.** The token counts the API reports for the call that produced the raw response, stored as returned. Zero for outcome `infrastructure_failure`. For Google, output tokens are `candidates_token_count + thoughts_token_count`, both as returned, because Gemini bills thoughts as output. The other providers' output counts already include reasoning tokens.
 4. **Retry input tokens and retry output tokens.** The token counts the API reports for every call in the attempt that failed, retried or not, summed and stored as returned. Zero when no call failed or the API reported no counts.
 5. **Latency.** The time from sending the request to receiving the full response, for the call that produced the raw response. Empty for outcome `infrastructure_failure`.
+6. **Stop reason.** How the call that produced the raw response ended: `ok`, `truncated`, `refused`, or `infrastructure_failure`. The validator needs it, because a truncated or refused response can look like valid JSON.
+7. **Served model.** The AI model id the API reported for the call, stored as returned. Empty for outcome `infrastructure_failure`. It shows when a model alias pointed at a different model than expected.
 
 ## Baseline and prices
 
 1. **Reference solver.** The program that solves each valid input to give a baseline move count. Every AI model is compared against the same reference solver. Computing the true optimum on 2x2 and 3x3 is optional and only checks the reference solver.
 2. **Reference length.** The number of moves `reference_length()` returns for a valid input's state, in the half-turn metric. Never zero, because no input starts solved. It is the reference solver's count, not the optimal distance, so it can exceed the scramble depth when the reference solver isn't optimal. Invalid inputs have no reference length.
 3. **Token price.** The price per input token and per output token for each AI model, kept in config.
+4. **Cost.** For one raw record, its input and retry input tokens times the input token price, plus its output and retry output tokens times the output token price, in USD.
+5. **Worst-case request cost.** The most one request can cost: the prompt's characters divided by 4, rounded up, as input tokens, plus `max_output_tokens` as output tokens, at the AI model's token prices.
+6. **Budget.** A cost limit in USD in the experiment config. There are three:
+   1. **Request budget.** No worst-case request cost may exceed it. Default 0.50 USD.
+   2. **Model budget.** The cost of one AI model's raw records in one experiment may not exceed it. Default 5.00 USD.
+   3. **Experiment budget.** The cost of all raw records in one experiment may not exceed it. Default 10.00 USD.
 
 ## Metrics
 
 `evaluate` computes every metric. No metric is stored in raw records. Reports split each metric by puzzle, setup, AI model, scramble depth, and validity label. Attempts with outcome `infrastructure_failure` are left out of every rate, efficiency, consistency, and latency, and counted on their own, so the denominators never change silently. They still count in tokens per attempt and cost per success, because their failed calls cost money.
+
+Every rate is reported with its denominator `n` and a 95% Wilson score interval, because a rate from a few dozen attempts can move by more than ten points by chance.
 
 1. **Success rate.** The share of attempts, on valid and invalid inputs, with outcome `success`.
 2. **Hallucination rate.** The share of attempts with outcome `hallucination`.
