@@ -49,7 +49,8 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
 1. `GET /api/catalogue` returns:
 
    ```json
-   {"releases": [{"version": "1.0.0", "puzzles": ["2x2", "3x3"], "input_count": 120}],
+   {"releases": [{"version": "1.0.0", "puzzles": ["2x2", "3x3"], "input_count": 120,
+                  "input_counts": {"2x2": 60, "3x3": 60}}],
     "latest": "1.0.0",
     "models": [{"name": "...", "provider": "...", "api_model_id": "...", "params": {},
                 "disabled_reason": null}],
