@@ -115,7 +115,7 @@ def refused_before_call(exp, capsys):
     models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
     assert go() == 1
     assert len(models.FAKE_REPLIES) == 1
-    assert not (exp / "results/exp/raw").exists()
+    assert not (exp / "results/exp").exists()
     assert capsys.readouterr().err.startswith("error:")
 
 
@@ -165,3 +165,39 @@ def test_dry_run_and_estimate_write_and_call_nothing(exp, capsys):
     assert not (exp / "results").exists() and len(models.FAKE_REPLIES) == 1
     full = input_count(exp) * 3 * 2
     assert f"total: {2 * full} attempts" in out and f"A: {full} attempts" in out
+
+
+def test_torn_last_line_resumes(exp):
+    go("--model", "A", "--limit", "2")
+    path = exp / "results/exp/raw/A.jsonl"
+    with open(path, "ab") as handle:
+        handle.write(b'{"input_id": "torn')
+    assert go("--model", "A", "--limit", "1") == 0
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert lines[2] == '{"input_id": "torn' and len(lines) == 4
+    assert json.loads(lines[3])["setup"] == "descriptive"
+    assert go("--model", "A") == 0  # the fragment does not block later runs
+
+
+def test_bad_middle_line_refused(exp, capsys):
+    go("--model", "A", "--limit", "2")
+    path = exp / "results/exp/raw/A.jsonl"
+    first, second = path.read_text(encoding="utf-8").splitlines()
+    path.write_text(first + "\nnot json\n" + second + "\n", encoding="utf-8")
+    assert go() == 1
+    err = capsys.readouterr().err
+    assert "A.jsonl" in err and "line 2" in err
+
+
+@pytest.mark.parametrize("field", ["files", "assessment_sha256", "prompt_versions", "input_set_id", "release_config"])
+def test_missing_manifest_field_refused(exp, capsys, field):
+    path = exp / "releases/1.0.0/manifest.json"
+    path.chmod(0o644)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    del manifest[field]
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    assert go() == 1
+    err = capsys.readouterr().err
+    assert "manifest.json" in err and field in err
+    assert len(models.FAKE_REPLIES) == 1 and not (exp / "results/exp").exists()

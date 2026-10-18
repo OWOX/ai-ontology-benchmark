@@ -29,7 +29,15 @@ def load_release(folder: Path) -> tuple[dict, list[dict]]:
     manifest_path = folder / "manifest.json"
     if not manifest_path.is_file():
         raise RunError(f"{manifest_path}: file not found")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except ValueError:
+        raise RunError(f"{manifest_path}: not valid JSON") from None
+    for field in ("files", "assessment_sha256", "prompt_versions", "input_set_id", "release_config"):
+        if field not in manifest:
+            raise RunError(f"{manifest_path}: field '{field}' is missing")
+    if "seed" not in manifest["release_config"]:
+        raise RunError(f"{manifest_path}: field 'release_config.seed' is missing")
     for name, digest in manifest["files"].items():
         path = folder / name
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
@@ -53,11 +61,19 @@ def read_done(raw_path: Path) -> set[tuple]:
     """Return the (input_id, setup, model, attempt_number) keys already in a raw file."""
     if not raw_path.is_file():
         return set()
+    text = raw_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
     done = set()
-    for line in raw_path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
+    for number, line in enumerate(lines, start=1):
+        try:
             row = json.loads(line)
             done.add((row["input_id"], row["setup"], row["model"], row["attempt_number"]))
+        except (ValueError, KeyError, TypeError):
+            # A stopped write leaves a fragment that starts with "{" and lacks the closing "}".
+            # append_record ends it with a newline, so it can sit mid-file later: ignore it.
+            if line.startswith("{") and not line.endswith("}"):
+                continue
+            raise RunError(f"{raw_path}: line {number} is not a valid raw record") from None
     return done
 
 
@@ -110,6 +126,13 @@ def make_record(config, manifest, row, model, setup, number, prompt, versions) -
 
 
 def append_record(raw_path: Path, record: dict) -> None:
+    if raw_path.exists() and raw_path.stat().st_size > 0:
+        with open(raw_path, "rb") as probe:
+            probe.seek(-1, 2)
+            torn = probe.read(1) != b"\n"
+        if torn:  # end the fragment as its own line; never rewrite it
+            with open(raw_path, "ab") as fix:
+                fix.write(b"\n")
     with open(raw_path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
         handle.flush()
