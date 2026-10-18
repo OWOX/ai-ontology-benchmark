@@ -145,7 +145,7 @@ function buildRing(model, input) {
   const setups = S.snap.setups;
   const total = setups.length * S.snap.attempts;
   const root = svg("svg", { viewBox: "0 0 100 100", width: 84, height: 84 });
-  const gap = total > 1 ? 0.06 : 0;
+  const gap = total > 1 ? Math.min(0.06, 0.3 * 2 * Math.PI / total) : 0;
   let idx = 0;
   for (const setup of setups) {
     for (let a = 1; a <= S.snap.attempts; a++, idx++) {
@@ -304,7 +304,7 @@ function writeForm(f) {
 // ---- Progress data ---------------------------------------------------------
 function resetProgress() {
   S.records = new Map(); S.counts = new Map(); S.inprog = {}; S.arcs = new Map();
-  S.lastArc = {}; S.jobs = {}; S.lastErr = {}; S.inputs = new Map();
+  S.lastArc = {}; S.jobs = {}; S.inputs = new Map();
 }
 
 function countFor(model, puzzle) {
@@ -334,8 +334,26 @@ function setInProgress(model, attempt) {
   if (S.lastArc[model]) paintArc(S.lastArc[model]);
 }
 
+// Events for the target id that arrive while its snapshot is in flight.
+let pendingLoad = null; // {id, events: []}
+
+function applyEvent(name, ev) {
+  if (name === "record") addRecord(ev.record);
+  else if (name === "in_progress") setInProgress(ev.model, ev.attempt);
+  else if (name === "job") onJob(ev);
+}
+
 async function loadState(id) {
-  const snap = await api("GET", "/api/state/" + encodeURIComponent(id));
+  const pending = { id, events: [] };
+  pendingLoad = pending;
+  let snap;
+  try {
+    snap = await api("GET", "/api/state/" + encodeURIComponent(id));
+  } catch (e) {
+    if (pendingLoad === pending) pendingLoad = null;
+    throw e;
+  }
+  if (pendingLoad !== pending) return; // a newer load superseded this one
   resetProgress();
   S.id = id; S.snap = snap;
   for (const i of snap.inputs) S.inputs.set(i.input_id, i);
@@ -343,6 +361,8 @@ async function loadState(id) {
   renderProgress();
   for (const r of snap.records) addRecord(r);
   for (const [m, a] of Object.entries(snap.in_progress || {})) setInProgress(m, a);
+  pendingLoad = null;
+  for (const [name, ev] of pending.events) applyEvent(name, ev);
   refreshControls();
 }
 
@@ -436,7 +456,7 @@ function renderBanners() {
       box.append(el("div", { class: "banner budget" },
         el("strong", { text: `Budget reached (${job})` }),
         el("div", { class: "small", text: S.lastErr[job] || "" }),
-        el("div", { class: "small muted", text: "Parallel models can each pass the experiment budget by one worst-case request. \"Attempts left\" in the message counts one model's attempts." }),
+        el("div", { class: "small muted", text: "Parallel AI models can each pass the experiment budget by one worst-case request. \"Attempts left\" in the message counts one AI model's attempts." }),
         btn));
     }
   }
@@ -478,14 +498,14 @@ function onEstimate() {
 
 function onRun() {
   return guarded("form-msg", async () => {
-    const { form, status } = await postForm();
-    await loadState(form.id);
     const raw = $("limit").value.trim();
     let limit = null;
     if (raw !== "") {
       limit = Number(raw);
       if (!Number.isInteger(limit) || limit < 1) throw new Error("limit must be a whole number of at least 1");
     }
+    const { form, status } = await postForm();
+    await loadState(form.id);
     await api("POST", "/api/run", { id: form.id, limit });
     say("form-msg", `Experiment ${status}; run started.`, "ok");
   });
@@ -585,9 +605,12 @@ function openEvents() {
     termLine(ev);
     if (ev.stream === "stderr") S.lastErr[ev.job] = ev.text;
   });
-  on("record", (ev) => { if (ev.id === S.id && S.snap) addRecord(ev.record); });
-  on("in_progress", (ev) => { if (ev.id === S.id && S.snap) setInProgress(ev.model, ev.attempt); });
-  on("job", (ev) => { if (ev.id === S.id) onJob(ev); });
+  for (const name of ["record", "in_progress", "job"]) {
+    on(name, (ev) => {
+      if (pendingLoad && ev.id === pendingLoad.id) pendingLoad.events.push([name, ev]);
+      else if (ev.id === S.id && S.snap) applyEvent(name, ev);
+    });
+  }
 }
 
 // ---- Startup ---------------------------------------------------------------
