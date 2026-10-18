@@ -67,8 +67,8 @@ function say(id, text, kind) {
 async function api(method, path, body) {
   const headers = {};
   const opts = { method, headers };
+  if (method === "POST" || path.startsWith("/api/commit/")) headers["X-Token"] = S.token;
   if (method === "POST") {
-    headers["X-Token"] = S.token;
     headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body || {});
   }

@@ -4,6 +4,7 @@ config/prices.toml, and config/experiments/<id>.toml. Writes only config/experim
 """
 
 import json
+import os
 import tempfile
 import tomllib
 from pathlib import Path
@@ -152,7 +153,9 @@ def save_experiment(root: Path, form: dict, env: dict) -> dict:
     else:
         status = "created"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    temp = path.with_name(f".{path.name}.tmp")
+    temp.write_text(text, encoding="utf-8")
+    os.replace(temp, path)  # atomic: a running script never reads half a file
     return {"id": experiment_id, "status": status}
 
 

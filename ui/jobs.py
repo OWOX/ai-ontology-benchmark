@@ -55,8 +55,16 @@ class JobManager:
     def _job_event(self, job: Job) -> None:
         self.hub.publish("job", {"id": job.experiment_id, "job": job.name, "state": job.state, "code": job.code})
 
-    def _register(self, experiment_id: str, name: str) -> Job:
+    def _register(self, experiment_id: str, name: str, no_run: bool = False,
+                  cancel: threading.Event | None = None) -> Job:
+        """Register a running job. The checks and the insert happen under one lock hold."""
         with self.lock:
+            if cancel is not None and cancel.is_set():
+                raise ApiError(409, f"experiment {experiment_id} was stopped")
+            if no_run and any(j.state == "running" and j.name.startswith("run:")
+                              for j in self.jobs.values() if j.experiment_id == experiment_id) \
+                    or no_run and experiment_id in self.staging:
+                raise ApiError(409, f"a run job of experiment {experiment_id} is alive")
             old = self.jobs.get((experiment_id, name))
             if old and old.state == "running":
                 raise ApiError(409, f"job {name} of experiment {experiment_id} is already running")
@@ -64,19 +72,24 @@ class JobManager:
         return job
 
     # --- subprocess jobs
-    def start(self, experiment_id: str, name: str, module_args: list[str]) -> Job:
-        job = self._register(experiment_id, name)
+    def start(self, experiment_id: str, name: str, module_args: list[str], no_run: bool = False,
+              cancel: threading.Event | None = None) -> Job:
+        job = self._register(experiment_id, name, no_run, cancel)
         argv = [sys.executable, "-u", "-m", *module_args]
         self.terminal(name, "cmd", shlex.join(argv))
         try:
             job.proc = subprocess.Popen(argv, cwd=self.root, env=merged_env(self.root), text=True,
-                                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                        encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE, bufsize=1)
         except OSError as error:
             self.terminal(name, "stderr", str(error))
             self.finish(job, 1)
             return job
         self._job_event(job)
+        if job.stopped:  # Stop arrived before the process existed
+            self._signal(job, signal.SIGINT)
+        if name.startswith("run:"):
+            self.publish_progress(experiment_id, name[4:])
         readers = [threading.Thread(target=self._read, args=(job, s), daemon=True) for s in ("stdout", "stderr")]
         for reader in readers:
             reader.start()
@@ -84,13 +97,16 @@ class JobManager:
         return job
 
     def _read(self, job: Job, stream: str) -> None:
-        for line in getattr(job.proc, stream):
-            text = line.rstrip("\r\n")
-            if stream == "stderr":
-                job.last_stderr = text
-                if text.startswith(BUDGET_PREFIX):
-                    job.budget = True
-            self.terminal(job.name, stream, text)
+        try:
+            for line in getattr(job.proc, stream):
+                text = line.rstrip("\r\n")
+                if stream == "stderr":
+                    job.last_stderr = text
+                    if text.startswith(BUDGET_PREFIX):
+                        job.budget = True
+                self.terminal(job.name, stream, text)
+        except (ValueError, OSError):
+            pass  # the pipe closed under us; the waiter reports the exit
 
     def _wait(self, job: Job, readers: list) -> None:
         code = job.proc.wait()
@@ -101,8 +117,10 @@ class JobManager:
         self.finish(job, code)
 
     def finish(self, job: Job, code: int) -> None:
-        job.code = code if code in (0, 1) else None
-        job.state = "stopped" if job.stopped else "done" if code == 0 else "budget" if (code == 1 and job.budget) else "failed"
+        with self.lock:
+            job.code = code if code in (0, 1) else None
+            job.state = ("stopped" if job.stopped else "done" if code == 0
+                         else "budget" if (code == 1 and job.budget) else "failed")
         self._job_event(job)
 
     # --- inline jobs (commit)
@@ -116,9 +134,7 @@ class JobManager:
         with self.lock:
             if self._alive(experiment_id, run_only=True):
                 raise ApiError(409, f"a run job of experiment {experiment_id} is already running")
-            cancel = threading.Event()
-            if len(models) > 1:  # staging counts as alive only while other models wait to start
-                self.staging[experiment_id] = cancel
+            cancel = self.staging[experiment_id] = threading.Event()  # alive until the first job is registered
         self._tail(experiment_id)
 
         def args(model: str) -> list[str]:
@@ -126,11 +142,15 @@ class JobManager:
             return ["src.run.run", "--experiment", experiment_id, "--model", model, *extra]
 
         try:
-            first = self.start(experiment_id, f"run:{models[0]}", args(models[0]))
+            first = self.start(experiment_id, f"run:{models[0]}", args(models[0]), cancel=cancel)
         except BaseException:
-            self.staging.pop(experiment_id, None)
+            with self.lock:
+                self.staging.pop(experiment_id, None)
             raise
-        if len(models) > 1:
+        if len(models) == 1:
+            with self.lock:
+                self.staging.pop(experiment_id, None)
+        else:
             threading.Thread(target=self._stage, args=(experiment_id, first, models[1:], args, cancel),
                              daemon=True).start()
 
@@ -145,7 +165,7 @@ class JobManager:
         try:
             for model in rest:
                 if not cancel.is_set():
-                    self.start(experiment_id, f"run:{model}", args(model))
+                    self.start(experiment_id, f"run:{model}", args(model), cancel=cancel)
         except ApiError:
             pass
         finally:
@@ -156,25 +176,27 @@ class JobManager:
     def stop(self, experiment_id: str) -> list[str]:
         with self.lock:
             event = self.staging.get(experiment_id)
+            if event:
+                event.set()  # under the lock: no model registers after this
             live = [j for j in self.jobs.values() if j.experiment_id == experiment_id
-                    and j.state == "running" and j.name.startswith("run:") and j.proc]
-        if event:
-            event.set()
+                    and j.state == "running" and j.name.startswith("run:")]
+            for job in live:
+                job.stopped = True
         for job in live:
-            job.stopped = True
             self._signal(job, signal.SIGINT)
         deadline = time.monotonic() + 10
-        while time.monotonic() < deadline and any(j.proc.poll() is None for j in live):
+        while time.monotonic() < deadline and any(j.proc and j.proc.poll() is None for j in live):
             time.sleep(0.05)
         for job in live:
-            if job.proc.poll() is None:
+            if job.proc and job.proc.poll() is None:
                 self._signal(job, signal.SIGTERM)
         return [j.name for j in live]
 
     @staticmethod
     def _signal(job: Job, sig: int) -> None:
         try:
-            job.proc.send_signal(sig)
+            if job.proc:
+                job.proc.send_signal(sig)
         except ProcessLookupError:
             pass
 

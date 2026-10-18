@@ -5,6 +5,7 @@ Run as `python -m ui.server [--port 8765] [--root .]`.
 """
 
 import argparse
+import hmac
 import json
 import queue
 import sys
@@ -53,9 +54,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if not self.host_ok():
                 raise ApiError(403, "bad Host header")
-            if method == "POST":
-                if self.headers.get("X-Token") != app.token:
+            if method == "POST" or path.startswith("/api/commit/"):
+                if not hmac.compare_digest(self.headers.get("X-Token", "").encode(), app.token.encode()):
                     raise ApiError(403, "missing or wrong X-Token")
+            if method == "POST":
                 self.send_json(200, app.post(path, self.read_body()))
             elif path == "/api/events":
                 self.stream_events()
@@ -77,8 +79,8 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             raise ApiError(400, "bad Content-Length") from None
-        if length > MAX_BODY:
-            raise ApiError(400, "body is larger than 64 KiB")
+        if length < 0 or length > MAX_BODY:
+            raise ApiError(400, "body is negative or larger than 64 KiB")
         try:
             body = json.loads(self.rfile.read(length) or b"null")
         except ValueError:

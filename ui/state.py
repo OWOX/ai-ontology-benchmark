@@ -25,7 +25,10 @@ def load_experiment(root: Path, experiment_id: str) -> tuple[dict, list[dict]]:
     path = experiment_path(root, experiment_id)
     if not path.is_file():
         raise ApiError(404, f"experiment {experiment_id} not found")
-    config = load_experiment_config(path)
+    try:
+        config = load_experiment_config(path)
+    except ValueError as error:
+        raise ApiError(400, str(error)) from None
     puzzles = config.get("puzzles") or release_puzzles(root, config["release"])
     lines = (root / "releases" / config["release"] / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
     inputs = [row for row in map(json.loads, (ln for ln in lines if ln.strip())) if row["puzzle"] in puzzles]

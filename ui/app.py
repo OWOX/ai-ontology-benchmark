@@ -27,9 +27,7 @@ class App:
         experiments.load_form(self.root, experiment_id)
         args = ["src.run.run", "--experiment", experiment_id, *flag] if name == "estimate" else \
             ["src.evaluate.evaluate", "--experiment", experiment_id]
-        if name == "evaluate" and self.jobs.alive(experiment_id, run_only=True):
-            raise ApiError(409, f"a run job of experiment {experiment_id} is alive")
-        self.jobs.start(experiment_id, name, args)
+        self.jobs.start(experiment_id, name, args, no_run=name == "evaluate")
         return {"id": experiment_id, "job": name}
 
     def run(self, body: dict) -> dict:

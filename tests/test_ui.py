@@ -179,6 +179,11 @@ def test_security(server):
     assert call(server, "POST", "/api/experiment", FORM, token=False)[0] == 403
     assert call(server, "POST", "/api/experiment", FORM, host="evil.example:80")[0] == 403
     assert call(server, "GET", "/api/catalogue", host="evil.example:80")[0] == 403
+    assert call(server, "GET", "/api/commit/t1", token=False)[0] == 403
+    port = server.server_address[1]
+    conn = http.client.HTTPConnection("127.0.0.1", port)
+    conn.request("POST", "/api/experiment", "{}", {"X-Token": server.app.token, "Content-Length": "-5"})
+    assert conn.getresponse().status == 400
     port = server.server_address[1]
     assert call(server, "GET", "/api/catalogue", host=f"localhost:{port}")[0] == 200
     (server.root / ".env").write_text("SECRET=1\n", encoding="utf-8")
@@ -214,13 +219,19 @@ def test_full_run_through_api(server):
     events.wait(lambda: job_state(events, "estimate") == "done")
     cmd = [d for d in events.of("terminal") if d["stream"] == "cmd"][0]
     assert "src.run.run" in cmd["text"] and "--estimate" in cmd["text"]
+    models = server.root / "src" / "run" / "models.py"  # slow the fake provider so the run stays alive
+    models.write_text(models.read_text().replace("def _fake() -> Reply:\n", "def _fake() -> Reply:\n    import time; time.sleep(0.4)\n"))
     assert call(server, "POST", "/api/run", {"id": "t1", "limit": None})[0] == 200
+    events.wait(lambda: any(d["attempt"] for d in events.of("in_progress")))  # amber before any record
+    assert not events.of("record") and job_state(events, "run:example-model") == "running"
+    events.wait(lambda: events.of("record"))
+    assert job_state(events, "run:example-model") == "running"  # live, not a burst at the end
     events.wait(lambda: job_state(events, "run:example-model") == "done")
     records = events.of("record")
     assert len(records) == 9  # 3 inputs x 3 setups x 1 attempt
     assert len({(r["record"]["input_id"], r["record"]["setup"]) for r in records}) == 9
     progress = [d for d in events.of("in_progress") if d["model"] == "example-model"]
-    assert progress[-1]["attempt"] is None
+    assert progress[-1]["attempt"] is None and any(d["attempt"] for d in progress[:-1])
     status, snap = call(server, "GET", "/api/state/t1")
     assert status == 200 and len(snap["records"]) == 9 and len(snap["inputs"]) == 3
     assert snap["in_progress"] == {"example-model": None}
