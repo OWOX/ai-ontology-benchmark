@@ -26,6 +26,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
    3. First and last `created_at` across raw records.
    4. The line `Torn raw lines skipped: <n>.`
    5. The token prices used, linked to `prices.toml` in the experiment folder.
+   6. The three budgets in force, and the cost spent per AI model and in total, at the prices used.
 4. **Summary.** For each AI model, two tables with setups as columns:
    1. Valid inputs: success rate, hallucination rate, false mismatch rate, malformed output rate, and cost per success.
    2. Invalid inputs: success rate, mismatch detection rate, hallucination rate, and malformed output rate.

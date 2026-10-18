@@ -105,6 +105,12 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 1. **Reference solver.** The program that solves each valid input to give a baseline move count. Every AI model is compared against the same reference solver. Computing the true optimum on 2x2 and 3x3 is optional and only checks the reference solver.
 2. **Reference length.** The number of moves `reference_length()` returns for a valid input's state, in the half-turn metric. Never zero, because no input starts solved. It is the reference solver's count, not the optimal distance, so it can exceed the scramble depth when the reference solver isn't optimal. Invalid inputs have no reference length.
 3. **Token price.** The price per input token and per output token for each AI model, kept in config.
+4. **Cost.** For one raw record, its input and retry input tokens times the input token price, plus its output and retry output tokens times the output token price, in USD.
+5. **Worst-case request cost.** The most one request can cost: the prompt's characters divided by 4, rounded up, as input tokens, plus `max_output_tokens` as output tokens, at the AI model's token prices.
+6. **Budget.** A cost limit in USD in the experiment config. There are three:
+   1. **Request budget.** No worst-case request cost may exceed it. Default 0.50 USD.
+   2. **Model budget.** The cost of one AI model's raw records in one experiment may not exceed it. Default 5.00 USD.
+   3. **Experiment budget.** The cost of all raw records in one experiment may not exceed it. Default 10.00 USD.
 
 ## Metrics
 
