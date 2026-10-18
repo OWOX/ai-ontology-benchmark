@@ -128,6 +128,21 @@ def _check_budget(path: Path, config: dict) -> dict:
     return budget
 
 
+def _check_puzzles(path: Path, config: dict) -> None:
+    """An optional `puzzles` is a non-empty list of unique registry names."""
+    puzzles = _get(path, config, "puzzles", list)
+    if not puzzles:
+        _fail(path, "puzzles", "must not be empty")
+    for puzzle in puzzles:
+        if not isinstance(puzzle, str):
+            _fail(path, "puzzles", "must hold only strings")
+        if puzzle not in ENGINES:
+            known = ", ".join(ENGINES)
+            _fail(path, "puzzles", f"has unknown puzzle {puzzle!r}; known puzzles: {known}")
+    if len(set(puzzles)) != len(puzzles):
+        _fail(path, "puzzles", "must not repeat a puzzle")
+
+
 def load_experiment_config(path: Path) -> dict:
     """Return the experiment config with the file stem added as `experiment_id`."""
     path = Path(path)
@@ -144,6 +159,8 @@ def load_experiment_config(path: Path) -> dict:
     _check_min(path, "retry_cap", retry_cap, 0)
     max_tokens = _get(path, config, "max_output_tokens", int)
     _check_min(path, "max_output_tokens", max_tokens, 1)
+    if "puzzles" in config:
+        _check_puzzles(path, config)
     models = _get(path, config, "models", list)
     if not models:
         _fail(path, "models", "must have at least one entry")

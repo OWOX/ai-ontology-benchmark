@@ -22,11 +22,12 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
    4. Links to `inputs.jsonl` and the `prompts/` folder in the release.
 3. **Experiment.** Linked to `experiment.toml`.
    1. A table of AI models with name, provider, API model id, every served model id seen in the raw records, and `params`, or "provider defaults" when there are none.
-   2. Attempts, retry cap, and maximum output tokens.
-   3. First and last `created_at` across raw records.
-   4. The line `Torn raw lines skipped: <n>.`
-   5. The token prices used, linked to `prices.toml` in the experiment folder.
-   6. The three budgets in force, and the cost spent per AI model and in total, at the prices used.
+   2. When the config has `puzzles`, the line `Puzzles: 2x2, 3x3` with the names in config order. Without `puzzles`, the line is absent and the report is unchanged.
+   3. Attempts, retry cap, and maximum output tokens.
+   4. First and last `created_at` across raw records.
+   5. The line `Torn raw lines skipped: <n>.`
+   6. The token prices used, linked to `prices.toml` in the experiment folder.
+   7. The three budgets in force, and the cost spent per AI model and in total, at the prices used.
 4. **Summary.** For each AI model, two tables with setups as columns:
    1. Valid inputs: success rate, hallucination rate, false mismatch rate, malformed output rate, and cost per success.
    2. Invalid inputs: success rate, mismatch detection rate, hallucination rate, and malformed output rate.
@@ -44,6 +45,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 4. The first heading names the release version, and the next lines link its tag and README.
 5. No summary table mixes valid and invalid inputs.
 6. A changed outcome shows as `stored → current`.
+7. The `Puzzles:` line appears only when the config sets `puzzles`.
 
 ## Risk
 

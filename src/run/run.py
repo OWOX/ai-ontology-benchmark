@@ -85,6 +85,8 @@ def pending_attempts(config: dict, inputs: list[dict], raw_dir: Path, only_model
     models = [m for m in config["models"] if only_model in (None, m["name"])]
     done = {m["name"]: read_done(raw_dir / f"{m['name']}.jsonl") for m in models}
     for row in inputs:
+        if "puzzles" in config and row["puzzle"] not in config["puzzles"]:
+            continue
         for model in models:
             for setup in SETUPS:
                 for number in range(1, config["attempts"] + 1):
@@ -162,6 +164,9 @@ def run(args: argparse.Namespace) -> int:
         raise RunError(f"{config_path}: field 'models' has no model {args.model!r}")
     folder = args.releases / config["release"]
     manifest, inputs = load_release(folder)
+    for name in config.get("puzzles", []):
+        if name not in manifest["release_config"]["puzzles"]:
+            raise RunError(f"{config_path}: field 'puzzles' names {name!r}, which release {config['release']} does not hold")
     results = args.results / config["experiment_id"]
     check_experiment_copy(config_path, results)
     prices = load_prices(args.prices)

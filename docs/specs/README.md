@@ -33,6 +33,7 @@ One spec per script. Each spec lists the script's inputs, its outputs, and how t
    python -m src.release.release --bump patch --note "Fix: ..."
    python -m src.evaluate.evaluate --experiment <id> --release 1.0.1
    ```
+6. Running from the UI: `python -m ui.server`, then open the printed URL.
 
 ## Specs
 
@@ -51,6 +52,7 @@ Listed in build order. Each script depends only on scripts above it.
 11. [run](run.md): `src/run/run.py`, `src/run/budget.py`, and `src/run/raw.py`.
 12. [report](report.md): `src/evaluate/report.py`.
 13. [evaluate](evaluate.md): `src/evaluate/evaluate.py` and `src/evaluate/metrics.py`.
+14. [ui](ui.md): `ui/`.
 
 The octahedral and tetrahedral engines have no spec yet. They wait on [open item 4](../../AGENTS.md#open).
 

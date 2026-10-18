@@ -15,9 +15,12 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
    3. `prompt_versions()` over the release's inputs and templates equals the manifest's `prompt_versions`, so the engine code in the working tree renders exactly the prompts the release froze.
    4. If `results/<ID>/experiment.toml` exists, it equals the experiment config apart from the `[budget]` table. An experiment never changes once it starts, except that its budget can be raised to resume.
    5. Every AI model in the experiment has a price in `config/prices.toml`.
-   6. For every attempt still to run, the [worst-case request cost](../definitions.md#baseline-and-prices) is at most `per_request_usd`. The error names the AI model and its worst-case cost.
+   6. If the config has `puzzles`, every name is in the release's `release_config.puzzles`. The error names the config path and the field `puzzles`.
+   7. For every attempt still to run, the [worst-case request cost](../definitions.md#baseline-and-prices) is at most `per_request_usd`. The error names the AI model and its worst-case cost.
 
    It exits with code 1 before any call if a check fails.
+
+   When the config has `puzzles`, `run` plays only the inputs of those puzzles. The attempts still to run, `--estimate`, `--dry-run`, `--limit`, and the budget checks all count only those inputs.
 3. API keys from env vars, through [models](models.md).
 4. Optional flags:
    1. `--model NAME` runs one AI model from the experiment. Separate processes can run different AI models at the same time, because each writes its own file.
@@ -68,3 +71,5 @@ All tests use the `fake` provider and temporary folders.
 16. A worst-case request cost above `per_request_usd` makes `run` exit with code 1 before any call, naming the model.
 17. A config with no `[budget]` uses the defaults, and changing only `[budget]` after the first run is accepted and updates `results/<ID>/experiment.toml`.
 18. A model missing from `config/prices.toml` makes `run` exit with code 1 before any call.
+19. On a release with 2x2 and 3x3, `puzzles = ["2x2"]` writes records for 2x2 inputs only, and a config with no `puzzles` writes both.
+20. A `puzzles` name that the release doesn't hold makes `run` exit with code 1 before any call, naming the config path and `puzzles`.
