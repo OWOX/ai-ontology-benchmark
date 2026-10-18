@@ -1,0 +1,61 @@
+# config
+
+Files: `config/release.toml`, `config/experiments/<experiment id>.toml`, `config/prices.toml`, `src/config.py`.
+
+## Purpose
+
+Hold every study parameter in three kinds of file, and refuse a config with a missing or wrong value before any work starts.
+
+## Inputs
+
+1. `config/release.toml`, read by [release](release.md) for a major release:
+
+   ```toml
+   seed = 20261017
+   puzzles = ["2x2", "3x3"]
+   scramble_depths = [5, 10, 20]
+   scramble_count = 10
+   valid_invalid_split = 0.5
+   ```
+
+2. `config/experiments/<experiment id>.toml`, read by [run](run.md) and [evaluate](evaluate.md). The file name is the [experiment id](../definitions.md#releases-and-experiments).
+
+   ```toml
+   release = "1.0.0"
+   attempts = 3
+   retry_cap = 3
+   max_output_tokens = 4096
+
+   [[models]]
+   name = "example-model"        # the AI model name written into raw records
+   provider = "anthropic"        # anthropic | openai | google | fake
+   api_model_id = "example-model-2026-01-01"
+   params = { temperature = 1.0 } # optional, passed to the SDK call unchanged
+   ```
+
+   `params` pins every sampling setting the experiment uses, such as temperature or reasoning effort, in the provider's own parameter names. Anything left out takes the provider's default, and the report says so.
+
+3. `config/prices.toml`, read by [evaluate](evaluate.md). Prices live apart from the experiment so that a price change never touches an experiment config.
+
+   ```toml
+   [example-model]
+   price_input_per_mtok = 3.00   # price per million input tokens
+   price_output_per_mtok = 15.00 # price per million output tokens
+   ```
+
+## Outputs
+
+`load_release_config(path)`, `load_experiment_config(path)`, and `load_prices(path)`. Each returns a dict after these checks, and raises `ValueError` naming the file and field on the first one that fails:
+
+1. Every field shown is present and has the type shown.
+2. `seed`, `scramble_count`, `attempts`, and every scramble depth are at least 1. `retry_cap` is at least 0.
+3. `valid_invalid_split` is between 0 and 1.
+4. Every puzzle is a name in the [registry](registry.md).
+5. `release` matches `MAJOR.MINOR.PATCH`.
+6. `models` has at least one entry, model names are unique, and `provider` is one of the four listed. `params` is a table, if present, and doesn't set the model id, the prompt, or the output token limit, which `models` sets itself.
+7. The experiment id contains only letters, digits, `-`, and `_`, because it becomes a folder name.
+
+## How to test
+
+1. The example files above load without error.
+2. For each check above, a file that breaks it raises `ValueError`, and the message contains the field name.
