@@ -90,6 +90,13 @@ EXPERIMENT_CASES = [
     ("params", EXPERIMENT + "params = { max_tokens = 5 }\n"),
     ("params", EXPERIMENT + "params = { model = 'x' }\n"),
     ("params", EXPERIMENT + "params = { prompt = 'x' }\n"),
+    ("params", EXPERIMENT + "params = { instructions = 'x' }\n"),
+    ("params", EXPERIMENT + "params = { system_instruction = 'x' }\n"),
+    ("params", EXPERIMENT + "params = { response_format = 'x' }\n"),
+    ("params", EXPERIMENT + "params = { response_mime_type = 'x' }\n"),
+    ("params", EXPERIMENT + "params = { response_schema = 'x' }\n"),
+    ("params", EXPERIMENT + "params = { tools = 'x' }\n"),
+    ("params", EXPERIMENT + "params = { tool_choice = 'x' }\n"),
     ("name", EXPERIMENT + '\n[[models]]\nname = "m"\nprovider = "fake"\napi_model_id = "z"\n'),
 ]
 

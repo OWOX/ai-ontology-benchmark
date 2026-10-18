@@ -14,6 +14,8 @@ PROVIDERS = ("anthropic", "openai", "google", "fake")
 FORBIDDEN_PARAMS = {
     "model", "model_id", "api_model_id", "prompt", "messages", "system", "input",
     "contents", "max_tokens", "max_output_tokens", "max_completion_tokens",
+    "instructions", "system_instruction", "response_format", "response_mime_type",
+    "response_schema", "tools", "tool_choice",
 }
 RELEASE_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 EXPERIMENT_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")

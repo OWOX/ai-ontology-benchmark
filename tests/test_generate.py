@@ -3,7 +3,10 @@
 
 import json
 
+import pytest
+
 from src.generate.generate import build_inputs
+from src.puzzles.engine import ValidityMismatchError
 from src.puzzles.registry import get_engine
 
 CONFIG = {
@@ -56,3 +59,24 @@ def test_ids_and_seeds_are_unique_and_order_is_right():
     assert rows[3]["input_id"] == "2x2-d3-002-x"
     assert rows[4]["input_id"] == "2x2-d3-003"
     assert rows[6]["input_id"] == "2x2-d6-001"
+
+
+def test_corrupt_that_stays_reachable_is_refused(monkeypatch):
+    real = get_engine("2x2")
+
+    class Lenient:
+        """Wraps the real engine but its corrupt() returns the state unchanged."""
+
+        def scramble(self, seed, depth):
+            return real.scramble(seed, depth)
+
+        def corrupt(self, state, seed):
+            return state, "no change"
+
+        def load_state(self, row):
+            return real.load_state(row)
+
+    monkeypatch.setattr("src.generate.generate.get_engine", lambda puzzle: Lenient())
+    config = dict(CONFIG, puzzles=["2x2"])
+    with pytest.raises(ValidityMismatchError):
+        build_inputs(config, "1")

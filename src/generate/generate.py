@@ -37,9 +37,12 @@ def build_inputs(release_config: dict, input_set_id: str) -> str:
                     "corruption": None,
                 }
                 valid["state"], valid["scramble"] = engine.scramble(valid["input_seed"], depth)
+                engine.load_state(valid)  # raises if the label and the state disagree
                 lines.append(valid)
                 if n <= invalid_count:
-                    lines.append(_invalid_copy(engine, valid, seed))
+                    invalid = _invalid_copy(engine, valid, seed)
+                    engine.load_state(invalid)
+                    lines.append(invalid)
     return "".join(json.dumps(line, sort_keys=True) + "\n" for line in lines)
 
 
