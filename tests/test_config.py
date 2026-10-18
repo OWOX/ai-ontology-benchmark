@@ -136,3 +136,33 @@ def test_missing_and_malformed_files(tmp_path):
         load_release_config(tmp_path / "nope.toml")
     with pytest.raises(ValueError, match="file.toml"):
         load_release_config(write(tmp_path, "seed = = 1"))
+
+
+DEFAULT_BUDGET = {"per_request_usd": 0.50, "per_model_usd": 5.00, "per_experiment_usd": 10.00}
+
+
+def test_no_budget_table_gives_the_defaults(tmp_path):
+    config = load_experiment_config(write(tmp_path, EXPERIMENT, "e.toml"))
+    assert config["budget"] == DEFAULT_BUDGET
+
+
+def test_partial_budget_fills_the_other_defaults(tmp_path):
+    text = EXPERIMENT + "\n[budget]\nper_experiment_usd = 25\n"
+    config = load_experiment_config(write(tmp_path, text, "e.toml"))
+    assert config["budget"] == {**DEFAULT_BUDGET, "per_experiment_usd": 25}
+
+
+@pytest.mark.parametrize("field", list(DEFAULT_BUDGET))
+@pytest.mark.parametrize("value", ["0", "-1", '"1"', "true"])
+def test_bad_budget_value(tmp_path, field, value):
+    text = EXPERIMENT + f"\n[budget]\n{field} = {value}\n"
+    with pytest.raises(ValueError, match=field) as error:
+        load_experiment_config(write(tmp_path, text, "e.toml"))
+    assert "e.toml" in str(error.value)
+
+
+def test_budget_must_be_a_table_and_know_its_fields(tmp_path):
+    with pytest.raises(ValueError, match="budget"):
+        load_experiment_config(write(tmp_path, 'budget = 3\n' + EXPERIMENT, "e.toml"))
+    with pytest.raises(ValueError, match="per_day_usd"):
+        load_experiment_config(write(tmp_path, EXPERIMENT + "\n[budget]\nper_day_usd = 1\n", "e.toml"))

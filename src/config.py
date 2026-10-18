@@ -19,6 +19,10 @@ FORBIDDEN_PARAMS = {
 }
 RELEASE_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 EXPERIMENT_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+# Budget limits in USD; an experiment config may set any of them.
+DEFAULT_PER_REQUEST_USD = 0.50
+DEFAULT_PER_MODEL_USD = 5.00
+DEFAULT_PER_EXPERIMENT_USD = 10.00
 
 
 def _fail(path: Path, field: str, problem: str) -> None:
@@ -104,6 +108,26 @@ def _check_model(path: Path, model: object, index: int, seen: set[str]) -> None:
                 _fail(path, where + "params", f"must not set {key!r}; the run script sets it")
 
 
+def _check_budget(path: Path, config: dict) -> dict:
+    """Return the budget with every default filled in; each limit must be above 0."""
+    budget = {
+        "per_request_usd": DEFAULT_PER_REQUEST_USD,
+        "per_model_usd": DEFAULT_PER_MODEL_USD,
+        "per_experiment_usd": DEFAULT_PER_EXPERIMENT_USD,
+    }
+    given = _get(path, config, "budget", dict) if "budget" in config else {}
+    for field in given:
+        if field not in budget:
+            _fail(path, f"budget.{field}", "is not a known budget")
+    for field in budget:
+        if field in given:
+            value = _get(path, given, field, float, "budget.")
+            if value <= 0:
+                _fail(path, f"budget.{field}", "must be above 0")
+            budget[field] = value
+    return budget
+
+
 def load_experiment_config(path: Path) -> dict:
     """Return the experiment config with the file stem added as `experiment_id`."""
     path = Path(path)
@@ -126,6 +150,7 @@ def load_experiment_config(path: Path) -> dict:
     seen: set[str] = set()
     for index, model in enumerate(models):
         _check_model(path, model, index, seen)
+    config["budget"] = _check_budget(path, config)
     config["experiment_id"] = experiment_id
     return config
 

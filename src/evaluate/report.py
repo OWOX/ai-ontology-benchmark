@@ -114,7 +114,23 @@ def experiment_section(link, folder: Path, config: dict, prices: dict, rows: lis
         price = prices[m["name"]]
         price_rows.append(
             [m["name"], price["price_input_per_mtok"], price["price_output_per_mtok"]])
-    return out + table(["AI model", "Input", "Output"], price_rows)
+    out += table(["AI model", "Input", "Output"], price_rows)
+    return out + budget_lines(config, rows)
+
+
+def budget_lines(config: dict, rows: list[dict]) -> list[str]:
+    """The budgets in force, and the cost spent per AI model and in total, at the prices used."""
+    budget = config["budget"]
+    spent = {m["name"]: sum(r["cost"] for r in rows if r["model"] == m["name"])
+             for m in config["models"]}
+    out = [
+        f"Budgets in force (USD): request {budget['per_request_usd']}, "
+        f"AI model {budget['per_model_usd']}, experiment {budget['per_experiment_usd']}.", "",
+        "Cost spent, at the prices above (USD):", "",
+    ]
+    body = [[name, number(cost, 4)] for name, cost in spent.items()]
+    body.append(["Total", number(sum(spent.values()), 4)])
+    return out + table(["AI model", "Spent"], body)
 
 
 def summary_cell(by_key: dict, model: str, setup: str, validity: str, name: str) -> str:

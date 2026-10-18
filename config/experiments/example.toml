@@ -8,3 +8,8 @@ name = "example-model"
 provider = "fake"
 api_model_id = "example-model-2026-01-01"
 params = { temperature = 1.0 }
+
+[budget]
+per_request_usd = 0.50
+per_model_usd = 5.00
+per_experiment_usd = 10.00

@@ -210,3 +210,94 @@ def test_missing_manifest_field_refused(exp, capsys, field):
     err = capsys.readouterr().err
     assert "manifest.json" in err and field in err
     assert len(models.FAKE_REPLIES) == 1 and not (exp / "results/exp").exists()
+
+
+# Budgets. Price 0 for input and 100 USD per million output tokens, with max_output_tokens = 100,
+# make every worst-case request cost 0.01 USD, and a reply of 100 output tokens cost 0.01 USD.
+CENT_PRICES = "".join(f"[{n}]\nprice_input_per_mtok = 0.0\nprice_output_per_mtok = 100.0\n" for n in "AB")
+
+
+def cent_replies():
+    return [Reply('{"moves": [], "mismatch": false}', "ok", "s", 0, 100, 0.1) for _ in range(200)]
+
+
+def with_budget(repo, **limits):
+    path = repo / "config" / "experiments" / "exp.toml"
+    text = EXPERIMENT + "[budget]\n" + "".join(f"{k} = {v}\n" for k, v in limits.items())
+    path.write_text(text, encoding="utf-8")
+    (repo / "config" / "prices.toml").write_text(CENT_PRICES, encoding="utf-8")
+    models.FAKE_REPLIES[:] = cent_replies()
+    return text
+
+
+def test_model_budget_stops_then_a_higher_budget_resumes(exp, capsys):
+    with_budget(exp, per_model_usd=0.035)
+    assert go() == 1
+    assert len(records(exp, "A")) == 3 and len(models.FAKE_REPLIES) == 197
+    err = capsys.readouterr().err
+    assert "per_model_usd 0.035 for model A" in err
+    assert "spent 0.0300, next request up to 0.0100" in err and f"{input_count(exp) * 12 - 3} attempts left" in err
+    text = with_budget(exp, per_model_usd=1.00)
+    models.FAKE_REPLIES[:] = cent_replies()
+    assert go() == 0
+    expected = input_count(exp) * 3 * 2
+    assert len(records(exp, "A")) == expected and len(records(exp, "B")) == expected
+    assert (exp / "results/exp/experiment.toml").read_text() == text
+
+
+def test_experiment_budget_is_shared_between_models(exp, capsys):
+    with_budget(exp, per_experiment_usd=0.045)
+    assert go("--model", "B", "--limit", "2") == 0
+    assert go() == 1
+    assert len(records(exp, "A")) == 2 and len(records(exp, "B")) == 2  # 4 calls in total
+    assert "per_experiment_usd 0.045" in capsys.readouterr().err
+
+
+def test_experiment_budget_stops_with_two_models_in_one_run(exp, capsys):
+    with_budget(exp, per_experiment_usd=0.045)
+    assert go() == 1
+    assert len(models.FAKE_REPLIES) == 196
+    assert "per_experiment_usd" in capsys.readouterr().err
+
+
+def test_request_budget_refused_before_any_call(exp, capsys):
+    with_budget(exp, per_request_usd=0.005)
+    assert go() == 1
+    assert len(models.FAKE_REPLIES) == 200 and not (exp / "results/exp").exists()
+    err = capsys.readouterr().err
+    assert "'A'" in err and "per_request_usd" in err
+
+
+def test_default_budget_and_a_budget_only_change(exp):
+    assert go("--limit", "1") == 0  # no [budget] table: defaults apply
+    text = with_budget(exp, per_experiment_usd=20)
+    assert go("--limit", "1") == 0
+    assert (exp / "results/exp/experiment.toml").read_text() == text
+    path = exp / "config/experiments/exp.toml"
+    path.write_text(text.replace("attempts = 2", "attempts = 3"))
+    assert go() == 1  # a change outside [budget] is still refused
+
+
+def test_dry_run_leaves_the_experiment_copy_alone(exp):
+    go("--limit", "1")
+    with_budget(exp, per_experiment_usd=20)
+    assert go("--dry-run") == 0
+    assert (exp / "results/exp/experiment.toml").read_text() == EXPERIMENT
+
+
+def test_model_without_a_price_refused_before_any_call(exp, capsys):
+    (exp / "config/prices.toml").write_text(PRICES.split("[B]")[0], encoding="utf-8")
+    models.FAKE_REPLIES[:] = cent_replies()
+    assert go() == 1
+    assert len(models.FAKE_REPLIES) == 200 and not (exp / "results/exp").exists()
+    assert "'B'" in capsys.readouterr().err
+
+
+def test_estimate_shows_spent_against_budgets(exp, capsys):
+    with_budget(exp, per_model_usd=1.0)
+    go("--model", "A", "--limit", "3")
+    capsys.readouterr()
+    assert go("--estimate") == 0
+    out = capsys.readouterr().out
+    assert "spent $0.0300 of per_model_usd 1.0" in out
+    assert "spent $0.0300 of per_experiment_usd 10.0" in out

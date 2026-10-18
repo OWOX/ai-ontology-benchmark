@@ -9,12 +9,15 @@ import argparse
 import hashlib
 import json
 import sys
+import tomllib
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config import load_experiment_config, load_prices
 from src.release.release import assessment_sha256
+from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
+                            print_estimate, worst_case_request_cost)
 from src.run.models import InfrastructureError, call_model
 from src.run.prompts import SETUPS, build_prompt, prompt_versions
 from src.run.raw import read_raw
@@ -52,10 +55,17 @@ def load_release(folder: Path) -> tuple[dict, list[dict]]:
     return manifest, inputs
 
 
+def without_budget(data: bytes) -> dict:
+    config = tomllib.loads(data.decode("utf-8"))
+    config.pop("budget", None)
+    return config
+
+
 def check_experiment_copy(config_path: Path, results: Path) -> None:
+    """The stored copy must equal the config apart from [budget]."""
     copy = results / "experiment.toml"
-    if copy.exists() and copy.read_bytes() != config_path.read_bytes():
-        raise RunError(f"{config_path}: differs from {copy}; an experiment never changes once it starts")
+    if copy.exists() and without_budget(copy.read_bytes()) != without_budget(config_path.read_bytes()):
+        raise RunError(f"{config_path}: differs from {copy}; an experiment never changes once it starts, except its [budget]")
 
 
 def read_done(raw_path: Path) -> set[tuple]:
@@ -132,22 +142,6 @@ def append_record(raw_path: Path, record: dict) -> None:
         handle.flush()
 
 
-def print_estimate(config: dict, pending: list, prices_path: Path, templates: Path) -> None:
-    prices = load_prices(prices_path)
-    total = 0.0
-    for model in config["models"]:
-        if model["name"] not in prices:
-            raise RunError(f"{prices_path}: no prices for model {model['name']!r}")
-        mine = [item for item in pending if item[1]["name"] == model["name"]]
-        tokens_in = sum(len(build_prompt(templates, row, setup)) // 4 for row, _, setup, _ in mine)
-        price = prices[model["name"]]
-        cost = (tokens_in * price["price_input_per_mtok"]
-                + len(mine) * config["max_output_tokens"] * price["price_output_per_mtok"]) / 1e6
-        total += cost
-        print(f"{model['name']}: {len(mine)} attempts, ~{tokens_in} input tokens, worst case ${cost:.4f}")
-    print(f"total: {len(pending)} attempts, worst case ${total:.4f}")
-
-
 def run(args: argparse.Namespace) -> int:
     config_path = args.configs / f"{args.experiment}.toml"
     config = load_experiment_config(config_path)
@@ -158,23 +152,30 @@ def run(args: argparse.Namespace) -> int:
     manifest, inputs = load_release(folder)
     results = args.results / config["experiment_id"]
     check_experiment_copy(config_path, results)
+    prices = load_prices(args.prices)
+    check_prices(config, prices, args.prices)
     pending = list(pending_attempts(config, inputs, results / "raw", args.model))
     if args.limit is not None:
         pending = pending[: args.limit]
+    for row, model, setup, _ in pending:
+        check_request_budget(config_path, config, model, build_prompt(folder / "prompts", row, setup), prices)
     if args.estimate:
-        print_estimate(config, pending, args.prices, folder / "prompts")
+        print_estimate(config, pending, prices, folder / "prompts", results / "raw")
         return 0
     versions = manifest["prompt_versions"]
     if not args.dry_run:
         (results / "raw").mkdir(parents=True, exist_ok=True)
-        if not (results / "experiment.toml").exists():
-            (results / "experiment.toml").write_bytes(config_path.read_bytes())
+        copy = results / "experiment.toml"
+        if not copy.exists() or copy.read_bytes() != config_path.read_bytes():
+            copy.write_bytes(config_path.read_bytes())  # first run, or only [budget] changed
     outcomes: Counter = Counter()
-    for row, model, setup, number in pending:
+    for left, (row, model, setup, number) in zip(range(len(pending), 0, -1), pending):
         prompt = build_prompt(folder / "prompts", row, setup)
         if args.dry_run:
             print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}\n{prompt}")
             continue
+        worst = worst_case_request_cost(prompt, config["max_output_tokens"], prices[model["name"]])
+        check_spend(config, prices, results / "raw", model["name"], worst, left)
         reply, retry_in, retry_out = call_with_retries(model, prompt, config)
         record = make_record(config, manifest, row, model, setup, number, prompt, versions,
                              reply, retry_in, retry_out)
@@ -198,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--results", default="results", type=Path)
     try:
         return run(parser.parse_args(argv))
-    except (RunError, ValueError) as error:
+    except (RunError, BudgetError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
