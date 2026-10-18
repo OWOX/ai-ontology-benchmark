@@ -48,9 +48,9 @@ Listed in build order. Each script depends only on scripts above it.
 8. [release](release.md): `src/release/release.py`.
 9. [validator](validator.md): `src/validator.py`.
 10. [models](models.md): `src/run/models.py`.
-11. [run](run.md): `src/run/run.py`.
-12. [evaluate](evaluate.md): `src/evaluate/evaluate.py`.
-13. [report](report.md): `src/evaluate/report.py`.
+11. [run](run.md): `src/run/run.py` and `src/run/raw.py`.
+12. [report](report.md): `src/evaluate/report.py`.
+13. [evaluate](evaluate.md): `src/evaluate/evaluate.py` and `src/evaluate/metrics.py`.
 
 The octahedral and tetrahedral engines have no spec yet. They wait on [open item 4](../../AGENTS.md#open).
 

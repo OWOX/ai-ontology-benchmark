@@ -41,12 +41,14 @@ config/
   experiments/     one file per experiment: release, AI models, attempts, and retry cap
   prices.toml      token prices per AI model
 src/
+  config.py        loads and checks the config files
+  validator.py     turns a raw response into moves, flags, and an outcome
   puzzles/         common interface, one engine per puzzle, registry
   generate/        builds an input set with each engine's scramble
   release/         freezes inputs, prompts, and assessment into a release
   run/             plays a release against each AI model under the three setups
   evaluate/        computes the metrics and writes the experiment report
-prompts/           working templates: no-model, descriptive, prescriptive
+prompts/           working templates: no_model, descriptive, prescriptive
 releases/          one read-only folder per release version
 results/           one folder per experiment: raw records and one report per release
 docs/              definitions, methodology, assumptions, related work

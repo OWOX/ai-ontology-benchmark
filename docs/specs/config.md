@@ -48,11 +48,11 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
 `load_release_config(path)`, `load_experiment_config(path)`, and `load_prices(path)`. Each returns a dict after these checks, and raises `ValueError` naming the file and field on the first one that fails:
 
 1. Every field shown is present and has the type shown.
-2. `seed`, `scramble_count`, `attempts`, and every scramble depth are at least 1. `retry_cap` is at least 0.
+2. `seed`, `scramble_count`, `attempts`, `max_output_tokens`, and every scramble depth are at least 1. `retry_cap` is at least 0.
 3. `valid_invalid_split` is between 0 and 1.
 4. Every puzzle is a name in the [registry](registry.md).
 5. `release` matches `MAJOR.MINOR.PATCH`.
-6. `models` has at least one entry, model names are unique, and `provider` is one of the four listed. `params` is a table, if present, and doesn't set the model id, the prompt, or the output token limit, which `models` sets itself.
+6. `models` has at least one entry, model names are unique, and `provider` is one of the four listed. `params` is a table, if present, and doesn't set any of these keys, which `models` and the run script set themselves: `model`, `model_id`, `api_model_id`, `prompt`, `messages`, `system`, `input`, `contents`, `max_tokens`, `max_output_tokens`, `max_completion_tokens`, `instructions`, `system_instruction`, `response_format`, `response_mime_type`, `response_schema`, `tools`, and `tool_choice`. That keeps the request the same shape for every AI model.
 7. The experiment id contains only letters, digits, `-`, and `_`, because it becomes a folder name.
 
 ## How to test

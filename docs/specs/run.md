@@ -33,11 +33,11 @@ In `results/<ID>/`:
 
 Loop order: for each input, for each AI model, for each setup (`no_model`, `descriptive`, `prescriptive`), for attempt number 1 to `attempts`:
 
-1. Skip the attempt if its record already exists, keyed by input id, setup, AI model, and attempt number. That lets a stopped run start again where it left off.
+1. Skip the attempt if its record already exists, keyed by input id, setup, AI model, and attempt number. That lets a stopped run start again where it left off. The raw file is read with `read_raw(path) -> (records, skipped_count)` in `src/run/raw.py`, which [evaluate](evaluate.md) also uses. It skips and counts every line that does not parse as a JSON object, because a stopped write leaves a torn line and a later run ends it with a newline, so it can sit anywhere in the file. A record that parses but lacks a key field is a checked error that names the file. Before it appends, `run` writes a newline if the file does not end with one, and it never rewrites a line.
 2. Build the prompt with [prompts](prompts.md) from the release's templates.
 3. Call [models](models.md). On `InfrastructureError`, retry up to `retry_cap` times, adding any token counts from the failed calls to the retry token fields. Never retry for any other reason.
 4. If the cap is reached, the raw response is empty and `stop_reason` is `infrastructure_failure`.
-5. Run the [validator](validator.md) and write the record.
+5. Run the [validator](validator.md) and write the record. The loop calls the model (with retries) and passes the reply and the retry token counts to the function that builds the record, so building a record never calls an API.
 
 Each record has every field in [invariant 13](../../AGENTS.md#invariants): `experiment_id`, `release_version`, `input_id`, `input_set_id`, `puzzle`, `scramble_depth`, `validity`, `setup`, `prompt_version`, `model`, `seed`, `input_seed`, `attempt_number`, `raw_response`, `parsed_moves`, `outcome`, `hallucination`, `mismatch`, `move_count`, `input_tokens`, `output_tokens`, `retry_input_tokens`, `retry_output_tokens`, `latency_s`, `stop_reason`, and `served_model`, plus `created_at`. It never holds a cost or a metric.
 
@@ -58,4 +58,5 @@ All tests use the `fake` provider and temporary folders.
 9. Patching the engine's `render()` makes `run` exit with code 1 before any call.
 10. Changing the experiment config after the first run makes `run` exit with code 1.
 11. Every record has every field listed above, and no other.
-12. `--dry-run` and `--estimate` write no file and make no call, and `--estimate` prints the attempt count the full run would make.
+12. A torn line at the end of a raw file, and one in the middle (including one that ends in `}`), is skipped, and the run resumes after it.
+13. `--dry-run` and `--estimate` write no file and make no call, and `--estimate` prints the attempt count the full run would make.

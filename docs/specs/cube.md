@@ -4,7 +4,7 @@ File: `src/puzzles/cube.py`.
 
 ## Purpose
 
-One [engine](engine.md) for every NxN cube. `CubeEngine(n)` handles the 2x2, 3x3, and 5x5.
+One [engine](engine.md) for every NxN cube. `CubeEngine(n)` handles the 2x2 and 3x3 now. The 5x5 waits on [open item 5](../../AGENTS.md#open).
 
 ## Inputs
 

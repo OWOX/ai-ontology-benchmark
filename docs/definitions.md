@@ -94,7 +94,7 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 
 1. **Move count.** The number of parsed moves, in the half-turn metric. Each impossible move counts as one. Empty for outcomes `infrastructure_failure` and `malformed_output`.
 2. **Half-turn metric.** The way moves are counted: any turn of one part, including a half turn such as `R2`, counts as one move. How whole-puzzle rotations and wide moves count is still [open](../AGENTS.md#open).
-3. **Input tokens and output tokens.** The token counts the API reports for the call that produced the raw response, stored as returned. Zero for outcome `infrastructure_failure`.
+3. **Input tokens and output tokens.** The token counts the API reports for the call that produced the raw response, stored as returned. Zero for outcome `infrastructure_failure`. For Google, output tokens are `candidates_token_count + thoughts_token_count`, both as returned, because Gemini bills thoughts as output. The other providers' output counts already include reasoning tokens.
 4. **Retry input tokens and retry output tokens.** The token counts the API reports for every call in the attempt that failed, retried or not, summed and stored as returned. Zero when no call failed or the API reported no counts.
 5. **Latency.** The time from sending the request to receiving the full response, for the call that produced the raw response. Empty for outcome `infrastructure_failure`.
 6. **Stop reason.** How the call that produced the raw response ended: `ok`, `truncated`, `refused`, or `infrastructure_failure`. The validator needs it, because a truncated or refused response can look like valid JSON.

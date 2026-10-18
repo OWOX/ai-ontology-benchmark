@@ -8,7 +8,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 
 ## Inputs
 
-`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows)`. [evaluate](evaluate.md) calls it with what `compute()` returned.
+`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0)`. [evaluate](evaluate.md) calls it with what `compute()` returned and the count of torn raw lines it skipped.
 
 ## Outputs
 
@@ -24,14 +24,15 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
    1. A table of AI models with name, provider, API model id, every served model id seen in the raw records, and `params`, or "provider defaults" when there are none.
    2. Attempts, retry cap, and maximum output tokens.
    3. First and last `created_at` across raw records.
-   4. The token prices used, linked to `prices.toml` in the experiment folder.
+   4. The line `Torn raw lines skipped: <n>.`
+   5. The token prices used, linked to `prices.toml` in the experiment folder.
 4. **Summary.** For each AI model, two tables with setups as columns:
    1. Valid inputs: success rate, hallucination rate, false mismatch rate, malformed output rate, and cost per success.
    2. Invalid inputs: success rate, mismatch detection rate, hallucination rate, and malformed output rate.
 
    Every rate cell reads `0.42 (0.30–0.55) n=60`: the rate, its 95% interval, and its denominator.
 5. **Metrics.** Every row of `metric_rows`, one table per puzzle, with rates shown the same way.
-6. **Attempts.** One table per input, headed by the input id linked to its line in the release's `inputs.jsonl` (`#L<n>`). The heading also shows the validity label and depth. Columns are AI model, setup, attempt, outcome, moves joined with spaces, mismatch, input and output tokens, and latency. Where re-validation changed an outcome, the cell shows `stored → current`.
+6. **Attempts.** One table per input, headed by the input id linked to its line in the release's `inputs.jsonl` (`#L<n>`). The heading also shows the validity label and depth. Columns are AI model, setup, attempt, outcome, moves joined with spaces, mismatch, input and output tokens, and latency. The token columns are headed `Input tokens (excl. retries)` and `Output tokens (excl. retries)`, because they leave out the retry tokens that the cost and the metrics tables include. Where re-validation changed an outcome, the cell shows `stored → current`.
 7. **Raw responses.** Not copied. One link to the `raw/` folder.
 
 ## How to test
