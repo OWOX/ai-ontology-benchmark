@@ -31,4 +31,4 @@ Both raise `ValueError` if a template is missing, has an unknown placeholder, la
 
 ## Open
 
-The real template text for each setup ([open item 1](../../AGENTS.md#open)). Placeholder templates stand in until then.
+The template text for each setup ([open item 1](../../AGENTS.md#open)) was approved by the project owner on 2026-10-23. All three setups share the description of the state format, the notation name, and the closing instructions, so only the rules differ. The prescriptive setup carries the descriptive rules plus the move list.

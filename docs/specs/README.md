@@ -13,7 +13,7 @@ One spec per script. Each spec lists the script's inputs, its outputs, and how t
 
 ## Getting results
 
-1. Install with `pip install -e .`, then copy `.env.example` to `.env` and fill in the API keys.
+1. Run `./ui/start.sh`. It creates `.venv` and installs on the first run, then opens the UI server. Add the API keys in the Setup step and run everything else from the page. The CLI commands below stay available for terminal use, with `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GOOGLE_API_KEY` exported.
 2. Make a release. The script commits the new release folder and tags it `release-1.0.0` locally:
    ```
    python -m src.release.release --bump major --note "First input set"
@@ -33,12 +33,13 @@ One spec per script. Each spec lists the script's inputs, its outputs, and how t
    python -m src.release.release --bump patch --note "Fix: ..."
    python -m src.evaluate.evaluate --experiment <id> --release 1.0.1
    ```
+6. Steps 2 to 5 can also be done from the page opened in step 1.
 
 ## Specs
 
 Listed in build order. Each script depends only on scripts above it.
 
-1. [setup](setup.md): `pyproject.toml` and `.env.example`.
+1. [setup](setup.md): `pyproject.toml`.
 2. [config](config.md): `config/` and `src/config.py`.
 3. [engine](engine.md): `src/puzzles/engine.py`, the puzzle engine interface.
 4. [cube](cube.md): `src/puzzles/cube.py`, the NxN cube engine.
@@ -51,6 +52,7 @@ Listed in build order. Each script depends only on scripts above it.
 11. [run](run.md): `src/run/run.py`, `src/run/budget.py`, and `src/run/raw.py`.
 12. [report](report.md): `src/evaluate/report.py`.
 13. [evaluate](evaluate.md): `src/evaluate/evaluate.py` and `src/evaluate/metrics.py`.
+14. [ui](ui.md): `ui/`.
 
 The octahedral and tetrahedral engines have no spec yet. They wait on [open item 4](../../AGENTS.md#open).
 

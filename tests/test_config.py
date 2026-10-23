@@ -75,7 +75,16 @@ def test_release_errors(tmp_path, field, text):
     assert "file.toml" in str(error.value)
 
 
+def with_puzzles(value):
+    return bad(EXPERIMENT, "attempts = 3\n", f"attempts = 3\npuzzles = {value}\n")
+
+
 EXPERIMENT_CASES = [
+    ("puzzles", with_puzzles("[]")),
+    ("puzzles", with_puzzles('["2x2", "2x2"]')),
+    ("puzzles", with_puzzles("[2]")),
+    ("puzzles", with_puzzles('"2x2"')),
+    ("puzzles", with_puzzles('["4x4"]')),
     ("release", bad(EXPERIMENT, 'release = "1.0.0"\n', "")),
     ("release", bad(EXPERIMENT, "1.0.0", "1.0")),
     ("attempts", bad(EXPERIMENT, "attempts = 3", "attempts = 0")),
@@ -166,3 +175,12 @@ def test_budget_must_be_a_table_and_know_its_fields(tmp_path):
         load_experiment_config(write(tmp_path, 'budget = 3\n' + EXPERIMENT, "e.toml"))
     with pytest.raises(ValueError, match="per_day_usd"):
         load_experiment_config(write(tmp_path, EXPERIMENT + "\n[budget]\nper_day_usd = 1\n", "e.toml"))
+
+
+def test_experiment_puzzles_valid_list_is_kept(tmp_path):
+    config = load_experiment_config(write(tmp_path, with_puzzles('["3x3", "2x2"]'), "e.toml"))
+    assert config["puzzles"] == ["3x3", "2x2"]
+
+
+def test_experiment_without_puzzles_leaves_the_key_absent(tmp_path):
+    assert "puzzles" not in load_experiment_config(write(tmp_path, EXPERIMENT, "e.toml"))

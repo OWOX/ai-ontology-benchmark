@@ -40,6 +40,7 @@ config/
   release.toml     seed, puzzles, scramble count and depths, and valid/invalid split
   experiments/     one file per experiment: release, AI models, attempts, and retry cap
   prices.toml      token prices per AI model
+  models.toml      model catalogue for the UI
 src/
   config.py        loads and checks the config files
   validator.py     turns a raw response into moves, flags, and an outcome
@@ -48,6 +49,7 @@ src/
   release/         freezes inputs, prompts, and assessment into a release
   run/             plays a release against each AI model under the three setups
   evaluate/        computes the metrics and writes the experiment report
+ui/                local web page to run an experiment (ui/start.sh)
 prompts/           working templates: no_model, descriptive, prescriptive
 releases/          one read-only folder per release version
 results/           one folder per experiment: raw records and one report per release
@@ -65,4 +67,4 @@ tests/
 
 ## Licence
 
-Code in `src/`, `tests/`, and `config/`, plus the build and packaging files at the root, such as `pyproject.toml`, is under the [Apache License 2.0](LICENSE). Everything else, including docs, prompts, frozen inputs, and results, is under [CC BY 4.0](LICENSE-CC-BY-4.0). Reused third-party code is listed in [NOTICE](NOTICE).
+Code in `src/`, `ui/`, `tests/`, and `config/`, plus the build and packaging files at the root, such as `pyproject.toml`, is under the [Apache License 2.0](LICENSE). Everything else, including docs, prompts, frozen inputs, and results, is under [CC BY 4.0](LICENSE-CC-BY-4.0). Reused third-party code is listed in [NOTICE](NOTICE).

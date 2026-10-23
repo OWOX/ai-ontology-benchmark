@@ -313,3 +313,45 @@ def test_budget_checked_before_each_retry(exp, capsys):
     assert (row["retry_input_tokens"], row["retry_output_tokens"]) == (0, 100)
     assert len(models.FAKE_REPLIES) == 9  # one call made, no retry
     assert "per_model_usd" in capsys.readouterr().err
+
+
+# Puzzle filter. The release holds 2x2 and 3x3; the experiment may name a subset.
+
+def two_puzzle_exp(repo, monkeypatch, extra=""):
+    release = repo / "config" / "release.toml"
+    release.write_text(release.read_text(encoding="utf-8").replace('["2x2"]', '["2x2", "3x3"]'), encoding="utf-8")
+    from test_release import commit_all
+    commit_all(repo, "two puzzles")
+    release_ok(repo, "major")
+    (repo / "config" / "experiments").mkdir()
+    text = EXPERIMENT.replace("attempts = 2\n", "attempts = 2\n" + extra)
+    (repo / "config" / "experiments" / "exp.toml").write_text(text, encoding="utf-8")
+    (repo / "config" / "prices.toml").write_text(PRICES, encoding="utf-8")
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(models, "FAKE_REPLIES", [])
+
+
+def test_puzzles_filter_writes_only_those_puzzles(repo, monkeypatch):
+    two_puzzle_exp(repo, monkeypatch, 'puzzles = ["2x2"]\n')
+    assert go() == 0
+    rows = records(repo, "A")
+    assert rows and {r["puzzle"] for r in rows} == {"2x2"}
+    inputs = [json.loads(x) for x in (repo / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert {r["puzzle"] for r in inputs} == {"2x2", "3x3"}
+    assert len(rows) == sum(r["puzzle"] == "2x2" for r in inputs) * 3 * 2
+
+
+def test_no_puzzles_runs_every_puzzle(repo, monkeypatch):
+    two_puzzle_exp(repo, monkeypatch)
+    assert go() == 0
+    assert {r["puzzle"] for r in records(repo, "A")} == {"2x2", "3x3"}
+
+
+def test_puzzle_not_in_release_refused_before_any_call(exp, capsys):
+    path = exp / "config/experiments/exp.toml"
+    path.write_text(path.read_text(encoding="utf-8").replace("attempts = 2\n", 'attempts = 2\npuzzles = ["3x3"]\n'), encoding="utf-8")
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    assert go() == 1
+    err = capsys.readouterr().err
+    assert "exp.toml" in err and "puzzles" in err
+    assert len(models.FAKE_REPLIES) == 1 and not (exp / "results/exp").exists()

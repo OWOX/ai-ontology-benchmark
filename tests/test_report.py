@@ -115,3 +115,9 @@ def test_experiment_section_shows_budgets_and_spend(tree):
     assert "Budgets in force (USD): request 0.5, AI model 5.0, experiment 10.0." in text
     spent = sum(r["cost"] for r in compute(records(), tree[0] / "releases" / "1.0.0", PRICES, ["M"])[0])
     assert f"| M | {spent:.4f} |" in text and f"| Total | {spent:.4f} |" in text
+
+
+def test_puzzles_line_only_when_the_config_sets_it(tree, monkeypatch):
+    assert "Puzzles:" not in build(tree)
+    monkeypatch.setitem(CONFIG, "puzzles", ["2x2", "3x3"])
+    assert "\nPuzzles: 2x2, 3x3\n" in build(tree)

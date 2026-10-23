@@ -8,6 +8,7 @@ and appends to results/<ID>/raw/<model name>.jsonl.
 import argparse
 import hashlib
 import json
+import os
 import sys
 import tomllib
 from collections import Counter
@@ -85,6 +86,8 @@ def pending_attempts(config: dict, inputs: list[dict], raw_dir: Path, only_model
     models = [m for m in config["models"] if only_model in (None, m["name"])]
     done = {m["name"]: read_done(raw_dir / f"{m['name']}.jsonl") for m in models}
     for row in inputs:
+        if "puzzles" in config and row["puzzle"] not in config["puzzles"]:
+            continue
         for model in models:
             for setup in SETUPS:
                 for number in range(1, config["attempts"] + 1):
@@ -162,6 +165,9 @@ def run(args: argparse.Namespace) -> int:
         raise RunError(f"{config_path}: field 'models' has no model {args.model!r}")
     folder = args.releases / config["release"]
     manifest, inputs = load_release(folder)
+    for name in config.get("puzzles", []):
+        if name not in manifest["release_config"]["puzzles"]:
+            raise RunError(f"{config_path}: field 'puzzles' names {name!r}, which release {config['release']} does not hold")
     results = args.results / config["experiment_id"]
     check_experiment_copy(config_path, results)
     prices = load_prices(args.prices)
@@ -179,7 +185,9 @@ def run(args: argparse.Namespace) -> int:
         (results / "raw").mkdir(parents=True, exist_ok=True)
         copy = results / "experiment.toml"
         if not copy.exists() or copy.read_bytes() != config_path.read_bytes():
-            copy.write_bytes(config_path.read_bytes())  # first run, or only [budget] changed
+            temp = copy.with_name(f".experiment.toml.{os.getpid()}.tmp")  # atomic: models started together
+            temp.write_bytes(config_path.read_bytes())  # never read half a file
+            os.replace(temp, copy)  # first run, or only [budget] changed
     outcomes: Counter = Counter()
     for left, (row, model, setup, number) in zip(range(len(pending), 0, -1), pending):
         prompt = build_prompt(folder / "prompts", row, setup)

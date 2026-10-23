@@ -76,7 +76,7 @@ Cube Bench (arXiv 2512.20595, code at github.com/dana-23/cube-bench) is the prio
 
 Ask before building anything that depends on these.
 
-1. Exact prompt text for each setup.
+1. Resolved: the prompt text for each setup is in `prompts/`, approved by the project owner on 2026-10-23.
 2. Reference solver for each puzzle.
 3. Resolved: the output schema is in invariant 9.
 4. The exact octahedral and tetrahedral puzzles, for example the face-turning octahedron (FTO) and the Pyraminx. Tetrahedral itself still needs confirmation.

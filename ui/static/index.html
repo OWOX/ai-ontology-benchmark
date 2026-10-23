@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="ui-token" content="{{UI_TOKEN}}">
+<title>Puzzle experiment runner</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Puzzle experiment runner</h1>
+  <span id="conn" class="conn" title="Server">connecting</span>
+</header>
+<div class="layout">
+  <main class="left">
+    <section class="step" id="step-setup">
+      <h2><span class="num">1</span>Setup</h2>
+      <div id="secrets"></div>
+      <label class="inline small">Upload .env file <input id="secrets-file" type="file"></label>
+      <p id="secrets-msg" class="msg" role="status"></p>
+      <p id="project" class="muted small"></p>
+      <div class="actions">
+        <button id="btn-install" type="button">Install dependencies</button>
+        <button id="btn-tests" type="button">Run tests</button>
+      </div>
+      <p id="setup-msg" class="msg" role="status"></p>
+    </section>
+
+    <section class="step" id="step-shapes">
+      <h2><span class="num">2</span>Shapes</h2>
+      <label class="inline">Release <select id="release"></select></label>
+      <span id="release-info" class="muted"></span>
+      <div id="puzzles" class="cards"></div>
+    </section>
+
+    <section class="step" id="step-models">
+      <h2><span class="num">3</span>Models</h2>
+      <div id="models"></div>
+    </section>
+
+    <section class="step" id="step-params">
+      <h2><span class="num">4</span>Parameters</h2>
+      <div class="grid">
+        <label class="wide">Experiment id
+          <span class="row">
+            <input id="exp-id" type="text" spellcheck="false" autocomplete="off">
+            <button id="btn-load" type="button">Load existing</button>
+          </span>
+        </label>
+        <label class="wide">Attempts per input and setup: sends the same input N times
+          <input id="attempts" type="number" min="1" step="1">
+        </label>
+        <label>Retry cap <input id="retry-cap" type="number" min="0" step="1"></label>
+        <label>Max output tokens <input id="max-tokens" type="number" min="1" step="1"></label>
+        <label>Budget per request (USD) <input id="b-request" type="number" min="0" step="any"></label>
+        <label>Budget per model (USD) <input id="b-model" type="number" min="0" step="any"></label>
+        <label>Budget per experiment (USD) <input id="b-experiment" type="number" min="0" step="any"></label>
+        <label>Limit per model (optional) <input id="limit" type="number" min="1" step="1" placeholder="all"></label>
+      </div>
+      <div class="actions">
+        <button id="btn-estimate" type="button">Estimate</button>
+        <button id="btn-dry" type="button">Dry run</button>
+        <button id="btn-run" type="button" class="primary">Run</button>
+        <button id="btn-stop" type="button" class="danger" disabled>Stop</button>
+      </div>
+      <p class="muted small">Stopping may leave a request in flight that is paid for and never recorded. For small runs, prefer a limit.</p>
+      <p id="form-msg" class="msg" role="status"></p>
+    </section>
+
+    <section class="step" id="step-progress">
+      <h2><span class="num">5</span>Progress</h2>
+      <div id="legend" class="legend"></div>
+      <div id="banners"></div>
+      <div id="progress" class="muted">Run or load an experiment to see progress.</div>
+    </section>
+
+    <section class="step" id="step-commit">
+      <h2><span class="num">6</span>Evaluate and commit</h2>
+      <div class="actions">
+        <label class="inline">Score under release <select id="eval-release"></select></label>
+        <button id="btn-evaluate" type="button" disabled>Evaluate</button>
+        <button id="btn-commit" type="button" disabled>Commit</button>
+      </div>
+      <p id="report" class="muted">No report yet.</p>
+      <p id="commit-result" class="msg" role="status"></p>
+    </section>
+
+    <section class="step" id="step-release">
+      <h2><span class="num">7</span>Release</h2>
+      <div class="actions">
+        <label class="inline">Bump
+          <select id="bump"><option>patch</option><option>minor</option><option>major</option></select>
+        </label>
+        <input id="note" type="text" placeholder="Note" autocomplete="off">
+        <button id="btn-release" type="button" class="primary">Release</button>
+      </div>
+      <p id="release-state" class="muted small"></p>
+      <div class="actions">
+        <button id="btn-push" type="button">Push and open PR</button>
+      </div>
+      <p id="release-msg" class="msg" role="status"></p>
+    </section>
+  </main>
+
+  <aside class="right">
+    <div class="term-bar">
+      <strong>Terminal</strong>
+      <button id="btn-clear" type="button" class="small">Clear</button>
+    </div>
+    <pre id="terminal" class="terminal" tabindex="0"></pre>
+  </aside>
+</div>
+
+<dialog id="commit-dialog">
+  <form method="dialog" id="commit-form">
+    <h3>Commit results</h3>
+    <div id="commit-preview"></div>
+    <p id="commit-error" class="msg"></p>
+    <div class="actions">
+      <button value="cancel" type="submit">Cancel</button>
+      <button id="btn-confirm" type="button" class="primary">Confirm</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

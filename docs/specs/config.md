@@ -25,6 +25,7 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
    attempts = 3
    retry_cap = 3
    max_output_tokens = 4096
+   puzzles = ["2x2"]              # optional; default is every puzzle in the release
 
    [[models]]
    name = "example-model"        # the AI model name written into raw records
@@ -61,10 +62,12 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
 5. `release` matches `MAJOR.MINOR.PATCH`.
 6. `models` has at least one entry, model names are unique, and `provider` is one of the four listed. `params` is a table, if present, and doesn't set any of these keys, which `models` and the run script set themselves: `model`, `model_id`, `api_model_id`, `prompt`, `messages`, `system`, `input`, `contents`, `max_tokens`, `max_output_tokens`, `max_completion_tokens`, `instructions`, `system_instruction`, `response_format`, `response_mime_type`, `response_schema`, `tools`, and `tool_choice`. That keeps the request the same shape for every AI model.
 7. Every budget is a number above 0. They aren't checked against each other, so setting only `per_experiment_usd = 2` is valid, and a model budget above the experiment budget never binds. `load_experiment_config` returns `budget` with every default filled in.
-8. The experiment id contains only letters, digits, `-`, and `_`, because it becomes a folder name.
+8. `puzzles`, if present in an experiment config, is a non-empty list of unique strings, each a name in the [registry](registry.md). When it is absent, the experiment covers every puzzle in the release, and `load_experiment_config` leaves the key out of the dict it returns. [run](run.md) checks the names against the release.
+9. The experiment id contains only letters, digits, `-`, and `_`, because it becomes a folder name.
 
 ## How to test
 
 1. The example files above load without error.
 2. For each check above, a file that breaks it raises `ValueError`, and the message contains the field name.
 3. A config with no `[budget]` returns the three defaults. A config that sets only `per_experiment_usd = 25` returns 25 for it and the defaults for the other two.
+4. In an experiment config, `puzzles` accepts a valid list, and raises `ValueError` naming `puzzles` for an empty list, a repeated name, a value that isn't a list of strings, and an unknown name. With no `puzzles`, the returned dict has no `puzzles` key.

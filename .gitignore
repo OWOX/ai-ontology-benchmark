@@ -2,10 +2,13 @@
 .claude/
 CLAUDE.local.md
 
-# Secrets
+# Secrets: API keys saved from the UI, one JSON file per provider. Never committed.
+secrets/
 .env
 .env.*
-!.env.example
+
+# Scratch work
+tmp/
 
 # Python
 __pycache__/
