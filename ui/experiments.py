@@ -59,7 +59,7 @@ def catalogue_models(root: Path, env: dict) -> list[dict]:
         if entry["name"] not in prices:
             reason = "no price in config/prices.toml"
         elif variable and not env.get(variable):
-            reason = f"no API key: set {variable}"
+            reason = "no API key: add it in Setup"
         models.append({"name": entry["name"], "provider": entry["provider"],
                        "api_model_id": entry["api_model_id"], "params": entry.get("params", {}),
                        "disabled_reason": reason})

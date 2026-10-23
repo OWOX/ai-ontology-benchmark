@@ -20,7 +20,8 @@ import pytest
 
 from src.config import load_experiment_config
 from test_release import commit_all, git, run_release, repo  # noqa: F401  (repo is a fixture)
-from ui.common import merged_env, parse_env
+from ui import secrets as key_store
+from ui.common import merged_env
 from ui import jobs as jobs_module
 from ui.server import make_server
 
@@ -108,28 +109,82 @@ def slow_fake(srv, seconds=0.4):
         "def _fake() -> Reply:\n", f"def _fake() -> Reply:\n    import time; time.sleep({seconds})\n"))
 
 
-def test_env_parsing(tmp_path, monkeypatch):
-    (tmp_path / ".env").write_text('# comment\n\nA=1\nB="two words"\nC=\'x\'\nD = spaced\nREAL=file\n', encoding="utf-8")
-    assert parse_env(tmp_path / ".env") == {"A": "1", "B": "two words", "C": "x", "D": "spaced", "REAL": "file"}
-    monkeypatch.setenv("REAL", "env")
-    merged = merged_env(tmp_path)
-    assert merged["REAL"] == "env" and merged["A"] == "1"
-    assert parse_env(tmp_path / "missing") == {}
+KEY = "sk-test-0123456789abcdef"
+
+
+def test_secret_files_and_env(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    key_store.save(tmp_path, "anthropic", f"  {KEY}\n")
+    folder, path = tmp_path / "secrets", tmp_path / "secrets" / "anthropic.json"
+    assert json.loads(path.read_text()) == {"api_key": KEY}
+    assert folder.stat().st_mode & 0o777 == 0o700 and path.stat().st_mode & 0o777 == 0o600
+    key_store.save(tmp_path, "anthropic", "second-key")
+    backup = folder / "anthropic.json.bak"
+    assert json.loads(backup.read_text()) == {"api_key": KEY} and backup.stat().st_mode & 0o777 == 0o600
+    assert [p.name for p in folder.iterdir() if p.name.endswith(".tmp")] == []
+    assert merged_env(tmp_path)["ANTHROPIC_API_KEY"] == "second-key"
+    info = key_store.inspect(tmp_path)["anthropic"]
+    assert info == {"variable": "ANTHROPIC_API_KEY", "configured": True, "tail": "-key", "source": "file",
+                    "location": "secrets/anthropic.json"}
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env-9999")
+    assert merged_env(tmp_path)["ANTHROPIC_API_KEY"] == "from-env-9999"
+    info = key_store.inspect(tmp_path)["anthropic"]
+    assert info["source"] == "env" and info["tail"] == "9999"
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    key_store.clear(tmp_path, "anthropic")
+    assert not path.exists() and backup.exists()
+    assert key_store.inspect(tmp_path)["anthropic"]["source"] == "missing"
+    for bad in ("", "  ", "two words", None):
+        with pytest.raises(key_store.ApiError, match="api_key"):
+            key_store.save(tmp_path, "openai", bad)
+    with pytest.raises(key_store.ApiError, match="provider"):
+        key_store.save(tmp_path, "nope", KEY)
+
+
+def test_secret_import_parsing(tmp_path, monkeypatch):
+    for variable in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(variable, raising=False)
+    text = ('# comment\n\nANTHROPIC_API_KEY="quoted-key"\nexport OPENAI_API_KEY = \'open-key\'\n'
+            'GOOGLE_API_KEY=\nOTHER=ignored\n')
+    assert key_store.import_text(tmp_path, text) == ["anthropic", "openai"]
+    assert key_store.env(tmp_path) == {"ANTHROPIC_API_KEY": "quoted-key", "OPENAI_API_KEY": "open-key"}
+    with pytest.raises(key_store.ApiError, match="text"):
+        key_store.import_text(tmp_path, "OTHER=1\nGOOGLE_API_KEY=\n")
+
+
+def test_secret_routes(server, monkeypatch):
+    for variable in ("OPENAI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(variable, raising=False)
+    body = {"provider": "anthropic", "action": "save", "api_key": KEY}
+    for method, path, payload in (("GET", "/api/secrets", None), ("POST", "/api/secrets", body),
+                                  ("POST", "/api/secrets/import", {"text": f"OPENAI_API_KEY={KEY}"})):
+        assert call(server, method, path, payload, token=False)[0] == 403
+    assert not (server.root / "secrets").exists()
+    status, data = call(server, "POST", "/api/secrets", body)
+    assert status == 200 and data["anthropic"]["tail"] == KEY[-4:]
+    assert call(server, "POST", "/api/secrets/import", {"text": f"OPENAI_API_KEY={KEY}"}) == (200, {"saved": ["openai"]})
+    assert call(server, "POST", "/api/secrets/import", {"text": "X=1"})[0] == 400
+    assert call(server, "POST", "/api/secrets", {**body, "action": "wipe"})[0] == 400
+    assert call(server, "POST", "/api/secrets", {**body, "api_key": "a b"})[0] == 400
+    for path in ("/api/secrets", "/api/catalogue", "/", "/api/log?after=0"):
+        assert KEY not in json.dumps(call(server, "GET", path)[1])
+    status, data = call(server, "GET", "/api/secrets")
+    assert status == 200 and data["openai"]["source"] == "file" and data["google"]["source"] == "missing"
+    _, cat = call(server, "GET", "/api/catalogue")
+    assert {m["name"]: m["disabled_reason"] for m in cat["models"]}["cloud-model"] is None
+    assert call(server, "POST", "/api/secrets", {"provider": "anthropic", "action": "clear"})[1]["anthropic"]["source"] == "missing"
 
 
 def test_catalogue_disabled_reasons(server):
     status, data = call(server, "GET", "/api/catalogue")
     assert status == 200
     reasons = {m["name"]: m["disabled_reason"] for m in data["models"]}
-    assert reasons == {"example-model": None, "cloud-model": "no API key: set ANTHROPIC_API_KEY",
+    assert reasons == {"example-model": None, "cloud-model": "no API key: add it in Setup",
                        "unpriced": "no price in config/prices.toml"}
     assert data["latest"] == "1.0.0"
     assert data["releases"] == [{"version": "1.0.0", "puzzles": ["2x2"], "input_count": 3,
                                "input_counts": {"2x2": 3}}]
     assert data["defaults"]["budget"] == BUDGET and data["defaults"]["attempts"] == 3
-    (server.root / ".env").write_text("ANTHROPIC_API_KEY=k\n", encoding="utf-8")
-    _, data = call(server, "GET", "/api/catalogue")
-    assert {m["name"]: m["disabled_reason"] for m in data["models"]}["cloud-model"] is None
 
 
 def test_experiment_statuses(server):
@@ -196,9 +251,9 @@ def test_security(server):
     assert conn.getresponse().status == 400
     port = server.server_address[1]
     assert call(server, "GET", "/api/catalogue", host=f"localhost:{port}")[0] == 200
-    (server.root / ".env").write_text("SECRET=1\n", encoding="utf-8")
-    assert call(server, "GET", "/.env")[0] == 404
-    assert call(server, "GET", "/static/../.env")[0] == 404
+    key_store.save(server.root, "openai", KEY)
+    assert call(server, "GET", "/secrets/openai.json")[0] == 404
+    assert call(server, "GET", "/static/../secrets/openai.json")[0] == 404
     status, page = call(server, "GET", "/")
     assert status == 200 and server.app.token in page and "{{UI_TOKEN}}" not in page
     assert call(server, "GET", "/static/app.js")[0] == 200

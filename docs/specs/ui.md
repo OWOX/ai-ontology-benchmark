@@ -36,14 +36,14 @@ The page polls. The server has no event stream.
    ```
 
 3. `config/prices.toml`. A catalogue model with no price there is shown disabled with the reason "no price in config/prices.toml".
-4. API keys. The server reads `.env` at the root (lines of `KEY=VALUE`, `#` comments and blank lines skipped, surrounding quotes stripped) and merges it under `os.environ`, so a real env var wins. The merged env goes to subprocesses only, never to the page. A model whose provider key (`src.run.models.KEY_VARIABLES`) is missing is shown disabled with the reason "no API key: set <VAR>". The `fake` provider needs no key.
+4. API keys, one provider each for `src.run.models.KEY_VARIABLES`. A key is stored in `secrets/<provider>.json` as `{"api_key": "..."}`. The folder has mode 0700 and each file 0600, written atomically (a temp file in the folder, then replace). Saving over an existing key first copies the old file to `<provider>.json.bak`, and clearing deletes the file but keeps the `.bak`. The server merges the saved keys under `os.environ`, so a real env var wins and the file is then ignored. The merged env goes to subprocesses only. The page gets only whether a key is set, where it comes from (`env`, `file`, or `missing`), and its last 4 characters, never a whole key. A model whose provider key is missing is shown disabled with the reason "no API key: add it in Setup". The `fake` provider needs no key. There is no `.env` support. Terminal users export the variables themselves.
 
 ## Security
 
 1. At start the server makes a token with `secrets.token_urlsafe(24)` and writes it into `index.html` as `<meta name="ui-token" content="...">`.
 2. Every request whose `Host` header is not `127.0.0.1:<port>` or `localhost:<port>` gets 403.
-3. Every `POST` without the header `X-Token: <token>` gets 403. So does every `GET /api/commit/<id>`, because the preview runs `git fetch`.
-4. Static files come from an allowlist: `/` serves `index.html`, and `/static/app.js` and `/static/style.css`. Any other path gets 404. Nothing outside `ui/static/` is ever served, so `.env` can't be reached.
+3. Every `POST` without the header `X-Token: <token>` gets 403. So does every `GET /api/commit/<id>`, because the preview runs `git fetch`, and `GET /api/secrets`.
+4. Static files come from an allowlist: `/` serves `index.html`, and `/static/app.js` and `/static/style.css`. Any other path gets 404. Nothing outside `ui/static/` is ever served, so `secrets/` can't be reached.
 5. A `POST` body is JSON of at most 64 KiB, or 400.
 
 ## HTTP API
@@ -109,6 +109,7 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
     ```
 
     The server keeps one in-memory list of lines for all jobs, at most 5,000, dropping the oldest. `stream` is `cmd`, `stdout`, or `stderr`. The `cmd` line is the full command, logged before the process starts. `seq` counts up from 1 for the life of the server. `state` is `running`, `done`, `failed`, `budget`, or `stopped`. `budget` means the job exited 1 with a stderr line starting `error: budget reached:`. `stopped` means the UI stopped it.
+12. `GET /api/secrets` returns `{"<provider>": {"variable": "ANTHROPIC_API_KEY", "configured": true, "tail": "ab12", "source": "env" | "file" | "missing", "location": "secrets/anthropic.json" | "env var ANTHROPIC_API_KEY" | null}}` for each provider. `POST /api/secrets {"provider", "action": "save" | "clear", "api_key"}` saves a stripped key or deletes the file, and returns the same listing. An empty key, or one with whitespace inside, gives 400 naming `api_key`. `POST /api/secrets/import {"text"}` takes `.env`-style text, saves each known variable with a value, and returns `{"saved": ["anthropic"]}`. Text with no known variable gives 400. All three need the token.
 
 Job names are `run:<model>`, `estimate`, `evaluate`, and `commit`. Every job runs with `cwd` at the root and the merged env from Inputs 4. The registry keys a job by experiment id and name, so a job that belongs to no experiment can use the id `""`.
 
@@ -161,12 +162,12 @@ Banners: a job in state `failed` shows its last stderr line. A job in state `bud
 
 `tests/test_ui.py`, with temporary folders, the `fake` provider, and no network. The server is started on port 0 in a thread.
 
-1. `.env` parsing: comments, blanks, quotes, and a real env var winning.
+1. Keys: file modes, the `.bak` copy, a real env var winning, and only the last 4 characters in any `GET` body. Import parses `KEY=VALUE` text (comments, blanks, `export`, quotes, unknown names ignored) and refuses text with no known key. Every secrets route needs the token.
 2. The catalogue marks a model with no price, and a model with no key, as disabled, with the reasons above.
 3. `POST /api/experiment` for each of `created`, `unchanged`, `budget_updated`, and 409. On 409 the file is byte-identical afterwards.
 4. `updated` while `results/<id>/experiment.toml` is missing, and a config without `puzzles` comparing equal to the same choice made on the page.
 5. A config the server writes loads with `load_experiment_config` and holds `puzzles`.
-6. A POST without the token, or with a foreign `Host`, gets 403. `GET /static/../.env` and `GET /.env` get 404.
+6. A POST without the token, or with a foreign `Host`, gets 403. `GET /static/../secrets/anthropic.json` and `GET /secrets/anthropic.json` get 404.
 7. The log keeps only the newest lines at the cap, and `after` returns the newer ones.
 8. A full run through the API on a one-puzzle release: records appear while the run is alive, the snapshot has no `in_progress`, and the run job ends `done`.
 9. Run is refused while evaluate is alive, and evaluate while a run is.

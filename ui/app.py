@@ -1,6 +1,6 @@
 # Spec: docs/specs/ui.md
 """The UI's request logic: routes GET and POST paths to experiments, jobs, and commit.
-Holds the token and the job registry. Writes only through those modules.
+Holds the token and the job registry. Key routes go to ui.secrets. Writes only through those modules.
 """
 
 import secrets
@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ui import commit as commit_module
 from ui import experiments
+from ui import secrets as key_store
 from ui.common import ApiError, check_id, merged_env
 from ui.jobs import Jobs
 
@@ -67,6 +68,8 @@ class App:
             except ValueError:
                 raise ApiError(400, "query 'after' must be a whole number") from None
             return self.jobs.log_since(after)
+        if parts == ["api", "secrets"]:
+            return key_store.inspect(self.root)
         if len(parts) == 3 and parts[0] == "api":
             experiment_id = check_id(parts[2])
             if parts[1] == "experiment":
@@ -81,6 +84,17 @@ class App:
     def post(self, path: str, body: dict) -> dict:
         if path == "/api/experiment":
             return experiments.save_experiment(self.root, body, merged_env(self.root))
+        if path == "/api/secrets":
+            provider = body.get("provider")
+            if body.get("action") == "save":
+                key_store.save(self.root, provider, body.get("api_key"))
+            elif body.get("action") == "clear":
+                key_store.clear(self.root, provider)
+            else:
+                raise ApiError(400, "field 'action' must be 'save' or 'clear'")
+            return key_store.inspect(self.root)
+        if path == "/api/secrets/import":
+            return {"saved": key_store.import_text(self.root, body.get("text"))}
         if path == "/api/estimate":
             return self.start_simple(body, "estimate")
         if path == "/api/evaluate":
