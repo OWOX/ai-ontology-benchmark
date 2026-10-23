@@ -60,9 +60,13 @@ class Jobs:
             del self.log[:-LOG_CAP]
 
     # --- start and finish
-    def register(self, experiment_id: str, names: list[str], blocked_by: tuple = (), inline: bool = False) -> list[Job]:
-        """Register running jobs. The checks and the inserts happen under one lock hold."""
+    def register(self, experiment_id: str, names: list[str], blocked_by: tuple = (), inline: bool = False,
+                 exclusive: bool = False) -> list[Job]:
+        """Register running jobs. The checks and the inserts happen under one lock hold.
+        An exclusive job is refused while any job of any experiment is running."""
         with self.lock:
+            if exclusive and any(j.state == "running" for j in self.jobs.values()):
+                raise ApiError(409, "another job is running; wait for it or stop it first")
             mine = [j for j in self.jobs.values() if j.experiment_id == experiment_id and j.state == "running"]
             for job in mine:
                 if job.name in names:
@@ -74,9 +78,10 @@ class Jobs:
                 self.jobs[(experiment_id, job.name)] = job
         return made
 
-    def start(self, experiment_id: str, items: list[tuple[str, list[str]]], blocked_by: tuple = ()) -> None:
+    def start(self, experiment_id: str, items: list[tuple[str, list[str]]], blocked_by: tuple = (),
+              exclusive: bool = False) -> None:
         """Start one subprocess job per (name, `python -m` arguments). All register together."""
-        for job, (_, module_args) in zip(self.register(experiment_id, [n for n, _ in items], blocked_by), items):
+        for job, (_, module_args) in zip(self.register(experiment_id, [n for n, _ in items], blocked_by, exclusive=exclusive), items):
             self._spawn(job, [sys.executable, "-u", "-m", *module_args])
 
     def _spawn(self, job: Job, argv: list[str]) -> None:

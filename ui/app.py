@@ -3,14 +3,18 @@
 Holds the token and the job registry. Key routes go to ui.secrets. Writes only through those modules.
 """
 
+import re
 import secrets
 from pathlib import Path
 
 from ui import commit as commit_module
 from ui import experiments
+from ui import project
 from ui import secrets as key_store
 from ui.common import ApiError, check_id, merged_env
 from ui.jobs import Jobs
+
+VERSION = re.compile(r"\d+\.\d+\.\d+")
 
 
 class App:
@@ -22,12 +26,46 @@ class App:
     def start_simple(self, body: dict, name: str) -> dict:
         experiment_id = check_id(body.get("id"))
         experiments.load_config(self.root, experiment_id)
+        args, blocked = ["src.run.run", "--experiment", experiment_id], ()
         if name == "estimate":
-            self.jobs.start(experiment_id, [(name, ["src.run.run", "--experiment", experiment_id, "--estimate"])])
+            args.append("--estimate")
+        elif name == "dry-run":
+            args.append("--dry-run")
         else:
-            self.jobs.start(experiment_id, [(name, ["src.evaluate.evaluate", "--experiment", experiment_id])],
-                            blocked_by=("run:",))
+            args, blocked = ["src.evaluate.evaluate", "--experiment", experiment_id], ("run:",)
+            release = body.get("release")
+            if release is not None:
+                if not isinstance(release, str) or not VERSION.fullmatch(release):
+                    raise ApiError(400, "field 'release' must be a version like 1.0.0, or null")
+                args += ["--release", release]
+        self.jobs.start(experiment_id, [(name, args)], blocked_by=blocked)
         return {"id": experiment_id, "job": name}
+
+    def project_job(self, name: str, args: list[str]) -> dict:
+        """A job of no experiment. install, release, and push also refuse while any job is alive."""
+        self.jobs.start("", [(name, args)], exclusive=name in ("install", "release"))
+        return {"job": name}
+
+    def release(self, body: dict) -> dict:
+        bump, note = body.get("bump"), body.get("note")
+        if bump not in ("major", "minor", "patch"):
+            raise ApiError(400, "field 'bump' must be 'major', 'minor', or 'patch'")
+        if not isinstance(note, str) or not note.strip():
+            raise ApiError(400, "field 'note' must not be blank")
+        project.check_branch(self.root)
+        return self.project_job("release", ["src.release.release", "--bump", bump, "--note", note.strip()])
+
+    def push(self) -> dict:
+        project.check_branch(self.root)
+        (job,) = self.jobs.register("", ["push"], inline=True, exclusive=True)
+        try:
+            result = project.push(self.root, lambda s, t: self.jobs.say("push", s, t))
+        except BaseException as error:
+            self.jobs.say("push", "stderr", getattr(error, "message", str(error)))
+            self.jobs.finish(job, 1)
+            raise
+        self.jobs.finish(job, 0)
+        return result
 
     def run(self, body: dict) -> dict:
         experiment_id = check_id(body.get("id"))
@@ -68,6 +106,8 @@ class App:
             except ValueError:
                 raise ApiError(400, "query 'after' must be a whole number") from None
             return self.jobs.log_since(after)
+        if parts == ["api", "project"]:
+            return project.info(self.root)
         if parts == ["api", "secrets"]:
             return key_store.inspect(self.root)
         if len(parts) == 3 and parts[0] == "api":
@@ -99,6 +139,16 @@ class App:
             return self.start_simple(body, "estimate")
         if path == "/api/evaluate":
             return self.start_simple(body, "evaluate")
+        if path == "/api/dry-run":
+            return self.start_simple(body, "dry-run")
+        if path == "/api/install":
+            return self.project_job("install", ["pip", "install", "-e", ".[test]"])
+        if path == "/api/tests":
+            return self.project_job("tests", ["pytest", "-q", "-p", "no:cacheprovider"])
+        if path == "/api/release":
+            return self.release(body)
+        if path == "/api/push":
+            return self.push()
         if path == "/api/run":
             return self.run(body)
         if path == "/api/commit":

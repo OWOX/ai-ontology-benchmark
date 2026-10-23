@@ -1,12 +1,12 @@
 # ui
 
-Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/jobs.py`, `ui/commit.py`, `ui/common.py`, `ui/tomlw.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/style.css`, `config/models.toml`.
+Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/common.py`, `ui/tomlw.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/style.css`, `config/models.toml`.
 
 ## Purpose
 
 A local web page that runs one [experiment](../definitions.md#releases-and-experiments) end to end: pick puzzles and AI models, set the parameters, watch every attempt land, score it, and open a pull request with the results. The page starts the existing scripts as subprocesses and reads the files they write. It adds no logic to them.
 
-The UI never runs `generate` or `release`, never edits anything in `releases/`, `prompts/`, or `results/<id>/raw/`, and never writes to `main`. It writes exactly one kind of file itself: `config/experiments/<id>.toml`.
+The UI may run `release` (which calls `generate` for a major bump) on a branch other than `main`, and never runs `generate` on its own. It never edits anything in `releases/`, `prompts/`, or `results/<id>/raw/`, and never writes to `main`. It writes exactly one kind of file itself: `config/experiments/<id>.toml`.
 
 ## Start
 
@@ -97,7 +97,7 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
 5. `POST /api/estimate {"id"}` starts `python -u -m src.run.run --experiment <id> --estimate`.
 6. `POST /api/run {"id", "limit": null}` starts one run job per model of the experiment, all at once: `python -u -m src.run.run --experiment <id> --model <name>`, plus `--limit N` if `limit` is set. The processes can race to write `results/<id>/experiment.toml` because `run` writes it atomically ([run.md](run.md#outputs)). A run job already alive for the id gives 409, and so does a live evaluate job.
 7. `POST /api/stop {"id"}` sends SIGINT to every live run job of the id, waits up to 10 seconds, then sends SIGTERM to any still alive. A request that is in flight when the job stops may be paid for and never recorded, so the page says to prefer `limit` for small runs.
-8. `POST /api/evaluate {"id"}` starts `python -u -m src.evaluate.evaluate --experiment <id>`. 409 while a run job of the id is alive.
+8. `POST /api/evaluate {"id", "release": null}` starts `python -u -m src.evaluate.evaluate --experiment <id>`, plus `--release <version>` if `release` is set (a bad version gives 400). 409 while a run job of the id is alive.
 9. `GET /api/commit/<id>` returns the commit preview: `{"branch": "results/<id>", "base": "<sha>", "files": [...], "diffstat": "..."}`. 409 while any job of the id is alive, before the report exists, or when the report is older than any file in `results/<id>/raw/` (message "the report is older than the raw records; evaluate again first"). The age is the file modification times.
 10. `POST /api/commit {"id"}` makes the commit and the pull request, and returns `{"branch": "...", "commit": "<sha>", "pr_url": "..."}`. The same 409 rules apply.
 11. `GET /api/log?after=<seq>` returns the terminal lines newer than `seq` (default 0) and the job states:
@@ -111,7 +111,17 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
     The server keeps one in-memory list of lines for all jobs, at most 5,000, dropping the oldest. `stream` is `cmd`, `stdout`, or `stderr`. The `cmd` line is the full command, logged before the process starts. `seq` counts up from 1 for the life of the server. `state` is `running`, `done`, `failed`, `budget`, or `stopped`. `budget` means the job exited 1 with a stderr line starting `error: budget reached:`. `stopped` means the UI stopped it.
 12. `GET /api/secrets` returns `{"<provider>": {"variable": "ANTHROPIC_API_KEY", "configured": true, "tail": "ab12", "source": "env" | "file" | "missing", "location": "secrets/anthropic.json" | "env var ANTHROPIC_API_KEY" | null}}` for each provider. `POST /api/secrets {"provider", "action": "save" | "clear", "api_key"}` saves a stripped key or deletes the file, and returns the same listing. An empty key, or one with whitespace inside, gives 400 naming `api_key`. `POST /api/secrets/import {"text"}` takes `.env`-style text, saves each known variable with a value, and returns `{"saved": ["anthropic"]}`. Text with no known variable gives 400. All three need the token.
 
-Job names are `run:<model>`, `estimate`, `evaluate`, and `commit`. Every job runs with `cwd` at the root and the merged env from Inputs 4. The registry keys a job by experiment id and name, so a job that belongs to no experiment can use the id `""`.
+Project jobs belong to no experiment and use the id `""`. Their names are `install`, `tests`, `release`, and `push`. Each is echoed to the terminal like the others.
+
+13. `GET /api/project` needs no token. It returns `{"branch", "clean", "latest_release", "python", "packages": {"anthropic": true, "openai": true, "google-genai": true, "pytest": true}, "gh": true}`. `branch` is `git rev-parse --abbrev-ref HEAD`, `clean` is true when `git status --porcelain` is empty, `latest_release` is `src.release.release.latest_version`, each package is checked with `importlib.util.find_spec` and never imported, and `gh` is whether the `gh` binary is found.
+14. `POST /api/install` starts `python -u -m pip install -e .[test]`, with `.[test]` as one argument.
+15. `POST /api/tests` starts `python -u -m pytest -q -p no:cacheprovider`.
+16. `POST /api/release {"bump", "note"}` starts `python -u -m src.release.release --bump <bump> --note <note>`. A `bump` that is not `major`, `minor`, or `patch`, or a blank `note`, gives 400.
+17. `POST /api/push` runs `git push -u origin <branch>`, then `git push origin --tags`, then finds the open pull request with `gh pr view` or makes one with `gh pr create --base main --head <branch> --fill`, and returns `{"branch", "pr_url"}`. It adds no attribution. It runs inline, like commit.
+18. `POST /api/dry-run {"id"}` starts `python -u -m src.run.run --experiment <id> --dry-run`.
+19. Release and push give 409 when the branch is `main` or HEAD is detached. Install, release, and push give 409 while any job of any experiment, or any project job, is running. `tests` and `dry-run` give 409 only while the same job is running.
+
+Job names are `run:<model>`, `estimate`, `dry-run`, `evaluate`, and `commit`, plus the project jobs above. Every job runs with `cwd` at the root and the merged env from Inputs 4. The registry keys a job by experiment id and name, so a job that belongs to no experiment can use the id `""`.
 
 ## Polling
 
@@ -175,4 +185,5 @@ Banners: a job in state `failed` shows its last stderr line. A job in state `bud
 11. Commit against a temporary bare remote, with `UI_GH` pointing at a stub script: the branch exists on the remote with only the two paths changed, the working tree and `HEAD` are unchanged, and a second commit with no changes gives 409.
 12. A failed push and a failed `gh pr create` can each be run again, and only an open pull request counts.
 13. Commit is refused when the report is older than a raw file.
-14. Outcome colours and the in-progress inference are in `app.js` and are not tested here. `app.js` keeps the colour table in one object.
+14. Project jobs: the argv of each job, the 409 on `main` and on a detached HEAD, the blank-note 400, mutating jobs refused while any job runs, the `/api/project` shape, and push against a temporary bare remote with a stub `gh`.
+15. Outcome colours and the in-progress inference are in `app.js` and are not tested here. `app.js` keeps the colour table in one object.

@@ -449,3 +449,96 @@ def test_commit_to_remote(server, gh):
     assert job_state(server, "commit") == "done"
     status, data = call(server, "POST", "/api/commit", {"id": "t1"})
     assert status == 409 and "nothing to commit" in data["error"]
+
+
+@pytest.fixture
+def spawned(monkeypatch):
+    """Record the argv of each spawned job instead of starting it."""
+    seen = []
+
+    def fake(self, job, argv):
+        seen.append(argv)
+        self.say(job.name, "cmd", " ".join(argv))
+        self.finish(job, 0)
+
+    monkeypatch.setattr(jobs_module.Jobs, "_spawn", fake)
+    return seen
+
+
+def on_branch(srv, name):
+    git(srv.root, "checkout", "-q", "-B", name)
+
+
+def test_project_info_shape(server):
+    on_branch(server, "feat")
+    status, data = call(server, "GET", "/api/project", token=False)
+    assert status == 200 and data["branch"] == "feat" and data["clean"] is True
+    assert data["latest_release"] == "1.0.0" and data["python"] == sys.version.split()[0]
+    assert set(data["packages"]) == {"anthropic", "openai", "google-genai", "pytest"}
+    assert data["packages"]["pytest"] is True and isinstance(data["gh"], bool)
+    (server.root / "stray.txt").write_text("x")
+    assert call(server, "GET", "/api/project", token=False)[1]["clean"] is False
+
+
+def test_project_job_argv(server, spawned):
+    on_branch(server, "feat")
+    py = sys.executable
+    assert call(server, "POST", "/api/install", {})[0] == 200
+    assert spawned[-1] == [py, "-u", "-m", "pip", "install", "-e", ".[test]"]
+    assert call(server, "POST", "/api/tests", {})[0] == 200
+    assert spawned[-1] == [py, "-u", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+    assert call(server, "POST", "/api/release", {"bump": "minor", "note": " why "})[0] == 200
+    assert spawned[-1] == [py, "-u", "-m", "src.release.release", "--bump", "minor", "--note", "why"]
+    call(server, "POST", "/api/experiment", FORM)
+    assert call(server, "POST", "/api/dry-run", {"id": "t1"})[0] == 200
+    assert spawned[-1] == [py, "-u", "-m", "src.run.run", "--experiment", "t1", "--dry-run"]
+    assert call(server, "POST", "/api/evaluate", {"id": "t1", "release": "1.0.0"})[0] == 200
+    assert spawned[-1][-2:] == ["--release", "1.0.0"]
+    assert call(server, "POST", "/api/evaluate", {"id": "t1", "release": "x"})[0] == 400
+    assert call(server, "POST", "/api/install", {})[0] == 200  # earlier jobs are over
+    jobs = call(server, "GET", "/api/log")[1]["jobs"]
+    assert {"id": "", "job": "install", "state": "done", "code": 0} in jobs
+
+
+def test_release_refusals(server, spawned):
+    on_branch(server, "main")
+    assert call(server, "POST", "/api/release", {"bump": "patch", "note": "x"})[0] == 409
+    assert call(server, "POST", "/api/push", {})[0] == 409
+    on_branch(server, "feat")
+    assert call(server, "POST", "/api/release", {"bump": "patch", "note": "  "})[0] == 400
+    assert call(server, "POST", "/api/release", {"bump": "huge", "note": "x"})[0] == 400
+    git(server.root, "checkout", "-q", "--detach")
+    assert call(server, "POST", "/api/release", {"bump": "patch", "note": "x"})[0] == 409
+    assert spawned == []
+
+
+def test_mutating_jobs_wait_for_any_job(server, spawned):
+    on_branch(server, "feat")
+    jobs = server.app.jobs
+    jobs.register("t1", ["run:example-model"])
+    for path, body in (("/api/install", {}), ("/api/release", {"bump": "patch", "note": "x"}),
+                       ("/api/push", {})):
+        assert call(server, "POST", path, body)[0] == 409
+    assert call(server, "POST", "/api/tests", {})[0] == 200  # not mutating
+    jobs.jobs[("t1", "run:example-model")].state = "done"
+    jobs.register("", ["tests"])
+    assert call(server, "POST", "/api/tests", {})[0] == 409  # the same job is running
+
+
+def test_push_creates_then_reuses_pull_request(server, gh):
+    on_branch(server, "feat")
+    git(server.root, "tag", "v-test")
+    status, result = call(server, "POST", "/api/push", {})
+    assert status == 200 and result == {"branch": "feat", "pr_url": "https://example.test/pr/1"}
+    assert git(server.root, "ls-remote", "origin", "refs/heads/feat")
+    assert git(server.root, "ls-remote", "--tags", "origin", "v-test")
+    log = (gh / "gh.log").read_text()
+    assert "pr create --base main --head feat --fill" in log and "Generated" not in log
+    assert job_state_of(server, "push") == "done"
+    before = log.count("pr create")
+    assert call(server, "POST", "/api/push", {})[1]["pr_url"] == "https://example.test/pr/1"
+    assert (gh / "gh.log").read_text().count("pr create") == before
+
+
+def job_state_of(srv, name):
+    return next(j["state"] for j in call(srv, "GET", "/api/log")[1]["jobs"] if j["job"] == name)
