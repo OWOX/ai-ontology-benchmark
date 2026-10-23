@@ -359,7 +359,7 @@ function markInProgress() {
 // rebuilds the progress tree; later loads only add records, so open accordions stay open.
 async function loadState(id) {
   const snap = await api("GET", "/api/state/" + encodeURIComponent(id));
-  const shape = JSON.stringify([id, snap.release, snap.models, snap.attempts, snap.inputs.length]);
+  const shape = JSON.stringify([id, snap.release, snap.models, snap.attempts, snap.inputs.map((i) => i.input_id)]);
   const rebuild = shape !== S.shape;
   if (rebuild) {
     resetProgress();

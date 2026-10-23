@@ -338,10 +338,11 @@ def test_failed_push_and_failed_pr_can_be_retried(server, gh):
     repo = server.root
     evaluated(server)
     good = git(repo, "remote", "get-url", "origin")
-    git(repo, "remote", "set-url", "origin", good + ".missing")
-    assert call(server, "POST", "/api/commit", {"id": "t1"})[0] == 409
+    git(repo, "remote", "set-url", "--push", "origin", good + ".missing")  # fetch works, push fails
+    status, data = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 409 and "git push failed" in data["error"]
     assert git(repo, "branch", "--list", "results/t1") == ""  # the local ref moves only after the push
-    git(repo, "remote", "set-url", "origin", good)
+    git(repo, "remote", "set-url", "--push", "origin", good)
     (gh / "fail_create").write_text("")
     status, data = call(server, "POST", "/api/commit", {"id": "t1"})
     assert status == 409 and "/gh pr failed" in data["error"]
