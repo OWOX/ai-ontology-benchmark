@@ -13,7 +13,7 @@ One spec per script. Each spec lists the script's inputs, its outputs, and how t
 
 ## Getting results
 
-1. Install with `pip install -e .`, then copy `.env.example` to `.env` and fill in the API keys.
+1. Install with `pip install -e .`. Add the API keys in the UI's Setup step, or, in a terminal, export `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GOOGLE_API_KEY`.
 2. Make a release. The script commits the new release folder and tags it `release-1.0.0` locally:
    ```
    python -m src.release.release --bump major --note "First input set"
@@ -39,7 +39,7 @@ One spec per script. Each spec lists the script's inputs, its outputs, and how t
 
 Listed in build order. Each script depends only on scripts above it.
 
-1. [setup](setup.md): `pyproject.toml` and `.env.example`.
+1. [setup](setup.md): `pyproject.toml`.
 2. [config](config.md): `config/` and `src/config.py`.
 3. [engine](engine.md): `src/puzzles/engine.py`, the puzzle engine interface.
 4. [cube](cube.md): `src/puzzles/cube.py`, the NxN cube engine.
