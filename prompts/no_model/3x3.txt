@@ -1,4 +1,4 @@
-Solve this 3x3 cube. The state is written as one block per face, headed by the face's letter. Each sticker is written as the letter of the face whose colour it has when the cube is solved. Here is its current state:
+Solve this 3x3 cube, written in Singmaster notation. The state is written as one block per face, headed by the face's letter. Each sticker is written as the letter of the face whose colour it has when the cube is solved. Rows are read top to bottom and stickers left to right, with each face seen from outside the cube: U with B at the top, D with F at the top, and R, F, L, and B with U at the top. Here is its current state:
 
 {state}
 
