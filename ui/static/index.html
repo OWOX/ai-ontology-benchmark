@@ -14,20 +14,33 @@
 </header>
 <div class="layout">
   <main class="left">
+    <section class="step" id="step-setup">
+      <h2><span class="num">1</span>Setup</h2>
+      <div id="secrets"></div>
+      <label class="inline small">Upload .env or key file <input id="secrets-file" type="file"></label>
+      <p id="secrets-msg" class="msg" role="status"></p>
+      <p id="project" class="muted small"></p>
+      <div class="actions">
+        <button id="btn-install" type="button">Install dependencies</button>
+        <button id="btn-tests" type="button">Run tests</button>
+      </div>
+      <p id="setup-msg" class="msg" role="status"></p>
+    </section>
+
     <section class="step" id="step-shapes">
-      <h2><span class="num">1</span>Shapes</h2>
+      <h2><span class="num">2</span>Shapes</h2>
       <label class="inline">Release <select id="release"></select></label>
       <span id="release-info" class="muted"></span>
       <div id="puzzles" class="cards"></div>
     </section>
 
     <section class="step" id="step-models">
-      <h2><span class="num">2</span>Models</h2>
+      <h2><span class="num">3</span>Models</h2>
       <div id="models"></div>
     </section>
 
     <section class="step" id="step-params">
-      <h2><span class="num">3</span>Parameters</h2>
+      <h2><span class="num">4</span>Parameters</h2>
       <div class="grid">
         <label class="wide">Experiment id
           <span class="row">
@@ -47,6 +60,7 @@
       </div>
       <div class="actions">
         <button id="btn-estimate" type="button">Estimate</button>
+        <button id="btn-dry" type="button">Dry run</button>
         <button id="btn-run" type="button" class="primary">Run</button>
         <button id="btn-stop" type="button" class="danger" disabled>Stop</button>
       </div>
@@ -55,20 +69,37 @@
     </section>
 
     <section class="step" id="step-progress">
-      <h2><span class="num">4</span>Progress</h2>
+      <h2><span class="num">5</span>Progress</h2>
       <div id="legend" class="legend"></div>
       <div id="banners"></div>
       <div id="progress" class="muted">Run or load an experiment to see progress.</div>
     </section>
 
     <section class="step" id="step-commit">
-      <h2><span class="num">5</span>Evaluate and commit</h2>
+      <h2><span class="num">6</span>Evaluate and commit</h2>
       <div class="actions">
+        <label class="inline">Score under release <select id="eval-release"></select></label>
         <button id="btn-evaluate" type="button" disabled>Evaluate</button>
         <button id="btn-commit" type="button" disabled>Commit</button>
       </div>
       <p id="report" class="muted">No report yet.</p>
       <p id="commit-result" class="msg" role="status"></p>
+    </section>
+
+    <section class="step" id="step-release">
+      <h2><span class="num">7</span>Release</h2>
+      <div class="actions">
+        <label class="inline">Bump
+          <select id="bump"><option>patch</option><option>minor</option><option>major</option></select>
+        </label>
+        <input id="note" type="text" placeholder="Note" autocomplete="off">
+        <button id="btn-release" type="button" class="primary">Release</button>
+      </div>
+      <p id="release-state" class="muted small"></p>
+      <div class="actions">
+        <button id="btn-push" type="button">Push and open PR</button>
+      </div>
+      <p id="release-msg" class="msg" role="status"></p>
     </section>
   </main>
 

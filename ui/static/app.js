@@ -39,6 +39,8 @@ const S = {
   lastErr: {},             // job -> last stderr line
   arcs: new Map(),         // key -> path element
   lastArc: {},             // model -> key painted as in progress
+  project: null,           // last /api/project
+  projRunning: new Set(),  // job names running at the last log poll
 };
 const STATE_POLL_MS = 1500;
 const LOG_POLL_MS = { busy: 1000, idle: 5000 };
@@ -73,7 +75,7 @@ function say(id, text, kind) {
 async function api(method, path, body) {
   const headers = {};
   const opts = { method, headers };
-  if (method === "POST" || path.startsWith("/api/commit/")) headers["X-Token"] = S.token;
+  if (method === "POST" || path.startsWith("/api/commit/") || path === "/api/secrets") headers["X-Token"] = S.token;
   if (method === "POST") {
     headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body || {});
@@ -195,6 +197,9 @@ function renderReleases() {
   const sel = $("release");
   sel.replaceChildren(...S.cat.releases.map((r) => el("option", { value: r.version, text: r.version })));
   sel.value = S.cat.latest;
+  const ev = $("eval-release");
+  ev.replaceChildren(el("option", { value: "", text: "experiment's release" }),
+    ...S.cat.releases.map((r) => el("option", { value: r.version, text: r.version })));
   renderPuzzles();
 }
 
@@ -480,6 +485,8 @@ function runAlive() { return Object.entries(S.jobs).some(([j, s]) => j.startsWit
 function refreshControls() {
   $("btn-run").disabled = runAlive();
   $("btn-estimate").disabled = anyAlive();
+  $("btn-dry").disabled = anyAlive();
+  renderProject();
   $("btn-stop").disabled = !runAlive();
   $("btn-evaluate").disabled = !S.id || runAlive();
   const report = S.snap && S.snap.report;
@@ -524,6 +531,16 @@ function onRun() {
   });
 }
 
+function onDry() {
+  return guarded("form-msg", async () => {
+    const { form } = await postForm();
+    await loadState(form.id);
+    await api("POST", "/api/dry-run", { id: form.id });
+    await loadState(form.id);
+    say("form-msg", "Dry run started; see the terminal.", "ok");
+  });
+}
+
 function onStop() {
   return guarded("form-msg", async () => {
     await api("POST", "/api/stop", { id: S.id || $("exp-id").value.trim() });
@@ -544,9 +561,108 @@ function onLoad() {
 
 function onEvaluate() {
   return guarded("commit-result", async () => {
-    await api("POST", "/api/evaluate", { id: S.id });
+    await api("POST", "/api/evaluate", { id: S.id, release: $("eval-release").value || null });
     await loadState(S.id);
   });
+}
+
+// ---- Setup and release -----------------------------------------------------
+function renderSecrets(list) {
+  $("secrets").replaceChildren(...Object.entries(list).map(([provider, s]) => {
+    const status = s.source === "file" ? `Key …${s.tail} from ${s.location}`
+      : s.source === "env" ? `Set by ${s.location}` : "No key";
+    const key = el("input", { type: "password", autocomplete: "off", placeholder: s.variable });
+    const act = (action) => guarded("secrets-msg", async () => {
+      if (action === "clear" && !confirm(`Delete the saved ${provider} key?`)) return;
+      renderSecrets(await api("POST", "/api/secrets", { provider, action, api_key: key.value }));
+      key.value = "";
+      await refreshCatalogue();
+    });
+    const save = el("button", { type: "button", text: "Save" });
+    const clear = el("button", { type: "button", text: "Clear" });
+    clear.disabled = s.source !== "file";
+    save.addEventListener("click", () => act("save"));
+    clear.addEventListener("click", () => act("clear"));
+    return el("div", { class: "row key-row" }, el("strong", { text: provider }),
+      el("span", { class: "muted small", text: status }), key, save, clear);
+  }));
+}
+
+async function loadSecrets() {
+  renderSecrets(await api("GET", "/api/secrets"));
+}
+
+function onImport(ev) {
+  const file = ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  guarded("secrets-msg", async () => {
+    const r = await api("POST", "/api/secrets/import", { text: await file.text() });
+    await loadSecrets();
+    await refreshCatalogue();
+    say("secrets-msg", `Saved: ${r.saved.join(", ")}.`, "ok");
+  });
+}
+
+// Reload the catalogue, keeping the form: models enable, new releases appear.
+async function refreshCatalogue() {
+  const keep = [$("release").value, $("eval-release").value];
+  S.cat = await api("GET", "/api/catalogue");
+  renderReleases();
+  for (const [id, v] of [["release", keep[0]], ["eval-release", keep[1]]]) {
+    if ([...$(id).options].some((o) => o.value === v)) $(id).value = v;
+  }
+  renderPuzzles();
+  setModels([...S.models]);
+}
+
+async function loadProject() {
+  S.project = await api("GET", "/api/project");
+  renderProject();
+}
+
+function renderProject() {
+  const p = S.project;
+  if (!p) return;
+  const pk = Object.entries(p.packages).map(([k, v]) => `${k} ${v ? "ok" : "missing"}`).join(", ");
+  $("project").textContent = `Branch ${p.branch}, ${p.clean ? "clean" : "changes"}. ${pk}. gh ${p.gh ? "found" : "missing"}.`;
+  const why = p.branch === "main" ? "on main" : p.branch === "HEAD" ? "detached HEAD"
+    : !p.clean ? "working tree has changes: commit them first" : "";
+  $("release-state").textContent = `Latest release ${p.latest_release || "none"} on ${p.branch}.${why ? " " + why + "." : ""}`;
+  const busy = S.anyAlive || anyAlive();
+  $("btn-release").disabled = !!why || busy;
+  $("btn-push").disabled = p.branch === "main" || p.branch === "HEAD" || busy;
+  for (const id of ["btn-install", "btn-tests"]) $(id).disabled = busy;
+}
+
+// Start a project job; on install, release, or push ending, refresh the project and the catalogue.
+function projectJob(msgId, path, body, text) {
+  return guarded(msgId, async () => {
+    await api("POST", path, body);
+    say(msgId, text, "ok");
+  });
+}
+
+function onRelease() {
+  const note = $("note").value.trim();
+  if (!note) return say("release-msg", "note: enter a release note", "err");
+  return projectJob("release-msg", "/api/release", { bump: $("bump").value, note }, "Release started; see the terminal.");
+}
+
+function onPush() {
+  return guarded("release-msg", async () => {
+    say("release-msg", "Pushing...");
+    const r = await api("POST", "/api/push", {});
+    const out = $("release-msg");
+    out.className = "msg ok";
+    out.replaceChildren(`Pushed ${r.branch}. `);
+    if (/^https?:\/\//.test(r.pr_url)) out.append(el("a", { href: r.pr_url, target: "_blank", rel: "noopener", text: "Open pull request" }));
+    await afterProjectJob();
+  });
+}
+
+async function afterProjectJob() {
+  await Promise.all([loadProject(), refreshCatalogue()]).catch(() => {});
 }
 
 // ---- Commit dialog ---------------------------------------------------------
@@ -608,6 +724,11 @@ async function pollLog() {
     }
     S.logAfter = data.last;
     S.anyAlive = data.jobs.some((j) => j.state === "running");
+    const running = new Set(data.jobs.filter((j) => j.state === "running").map((j) => j.job));
+    const ended = ["install", "release", "push"].some((n) => S.projRunning.has(n) && !running.has(n));
+    S.projRunning = running;
+    if (ended) afterProjectJob();
+    renderProject();
     // A job of the loaded experiment started elsewhere (the CLI cannot, but a second tab can).
     if (S.id && !S.statePoll && data.jobs.some((j) => j.id === S.id && j.state === "running")) {
       loadState(S.id).catch(() => {});
@@ -625,6 +746,12 @@ async function init() {
   renderLegend();
   $("btn-estimate").addEventListener("click", onEstimate);
   $("btn-run").addEventListener("click", onRun);
+  $("btn-dry").addEventListener("click", onDry);
+  $("secrets-file").addEventListener("change", onImport);
+  $("btn-install").addEventListener("click", () => projectJob("setup-msg", "/api/install", {}, "Install started; see the terminal."));
+  $("btn-tests").addEventListener("click", () => projectJob("setup-msg", "/api/tests", {}, "Tests started; see the terminal."));
+  $("btn-release").addEventListener("click", onRelease);
+  $("btn-push").addEventListener("click", onPush);
   $("btn-stop").addEventListener("click", onStop);
   $("btn-load").addEventListener("click", onLoad);
   $("btn-evaluate").addEventListener("click", onEvaluate);
@@ -640,6 +767,8 @@ async function init() {
   } catch (e) {
     say("form-msg", "Could not load catalogue: " + e.message, "err");
   }
+  loadSecrets().catch((e) => say("secrets-msg", e.message, "err"));
+  loadProject().catch((e) => say("setup-msg", e.message, "err"));
   pollLog();
 }
 
