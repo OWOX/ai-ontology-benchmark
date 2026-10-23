@@ -6,17 +6,22 @@ holding a tiny 2x2 release, with the fake provider and no network.
 import http.client
 import json
 import os
+import re
+import signal
+import subprocess
+import sys
 import threading
 import time
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from src.config import load_experiment_config
 from test_release import commit_all, git, run_release, repo  # noqa: F401  (repo is a fixture)
 from ui.common import merged_env, parse_env
-from ui.events import Tailer
+from ui import jobs as jobs_module
 from ui.server import make_server
 
 MODELS = (
@@ -54,9 +59,9 @@ def server(ui_repo, tmp_path_factory):
     (static / "style.css").write_text("/*css*/", encoding="utf-8")
     srv = make_server(ui_repo, 0, static)
     srv.root = ui_repo
-    srv.keepalive_s = 0.2
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield srv
+    srv.app.jobs.stop_all()
     srv.shutdown()
     srv.server_close()
 
@@ -78,45 +83,29 @@ def call(srv, method, path, body=None, token=True, host=None):
         return response.status, raw.decode()
 
 
-class Events:
-    """Reads the SSE stream in a thread and keeps every event."""
-
-    def __init__(self, srv):
-        self.items, self.lock = [], threading.Lock()
-        self.conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=60)
-        self.conn.request("GET", "/api/events")
-        self.response = self.conn.getresponse()
-        self.comments = []
-        threading.Thread(target=self.read, daemon=True).start()
-
-    def read(self):
-        event = None
-        for raw in self.response:
-            line = raw.decode().rstrip("\n")
-            if line.startswith(":"):
-                self.comments.append(line)
-            elif line.startswith("event: "):
-                event = line[7:]
-            elif line.startswith("data: "):
-                with self.lock:
-                    self.items.append((event, json.loads(line[6:])))
-
-    def of(self, kind):
-        with self.lock:
-            return [d for e, d in self.items if e == kind]
-
-    def wait(self, check, timeout=60):
-        end = time.monotonic() + timeout
-        while time.monotonic() < end:
-            if check():
-                return
-            time.sleep(0.05)
-        raise AssertionError(f"timed out; events: {self.items[-5:]}")
+def wait_for(check, timeout=60):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        value = check()
+        if value:
+            return value
+        time.sleep(0.05)
+    raise AssertionError("timed out")
 
 
-def job_state(events, name):
-    states = [d["state"] for d in events.of("job") if d["job"] == name]
-    return states[-1] if states else None
+def job_state(srv, name, experiment_id="t1"):
+    return call(srv, "GET", f"/api/state/{experiment_id}")[1]["jobs"].get(name)
+
+
+def wait_job(srv, name, state="done", experiment_id="t1"):
+    wait_for(lambda: job_state(srv, name, experiment_id) == state)
+
+
+def slow_fake(srv, seconds=0.4):
+    """Slow the fake provider so a run stays alive for a while."""
+    models = srv.root / "src" / "run" / "models.py"
+    models.write_text(models.read_text().replace(
+        "def _fake() -> Reply:\n", f"def _fake() -> Reply:\n    import time; time.sleep({seconds})\n"))
 
 
 def test_env_parsing(tmp_path, monkeypatch):
@@ -149,6 +138,8 @@ def test_experiment_statuses(server):
     written = path.read_bytes()
     assert call(server, "POST", "/api/experiment", FORM) == (200, {"id": "t1", "status": "unchanged"})
     assert path.read_bytes() == written
+    (server.root / "results" / "t1").mkdir(parents=True)  # once the experiment has started, it is fixed
+    (server.root / "results" / "t1" / "experiment.toml").write_bytes(written)
     raised = dict(FORM, budget=dict(BUDGET, per_experiment_usd=20.0))
     assert call(server, "POST", "/api/experiment", raised) == (200, {"id": "t1", "status": "budget_updated"})
     assert tomllib.loads(path.read_text())["budget"]["per_experiment_usd"] == 20.0
@@ -161,6 +152,25 @@ def test_experiment_statuses(server):
         status, data = call(server, "POST", "/api/experiment", dict(bad, id="bad"))
         assert status == 400 and "field" in data["error"]
     assert not (server.root / "config" / "experiments" / "bad.toml").exists()
+
+
+def test_experiment_updated_before_first_run_and_missing_puzzles(server):
+    path = server.root / "config" / "experiments" / "t1.toml"
+    call(server, "POST", "/api/experiment", FORM)
+    assert call(server, "POST", "/api/experiment", dict(FORM, attempts=2)) == (200, {"id": "t1", "status": "updated"})
+    assert tomllib.loads(path.read_text())["attempts"] == 2
+    # a CLI-made config without `puzzles` means every puzzle of the release
+    cli = path.read_text().replace('puzzles = ["2x2"]\n', "")
+    assert "puzzles" not in cli
+    path.write_text(cli, encoding="utf-8")
+    assert call(server, "POST", "/api/experiment", dict(FORM, attempts=2)) == (200, {"id": "t1", "status": "unchanged"})
+    results = server.root / "results" / "t1"
+    results.mkdir(parents=True)
+    (results / "experiment.toml").write_text(cli, encoding="utf-8")  # the experiment has started
+    assert call(server, "POST", "/api/experiment", dict(FORM, attempts=2)) == (200, {"id": "t1", "status": "unchanged"})
+    raised = dict(FORM, attempts=2, budget=dict(BUDGET, per_model_usd=9.0))
+    assert call(server, "POST", "/api/experiment", raised) == (200, {"id": "t1", "status": "budget_updated"})
+    assert call(server, "POST", "/api/experiment", dict(FORM, attempts=3))[0] == 409
 
 
 def test_written_config_loads_with_puzzles(server):
@@ -198,63 +208,169 @@ def test_security(server):
     assert conn.getresponse().status == 400
 
 
-def test_tailer_reads_torn_lines_once(tmp_path):
-    raw = tmp_path / "raw"
-    raw.mkdir()
-    file = raw / "m.jsonl"
-    tailer = Tailer(raw)
-    assert tailer.poll() == []
-    file.write_text('{"a": 1}\n{"a": 2', encoding="utf-8")
-    assert tailer.poll() == [{"a": 1}]
-    with open(file, "a", encoding="utf-8") as handle:
-        handle.write('}\nnot json\n[3]\n{"a": 4}\n')
-    assert tailer.poll() == [{"a": 2}, {"a": 4}]
-    assert tailer.poll() == []
+def test_log_keeps_the_newest_lines_and_serves_after(server, monkeypatch):
+    monkeypatch.setattr(jobs_module, "LOG_CAP", 3)
+    for n in range(5):
+        server.app.jobs.say("j", "stdout", f"line {n}")
+    status, data = call(server, "GET", "/api/log?after=0")
+    assert status == 200 and [l["text"] for l in data["lines"]] == ["line 2", "line 3", "line 4"]
+    assert data["last"] == 5 and data["lines"][0] == {"seq": 3, "job": "j", "stream": "stdout", "text": "line 2"}
+    assert [l["seq"] for l in call(server, "GET", "/api/log?after=4")[1]["lines"]] == [5]
+    assert call(server, "GET", "/api/log?after=x")[0] == 400
 
 
 def test_full_run_through_api(server):
-    events = Events(server)
     assert call(server, "POST", "/api/experiment", FORM)[0] == 200
     assert call(server, "POST", "/api/estimate", {"id": "t1"})[0] == 200
-    events.wait(lambda: job_state(events, "estimate") == "done")
-    cmd = [d for d in events.of("terminal") if d["stream"] == "cmd"][0]
-    assert "src.run.run" in cmd["text"] and "--estimate" in cmd["text"]
-    models = server.root / "src" / "run" / "models.py"  # slow the fake provider so the run stays alive
-    models.write_text(models.read_text().replace("def _fake() -> Reply:\n", "def _fake() -> Reply:\n    import time; time.sleep(0.4)\n"))
+    wait_job(server, "estimate")
+    cmds = [l for l in call(server, "GET", "/api/log")[1]["lines"] if l["stream"] == "cmd"]
+    assert "src.run.run" in cmds[0]["text"] and "--estimate" in cmds[0]["text"]
+    slow_fake(server)
     assert call(server, "POST", "/api/run", {"id": "t1", "limit": None})[0] == 200
-    events.wait(lambda: any(d["attempt"] for d in events.of("in_progress")))  # amber before any record
-    assert not events.of("record") and job_state(events, "run:example-model") == "running"
-    events.wait(lambda: events.of("record"))
-    assert job_state(events, "run:example-model") == "running"  # live, not a burst at the end
-    events.wait(lambda: job_state(events, "run:example-model") == "done")
-    records = events.of("record")
-    assert len(records) == 9  # 3 inputs x 3 setups x 1 attempt
-    assert len({(r["record"]["input_id"], r["record"]["setup"]) for r in records}) == 9
-    progress = [d for d in events.of("in_progress") if d["model"] == "example-model"]
-    assert progress[-1]["attempt"] is None and any(d["attempt"] for d in progress[:-1])
+    assert call(server, "POST", "/api/run", {"id": "t1"})[0] == 409  # already running
     status, snap = call(server, "GET", "/api/state/t1")
-    assert status == 200 and len(snap["records"]) == 9 and len(snap["inputs"]) == 3
-    assert snap["in_progress"] == {"example-model": None}
+    assert snap["jobs"]["run:example-model"] == "running" and "in_progress" not in snap
+    assert snap["setups"] == ["no_model", "descriptive", "prescriptive"] and snap["attempts"] == 1
+    wait_for(lambda: call(server, "GET", "/api/state/t1")[1]["records"])
+    assert job_state(server, "run:example-model") == "running"  # records arrive live, not in a burst
+    wait_job(server, "run:example-model")
+    status, snap = call(server, "GET", "/api/state/t1")
+    assert status == 200 and len(snap["records"]) == 9 and len(snap["inputs"]) == 3  # 3 inputs x 3 setups x 1
+    assert len({(r["input_id"], r["setup"]) for r in snap["records"]}) == 9
     assert snap["jobs"]["run:example-model"] == "done" and snap["report"] is None
-    assert events.comments  # keep-alive or connected line arrived
+    assert not list((server.root / "results" / "t1").glob(".*tmp"))  # the atomic copy leaves no temp file
+    assert (server.root / "results" / "t1" / "experiment.toml").read_bytes() == \
+        (server.root / "config" / "experiments" / "t1.toml").read_bytes()
 
 
-def test_commit_to_remote(server, tmp_path_factory, monkeypatch):
-    tmp_path = tmp_path_factory.mktemp("gh")
-    stub = tmp_path / "gh"
-    log = tmp_path / "gh.log"
-    stub.write_text(f'#!/bin/sh\necho "$@" >> {log}\n[ "$2" = view ] && exit 1\n'
-                    'echo https://example.test/pr/1\n', encoding="utf-8")
+def test_run_and_evaluate_exclude_each_other(server):
+    call(server, "POST", "/api/experiment", FORM)
+    jobs = server.app.jobs
+    (job,) = jobs.register("t1", ["evaluate"])
+    status, data = call(server, "POST", "/api/run", {"id": "t1"})
+    assert status == 409 and "evaluate" in data["error"]
+    jobs.finish(job, 0)
+    (job,) = jobs.register("t1", ["run:example-model"])
+    assert call(server, "POST", "/api/evaluate", {"id": "t1"})[0] == 409
+    jobs.finish(job, 0)
+
+
+def test_stop_and_stop_all(server):
+    call(server, "POST", "/api/experiment", FORM)
+    slow_fake(server, 0.5)
+    call(server, "POST", "/api/run", {"id": "t1"})
+    wait_for(lambda: call(server, "GET", "/api/state/t1")[1]["records"])
+    status, data = call(server, "POST", "/api/stop", {"id": "t1"})
+    assert status == 200 and data["stopped"] == ["run:example-model"]
+    wait_job(server, "run:example-model", "stopped")
+    call(server, "POST", "/api/run", {"id": "t1"})  # resumes
+    wait_job(server, "run:example-model", "running")
+    assert server.app.jobs.stop_all() == ["run:example-model"]
+    wait_job(server, "run:example-model", "stopped")
+
+
+def test_server_stops_its_jobs_on_sigterm(ui_repo):
+    slow_fake(SimpleNamespace(root=ui_repo), 0.5)
+    root = Path(__file__).resolve().parent.parent
+    proc = subprocess.Popen([sys.executable, "-m", "ui.server", "--port", "0", "--root", str(ui_repo)], cwd=root,
+                            stdout=subprocess.PIPE, text=True)
+    try:
+        port = int(re.search(r":(\d+)/", proc.stdout.readline()).group(1))
+
+        def request(method, path, body=None, token=""):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn.request(method, path, json.dumps(body) if body is not None else None, {"X-Token": token})
+            return conn.getresponse().read().decode()
+
+        token = re.search(r'name="ui-token" content="([^"]+)"', request("GET", "/")).group(1)
+        assert "created" in request("POST", "/api/experiment", FORM, token)
+        assert "run:example-model" in request("POST", "/api/run", {"id": "t1"}, token)
+        raw = ui_repo / "results" / "t1" / "raw" / "example-model.jsonl"
+        wait_for(lambda: raw.is_file() and raw.read_text())
+        proc.send_signal(signal.SIGTERM)
+        assert proc.wait(timeout=30) == 0
+        count = len(raw.read_text().splitlines())
+        time.sleep(1.5)
+        assert len(raw.read_text().splitlines()) == count < 9  # the run died with the server
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+GH_STUB = """#!/bin/sh
+echo "$@" >> {dir}/gh.log
+if [ "$2" = view ]; then [ -f {dir}/view.json ] && cat {dir}/view.json && exit 0; exit 1; fi
+[ -f {dir}/fail_create ] && exit 1
+echo '{{"url": "https://example.test/pr/1", "state": "OPEN"}}' > {dir}/view.json
+echo https://example.test/pr/1
+"""
+
+
+@pytest.fixture
+def gh(tmp_path_factory, monkeypatch):
+    folder = tmp_path_factory.mktemp("gh")
+    stub = folder / "gh"
+    stub.write_text(GH_STUB.format(dir=folder), encoding="utf-8")
     stub.chmod(0o755)
     monkeypatch.setenv("UI_GH", str(stub))
+    return folder
+
+
+def evaluated(server):
+    call(server, "POST", "/api/experiment", FORM)
+    call(server, "POST", "/api/run", {"id": "t1"})
+    wait_job(server, "run:example-model")
+    assert call(server, "POST", "/api/evaluate", {"id": "t1"})[0] == 200
+    wait_job(server, "evaluate")
+
+
+def test_commit_refused_when_report_is_older_than_raw(server, gh):
+    evaluated(server)
+    assert call(server, "GET", "/api/commit/t1")[0] == 200
+    raw = server.root / "results" / "t1" / "raw" / "example-model.jsonl"
+    report = server.root / "results" / "t1" / "1.0.0.md"
+    os.utime(raw, (report.stat().st_mtime + 5, report.stat().st_mtime + 5))
+    for status, data in (call(server, "GET", "/api/commit/t1"), call(server, "POST", "/api/commit", {"id": "t1"})):
+        assert status == 409 and "evaluate again first" in data["error"]
+
+
+def test_failed_push_and_failed_pr_can_be_retried(server, gh):
     repo = server.root
-    events = Events(server)
+    evaluated(server)
+    good = git(repo, "remote", "get-url", "origin")
+    git(repo, "remote", "set-url", "origin", good + ".missing")
+    assert call(server, "POST", "/api/commit", {"id": "t1"})[0] == 409
+    assert git(repo, "branch", "--list", "results/t1") == ""  # the local ref moves only after the push
+    git(repo, "remote", "set-url", "origin", good)
+    (gh / "fail_create").write_text("")
+    status, data = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 409 and "/gh pr failed" in data["error"]
+    assert git(repo, "ls-remote", "origin", "refs/heads/results/t1")  # pushed, no pull request yet
+    (gh / "fail_create").unlink()
+    status, result = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 200 and result["pr_url"] == "https://example.test/pr/1"
+    assert git(repo, "ls-remote", "origin", "refs/heads/results/t1").split()[0] == result["commit"]
+
+
+def test_only_an_open_pull_request_counts(server, gh):
+    evaluated(server)
+    (gh / "view.json").write_text('{"url": "https://example.test/pr/9", "state": "CLOSED"}')
+    status, result = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 200 and result["pr_url"] == "https://example.test/pr/1"
+    (gh / "view.json").write_text('{"url": "https://example.test/pr/9", "state": "OPEN"}')
+    status, data = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 409 and "nothing to commit" in data["error"]
+
+
+def test_commit_to_remote(server, gh):
+    log = gh / "gh.log"
+    repo = server.root
     call(server, "POST", "/api/experiment", FORM)
     assert call(server, "GET", "/api/commit/t1")[0] == 409  # no report yet
     call(server, "POST", "/api/run", {"id": "t1"})
-    events.wait(lambda: job_state(events, "run:example-model") == "done")
+    wait_job(server, "run:example-model")
     assert call(server, "POST", "/api/evaluate", {"id": "t1"})[0] == 200
-    events.wait(lambda: job_state(events, "evaluate") == "done")
+    wait_job(server, "evaluate")
     head, status_before = git(repo, "rev-parse", "HEAD"), git(repo, "status", "--porcelain")
     status, preview = call(server, "GET", "/api/commit/t1")
     assert status == 200 and preview["branch"] == "results/t1"
@@ -270,7 +386,7 @@ def test_commit_to_remote(server, tmp_path_factory, monkeypatch):
     assert git(repo, "diff", "--cached", "--name-only") == ""
     args = log.read_text()
     assert "pr create --base main --head results/t1" in args and "Generated" not in args
-    assert any(d["job"] == "commit" for d in events.of("terminal"))
-    assert job_state(events, "commit") == "done"
+    assert any(l["job"] == "commit" for l in call(server, "GET", "/api/log")[1]["lines"])
+    assert job_state(server, "commit") == "done"
     status, data = call(server, "POST", "/api/commit", {"id": "t1"})
     assert status == 409 and "nothing to commit" in data["error"]

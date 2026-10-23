@@ -1,16 +1,17 @@
 # Spec: docs/specs/ui.md
-"""Local web server for running an experiment. Serves ui/static/, answers the JSON API, and
-streams events. Reads the files named in the spec; writes only config/experiments/<id>.toml.
+"""Local web server for running an experiment. Serves ui/static/ and answers the JSON API,
+including the terminal log the page polls. Reads the files named in the spec; writes only config/experiments/<id>.toml.
 Run as `python -m ui.server [--port 8765] [--root .]`.
 """
 
 import argparse
 import hmac
 import json
-import queue
+import signal
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from ui.app import App
 from ui.common import ApiError
@@ -50,7 +51,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_request(self, method: str) -> None:
         app = self.server.app
-        path = self.path.split("?", 1)[0]
+        url = urlsplit(self.path)
+        path = url.path
         try:
             if not self.host_ok():
                 raise ApiError(403, "bad Host header")
@@ -59,12 +61,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise ApiError(403, "missing or wrong X-Token")
             if method == "POST":
                 self.send_json(200, app.post(path, self.read_body()))
-            elif path == "/api/events":
-                self.stream_events()
             elif path in STATIC:
                 self.send_static(path)
             elif path.startswith("/api/"):
-                self.send_json(200, app.get(path))
+                self.send_json(200, app.get(path, parse_qs(url.query)))
             else:
                 raise ApiError(404, "not found")
         except ApiError as error:
@@ -100,34 +100,10 @@ class Handler(BaseHTTPRequestHandler):
             data = data.replace(b"{{UI_TOKEN}}", app.token.encode("ascii"))
         self.send_bytes(200, data, kind)
 
-    def stream_events(self) -> None:
-        hub = self.server.app.hub
-        client = hub.subscribe()
-        try:
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(b": connected\n\n")
-            self.wfile.flush()
-            while True:
-                try:
-                    event, data = client.get(timeout=self.server.keepalive_s)
-                    message = f"event: {event}\ndata: {json.dumps(data)}\n\n"
-                except queue.Empty:
-                    message = ": keep-alive\n\n"
-                self.wfile.write(message.encode("utf-8"))
-                self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError, OSError):
-            pass
-        finally:
-            hub.unsubscribe(client)
-
 
 class UiServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
-    keepalive_s = 15
 
     def __init__(self, address: tuple, app: App) -> None:
         super().__init__(address, Handler)
@@ -154,10 +130,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: port {args.port}: {error.strerror}", file=sys.stderr)
         return 1
     print(f"UI at http://127.0.0.1:{server.server_address[1]}/", flush=True)
+    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        server.app.jobs.stop_all()  # no run outlives the server
     return 0
 
 

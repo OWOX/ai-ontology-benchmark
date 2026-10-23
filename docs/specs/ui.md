@@ -1,6 +1,6 @@
 # ui
 
-Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/state.py`, `ui/jobs.py`, `ui/events.py`, `ui/commit.py`, `ui/common.py`, `ui/tomlw.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/style.css`, `config/models.toml`.
+Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/jobs.py`, `ui/commit.py`, `ui/common.py`, `ui/tomlw.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/style.css`, `config/models.toml`.
 
 ## Purpose
 
@@ -17,6 +17,10 @@ python -m ui.server [--port 8765] [--root .]
 It binds to `127.0.0.1` only and prints the URL. `--root` is the repo root, for tests. It exits with code 1 if the port is taken or `--root` has no `releases/` folder.
 
 The server uses `http.server.ThreadingHTTPServer` with `daemon_threads = True`. Shared job state sits behind one `threading.Lock`.
+
+On Ctrl-C or SIGTERM the server stops every live job the way `POST /api/stop` does (SIGINT, wait up to 10 seconds, then SIGTERM) before it exits, so no run outlives it.
+
+The page polls. The server has no event stream.
 
 ## Inputs
 
@@ -70,9 +74,10 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
 
    `models` holds catalogue names. The server builds the experiment config, with `puzzles` always written, and checks it with `src.config.load_experiment_config` on a copy in a temporary folder before it touches the real file. Then:
    1. No file for that id: write it. Status `created`.
-   2. A file exists and equals the new config: write nothing. Status `unchanged`.
-   3. A file exists and differs only in `[budget]`: write it. Status `budget_updated`.
-   4. A file exists and differs in anything else: 409, "experiment <id> exists with a different config; load it or pick a new id". Nothing is written.
+   2. A file exists and equals the new config: write nothing. Status `unchanged`. A missing `puzzles` in the file counts as every puzzle of its release, so a config made on the command line compares equal to the same choice made on the page.
+   3. A file exists, differs, and `results/<id>/experiment.toml` does not exist, so nothing has run: write it. Status `updated`.
+   4. A file exists, `results/<id>/experiment.toml` exists, and the config differs only in `[budget]`: write it. Status `budget_updated`.
+   5. Any other difference once `results/<id>/experiment.toml` exists: 409, "experiment <id> exists with a different config; load it or pick a new id". Nothing is written.
 
    It returns `{"id": "...", "status": "..."}`. A disabled model, an unknown release, or a puzzle that isn't in the release gives 400.
 4. `GET /api/state/<id>` returns the live snapshot:
@@ -84,39 +89,44 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
                 "validity": "valid", "state": "RUUL..."}],
     "records": [{"model": "...", "input_id": "...", "setup": "...", "attempt_number": 1,
                  "outcome": "success", "mismatch": false}],
-    "in_progress": {"example-model": {"input_id": "...", "setup": "...", "attempt_number": 2}},
     "jobs": {"run:example-model": "running"},
     "report": "results/<id>/1.0.0.md"}
    ```
 
-   `inputs` holds only the experiment's puzzles, in release order. `records` comes from `src.run.raw.read_raw` over each model's raw file. `in_progress[model]` is the first item of `src.run.run.pending_attempts(config, inputs, raw_dir, model)` while that model's run job is alive, else `null`. It is an inference: run doesn't report the attempt it is on. `report` is the report path if it exists, else `null`.
+   `inputs` holds only the experiment's puzzles, in release order. `records` comes from `src.run.raw.read_raw` over each model's raw file. `jobs` maps each job name of the id to its state. `report` is the report path if it exists, else `null`. The snapshot holds no in-progress attempt: the page works that out (see Polling).
 5. `POST /api/estimate {"id"}` starts `python -u -m src.run.run --experiment <id> --estimate`.
-6. `POST /api/run {"id", "limit": null}` starts one run job per model of the experiment: `python -u -m src.run.run --experiment <id> --model <name>`, plus `--limit N` if `limit` is set. It starts the first model alone, waits until `results/<id>/experiment.toml` exists with the same bytes as the config (or the first job has exited, or 10 seconds pass), then starts the rest together. That stops the processes racing to write the experiment copy. A run job already alive for the id gives 409.
+6. `POST /api/run {"id", "limit": null}` starts one run job per model of the experiment, all at once: `python -u -m src.run.run --experiment <id> --model <name>`, plus `--limit N` if `limit` is set. The processes can race to write `results/<id>/experiment.toml` because `run` writes it atomically ([run.md](run.md#outputs)). A run job already alive for the id gives 409, and so does a live evaluate job.
 7. `POST /api/stop {"id"}` sends SIGINT to every live run job of the id, waits up to 10 seconds, then sends SIGTERM to any still alive. A request that is in flight when the job stops may be paid for and never recorded, so the page says to prefer `limit` for small runs.
 8. `POST /api/evaluate {"id"}` starts `python -u -m src.evaluate.evaluate --experiment <id>`. 409 while a run job of the id is alive.
-9. `GET /api/commit/<id>` returns the commit preview: `{"branch": "results/<id>", "base": "<sha>", "files": [...], "diffstat": "..."}`. 409 while any job of the id is alive, or before the report exists.
+9. `GET /api/commit/<id>` returns the commit preview: `{"branch": "results/<id>", "base": "<sha>", "files": [...], "diffstat": "..."}`. 409 while any job of the id is alive, before the report exists, or when the report is older than any file in `results/<id>/raw/` (message "the report is older than the raw records; evaluate again first"). The age is the file modification times.
 10. `POST /api/commit {"id"}` makes the commit and the pull request, and returns `{"branch": "...", "commit": "<sha>", "pr_url": "..."}`. The same 409 rules apply.
-11. `GET /api/events` is one Server-Sent Events stream for the whole page. The page opens one `EventSource` and never more. A comment line `: keep-alive` goes out every 15 seconds. Events:
-    1. `terminal`: `{"job": "run:example-model", "stream": "cmd"|"stdout"|"stderr", "text": "..."}`. The `cmd` line is the full command, sent before the process starts. Output goes out line by line.
-    2. `record`: `{"id": "...", "record": {<same fields as in the snapshot>}}`, one per new raw record.
-    3. `in_progress`: `{"id": "...", "model": "...", "attempt": {...} | null}`.
-    4. `job`: `{"id": "...", "job": "run:<model>"|"estimate"|"evaluate"|"commit", "state": "running"|"done"|"failed"|"budget"|"stopped", "code": 0|1|null}`. `budget` means the job exited 1 with a stderr line starting `error: budget reached:`. `stopped` means the UI stopped it.
+11. `GET /api/log?after=<seq>` returns the terminal lines newer than `seq` (default 0) and the job states:
 
-Job names are `run:<model>`, `estimate`, `evaluate`, and `commit`. Every job runs with `cwd` at the root and the merged env from Inputs 4.
+    ```json
+    {"lines": [{"seq": 41, "job": "run:example-model", "stream": "stdout", "text": "..."}],
+     "last": 41,
+     "jobs": [{"id": "t1", "job": "run:example-model", "state": "running", "code": null}]}
+    ```
 
-## Live records
+    The server keeps one in-memory list of lines for all jobs, at most 5,000, dropping the oldest. `stream` is `cmd`, `stdout`, or `stderr`. The `cmd` line is the full command, logged before the process starts. `seq` counts up from 1 for the life of the server. `state` is `running`, `done`, `failed`, `budget`, or `stopped`. `budget` means the job exited 1 with a stderr line starting `error: budget reached:`. `stopped` means the UI stopped it.
 
-`ui/jobs.py` polls `results/<id>/raw/*.jsonl` every 0.5 seconds while any run job of the id is alive, and once more after the last one exits. It keeps a byte offset per file and reads only up to the last `\n`, so a torn line is never half-read. Each complete line is parsed as `read_raw` does: a line that isn't a JSON object is skipped. Every new record becomes a `record` event, and the model's `in_progress` is recomputed and sent.
+Job names are `run:<model>`, `estimate`, `evaluate`, and `commit`. Every job runs with `cwd` at the root and the merged env from Inputs 4. The registry keys a job by experiment id and name, so a job that belongs to no experiment can use the id `""`.
+
+## Polling
+
+1. Snapshot. The page loads `GET /api/state/<id>` on load, and again every 1.5 seconds while any job of that experiment is alive. The poll that sees the last job end is the final one. With no job alive it loads once and stops.
+2. Log. The page polls `GET /api/log?after=<seq>` every second while any job is alive and every 5 seconds otherwise.
+3. In-progress attempt. For each model with a running `run:<model>` job, the page marks the first attempt with no record, in the loop order of [run.md](run.md#outputs): input in release order, then setup, then attempt number. It is an inference, as `run` doesn't report the attempt it is on.
 
 ## Commit
 
 The commit never touches the working tree, the index, or `HEAD`:
 
-1. `git fetch origin main`. The parent is the tip of `results/<id>` if that branch exists locally, else `origin/main`.
+1. `git fetch origin main`, then `git fetch origin results/<id>`. The parent is `origin/results/<id>` if that fetch succeeds, else `origin/main`.
 2. With `GIT_INDEX_FILE` set to a temporary file: `git read-tree <parent>`, then `git add -- config/experiments/<id>.toml results/<id>`, then `git write-tree`. Only those two paths are ever added.
-3. Preview: the files are `git diff --name-only <parent> <tree>`, and the diffstat is `git diff --stat <parent> <tree>`. No files means 409 "nothing to commit".
-4. Commit: `git commit-tree <tree> -p <parent> -m "Results: experiment <id>"`, `git update-ref refs/heads/results/<id> <commit>`, `git push -u origin results/<id>`.
-5. Pull request: if `gh pr view results/<id> --json url` finds one, return its URL. Else `gh pr create --base main --head results/<id> --title "Results: experiment <id>" --body "<body>"`. The body lists the release, puzzles, models, attempts, and a link to the report path. It carries no attribution line.
+3. Preview: the files are `git diff --name-only <parent> <tree>`, and the diffstat is `git diff --stat <parent> <tree>`. No files and no branch on the remote means 409 "nothing to commit".
+4. Commit, in this order, so a failure at any step can be run again: `git commit-tree <tree> -p <parent> -m "Results: experiment <id>"`, then `git push origin <commit>:refs/heads/results/<id>`, and only after the push succeeds `git update-ref refs/heads/results/<id> <commit>`. With no files but a branch already on the remote, there is no new commit and the step goes straight to the pull request.
+5. Pull request: if `gh pr view results/<id> --json url,state` finds one whose state is `OPEN`, return its URL. A closed or merged pull request doesn't count. With no files and an open pull request, 409 "nothing to commit". Else `gh pr create --base main --head results/<id> --title "Results: experiment <id>" --body "<body>"`. The body lists the release, puzzles, models, attempts, and a link to the report path. It carries no attribution line.
 6. The `gh` binary is `$UI_GH` if set, else `gh`, so tests can stub it.
 
 Every git and gh command is echoed to the terminal as a `commit` job.
@@ -125,10 +135,10 @@ Every git and gh command is echoed to the terminal as a `commit` job.
 
 Two columns. The left column holds five numbered steps. The right column is the terminal, sticky to the viewport height.
 
-1. Shapes. A release picker (default latest), then one card per puzzle in that release: an SVG cube net in solved colours, the puzzle name, and its input count. Click toggles selection. At least one is needed.
+1. Shapes. A release picker (default latest), then one `<button aria-pressed>` card per puzzle in that release: the puzzle name, its input count, and, for an `NxN` name only, an SVG cube net in solved colours with `n` taken from the name. Any other puzzle shows its name with no net. Click toggles selection. At least one is needed.
 2. Models. Grouped by provider in the order anthropic, openai, google, fake. Each group header has a text badge: a coloured circle with the provider's initial. There are no third-party logos. Disabled models show their reason.
 3. Parameters. Experiment id (default `ui-YYYYMMDD-HHMMSS`, editable, with a "Load existing" button that fills the form from `GET /api/experiment/<id>`), attempts (labelled "Attempts per input and setup: sends the same input N times"), retry cap, max output tokens, the three budgets, and "Limit per model" (optional). Buttons: Estimate, Run, Stop. Run first posts the form to `/api/experiment`, then calls `/api/run`.
-4. Progress. A legend, then one accordion per model, inside it one per puzzle, inside that one row per input. Headers show done/total and a count per outcome. Each row has a ring SVG split into `3 × attempts` arcs, in setup order then attempt order, with the input's cube net inside the ring, the input id, the depth, and the validity. Rows render when their accordion first opens. Hovering an arc shows setup, attempt, outcome, and, on invalid inputs, mismatch.
+4. Progress. A legend, then one accordion per model, inside it one per puzzle, inside that one row per input. Headers show done/total and a count per outcome. Each row has a ring SVG split into `3 × attempts` arcs, in setup order then attempt order, with the input's cube net inside the ring, the input id, the depth, and the validity. Rows render when their accordion first opens. Hovering an arc shows setup, attempt, outcome, and, on invalid inputs, mismatch. A later snapshot only adds records, so open accordions stay open.
 5. Evaluate and commit. Evaluate runs the evaluate job and then shows the report path. Commit opens a dialog with the preview's branch, files, and diffstat, and Confirm calls `POST /api/commit` and shows the PR link. Commit is disabled while any job is alive or before the report exists.
 
 Arc colours:
@@ -145,7 +155,7 @@ Arc colours:
 
 Cube net: a state is `6·n·n` characters over `URFDLB`, faces in that order, each face row-major. The net puts U above F, L, F, R, and B in a row, and D below F. Sticker colours: U white, R red, F green, D yellow, L orange, B blue. These colours live in `app.js` only.
 
-Banners: a job in state `failed` shows its last stderr line. A job in state `budget` shows "Budget reached" with a "Raise budget and resume" button that scrolls to the budget fields. Running again posts the form, which the server accepts as `budget_updated`, and resumes. The banner notes that parallel AI models can each pass the experiment budget by one worst-case request, and that "attempts left" in the message counts one AI model's attempts.
+Banners: a job in state `failed` shows its last stderr line. A job in state `budget` shows "Budget reached" and a plain note to raise the budget under Parameters and press Run. Running again posts the form, which the server accepts as `budget_updated`, and resumes. The banner notes that parallel AI models can each pass the experiment budget by one worst-case request, and that "attempts left" in the message counts one AI model's attempts.
 
 ## How to test
 
@@ -154,9 +164,14 @@ Banners: a job in state `failed` shows its last stderr line. A job in state `bud
 1. `.env` parsing: comments, blanks, quotes, and a real env var winning.
 2. The catalogue marks a model with no price, and a model with no key, as disabled, with the reasons above.
 3. `POST /api/experiment` for each of `created`, `unchanged`, `budget_updated`, and 409. On 409 the file is byte-identical afterwards.
-4. A config the server writes loads with `load_experiment_config` and holds `puzzles`.
-5. A POST without the token, or with a foreign `Host`, gets 403. `GET /static/../.env` and `GET /.env` get 404.
-6. The tailer reads a file in two writes, the first ending mid-line, and gives each record once.
-7. A full run through the API on a one-puzzle release: every expected record arrives as an event, `in_progress` ends `null`, and the run job ends `done`.
-8. Commit against a temporary bare remote, with `UI_GH` pointing at a stub script: the branch exists on the remote with only the two paths changed, the working tree and `HEAD` are unchanged, and a second commit with no changes gives 409.
-9. Outcome colours are not tested here. `app.js` keeps the colour table in one object.
+4. `updated` while `results/<id>/experiment.toml` is missing, and a config without `puzzles` comparing equal to the same choice made on the page.
+5. A config the server writes loads with `load_experiment_config` and holds `puzzles`.
+6. A POST without the token, or with a foreign `Host`, gets 403. `GET /static/../.env` and `GET /.env` get 404.
+7. The log keeps only the newest lines at the cap, and `after` returns the newer ones.
+8. A full run through the API on a one-puzzle release: records appear while the run is alive, the snapshot has no `in_progress`, and the run job ends `done`.
+9. Run is refused while evaluate is alive, and evaluate while a run is.
+10. Stop, and stop on server shutdown: a server given SIGTERM leaves no run alive.
+11. Commit against a temporary bare remote, with `UI_GH` pointing at a stub script: the branch exists on the remote with only the two paths changed, the working tree and `HEAD` are unchanged, and a second commit with no changes gives 409.
+12. A failed push and a failed `gh pr create` can each be run again, and only an open pull request counts.
+13. Commit is refused when the report is older than a raw file.
+14. Outcome colours and the in-progress inference are in `app.js` and are not tested here. `app.js` keeps the colour table in one object.

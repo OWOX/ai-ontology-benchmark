@@ -1,6 +1,7 @@
 # Spec: docs/specs/ui.md
-"""Catalogue and experiment config handling. Reads releases/, config/models.toml,
-config/prices.toml, and config/experiments/<id>.toml. Writes only config/experiments/<id>.toml.
+"""Catalogue, experiment config handling, and the live snapshot. Reads releases/,
+config/models.toml, config/prices.toml, config/experiments/<id>.toml, and results/<id>/. Writes
+only config/experiments/<id>.toml.
 """
 
 import json
@@ -13,6 +14,8 @@ from src.config import (DEFAULT_PER_EXPERIMENT_USD, DEFAULT_PER_MODEL_USD, DEFAU
                         RELEASE_PATTERN, load_experiment_config, load_prices)
 from src.release.release import latest_version, parse_version
 from src.run.models import KEY_VARIABLES
+from src.run.prompts import SETUPS
+from src.run.raw import read_raw
 from ui.common import ApiError, check_id
 from ui.tomlw import dumps_config
 
@@ -68,9 +71,8 @@ def catalogue(root: Path, env: dict) -> dict:
             "models": catalogue_models(root, env), "defaults": DEFAULTS}
 
 
-def _number(form: dict, field: str, kind: type, minimum: float, where: dict | None = None):
-    table = form if where is None else where
-    value = table.get(field)
+def _number(form: dict, field: str, kind: type, minimum: float):
+    value = form.get(field)
     ok = isinstance(value, (int, float)) and not isinstance(value, bool)
     if kind is int:
         ok = isinstance(value, int) and not isinstance(value, bool)
@@ -135,23 +137,34 @@ def _without_budget(config: dict) -> dict:
     return {k: v for k, v in config.items() if k != "budget"}
 
 
+def _all_puzzles(root: Path, config: dict) -> dict:
+    """A config with no `puzzles` means every puzzle of its release, so spell that out."""
+    try:
+        return {**config, "puzzles": config.get("puzzles") or release_puzzles(root, config["release"])}
+    except (OSError, KeyError, ValueError):
+        return config
+
+
 def save_experiment(root: Path, form: dict, env: dict) -> dict:
     config = build_config(root, form, env)
     experiment_id = form["id"]
     text = dumps_config(config)
     _check_loadable(experiment_id, text)
     path = root / "config" / "experiments" / f"{experiment_id}.toml"
-    if path.exists():
-        existing = tomllib.loads(path.read_text(encoding="utf-8"))
+    if not path.exists():
+        status = "created"
+    else:
+        existing = _all_puzzles(root, tomllib.loads(path.read_text(encoding="utf-8")))
         new = tomllib.loads(text)
         if existing == new:
             return {"id": experiment_id, "status": "unchanged"}
-        if _without_budget(existing) != _without_budget(new):
+        if not (root / "results" / experiment_id / "experiment.toml").exists():
+            status = "updated"  # nothing has run yet, so the config is still free to change
+        elif _without_budget(existing) == _without_budget(new):
+            status = "budget_updated"
+        else:
             raise ApiError(409, f"experiment {experiment_id} exists with a different config; "
                                 "load it or pick a new id")
-        status = "budget_updated"
-    else:
-        status = "created"
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(f".{path.name}.tmp")
     temp.write_text(text, encoding="utf-8")
@@ -159,21 +172,43 @@ def save_experiment(root: Path, form: dict, env: dict) -> dict:
     return {"id": experiment_id, "status": status}
 
 
-def experiment_path(root: Path, experiment_id: str) -> Path:
-    return root / "config" / "experiments" / f"{check_id(experiment_id)}.toml"
-
-
-def load_form(root: Path, experiment_id: str) -> dict:
-    """The existing config as the form JSON. Raises ApiError(404) when there is no file."""
-    path = experiment_path(root, experiment_id)
+def load_config(root: Path, experiment_id: str) -> dict:
+    """The experiment config, checked. Raises ApiError(404) when there is no file."""
+    path = root / "config" / "experiments" / f"{check_id(experiment_id)}.toml"
     if not path.is_file():
         raise ApiError(404, f"experiment {experiment_id} not found")
     try:
-        config = load_experiment_config(path)
+        return load_experiment_config(path)
     except ValueError as error:
         raise ApiError(400, str(error)) from None
+
+
+def load_form(root: Path, experiment_id: str) -> dict:
+    """The existing config as the form JSON."""
+    config = load_config(root, experiment_id)
     return {"id": experiment_id, "release": config["release"],
             "puzzles": config.get("puzzles") or release_puzzles(root, config["release"]),
             "models": [m["name"] for m in config["models"]], "attempts": config["attempts"],
             "retry_cap": config["retry_cap"], "max_output_tokens": config["max_output_tokens"],
             "budget": config["budget"]}
+
+
+def snapshot(root: Path, experiment_id: str, job_states: dict) -> dict:
+    """Live state of one experiment: its inputs, the raw records so far, and its job states."""
+    config = load_config(root, experiment_id)
+    puzzles = config.get("puzzles") or release_puzzles(root, config["release"])
+    lines = (root / "releases" / config["release"] / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
+    inputs = [row for row in map(json.loads, (ln for ln in lines if ln.strip())) if row["puzzle"] in puzzles]
+    raw_dir = root / "results" / experiment_id / "raw"
+    names = [m["name"] for m in config["models"]]
+    keys = ("model", "input_id", "setup", "attempt_number", "outcome", "mismatch")
+    report = f"results/{experiment_id}/{config['release']}.md"
+    return {
+        "id": experiment_id, "release": config["release"], "setups": list(SETUPS),
+        "attempts": config["attempts"], "models": names,
+        "inputs": [{k: row[k] for k in ("input_id", "puzzle", "scramble_depth", "validity", "state")}
+                   for row in inputs],
+        "records": [{k: r.get(k) for k in keys} for name in names for r in read_raw(raw_dir / f"{name}.jsonl")[0]],
+        "jobs": job_states,
+        "report": report if (root / report).is_file() else None,
+    }

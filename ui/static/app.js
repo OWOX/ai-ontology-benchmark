@@ -30,12 +30,18 @@ const S = {
   inputs: new Map(),       // input_id -> input
   records: new Map(),      // key -> record
   counts: new Map(),       // "model|puzzle" -> {done, total, out: {}}
-  inprog: {},              // model -> attempt | null
-  jobs: {},                // job -> state
+  shape: "",               // identity of the rendered progress tree
+  puzzleList: [],          // puzzles of the loaded experiment, in release order
+  jobs: {},                // job -> state, for the loaded experiment
+  anyAlive: false,         // any job of any experiment is running
+  logAfter: 0,             // highest terminal line seq seen
+  statePoll: null,         // timer of the snapshot poll
   lastErr: {},             // job -> last stderr line
   arcs: new Map(),         // key -> path element
   lastArc: {},             // model -> key painted as in progress
 };
+const STATE_POLL_MS = 1500;
+const LOG_POLL_MS = { busy: 1000, idle: 5000 };
 
 // ---- Small DOM helpers -----------------------------------------------------
 const $ = (id) => document.getElementById(id);
@@ -75,11 +81,6 @@ async function api(method, path, body) {
   const res = await fetch(path, opts);
   let data = null;
   try { data = await res.json(); } catch (e) { /* non-JSON body */ }
-  if (res.status === 403 && data && data.error === "missing or wrong X-Token") {
-    S.stale = true;
-    renderBanners();
-    throw new Error("The server restarted. Reload the page.");
-  }
   if (!res.ok) throw new Error((data && data.error) || `${method} ${path} failed (${res.status})`);
   return data;
 }
@@ -205,20 +206,20 @@ function renderPuzzles() {
   if (!rel) return;
   $("release-info").textContent = `${rel.input_count} inputs in this release`;
   for (const name of rel.puzzles) {
-    const n = Number(name.split("x")[0]) || 2;
-    const counts = rel.input_counts && rel.input_counts[name];
-    const card = el("div", { class: "card", role: "button", tabindex: "0", "aria-pressed": "false" },
-      cubeNet(solvedState(n), { width: 96, height: 72 }),
+    const cube = /^(\d+)x(\d+)$/.exec(name);
+    const n = cube && cube[1] === cube[2] ? Number(cube[1]) : 0;  // a net only for NxN cubes
+    const card = el("button", { type: "button", class: "card", "aria-pressed": "false" },
+      n ? cubeNet(solvedState(n), { width: 96, height: 72 }) : null,
       el("div", { class: "name", text: name }),
-      el("div", { class: "muted small", text: counts != null ? `${counts} inputs` : "" }));
+      el("div", { class: "muted small", text: `${rel.input_counts[name]} inputs` }));
     const toggle = () => {
       if (S.puzzles.has(name)) S.puzzles.delete(name); else S.puzzles.add(name);
       card.classList.toggle("sel", S.puzzles.has(name));
       card.setAttribute("aria-pressed", String(S.puzzles.has(name)));
     };
     card.addEventListener("click", toggle);
-    card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
     card.classList.toggle("sel", S.puzzles.has(name));
+    card.setAttribute("aria-pressed", String(S.puzzles.has(name)));
     box.append(card);
   }
 }
@@ -294,22 +295,21 @@ function readForm() {
 
 function writeForm(f) {
   $("exp-id").value = f.id;
-  if (f.release) { $("release").value = f.release; }
-  setPuzzles(f.puzzles || []);
-  setModels(f.models || []);
-  if (f.attempts != null) $("attempts").value = f.attempts;
-  if (f.retry_cap != null) $("retry-cap").value = f.retry_cap;
-  if (f.max_output_tokens != null) $("max-tokens").value = f.max_output_tokens;
-  const b = f.budget || {};
-  if (b.per_request_usd != null) $("b-request").value = b.per_request_usd;
-  if (b.per_model_usd != null) $("b-model").value = b.per_model_usd;
-  if (b.per_experiment_usd != null) $("b-experiment").value = b.per_experiment_usd;
+  $("release").value = f.release;
+  setPuzzles(f.puzzles);
+  setModels(f.models);
+  $("attempts").value = f.attempts;
+  $("retry-cap").value = f.retry_cap;
+  $("max-tokens").value = f.max_output_tokens;
+  $("b-request").value = f.budget.per_request_usd;
+  $("b-model").value = f.budget.per_model_usd;
+  $("b-experiment").value = f.budget.per_experiment_usd;
 }
 
 // ---- Progress data ---------------------------------------------------------
 function resetProgress() {
-  S.records = new Map(); S.counts = new Map(); S.inprog = {}; S.arcs = new Map();
-  S.lastArc = {}; S.jobs = {}; S.inputs = new Map();
+  S.records = new Map(); S.counts = new Map(); S.arcs = new Map();
+  S.lastArc = {}; S.inputs = new Map();
 }
 
 function countFor(model, puzzle) {
@@ -324,6 +324,7 @@ function addRecord(rec) {
   const key = recKey(rec.model, rec.input_id, rec.setup, rec.attempt_number);
   const c = countFor(rec.model, input.puzzle);
   const old = S.records.get(key);
+  if (old && old.outcome === rec.outcome) return;
   if (old) { c.done--; c.out[old.outcome]--; }
   S.records.set(key, rec);
   c.done++; c.out[rec.outcome] = (c.out[rec.outcome] || 0) + 1;
@@ -331,44 +332,58 @@ function addRecord(rec) {
   updateHeaders(rec.model, input.puzzle);
 }
 
-function setInProgress(model, attempt) {
-  const prev = S.lastArc[model];
-  S.inprog[model] = attempt;
-  S.lastArc[model] = attempt ? recKey(model, attempt.input_id, attempt.setup, attempt.attempt_number) : null;
-  if (prev) paintArc(prev);
-  if (S.lastArc[model]) paintArc(S.lastArc[model]);
-}
-
-// Events for the target id that arrive while its snapshot is in flight.
-let pendingLoad = null; // {id, events: []}
-
-function applyEvent(name, ev) {
-  if (name === "record") addRecord(ev.record);
-  else if (name === "in_progress") setInProgress(ev.model, ev.attempt);
-  else if (name === "job") onJob(ev);
-}
-
-async function loadState(id) {
-  const pending = { id, events: [] };
-  pendingLoad = pending;
-  let snap;
-  try {
-    snap = await api("GET", "/api/state/" + encodeURIComponent(id));
-  } catch (e) {
-    if (pendingLoad === pending) pendingLoad = null;
-    throw e;
+// The attempt a running model is on: the first without a record, in run's loop order
+// (input, setup, attempt number). It is an inference; run reports no such thing.
+function firstPending(model) {
+  for (const input of S.snap.inputs) {
+    for (const setup of S.snap.setups) {
+      for (let a = 1; a <= S.snap.attempts; a++) {
+        const key = recKey(model, input.input_id, setup, a);
+        if (!S.records.has(key)) return key;
+      }
+    }
   }
-  if (pendingLoad !== pending) return; // a newer load superseded this one
-  resetProgress();
-  S.id = id; S.snap = snap;
-  for (const i of snap.inputs) S.inputs.set(i.input_id, i);
+  return null;
+}
+
+function markInProgress() {
+  for (const model of S.snap.models) {
+    const prev = S.lastArc[model];
+    S.lastArc[model] = S.jobs["run:" + model] === "running" ? firstPending(model) : null;
+    if (prev) paintArc(prev);
+    if (S.lastArc[model]) paintArc(S.lastArc[model]);
+  }
+}
+
+// Fetch the snapshot and apply it. The first load of an experiment, or one whose inputs changed,
+// rebuilds the progress tree; later loads only add records, so open accordions stay open.
+async function loadState(id) {
+  const snap = await api("GET", "/api/state/" + encodeURIComponent(id));
+  const shape = JSON.stringify([id, snap.release, snap.models, snap.attempts, snap.inputs.length]);
+  const rebuild = shape !== S.shape;
+  if (rebuild) {
+    resetProgress();
+    S.shape = shape; S.id = id;
+    S.puzzleList = [...new Set(snap.inputs.map((i) => i.puzzle))];
+    for (const i of snap.inputs) S.inputs.set(i.input_id, i);
+  }
+  S.snap = snap;
   S.jobs = { ...snap.jobs };
-  renderProgress();
+  if (rebuild) renderProgress();
   for (const r of snap.records) addRecord(r);
-  for (const [m, a] of Object.entries(snap.in_progress || {})) setInProgress(m, a);
-  pendingLoad = null;
-  for (const [name, ev] of pending.events) applyEvent(name, ev);
+  markInProgress();
+  renderBanners();
   refreshControls();
+  scheduleState();
+}
+
+// Poll the snapshot every 1.5 s while a job of the experiment is alive. The poll that sees the
+// last job finish is the final one.
+function scheduleState() {
+  clearTimeout(S.statePoll);
+  S.statePoll = anyAlive() ? setTimeout(() => {
+    loadState(S.id).catch((e) => { say("form-msg", e.message, "err"); scheduleState(); });
+  }, STATE_POLL_MS) : null;
 }
 
 // ---- Progress rendering ----------------------------------------------------
@@ -377,10 +392,8 @@ function chip(outcome, n) {
   return el("span", { title: outcome }, i, String(n));
 }
 
-function headerText(model, puzzle) {
-  const total = (puzzle ? S.snap.inputs.filter((i) => i.puzzle === puzzle).length : 0) * S.snap.setups.length * S.snap.attempts;
-  const c = countFor(model, puzzle);
-  return { total, c };
+function puzzleTotal(puzzle) {
+  return S.snap.inputs.filter((i) => i.puzzle === puzzle).length * S.snap.setups.length * S.snap.attempts;
 }
 
 function fillCounts(box, done, total, out) {
@@ -390,14 +403,14 @@ function fillCounts(box, done, total, out) {
 
 function updateHeaders(model, puzzle) {
   const pb = document.querySelector(`[data-counts="${CSS.escape(model + "|" + puzzle)}"]`);
-  if (pb) { const { total, c } = headerText(model, puzzle); fillCounts(pb, c.done, total, c.out); }
+  if (pb) { const c = countFor(model, puzzle); fillCounts(pb, c.done, puzzleTotal(puzzle), c.out); }
   const mb = document.querySelector(`[data-counts="${CSS.escape(model)}"]`);
   if (mb) {
     let done = 0, total = 0; const out = {};
-    for (const p of S.snap.puzzles) {
-      const h = headerText(model, p);
-      done += h.c.done; total += h.total;
-      for (const [o, n] of Object.entries(h.c.out)) out[o] = (out[o] || 0) + n;
+    for (const p of S.puzzleList) {
+      const c = countFor(model, p);
+      done += c.done; total += puzzleTotal(p);
+      for (const [o, n] of Object.entries(c.out)) out[o] = (out[o] || 0) + n;
     }
     fillCounts(mb, done, total, out);
   }
@@ -425,11 +438,10 @@ function renderProgress() {
   const root = $("progress");
   root.className = "";
   root.replaceChildren();
-  S.snap.puzzles = [...new Set(S.snap.inputs.map((i) => i.puzzle))];
   for (const model of S.snap.models) {
     const mCounts = el("span", { class: "counts", "data-counts": model });
     const mDet = el("details", {}, el("summary", {}, el("strong", { text: model }), mCounts));
-    for (const puzzle of S.snap.puzzles) {
+    for (const puzzle of S.puzzleList) {
       const pCounts = el("span", { class: "counts", "data-counts": `${model}|${puzzle}` });
       const body = el("div", { class: "body" });
       const pDet = el("details", {}, el("summary", {}, el("span", { text: puzzle }), pCounts), body);
@@ -440,30 +452,23 @@ function renderProgress() {
       mDet.append(pDet);
     }
     root.append(mDet);
-    S.snap.puzzles.forEach((p) => updateHeaders(model, p));
+    S.puzzleList.forEach((p) => updateHeaders(model, p));
   }
-  renderBanners();
 }
 
 function renderBanners() {
   const box = $("banners");
   box.replaceChildren();
-  if (S.stale) box.append(el("div", { class: "banner" }, el("strong", { text: "The server restarted. Reload the page." })));
   for (const [job, state] of Object.entries(S.jobs)) {
     if (state === "failed") {
       box.append(el("div", { class: "banner" }, el("strong", { text: `${job} failed` }),
         el("div", {}, el("code", { text: S.lastErr[job] || "no error output" }))));
     } else if (state === "budget") {
-      const btn = el("button", { type: "button", text: "Raise budget and resume" });
-      btn.addEventListener("click", () => {
-        $("b-experiment").scrollIntoView({ behavior: "smooth", block: "center" });
-        $("b-experiment").focus();
-      });
       box.append(el("div", { class: "banner budget" },
         el("strong", { text: `Budget reached (${job})` }),
         el("div", { class: "small", text: S.lastErr[job] || "" }),
-        el("div", { class: "small muted", text: "Parallel AI models can each pass the experiment budget by one worst-case request. \"Attempts left\" in the message counts one AI model's attempts." }),
-        btn));
+        el("div", { class: "small", text: "To resume, raise the budget under Parameters and press Run." }),
+        el("div", { class: "small muted", text: "Parallel AI models can each pass the experiment budget by one worst-case request. \"Attempts left\" in the message counts one AI model's attempts." })));
     }
   }
 }
@@ -498,6 +503,7 @@ function onEstimate() {
     const { form } = await postForm();
     await loadState(form.id);
     await api("POST", "/api/estimate", { id: form.id });
+    await loadState(form.id);
     say("form-msg", "Estimate started; see the terminal.", "ok");
   });
 }
@@ -513,6 +519,7 @@ function onRun() {
     const { form, status } = await postForm();
     await loadState(form.id);
     await api("POST", "/api/run", { id: form.id, limit });
+    await loadState(form.id);
     say("form-msg", `Experiment ${status}; run started.`, "ok");
   });
 }
@@ -538,6 +545,7 @@ function onLoad() {
 function onEvaluate() {
   return guarded("commit-result", async () => {
     await api("POST", "/api/evaluate", { id: S.id });
+    await loadState(S.id);
   });
 }
 
@@ -563,6 +571,7 @@ async function onConfirm() {
   $("btn-confirm").disabled = true;
   try {
     const r = await api("POST", "/api/commit", { id: S.id });
+    await loadState(S.id);
     $("commit-dialog").close();
     const out = $("commit-result");
     out.className = "msg ok";
@@ -587,36 +596,26 @@ function termLine(ev) {
   if (atBottom) term.scrollTop = term.scrollHeight;
 }
 
-// ---- Event stream ----------------------------------------------------------
-function onJob(ev) {
-  S.jobs[ev.job] = ev.state;
-  renderBanners();
-  refreshControls();
-  if (ev.job === "evaluate" && ev.state === "done") loadState(S.id).catch((e) => say("commit-result", e.message, "err"));
-}
-
-function openEvents() {
+// ---- Terminal log poll -----------------------------------------------------
+async function pollLog() {
   const conn = $("conn");
-  const es = new EventSource("/api/events");
-  es.onopen = () => {
+  try {
+    const data = await api("GET", "/api/log?after=" + S.logAfter);
     conn.textContent = "live"; conn.className = "conn ok";
-    if (S.id) loadState(S.id).catch(() => {});
-  };
-  es.onerror = () => { conn.textContent = "reconnecting"; conn.className = "conn bad"; };
-  const on = (name, fn) => es.addEventListener(name, (m) => {
-    let ev; try { ev = JSON.parse(m.data); } catch (e) { return; }
-    fn(ev);
-  });
-  on("terminal", (ev) => {
-    termLine(ev);
-    if (ev.stream === "stderr") S.lastErr[ev.job] = ev.text;
-  });
-  for (const name of ["record", "in_progress", "job"]) {
-    on(name, (ev) => {
-      if (pendingLoad && ev.id === pendingLoad.id) pendingLoad.events.push([name, ev]);
-      else if (ev.id === S.id && S.snap) applyEvent(name, ev);
-    });
+    for (const line of data.lines) {
+      termLine(line);
+      if (line.stream === "stderr") S.lastErr[line.job] = line.text;
+    }
+    S.logAfter = data.last;
+    S.anyAlive = data.jobs.some((j) => j.state === "running");
+    // A job of the loaded experiment started elsewhere (the CLI cannot, but a second tab can).
+    if (S.id && !S.statePoll && data.jobs.some((j) => j.id === S.id && j.state === "running")) {
+      loadState(S.id).catch(() => {});
+    }
+  } catch (e) {
+    conn.textContent = "reconnecting"; conn.className = "conn bad";
   }
+  setTimeout(pollLog, S.anyAlive ? LOG_POLL_MS.busy : LOG_POLL_MS.idle);
 }
 
 // ---- Startup ---------------------------------------------------------------
@@ -641,7 +640,7 @@ async function init() {
   } catch (e) {
     say("form-msg", "Could not load catalogue: " + e.message, "err");
   }
-  openEvents();
+  pollLog();
 }
 
 init();

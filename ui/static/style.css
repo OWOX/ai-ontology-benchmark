@@ -30,7 +30,7 @@ button.primary:hover:not(:disabled) { background: #284fb0; }
 button.danger { color: var(--danger); border-color: var(--danger); }
 button.small { padding: 2px 8px; font-size: 12px; }
 .cards { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
-.card { border: 2px solid var(--line); border-radius: var(--radius); padding: 8px; cursor: pointer; text-align: center; min-width: 120px; background: #fff; user-select: none; }
+.card { font: inherit; color: inherit; border: 2px solid var(--line); border-radius: var(--radius); padding: 8px; cursor: pointer; text-align: center; min-width: 120px; background: #fff; user-select: none; }
 .card.sel { border-color: var(--accent); background: #eef3ff; }
 .card .name { font-weight: 600; }
 .provider { margin-bottom: 8px; }
