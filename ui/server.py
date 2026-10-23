@@ -56,7 +56,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if not self.host_ok():
                 raise ApiError(403, "bad Host header")
-            if method == "POST" or path.startswith("/api/commit/") or path == "/api/secrets":
+            guarded = path.strip("/").split("/")[:2] in (["api", "commit"], ["api", "secrets"])  # as app.get routes
+            if method == "POST" or guarded:
                 if not hmac.compare_digest(self.headers.get("X-Token", "").encode(), app.token.encode()):
                     raise ApiError(403, "missing or wrong X-Token")
             if method == "POST":

@@ -160,6 +160,9 @@ def test_secret_routes(server, monkeypatch):
                                   ("POST", "/api/secrets/import", {"text": f"OPENAI_API_KEY={KEY}"})):
         assert call(server, method, path, payload, token=False)[0] == 403
     assert not (server.root / "secrets").exists()
+    for path in ("/api/secrets/", "//api/secrets", "/api/secrets//"):
+        assert call(server, "GET", path, token=False)[0] == 403, path
+    assert call(server, "GET", "/api/commit/t1/", token=False)[0] == 403
     status, data = call(server, "POST", "/api/secrets", body)
     assert status == 200 and data["anthropic"]["tail"] == KEY[-4:]
     assert call(server, "POST", "/api/secrets/import", {"text": f"OPENAI_API_KEY={KEY}"}) == (200, {"saved": ["openai"]})
