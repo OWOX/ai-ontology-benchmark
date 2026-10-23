@@ -49,7 +49,7 @@ src/
   release/         freezes inputs, prompts, and assessment into a release
   run/             plays a release against each AI model under the three setups
   evaluate/        computes the metrics and writes the experiment report
-ui/                local web page to run an experiment (python -m ui.server)
+ui/                local web page to run an experiment (ui/start.sh)
 prompts/           working templates: no_model, descriptive, prescriptive
 releases/          one read-only folder per release version
 results/           one folder per experiment: raw records and one report per release

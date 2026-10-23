@@ -13,7 +13,7 @@ One spec per script. Each spec lists the script's inputs, its outputs, and how t
 
 ## Getting results
 
-1. Install with `pip install -e .`. Add the API keys in the UI's Setup step, or, in a terminal, export `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GOOGLE_API_KEY`.
+1. Run `./ui/start.sh`. It creates `.venv` and installs on the first run, then opens the UI server. Add the API keys in the Setup step and run everything else from the page. The CLI commands below stay available for terminal use, with `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GOOGLE_API_KEY` exported.
 2. Make a release. The script commits the new release folder and tags it `release-1.0.0` locally:
    ```
    python -m src.release.release --bump major --note "First input set"
@@ -33,7 +33,7 @@ One spec per script. Each spec lists the script's inputs, its outputs, and how t
    python -m src.release.release --bump patch --note "Fix: ..."
    python -m src.evaluate.evaluate --experiment <id> --release 1.0.1
    ```
-6. Running from the UI: `python -m ui.server`, then open the printed URL.
+6. Run `./ui/start.sh`, add the keys in the Setup step, and run everything else from the page, then open the printed URL.
 
 ## Specs
 
