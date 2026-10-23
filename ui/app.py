@@ -124,6 +124,9 @@ class App:
 
     def post(self, path: str, body: dict) -> dict:
         if path == "/api/experiment":
+            experiment_id = body.get("id")
+            if isinstance(experiment_id, str) and self.jobs.alive(experiment_id):
+                raise ApiError(409, f"a job of experiment {experiment_id} is running; stop it first")
             return experiments.save_experiment(self.root, body, merged_env(self.root))
         if path == "/api/secrets":
             provider = body.get("provider")

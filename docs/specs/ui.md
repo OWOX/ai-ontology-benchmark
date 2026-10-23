@@ -79,7 +79,8 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
    2. A file exists and equals the new config: write nothing. Status `unchanged`. A missing `puzzles` in the file counts as every puzzle of its release, so a config made on the command line compares equal to the same choice made on the page.
    3. A file exists, differs, and `results/<id>/experiment.toml` does not exist, so nothing has run: write it. Status `updated`.
    4. A file exists, `results/<id>/experiment.toml` exists, and the config differs only in `[budget]`: write it. Status `budget_updated`.
-   5. Any other difference once `results/<id>/experiment.toml` exists: 409, "experiment <id> exists with a different config; load it or pick a new id". Nothing is written.
+   5. A job of the id is alive: 409, "a job of experiment <id> is running; stop it first", because `run` re-reads the config bytes after loading them. Nothing is written.
+   6. Any other difference once `results/<id>/experiment.toml` exists: 409, "experiment <id> exists with a different config; load it or pick a new id". Nothing is written.
 
    It returns `{"id": "...", "status": "..."}`. A disabled model, an unknown release, or a puzzle that isn't in the release gives 400.
 4. `GET /api/state/<id>` returns the live snapshot:

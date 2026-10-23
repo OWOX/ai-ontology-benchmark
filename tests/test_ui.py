@@ -231,6 +231,15 @@ def test_experiment_updated_before_first_run_and_missing_puzzles(server):
     assert call(server, "POST", "/api/experiment", dict(FORM, attempts=3))[0] == 409
 
 
+def test_save_refused_while_a_job_of_the_experiment_is_alive(server):
+    call(server, "POST", "/api/experiment", FORM)
+    (job,) = server.app.jobs.register("t1", ["run:example-model"])
+    status, data = call(server, "POST", "/api/experiment", dict(FORM, attempts=2))
+    assert status == 409 and data["error"] == "a job of experiment t1 is running; stop it first"
+    server.app.jobs.finish(job, 0)
+    assert call(server, "POST", "/api/experiment", dict(FORM, attempts=2))[0] == 200
+
+
 def test_written_config_loads_with_puzzles(server):
     call(server, "POST", "/api/experiment", FORM)
     path = server.root / "config" / "experiments" / "t1.toml"
