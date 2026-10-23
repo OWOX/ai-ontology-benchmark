@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from src.config import EXPERIMENT_ID_PATTERN
+from src.run.models import KEY_VARIABLES
 
 
 class ApiError(Exception):
@@ -25,7 +26,8 @@ def check_id(experiment_id: object) -> str:
 
 
 def merged_env(root: Path) -> dict[str, str]:
-    """The saved API keys under os.environ, so a real env var wins. Goes to subprocesses only."""
+    """The saved API keys under os.environ, so a real, non-empty env var wins. Goes to subprocesses only."""
     from ui import secrets  # here, because ui.secrets imports ApiError from this module
 
-    return {**secrets.env(root), **os.environ}
+    real = {name: value for name, value in os.environ.items() if value or name not in KEY_VARIABLES.values()}
+    return {**secrets.env(root), **real}

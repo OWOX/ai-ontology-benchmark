@@ -119,9 +119,7 @@ def test_secret_files_and_env(tmp_path, monkeypatch):
     assert json.loads(path.read_text()) == {"api_key": KEY}
     assert folder.stat().st_mode & 0o777 == 0o700 and path.stat().st_mode & 0o777 == 0o600
     key_store.save(tmp_path, "anthropic", "second-key")
-    backup = folder / "anthropic.json.bak"
-    assert json.loads(backup.read_text()) == {"api_key": KEY} and backup.stat().st_mode & 0o777 == 0o600
-    assert [p.name for p in folder.iterdir() if p.name.endswith(".tmp")] == []
+    assert [p.name for p in folder.iterdir()] == ["anthropic.json"]
     assert merged_env(tmp_path)["ANTHROPIC_API_KEY"] == "second-key"
     info = key_store.inspect(tmp_path)["anthropic"]
     assert info == {"variable": "ANTHROPIC_API_KEY", "configured": True, "tail": "-key", "source": "file",
@@ -132,13 +130,20 @@ def test_secret_files_and_env(tmp_path, monkeypatch):
     assert info["source"] == "env" and info["tail"] == "9999"
     monkeypatch.delenv("ANTHROPIC_API_KEY")
     key_store.clear(tmp_path, "anthropic")
-    assert not path.exists() and backup.exists()
+    assert list(folder.iterdir()) == []
     assert key_store.inspect(tmp_path)["anthropic"]["source"] == "missing"
     for bad in ("", "  ", "two words", None):
         with pytest.raises(key_store.ApiError, match="api_key"):
             key_store.save(tmp_path, "openai", bad)
     with pytest.raises(key_store.ApiError, match="provider"):
         key_store.save(tmp_path, "nope", KEY)
+
+
+def test_empty_env_var_does_not_hide_a_saved_key(tmp_path, monkeypatch):
+    key_store.save(tmp_path, "anthropic", KEY)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    assert merged_env(tmp_path)["ANTHROPIC_API_KEY"] == KEY
+    assert key_store.inspect(tmp_path)["anthropic"]["source"] == "file"
 
 
 def test_secret_import_parsing(tmp_path, monkeypatch):

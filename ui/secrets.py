@@ -43,7 +43,7 @@ def inspect(root: Path) -> dict:
     result = {}
     for provider, variable in KEY_VARIABLES.items():
         stored = read_key(file_of(root, provider))
-        from_env = os.environ.get(variable, "")
+        from_env = os.environ.get(variable, "").strip()
         key = from_env or stored
         source = "env" if from_env else "file" if stored else "missing"
         result[provider] = {"variable": variable, "configured": bool(key), "tail": key[-4:], "source": source,
@@ -61,8 +61,6 @@ def save(root: Path, provider: object, api_key: object) -> None:
         raise ApiError(400, "field 'api_key' must not contain whitespace")
     folder(root).mkdir(mode=0o700, exist_ok=True)
     os.chmod(folder(root), 0o700)
-    if path.is_file():
-        write_private(path.with_name(path.name + ".bak"), path.read_text(encoding="utf-8"))
     write_private(path, json.dumps({"api_key": key}) + "\n")
 
 
