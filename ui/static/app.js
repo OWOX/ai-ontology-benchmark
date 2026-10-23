@@ -40,6 +40,7 @@ const S = {
   arcs: new Map(),         // key -> path element
   lastArc: {},             // model -> key painted as in progress
   project: null,           // last /api/project
+  logTimer: null,          // timer of the log poll
   projRunning: new Set(),  // job names running at the last log poll
 };
 const STATE_POLL_MS = 1500;
@@ -635,10 +636,15 @@ function renderProject() {
   for (const id of ["btn-install", "btn-tests"]) $(id).disabled = busy;
 }
 
-// Start a project job; on install, release, or push ending, refresh the project and the catalogue.
+// Start a project job. Mark it running and poll the log at once, so a job that ends within
+// seconds is still seen to end and the refresh in pollLog runs.
 function projectJob(msgId, path, body, text) {
   return guarded(msgId, async () => {
     await api("POST", path, body);
+    S.projRunning.add(path.slice("/api/".length));
+    S.anyAlive = true;
+    clearTimeout(S.logTimer);
+    S.logTimer = setTimeout(pollLog, 0);
     say(msgId, text, "ok");
   });
 }
@@ -726,7 +732,7 @@ async function pollLog() {
     S.anyAlive = data.jobs.some((j) => j.state === "running");
     const running = new Set(data.jobs.filter((j) => j.state === "running").map((j) => j.job));
     const ended = ["install", "release", "push"].some((n) => S.projRunning.has(n) && !running.has(n));
-    S.projRunning = running;
+    S.projRunning = new Set([...running]);
     if (ended) afterProjectJob();
     renderProject();
     // A job of the loaded experiment started elsewhere (the CLI cannot, but a second tab can).
@@ -736,7 +742,8 @@ async function pollLog() {
   } catch (e) {
     conn.textContent = "reconnecting"; conn.className = "conn bad";
   }
-  setTimeout(pollLog, S.anyAlive ? LOG_POLL_MS.busy : LOG_POLL_MS.idle);
+  clearTimeout(S.logTimer);
+  S.logTimer = setTimeout(pollLog, S.anyAlive ? LOG_POLL_MS.busy : LOG_POLL_MS.idle);
 }
 
 // ---- Startup ---------------------------------------------------------------
