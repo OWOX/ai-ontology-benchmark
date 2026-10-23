@@ -33,7 +33,7 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
 
 In `results/<ID>/`:
 
-1. `experiment.toml`: a copy of the experiment config, written on the first run. When a later run's config differs only in `[budget]`, `run` replaces the copy, so the report shows the budget in force.
+1. `experiment.toml`: a copy of the experiment config, written on the first run, atomically: a temporary file in the same folder, then `os.replace`, so AI models run at the same time never read half a file. When a later run's config differs only in `[budget]`, `run` replaces the copy, so the report shows the budget in force.
 2. `raw/<model name>.jsonl`: one file per AI model. `run` only appends to it, one JSON line per attempt, flushed after each line.
 
 Loop order: for each input, for each AI model, for each setup (`no_model`, `descriptive`, `prescriptive`), for attempt number 1 to `attempts`:

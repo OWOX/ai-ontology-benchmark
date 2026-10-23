@@ -8,6 +8,7 @@ and appends to results/<ID>/raw/<model name>.jsonl.
 import argparse
 import hashlib
 import json
+import os
 import sys
 import tomllib
 from collections import Counter
@@ -184,7 +185,9 @@ def run(args: argparse.Namespace) -> int:
         (results / "raw").mkdir(parents=True, exist_ok=True)
         copy = results / "experiment.toml"
         if not copy.exists() or copy.read_bytes() != config_path.read_bytes():
-            copy.write_bytes(config_path.read_bytes())  # first run, or only [budget] changed
+            temp = copy.with_name(f".experiment.toml.{os.getpid()}.tmp")  # atomic: models started together
+            temp.write_bytes(config_path.read_bytes())  # never read half a file
+            os.replace(temp, copy)  # first run, or only [budget] changed
     outcomes: Counter = Counter()
     for left, (row, model, setup, number) in zip(range(len(pending), 0, -1), pending):
         prompt = build_prompt(folder / "prompts", row, setup)
