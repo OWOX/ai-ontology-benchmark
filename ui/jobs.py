@@ -19,8 +19,8 @@ STOP_WAIT_S = 10.0
 
 
 class Job:
-    def __init__(self, experiment_id: str, name: str, inline: bool = False) -> None:
-        self.experiment_id, self.name, self.inline = experiment_id, name, inline
+    def __init__(self, experiment_id: str, name: str, inline: bool = False, exclusive: bool = False) -> None:
+        self.experiment_id, self.name, self.inline, self.exclusive = experiment_id, name, inline, exclusive
         self.state, self.code = "running", None
         self.proc: subprocess.Popen | None = None
         self.stopped = self.budget = False
@@ -65,15 +65,16 @@ class Jobs:
         """Register running jobs. The checks and the inserts happen under one lock hold.
         An exclusive job is refused while any job of any experiment is running."""
         with self.lock:
-            if exclusive and any(j.state == "running" for j in self.jobs.values()):
-                raise ApiError(409, "another job is running; wait for it or stop it first")
+            running = [j for j in self.jobs.values() if j.state == "running"]
+            if running and (exclusive or any(j.exclusive for j in running)):
+                raise ApiError(409, f"job {running[0].name} is running; wait for it or stop it first")
             mine = [j for j in self.jobs.values() if j.experiment_id == experiment_id and j.state == "running"]
             for job in mine:
                 if job.name in names:
                     raise ApiError(409, f"job {job.name} of experiment {experiment_id} is already running")
                 if job.name.startswith(blocked_by):
                     raise ApiError(409, f"job {job.name} of experiment {experiment_id} is alive")
-            made = [Job(experiment_id, name, inline) for name in names]
+            made = [Job(experiment_id, name, inline, exclusive) for name in names]
             for job in made:
                 self.jobs[(experiment_id, job.name)] = job
         return made

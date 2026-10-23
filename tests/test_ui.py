@@ -528,10 +528,17 @@ def test_mutating_jobs_wait_for_any_job(server, spawned):
 def test_push_creates_then_reuses_pull_request(server, gh):
     on_branch(server, "feat")
     git(server.root, "tag", "v-test")
+    git(server.root, "tag", "release-9.9.9")  # reachable from HEAD
+    git(server.root, "checkout", "-q", "-b", "other", "main")
+    (server.root / "o.txt").write_text("o")
+    commit_all(server.root, "other")
+    git(server.root, "tag", "release-8.8.8")  # on another branch only
+    git(server.root, "checkout", "-q", "feat")
     status, result = call(server, "POST", "/api/push", {})
     assert status == 200 and result == {"branch": "feat", "pr_url": "https://example.test/pr/1"}
     assert git(server.root, "ls-remote", "origin", "refs/heads/feat")
-    assert git(server.root, "ls-remote", "--tags", "origin", "v-test")
+    tags = git(server.root, "ls-remote", "--tags", "origin")
+    assert "release-9.9.9" in tags and "v-test" not in tags and "release-8.8.8" not in tags
     log = (gh / "gh.log").read_text()
     assert "pr create --base main --head feat --fill" in log and "Generated" not in log
     assert job_state_of(server, "push") == "done"
@@ -542,3 +549,18 @@ def test_push_creates_then_reuses_pull_request(server, gh):
 
 def job_state_of(srv, name):
     return next(j["state"] for j in call(srv, "GET", "/api/log")[1]["jobs"] if j["job"] == name)
+
+
+def test_exclusive_job_blocks_everything_and_release_needs_clean_tree(server, spawned):
+    on_branch(server, "feat")
+    call(server, "POST", "/api/experiment", FORM)
+    (server.root / "stray.txt").write_text("x")
+    status, data = call(server, "POST", "/api/release", {"bump": "patch", "note": "x"})
+    assert status == 409 and "stray.txt" in data["error"] and spawned == []
+    (server.root / "stray.txt").unlink()
+    jobs = server.app.jobs
+    jobs.register("", ["install"], exclusive=True)
+    for path, body in (("/api/run", {"id": "t1"}), ("/api/estimate", {"id": "t1"}),
+                       ("/api/evaluate", {"id": "t1"}), ("/api/dry-run", {"id": "t1"}),
+                       ("/api/tests", {})):
+        assert call(server, "POST", path, body)[0] == 409, path

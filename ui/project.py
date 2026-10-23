@@ -28,6 +28,15 @@ def check_branch(root: Path) -> str:
     return branch
 
 
+def check_clean(root: Path) -> None:
+    """409 naming the changed paths, because release commits and fails on a dirty tree."""
+    out = sh(root, ["git", "status", "--porcelain"], lambda s, t: None)
+    paths = [line[3:] for line in out.stdout.splitlines()]
+    if paths:
+        more = f", and {len(paths) - 10} more" if len(paths) > 10 else ""
+        raise ApiError(409, f"commit or remove these first: {', '.join(paths[:10])}{more}")
+
+
 def installed(module: str) -> bool:
     try:
         return importlib.util.find_spec(module) is not None
@@ -48,7 +57,9 @@ def push(root: Path, emit: Emit) -> dict:
     """Push the branch and the tags, then return the open pull request or make one."""
     branch = check_branch(root)
     sh(root, ["git", "push", "-u", "origin", branch], emit)
-    sh(root, ["git", "push", "origin", "--tags"], emit)
+    tags = sh(root, ["git", "tag", "--merged", branch, "--list", "release-*"], emit).stdout.split()
+    if tags:
+        sh(root, ["git", "push", "origin", *tags], emit)
     url = open_pr_url(root, branch, emit)
     if not url:
         gh = merged_env(root).get("UI_GH") or "gh"

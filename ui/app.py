@@ -53,6 +53,7 @@ class App:
         if not isinstance(note, str) or not note.strip():
             raise ApiError(400, "field 'note' must not be blank")
         project.check_branch(self.root)
+        project.check_clean(self.root)
         return self.project_job("release", ["src.release.release", "--bump", bump, "--note", note.strip()])
 
     def push(self) -> dict:

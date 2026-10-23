@@ -117,9 +117,9 @@ Project jobs belong to no experiment and use the id `""`. Their names are `insta
 14. `POST /api/install` starts `python -u -m pip install -e .[test]`, with `.[test]` as one argument.
 15. `POST /api/tests` starts `python -u -m pytest -q -p no:cacheprovider`.
 16. `POST /api/release {"bump", "note"}` starts `python -u -m src.release.release --bump <bump> --note <note>`. A `bump` that is not `major`, `minor`, or `patch`, or a blank `note`, gives 400.
-17. `POST /api/push` runs `git push -u origin <branch>`, then `git push origin --tags`, then finds the open pull request with `gh pr view` or makes one with `gh pr create --base main --head <branch> --fill`, and returns `{"branch", "pr_url"}`. It adds no attribution. It runs inline, like commit.
+17. `POST /api/push` runs `git push -u origin <branch>`, then `git push origin <tag>...` for the `release-*` tags reachable from the branch (`git tag --merged <branch> --list 'release-*'`; skipped when there are none), then finds the open pull request with `gh pr view` or makes one with `gh pr create --base main --head <branch> --fill`, and returns `{"branch", "pr_url"}`. It adds no attribution. It runs inline, like commit.
 18. `POST /api/dry-run {"id"}` starts `python -u -m src.run.run --experiment <id> --dry-run`.
-19. Release and push give 409 when the branch is `main` or HEAD is detached. Install, release, and push give 409 while any job of any experiment, or any project job, is running. `tests` and `dry-run` give 409 only while the same job is running.
+19. Release and push give 409 when the branch is `main` or HEAD is detached. Install, release, and push give 409 while any job of any experiment, or any project job, is running, and while one of them runs every other job gives 409. Release also gives 409, naming up to 10 paths, when `git status --porcelain` is not empty. `tests` and `dry-run` give 409 only while the same job is running.
 
 Job names are `run:<model>`, `estimate`, `dry-run`, `evaluate`, and `commit`, plus the project jobs above. Every job runs with `cwd` at the root and the merged env from Inputs 4. The registry keys a job by experiment id and name, so a job that belongs to no experiment can use the id `""`.
 
