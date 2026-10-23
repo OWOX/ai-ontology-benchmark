@@ -33,7 +33,7 @@ One spec per script. Each spec lists the script's inputs, its outputs, and how t
    python -m src.release.release --bump patch --note "Fix: ..."
    python -m src.evaluate.evaluate --experiment <id> --release 1.0.1
    ```
-6. Run `./ui/start.sh`, add the keys in the Setup step, and run everything else from the page, then open the printed URL.
+6. Steps 2 to 5 can also be done from the page opened in step 1.
 
 ## Specs
 

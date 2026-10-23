@@ -1,6 +1,6 @@
 # ui
 
-Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/common.py`, `ui/tomlw.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/style.css`, `ui/start.sh`, `config/models.toml`.
+Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/style.css`, `ui/start.sh`, `config/models.toml`.
 
 Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments. Later updates go through the Install button.
 
@@ -38,7 +38,7 @@ The page polls. The server has no event stream.
    ```
 
 3. `config/prices.toml`. A catalogue model with no price there is shown disabled with the reason "no price in config/prices.toml".
-4. API keys, one provider each for `src.run.models.KEY_VARIABLES`. A key is stored in `secrets/<provider>.json` as `{"api_key": "..."}`. The folder has mode 0700 and each file 0600, written atomically (a temp file in the folder, then replace). Saving over an existing key first copies the old file to `<provider>.json.bak`, and clearing deletes the file but keeps the `.bak`. The server merges the saved keys under `os.environ`, so a real env var wins and the file is then ignored. The merged env goes to subprocesses only. The page gets only whether a key is set, where it comes from (`env`, `file`, or `missing`), and its last 4 characters, never a whole key. A model whose provider key is missing is shown disabled with the reason "no API key: add it in Setup". The `fake` provider needs no key. There is no `.env` support. Terminal users export the variables themselves.
+4. API keys, one provider each for `src.run.models.KEY_VARIABLES`. A key is stored in `secrets/<provider>.json` as `{"api_key": "..."}`. The folder has mode 0700 and each file 0600, written atomically (a temp file in the folder, then replace). Saving overwrites the file and keeps no copy, and clearing deletes it. The server merges the saved keys under `os.environ`, so a real env var wins and the file is then ignored. An env var that is set but empty counts as unset. The merged env goes to subprocesses only. The page gets only whether a key is set, where it comes from (`env`, `file`, or `missing`), and its last 4 characters, never a whole key. A model whose provider key is missing is shown disabled with the reason "no API key: add it in Setup". The `fake` provider needs no key. There is no `.env` support. Terminal users export the variables themselves.
 
 ## Security
 
@@ -79,7 +79,7 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
    2. A file exists and equals the new config: write nothing. Status `unchanged`. A missing `puzzles` in the file counts as every puzzle of its release, so a config made on the command line compares equal to the same choice made on the page.
    3. A file exists, differs, and `results/<id>/experiment.toml` does not exist, so nothing has run: write it. Status `updated`.
    4. A file exists, `results/<id>/experiment.toml` exists, and the config differs only in `[budget]`: write it. Status `budget_updated`.
-   5. A job of the id is alive: 409, "a job of experiment <id> is running; stop it first", because `run` re-reads the config bytes after loading them. Nothing is written.
+   5. Checked first: a job of the id is alive: 409, "a job of experiment <id> is running; stop it first", because `run` re-reads the config bytes after loading them. Nothing is written.
    6. Any other difference once `results/<id>/experiment.toml` exists: 409, "experiment <id> exists with a different config; load it or pick a new id". Nothing is written.
 
    It returns `{"id": "...", "status": "..."}`. A disabled model, an unknown release, or a puzzle that isn't in the release gives 400.
@@ -177,7 +177,7 @@ Banners: a job in state `failed` shows its last stderr line. A job in state `bud
 
 `tests/test_ui.py`, with temporary folders, the `fake` provider, and no network. The server is started on port 0 in a thread.
 
-1. Keys: file modes, the `.bak` copy, a real env var winning, and only the last 4 characters in any `GET` body. Import parses `KEY=VALUE` text (comments, blanks, `export`, quotes, unknown names ignored) and refuses text with no known key. Every secrets route needs the token.
+1. Keys: file modes, no backup copy, a real env var winning, an empty env var losing to a saved key, and only the last 4 characters in any `GET` body. Import parses `KEY=VALUE` text (comments, blanks, `export`, quotes, unknown names ignored) and refuses text with no known key. Every secrets route needs the token.
 2. The catalogue marks a model with no price, and a model with no key, as disabled, with the reasons above.
 3. `POST /api/experiment` for each of `created`, `unchanged`, `budget_updated`, and 409. On 409 the file is byte-identical afterwards.
 4. `updated` while `results/<id>/experiment.toml` is missing, and a config without `puzzles` comparing equal to the same choice made on the page.
