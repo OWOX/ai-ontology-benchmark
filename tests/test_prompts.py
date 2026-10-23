@@ -46,11 +46,11 @@ def test_prescriptive_lists_legal_moves(templates):
         assert "{" not in text.replace('{"moves": [...], "mismatch": true|false}', "")
 
 
-def test_templates_ask_for_json_and_start_with_placeholder_line(templates):
+def test_templates_ask_for_json_and_are_not_placeholders(templates):
     for setup in SETUPS:
         for puzzle in ("2x2", "3x3"):
             text = (templates / setup / f"{puzzle}.txt").read_text()
-            assert text.startswith("PLACEHOLDER: real text pending open item 1.\n")
+            assert "PLACEHOLDER" not in text
             assert '{"moves": [...], "mismatch": true|false}' in text
 
 
