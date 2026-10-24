@@ -1,0 +1,7 @@
+Solve this 2x2 cube, written in Singmaster notation. The state is written as one block per face, headed by the face's letter. Each sticker is written as the letter of the face whose colour it has when the cube is solved. Rows are read top to bottom and stickers left to right, with each face seen from outside the cube: U with B at the top, D with F at the top, and R, F, L, and B with U at the top. Here is its current state:
+
+{state}
+
+If the state cannot be reached from the solved state by legal moves, set mismatch to true.
+Reply with exactly this JSON object and nothing else: {"moves": [...], "mismatch": true|false}
+List the moves in the order they are applied, one move per string.
