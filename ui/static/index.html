@@ -15,7 +15,7 @@
 <div class="layout">
   <main class="left">
     <section class="step" id="step-setup">
-      <h2><span class="num">1</span>Setup</h2>
+      <h2><button type="button" class="help" aria-label="Help: Setup" aria-describedby="tip-setup">?</button><span class="tip" role="tooltip" id="tip-setup">Setup holds the API keys and the project status. Save a key for each provider, or use Upload .env file: it reads a local text file of NAME=VALUE lines (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY), saves each key it knows into secrets/, and ignores everything else. It is a shortcut for pasting the keys one by one. Install dependencies and Run tests prepare and check the project.</span><span class="num">1</span>Setup</h2>
       <div id="secrets"></div>
       <label class="inline small">Upload .env file <input id="secrets-file" type="file"></label>
       <p id="secrets-msg" class="msg" role="status"></p>
@@ -28,19 +28,19 @@
     </section>
 
     <section class="step" id="step-shapes">
-      <h2><span class="num">2</span>Shapes</h2>
+      <h2><button type="button" class="help" aria-label="Help: Shapes" aria-describedby="tip-shapes">?</button><span class="tip" role="tooltip" id="tip-shapes">Shapes picks the release and the puzzles to test. Every input of a chosen puzzle in that release goes to every AI model under all three setups. The input count on each card is the number of inputs in the release. Choose at least one puzzle.</span><span class="num">2</span>Shapes</h2>
       <label class="inline">Release <select id="release"></select></label>
       <span id="release-info" class="muted"></span>
       <div id="puzzles" class="cards"></div>
     </section>
 
     <section class="step" id="step-models">
-      <h2><span class="num">3</span>Models</h2>
+      <h2><button type="button" class="help" aria-label="Help: Models" aria-describedby="tip-models">?</button><span class="tip" role="tooltip" id="tip-models">Models lists the AI models from the catalogue, grouped by provider. Tick the ones to test. A model is disabled, with the reason shown, when its provider has no API key or its token price is missing from config.</span><span class="num">3</span>Models</h2>
       <div id="models"></div>
     </section>
 
     <section class="step" id="step-params">
-      <h2><span class="num">4</span>Parameters</h2>
+      <h2><button type="button" class="help" aria-label="Help: Parameters" aria-describedby="tip-params">?</button><span class="tip" role="tooltip" id="tip-params">Parameters sets the experiment. Attempts is how many times each input is sent to each AI model under each setup, and the retry cap limits retries of infrastructure failures. The three budgets stop a run that would cost too much. Estimate and Dry run show the cost and the plan, and Run starts the experiment.</span><span class="num">4</span>Parameters</h2>
       <div class="grid">
         <label class="wide">Experiment id
           <span class="row">
@@ -69,7 +69,7 @@
     </section>
 
     <section class="step" id="step-progress">
-      <h2><span class="num">5</span>Progress</h2>
+      <h2><button type="button" class="help" aria-label="Help: Progress" aria-describedby="tip-progress">?</button><span class="tip" role="tooltip" id="tip-progress">Progress shows every attempt as it lands, with its outcome: success, failure, hallucination, malformed output, or infrastructure failure. A hallucination means at least one impossible move. The Cube panel replays an attempt's moves state by state on the input's puzzle. Live follows the newest attempt of the model you choose.</span><span class="num">5</span>Progress</h2>
       <div id="cube-panel" class="cube-panel">
         <div class="cube-head">
           <strong>Cube</strong>
@@ -92,7 +92,7 @@
     </section>
 
     <section class="step" id="step-commit">
-      <h2><span class="num">6</span>Evaluate and commit</h2>
+      <h2><button type="button" class="help" aria-label="Help: Evaluate and commit" aria-describedby="tip-commit">?</button><span class="tip" role="tooltip" id="tip-commit">Evaluate re-validates every raw response of the experiment under a release and writes the experiment report. It never calls an AI model. Commit opens a preview of the branch and files, and on confirmation commits the results and opens a pull request. Commit needs a report that is newer than the raw records.</span><span class="num">6</span>Evaluate and commit</h2>
       <div class="actions">
         <label class="inline">Score under release <select id="eval-release"></select></label>
         <button id="btn-evaluate" type="button" disabled>Evaluate</button>
@@ -103,7 +103,7 @@
     </section>
 
     <section class="step" id="step-release">
-      <h2><span class="num">7</span>Release</h2>
+      <h2><button type="button" class="help" aria-label="Help: Release" aria-describedby="tip-release">?</button><span class="tip" role="tooltip" id="tip-release">Release freezes a new release from the current input set, prompt templates, and assessment. A major bump makes a new input set, a minor bump a prompt change, and a patch bump an assessment fix. Push and open PR sends the branch and opens a pull request. Both are disabled on main, on a detached HEAD, and while a job runs.</span><span class="num">7</span>Release</h2>
       <div class="actions">
         <label class="inline">Bump
           <select id="bump"><option>patch</option><option>minor</option><option>major</option></select>

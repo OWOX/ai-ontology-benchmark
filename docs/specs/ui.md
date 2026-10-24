@@ -157,7 +157,7 @@ Every git and gh command is echoed to the terminal as a `commit` job.
 
 ## Page
 
-Two columns. The left column holds seven numbered steps. The right column is the terminal, sticky to the viewport height.
+Two columns. The left column holds seven numbered steps. The right column is the terminal, sticky to the viewport height. Each step header starts with a "?" help button whose tooltip, shown on hover or keyboard focus, says in plain words what the step is for and what its controls do. The texts sit in `index.html`.
 
 1. Setup. One row per provider: its status (`Key …abcd from secrets/anthropic.json`, `Set by env var ANTHROPIC_API_KEY`, or `No key`), a password field, Save, and Clear (after `confirm()`). "Upload .env file" reads the file as text and posts it to `/api/secrets/import`. Save, Clear, and Import reload the secrets panel and the catalogue, so models enable. The password field is cleared after Save, and a key is never shown. Below the rows are the project status from `/api/project` (branch, clean tree, packages, `gh`) and the buttons Install dependencies and Run tests. Errors show the server's text in the step's message line.
 2. Shapes. A release picker (default latest), then one `<button aria-pressed>` card per puzzle in that release: the puzzle name, its input count, and, for an `NxN` name only, an SVG cube net in solved colours with `n` taken from the name. Any other puzzle shows its name with no net. Click toggles selection. At least one is needed.
