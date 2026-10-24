@@ -545,20 +545,25 @@ function renderSecrets(list) {
   $("secrets").replaceChildren(...Object.entries(list).map(([provider, s]) => {
     const status = s.source === "file" ? `Key …${s.tail} from ${s.location}`
       : s.source === "env" ? `Set by ${s.location}` : "No key";
-    const key = el("input", { type: "password", autocomplete: "off", placeholder: s.variable });
-    const act = (action) => guarded("secrets-msg", async () => {
-      if (action === "clear" && !confirm(`Delete the saved ${provider} key?`)) return;
-      renderSecrets(await api("POST", "/api/secrets", { provider, action, api_key: key.value }));
-      key.value = "";
-      await refreshCatalogue();
-    });
-    const save = el("button", { type: "button", text: "Save" });
-    const clear = el("button", { type: "button", text: "Clear" });
-    clear.disabled = s.source !== "file";
-    save.addEventListener("click", () => act("save"));
-    clear.addEventListener("click", () => act("clear"));
-    return el("div", { class: "row key-row" }, el("strong", { text: provider }),
-      el("span", { class: "muted small", text: status }), key, save, clear);
+    const row = el("div", { class: "row key-row" });
+    const btn = (text, fn) => { const b = el("button", { type: "button", text }); b.addEventListener("click", fn); return b; };
+    const draw = (editing) => {
+      const key = el("input", { type: "password", autocomplete: "off", placeholder: s.variable });
+      const act = (action) => guarded("secrets-msg", async () => {
+        if (action === "clear" && !confirm(`Delete the saved ${provider} key?`)) return;
+        const body = { provider, action, api_key: key.value };
+        key.value = "";
+        renderSecrets(await api("POST", "/api/secrets", body));
+        await refreshCatalogue();
+      });
+      const parts = [el("strong", { text: provider }), el("span", { class: "muted small", text: status })];
+      if (s.source === "missing" || editing) parts.push(key, btn("Save", () => act("save")));
+      if (editing) parts.push(btn("Cancel", () => { key.value = ""; draw(false); }));
+      else if (s.source === "file") parts.push(btn("Edit", () => draw(true)), btn("Clear", () => act("clear")));
+      row.replaceChildren(...parts);
+    };
+    draw(false);
+    return row;
   }));
 }
 
@@ -849,10 +854,12 @@ async function pollLog() {
   try {
     const data = await api("GET", "/api/log?after=" + S.logAfter);
     conn.textContent = "live"; conn.className = "conn ok";
+    let errs = false;
     for (const line of data.lines) {
       termLine(line);
-      if (line.stream === "stderr") S.lastErr[line.job] = line.text;
+      if (line.stream === "stderr") { S.lastErr[line.job] = line.text; errs = true; }
     }
+    if (errs && S.snap) renderBanners();  // the snapshot can show a failed job before its stderr line arrives
     S.logAfter = data.last;
     S.anyAlive = data.jobs.some((j) => j.state === "running");
     const running = new Set(data.jobs.filter((j) => j.state === "running").map((j) => j.job));
@@ -868,7 +875,7 @@ async function pollLog() {
     conn.textContent = "reconnecting"; conn.className = "conn bad";
   }
   clearTimeout(S.logTimer);
-  S.logTimer = setTimeout(pollLog, S.anyAlive ? LOG_POLL_MS.busy : LOG_POLL_MS.idle);
+  S.logTimer = setTimeout(pollLog, S.anyAlive || anyAlive() ? LOG_POLL_MS.busy : LOG_POLL_MS.idle);
 }
 
 // ---- Startup ---------------------------------------------------------------
