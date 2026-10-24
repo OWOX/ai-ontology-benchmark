@@ -1,8 +1,8 @@
 # Spec: docs/specs/ui.md
-"""Web server for running an experiment, for this machine and the home network. Serves ui/static/ and answers the
-JSON API, including the terminal log the page polls. With --lan (the default) it binds 0.0.0.0 and answers every client and Host; with --no-lan it binds 127.0.0.1 and answers only loopback.
+"""Web server for running an experiment. Serves ui/static/ and answers the
+JSON API, including the terminal log the page polls. With --lan (the default) it binds 0.0.0.0 and answers every client, but only Hosts that are localhost, an IP literal, or an --allow-host name; with --no-lan it binds 127.0.0.1 and answers only loopback.
 Reads the files named in the spec; writes only config/experiments/<id>.toml.
-Run as `python -m ui.server [--port 8765] [--root .] [--lan | --no-lan]`.
+Run as `python -m ui.server [--port 8765] [--root .] [--lan | --no-lan] [--allow-host NAME]`.
 """
 
 import argparse
@@ -69,13 +69,26 @@ class Handler(BaseHTTPRequestHandler):
         self.send_bytes(status, json.dumps(data).encode("utf-8"), "application/json")
 
     def host_ok(self) -> bool:
-        """With --no-lan, Host must be localhost or a literal 127.x.x.x address, with this server's port. Otherwise any Host."""
-        if not self.server.loopback_only:
-            return True
-        host, _, port = (self.headers.get("Host") or "").rpartition(":")
-        if port != str(self.server.server_address[1]):
-            return False
-        return host == "localhost" or ("." in host and ":" not in host and is_loopback(host))
+        """With --no-lan, Host must be localhost or a literal 127.x.x.x address, with this server's port. Otherwise (DNS
+        rebinding always uses a hostname) it must be an IP literal or an --allow-host name, with any port or none, or localhost
+        with this server's port."""
+        text = self.headers.get("Host") or ""
+        if self.server.loopback_only:
+            host, _, port = text.rpartition(":")
+            if port != str(self.server.server_address[1]):
+                return False
+            return host == "localhost" or ("." in host and ":" not in host and is_loopback(host))
+        if text.startswith("["):  # [v6] or [v6]:port
+            name, _, rest = text[1:].partition("]")
+            port, literal = (rest[1:] if rest.startswith(":") else rest and "?"), True
+        else:
+            name, _, port = text.partition(":")
+            literal = False
+        name = name.lower().rstrip(".")
+        try:  # an IP literal can't be rebound, so it passes with any port or none (a proxy may send either)
+            return ipaddress.ip_address(name).version == (6 if literal else 4)
+        except ValueError:
+            return not literal and (name in self.server.allow_hosts or (name == "localhost" and port == str(self.server.server_address[1])))
 
     def do_GET(self) -> None:
         self.handle_request("GET")
@@ -91,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.server.loopback_only and not is_loopback(self.client_address[0]):
                 raise ApiError(403, "client address not allowed")
             if not self.host_ok():
-                raise ApiError(403, "bad Host header")
+                raise ApiError(403, f"bad Host header {(self.headers.get('Host') or '')[:100]!r}; add the name with --allow-host")
             guarded = path.strip("/").split("/")[:2] in (["api", "commit"], ["api", "secrets"])  # as app.get routes
             if method == "POST" or guarded:
                 if not hmac.compare_digest(self.headers.get("X-Token", "").encode(), app.token.encode()):
@@ -142,10 +155,11 @@ class UiServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True  # restart at once after Ctrl-C; main probes the port first (see port_answers)
 
-    def __init__(self, address: tuple, app: App, lan: bool = True) -> None:
+    def __init__(self, address: tuple, app: App, lan: bool = True, allow_hosts: tuple = ()) -> None:
         super().__init__(address, Handler)
         self.app = app
-        self.loopback_only = not lan  # --no-lan: peer and Host checks. With --lan nothing is checked.
+        self.loopback_only = not lan  # --no-lan: peer and Host checks. With --lan only the Host check, against rebinding.
+        self.allow_hosts = frozenset(h.lower().rstrip(".") for h in allow_hosts)
 
     def verify_request(self, request, client_address) -> bool:
         """With --no-lan, drop a peer outside 127.0.0.0/8 before its request is parsed. Otherwise accept every peer."""
@@ -167,16 +181,17 @@ def port_answers(port: int) -> bool:
 
 
 def make_server(root: Path, port: int = 0, static_dir: Path | None = None, host: str = "127.0.0.1",
-                lan: bool = True) -> UiServer:
+                lan: bool = True, allow_hosts: tuple = ()) -> UiServer:
     """Build the server. `main` passes BIND_HOST, or 127.0.0.1 with --no-lan; tests keep loopback, port 0, and their own static folder."""
     static = static_dir or Path(__file__).resolve().parent / "static"
-    return UiServer((host, port), App(Path(root).resolve(), static), lan)
+    return UiServer((host, port), App(Path(root).resolve(), static), lan, allow_hosts)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the experiment UI. With --lan (the default) it binds 0.0.0.0 and serves "
-                                     "every client; with --no-lan, only this machine.")
+                                     "every client with an allowed Host; with --no-lan, only this machine.")
     parser.add_argument("--lan", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--allow-host", action="append", default=[], metavar="NAME", help="also accept this Host name (repeatable)")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--root", type=Path, default=Path("."))
     args = parser.parse_args(argv)
@@ -187,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: port {args.port}: another server is listening", file=sys.stderr)
         return 1
     try:
-        server = make_server(args.root, args.port, host=BIND_HOST if args.lan else "127.0.0.1", lan=args.lan)
+        server = make_server(args.root, args.port, host=BIND_HOST if args.lan else "127.0.0.1", lan=args.lan, allow_hosts=tuple(args.allow_host))
     except OSError as error:
         print(f"error: port {args.port}: {error.strerror}", file=sys.stderr)
         return 1
@@ -196,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.lan:
         if address := lan_address():
             print(f"UI at http://{address}:{port}/", flush=True)
+        if server.allow_hosts:
+            print("Allowed Host names: " + ", ".join(sorted(server.allow_hosts)), flush=True)
         print("Open to every client: anyone who can reach this port can run experiments on your API keys "
               "(use --no-lan for this machine only)", flush=True)
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))

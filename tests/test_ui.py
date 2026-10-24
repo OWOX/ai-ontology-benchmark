@@ -27,7 +27,7 @@ from ui import secrets as key_store
 from ui.common import merged_env
 from ui import jobs as jobs_module
 from ui import server as server_module
-from ui.server import make_server
+from ui.server import is_loopback, make_server
 
 MODELS = (
     '[[models]]\nname = "example-model"\nprovider = "fake"\napi_model_id = "ex-1"\n'
@@ -251,7 +251,8 @@ def test_written_config_loads_with_puzzles(server):
 
 def test_security(server):
     assert call(server, "POST", "/api/experiment", FORM, token=False)[0] == 403
-    assert call(server, "GET", "/api/catalogue", host="evil.example:80")[0] == 200
+    assert call(server, "POST", "/api/experiment", FORM, host="evil.example:80")[0] == 403
+    assert call(server, "GET", "/api/catalogue", host="evil.example:80")[0] == 403
     assert call(server, "GET", "/api/commit/t1", token=False)[0] == 403
     port = server.server_address[1]
     conn = http.client.HTTPConnection("127.0.0.1", port)
@@ -271,17 +272,43 @@ def test_security(server):
     assert conn.getresponse().status == 400
 
 
-def test_default_mode_accepts_every_host(server):
+def test_default_mode_host_check(server, ui_repo, tmp_path):
     port = server.server_address[1]
-    for host in ("aiohr.dorland.keenetic.pro", f"aiohr.dorland.keenetic.pro:{port}", f"8.8.8.8:{port}",
-                 f"10.1.2.3:{port}", f"evil.example:{port + 1}"):
+    for host in (f"8.8.8.8:{port}", f"10.1.2.3:{port}", f"localhost:{port}", f"[::1]:{port}", "10.0.0.11", "10.0.0.11:443",
+                 f"8.8.8.8:{port + 1}", "[::1]"):
         assert call(server, "GET", "/api/catalogue", host=host)[0] == 200, host
-    assert call(server, "POST", "/api/experiment", FORM, host="evil.example:80", token=False)[0] == 403  # the token still applies
+    for host in ("aiohr.dorland.keenetic.pro", f"aiohr.dorland.keenetic.pro:{port}", "evil.example", f"evil.example:{port}",
+                 "localhost", f"localhost:{port + 1}", "[evil.example]"):
+        assert call(server, "GET", "/api/catalogue", host=host)[0] == 403, host
+    srv = make_server(ui_repo, 0, tmp_path, allow_hosts=("AIOHR.dorland.keenetic.pro.",))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        port = srv.server_address[1]
+        for host in ("aiohr.dorland.keenetic.pro", "aiohr.dorland.keenetic.pro:443", "aiohr.dorland.keenetic.pro:80",
+                     f"Aiohr.dorland.keenetic.pro:{port}", f"aiohr.dorland.keenetic.pro.:{port}"):
+            assert call(srv, "GET", "/api/catalogue", host=host)[0] == 200, host
+        for host in ("evil.example", "evil.example:443", f"evil.example:{port}", f"localhost:{port + 1}"):
+            assert call(srv, "GET", "/api/catalogue", host=host)[0] == 403, host
+        status, body = call(srv, "GET", "/api/catalogue", host="evil.example:443")
+        assert "'evil.example:443'" in body["error"] and "--allow-host" in body["error"]
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_is_loopback():
+    assert is_loopback("::ffff:127.0.0.1") and not is_loopback("not-an-ip")
 
 
 def test_default_mode_accepts_every_peer(server):
     for peer in ("8.8.8.8", "172.16.0.1", "10.0.0.5", "::1"):
         assert server.verify_request(None, (peer, 1234)) is True, peer
+    sent = []
+    fake = SimpleNamespace(client_address=("8.8.8.8", 1), server=server, path="/api/catalogue",
+                           headers={"Host": f"8.8.8.8:{server.server_address[1]}"}, send_json=lambda status, data: sent.append((status, data)))
+    fake.host_ok = lambda: server_module.Handler.host_ok(fake)
+    server_module.Handler.handle_request(fake, "GET")
+    assert not sent or sent[0][0] != 403 or "client address" not in sent[0][1]["error"]
 
 
 def test_no_lan_refuses_other_peers_and_hosts(ui_repo, tmp_path):
@@ -307,7 +334,7 @@ def test_no_lan_refuses_other_peers_and_hosts(ui_repo, tmp_path):
 def test_main_no_lan_binds_loopback(ui_repo, monkeypatch):
     seen = {}
 
-    def fake_make_server(root, port, static_dir=None, host="x", lan=True):
+    def fake_make_server(root, port, static_dir=None, host="x", lan=True, allow_hosts=()):
         seen.update(host=host, lan=lan)
         raise OSError(0, "stop here")
 
@@ -316,10 +343,18 @@ def test_main_no_lan_binds_loopback(ui_repo, monkeypatch):
     assert seen == {"host": "127.0.0.1", "lan": False}
 
 
+def test_main_prints_the_open_warning_and_allowed_hosts(ui_repo, monkeypatch, capsys):
+    monkeypatch.setattr(server_module.UiServer, "serve_forever", lambda self: None)
+    assert server_module.main(["--root", str(ui_repo), "--port", "0", "--allow-host", "Aiohr.Example."]) == 0
+    out = capsys.readouterr().out
+    assert "Open to every client: anyone who can reach this port can run experiments on your API keys (use --no-lan for this machine only)" in out
+    assert "Allowed Host names: aiohr.example" in out
+
+
 def test_main_binds_all_interfaces(ui_repo, monkeypatch):
     seen = {}
 
-    def fake_make_server(root, port, static_dir=None, host="127.0.0.1", lan=True):
+    def fake_make_server(root, port, static_dir=None, host="127.0.0.1", lan=True, allow_hosts=()):
         seen["host"] = host
         raise OSError(0, "stop here")
 
