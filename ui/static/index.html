@@ -28,7 +28,7 @@
     </section>
 
     <section class="step" id="step-shapes">
-      <h2><button type="button" class="help" aria-label="Help: Shapes" aria-describedby="tip-shapes">?</button><span class="tip" role="tooltip" id="tip-shapes">Shapes picks the release and the puzzles to test. Every input of a chosen puzzle in that release goes to every AI model under all three setups. The input count on each card is the number of inputs in the release. Choose at least one puzzle.</span><span class="num">2</span>Shapes</h2>
+      <h2><button type="button" class="help" aria-label="Help: Shapes" aria-describedby="tip-shapes">?</button><span class="tip" role="tooltip" id="tip-shapes">Shapes picks the release and the puzzles to test. Every input of a chosen puzzle in that release goes to every chosen AI model under all three setups. The count on each card is the number of inputs for that puzzle in the release. Choose at least one puzzle.</span><span class="num">2</span>Shapes</h2>
       <label class="inline">Release <select id="release"></select></label>
       <span id="release-info" class="muted"></span>
       <div id="puzzles" class="cards"></div>
@@ -92,7 +92,7 @@
     </section>
 
     <section class="step" id="step-commit">
-      <h2><button type="button" class="help" aria-label="Help: Evaluate and commit" aria-describedby="tip-commit">?</button><span class="tip" role="tooltip" id="tip-commit">Evaluate re-validates every raw response of the experiment under a release and writes the experiment report. It never calls an AI model. Commit opens a preview of the branch and files, and on confirmation commits the results and opens a pull request. Commit needs a report that is newer than the raw records.</span><span class="num">6</span>Evaluate and commit</h2>
+      <h2><button type="button" class="help" aria-label="Help: Evaluate and commit" aria-describedby="tip-commit">?</button><span class="tip" role="tooltip" id="tip-commit">Evaluate re-validates every raw response of the experiment under a release and writes the report: the experiment report and its CSV of metrics. It never calls an AI model. Commit opens a preview of the branch and files, and on confirmation commits the results and opens a pull request. Commit needs a report that is newer than the raw records.</span><span class="num">6</span>Evaluate and commit</h2>
       <div class="actions">
         <label class="inline">Score under release <select id="eval-release"></select></label>
         <button id="btn-evaluate" type="button" disabled>Evaluate</button>
@@ -103,7 +103,7 @@
     </section>
 
     <section class="step" id="step-release">
-      <h2><button type="button" class="help" aria-label="Help: Release" aria-describedby="tip-release">?</button><span class="tip" role="tooltip" id="tip-release">Release freezes a new release from the current input set, prompt templates, and assessment. A major bump makes a new input set, a minor bump a prompt change, and a patch bump an assessment fix. Push and open PR sends the branch and opens a pull request. Both are disabled on main, on a detached HEAD, and while a job runs.</span><span class="num">7</span>Release</h2>
+      <h2><button type="button" class="help" aria-label="Help: Release" aria-describedby="tip-release">?</button><span class="tip" role="tooltip" id="tip-release">Release freezes a new release from the current input set, prompt templates, and assessment. A major bump makes a new input set, a minor bump a prompt change, and a patch bump an assessment fix. Push and open PR sends the branch and its release tags and opens a pull request. Both are disabled on main, on a detached HEAD, and while a job runs.</span><span class="num">7</span>Release</h2>
       <div class="actions">
         <label class="inline">Bump
           <select id="bump"><option>patch</option><option>minor</option><option>major</option></select>
