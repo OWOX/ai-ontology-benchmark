@@ -16,7 +16,7 @@ The UI may run `release` (which calls `generate` for a major bump) on a branch o
 python -m ui.server [--port 8765] [--root .] [--lan | --no-lan]
 ```
 
-`--lan` is the default. It binds to `0.0.0.0` and serves only clients in `127.0.0.0/8`, `10.0.0.0/16`, and `192.168.0.0/16`. On start it prints the loopback URL, one URL for this machine's primary LAN address when it is in those networks, and a line naming the allowed LAN networks. `--no-lan` binds to `127.0.0.1`, serves only `127.0.0.0/8` for both the peer check and the Host check, and prints only the loopback URL. A peer outside them is dropped before its request is read, and an idle connection times out after 30 seconds. `--root` is the repo root, for tests. A restart binds at once, even while old connections are closing. It exits with code 1 if another server answers on `127.0.0.1:<port>` (checked before binding, because macOS lets a `0.0.0.0` and a `127.0.0.1` server share a port), or if `--root` has no `releases/` folder.
+`--lan` is the default. It binds to `0.0.0.0` and serves every client, whatever its address or `Host` header. On start it prints the loopback URL, one URL for this machine's primary LAN address from a UDP probe (in any range, not only private ones), and the line "Open to every client: anyone who can reach this port can run experiments on your API keys (use --no-lan for this machine only)". `--no-lan` binds to `127.0.0.1`, serves only peers in `127.0.0.0/8` and `Host` headers of `localhost:<port>` or `127.x.x.x:<port>`, and prints only the loopback URL. With `--no-lan`, a peer outside `127.0.0.0/8` is dropped before its request is read. An idle connection times out after 30 seconds. `--root` is the repo root, for tests. A restart binds at once, even while old connections are closing. It exits with code 1 if another server answers on `127.0.0.1:<port>` (checked before binding, because macOS lets a `0.0.0.0` and a `127.0.0.1` server share a port), or if `--root` has no `releases/` folder.
 
 The server uses `http.server.ThreadingHTTPServer` with `daemon_threads = True`. Shared job state sits behind one `threading.Lock`.
 
@@ -43,8 +43,8 @@ The page polls. The server has no event stream.
 ## Security
 
 1. At start the server makes a token with `secrets.token_urlsafe(24)` and writes it into `index.html` as `<meta name="ui-token" content="...">`.
-2. With `--no-lan`, the networks below shrink to `127.0.0.0/8`. Every request from a peer address outside `127.0.0.0/8`, `10.0.0.0/16`, and `192.168.0.0/16` gets 403, and so does every request whose `Host` header is not `localhost:<port>` or `<ip>:<port>`, where `<ip>` is a literal IPv4 address in those networks. An IPv4-mapped IPv6 peer counts as its IPv4 address. Hostnames are refused, which stops DNS rebinding.
-3. Warning: anyone on those networks who opens the page gets its token, and can start paid runs and push. The traffic is plain HTTP, so anyone who can watch the network can read the token and any API key sent through the page. Run the server only on a network you trust.
+2. The default mode (`--lan`) has no network or `Host` restriction. Every peer address and every `Host` header is accepted, so the server can sit behind a router's public name or proxy.
+3. Warning: in the default mode, anyone who can reach the port gets the token, because the server puts it in the page it serves to every client that loads it. That client can start paid runs, use the saved API keys, and push. The traffic is plain HTTP, so anyone who can watch the network can read the token and any API key sent through the page. Use `--no-lan` to restrict the server to this machine. With `--no-lan`, every request from a peer outside `127.0.0.0/8` gets 403, and so does every request whose `Host` header is not `localhost:<port>` or `<ip>:<port>`, where `<ip>` is a literal address in `127.0.0.0/8`. An IPv4-mapped IPv6 peer counts as its IPv4 address. Hostnames are refused, which stops DNS rebinding.
 4. Every `POST` without the header `X-Token: <token>` gets 403. So does every `GET /api/commit/<id>`, because the preview runs `git fetch`, and `GET /api/secrets`.
 5. Static files come from an allowlist: `/` serves `index.html`, and `/static/app.js`, `/static/cube.js`, and `/static/style.css`. Any other path gets 404. Nothing outside `ui/static/` is ever served, so `secrets/` can't be reached.
 6. A `POST` body is JSON of at most 64 KiB, or 400.
@@ -202,7 +202,9 @@ Banners: a job in state `failed` shows its last stderr line. A job in state `bud
 3. `POST /api/experiment` for each of `created`, `unchanged`, `budget_updated`, and 409. On 409 the file is byte-identical afterwards.
 4. `updated` while `results/<id>/experiment.toml` is missing, and a config without `puzzles` comparing equal to the same choice made on the page.
 5. A config the server writes loads with `load_experiment_config` and holds `puzzles`.
-6. A POST without the token, or with a foreign `Host`, gets 403. `GET /static/../secrets/anthropic.json` and `GET /secrets/anthropic.json` get 404.
+6. A POST without the token gets 403, whatever its `Host`. `GET /static/../secrets/anthropic.json` and `GET /secrets/anthropic.json` get 404.
+   1. In the default mode, `Host` headers such as `aiohr.dorland.keenetic.pro`, `8.8.8.8:<port>`, and `10.1.2.3:<port>` are accepted, and `verify_request` accepts the peers `8.8.8.8` and `172.16.0.1`.
+   2. With `--no-lan`, a `10.0.0.5` peer and an `evil.example` `Host` are refused, and loopback is accepted.
 7. The log keeps only the newest lines at the cap, and `after` returns the newer ones.
 8. A full run through the API on a one-puzzle release: records appear while the run is alive, the snapshot has no `in_progress`, and the run job ends `done`.
 9. Run is refused while evaluate is alive, and evaluate while a run is.

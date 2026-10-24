@@ -27,7 +27,7 @@ from ui import secrets as key_store
 from ui.common import merged_env
 from ui import jobs as jobs_module
 from ui import server as server_module
-from ui.server import allowed_address, make_server
+from ui.server import make_server
 
 MODELS = (
     '[[models]]\nname = "example-model"\nprovider = "fake"\napi_model_id = "ex-1"\n'
@@ -251,8 +251,7 @@ def test_written_config_loads_with_puzzles(server):
 
 def test_security(server):
     assert call(server, "POST", "/api/experiment", FORM, token=False)[0] == 403
-    assert call(server, "POST", "/api/experiment", FORM, host="evil.example:80")[0] == 403
-    assert call(server, "GET", "/api/catalogue", host="evil.example:80")[0] == 403
+    assert call(server, "GET", "/api/catalogue", host="evil.example:80")[0] == 200
     assert call(server, "GET", "/api/commit/t1", token=False)[0] == 403
     port = server.server_address[1]
     conn = http.client.HTTPConnection("127.0.0.1", port)
@@ -272,46 +271,35 @@ def test_security(server):
     assert conn.getresponse().status == 400
 
 
-def test_host_check_accepts_allowed_networks(server):
+def test_default_mode_accepts_every_host(server):
     port = server.server_address[1]
-    for host in (f"10.0.5.6:{port}", f"192.168.1.5:{port}"):
-        assert call(server, "GET", "/api/catalogue", host=host)[0] == 200
+    for host in ("aiohr.dorland.keenetic.pro", f"aiohr.dorland.keenetic.pro:{port}", f"8.8.8.8:{port}",
+                 f"10.1.2.3:{port}", f"evil.example:{port + 1}"):
+        assert call(server, "GET", "/api/catalogue", host=host)[0] == 200, host
+    assert call(server, "POST", "/api/experiment", FORM, host="evil.example:80", token=False)[0] == 403  # the token still applies
 
 
-def test_host_check_refuses_other_hosts(server):
-    port = server.server_address[1]
-    for host in (f"10.1.2.3:{port}", f"10.255.0.1:{port}", f"172.16.0.1:{port}", f"8.8.8.8:{port}", f"evil.example:{port}", f"10.0.0.1:{port + 1}"):
-        assert call(server, "GET", "/api/catalogue", host=host)[0] == 403
+def test_default_mode_accepts_every_peer(server):
+    for peer in ("8.8.8.8", "172.16.0.1", "10.0.0.5", "::1"):
+        assert server.verify_request(None, (peer, 1234)) is True, peer
 
 
-def test_peer_allowlist():
-    for peer in ("10.0.5.6", "192.168.1.5", "127.0.0.1", "::ffff:10.0.0.5"):
-        assert allowed_address(peer), peer
-    for peer in ("10.1.2.3", "10.255.0.1", "172.16.0.1", "8.8.8.8", "::1", "not-an-ip"):
-        assert not allowed_address(peer), peer
-
-
-def test_refused_peer_is_dropped_and_refused_by_the_handler(server):
-    assert server.verify_request(None, ("172.16.0.1", 1234)) is False
-    assert server.verify_request(None, ("10.0.0.5", 1234)) is True
-    sent = []
-    fake = SimpleNamespace(client_address=("172.16.0.1", 1), server=server, path="/api/catalogue", headers={},
-                           send_json=lambda status, data: sent.append((status, data)))
-    server_module.Handler.handle_request(fake, "GET")
-    assert sent and sent[0][0] == 403 and "client address" in sent[0][1]["error"]
-
-
-def test_no_lan_refuses_lan_peers_and_hosts(ui_repo, tmp_path):
+def test_no_lan_refuses_other_peers_and_hosts(ui_repo, tmp_path):
     srv = make_server(ui_repo, 0, tmp_path, lan=False)
     try:
         assert srv.verify_request(None, ("127.0.0.1", 1)) is True
-        for peer in ("10.0.5.6", "192.168.1.5"):
+        for peer in ("10.0.0.5", "192.168.1.5", "8.8.8.8"):
             assert srv.verify_request(None, (peer, 1)) is False
         port = srv.server_address[1]
-        for host, ok in ((f"localhost:{port}", True), (f"127.0.0.1:{port}", True),
-                         (f"10.0.5.6:{port}", False), (f"192.168.1.5:{port}", False)):
+        for host, ok in ((f"localhost:{port}", True), (f"127.0.0.1:{port}", True), (f"127.1.2.3:{port}", True),
+                         (f"10.0.0.5:{port}", False), (f"evil.example:{port}", False), (f"localhost:{port + 1}", False)):
             fake = SimpleNamespace(server=srv, headers={"Host": host})
             assert server_module.Handler.host_ok(fake) is ok, host
+        sent = []
+        fake = SimpleNamespace(client_address=("10.0.0.5", 1), server=srv, path="/api/catalogue", headers={},
+                               send_json=lambda status, data: sent.append((status, data)))
+        server_module.Handler.handle_request(fake, "GET")
+        assert sent and sent[0][0] == 403 and "client address" in sent[0][1]["error"]
     finally:
         srv.server_close()
 
