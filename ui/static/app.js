@@ -1,4 +1,7 @@
 "use strict";
+// Spec: docs/specs/ui.md
+// The page: reads the JSON API and draws the steps. cube.js loads first and holds svg(), STICKERS,
+// and the cube drawings. Writes only through POSTs to the API and the DOM.
 
 // ---- Constants: every colour lives here ----------------------------------
 const COLORS = {
@@ -11,13 +14,9 @@ const COLORS = {
   infrastructure_failure: "#5d6d7e",
 };
 const OUTCOMES = ["success", "failure", "hallucination", "malformed_output", "infrastructure_failure"];
-const STICKERS = { U: "#ffffff", R: "#d62d20", F: "#1f9d55", D: "#f5d90a", L: "#f08a1c", B: "#2155c4" };
-const FACE_ORDER = "URFDLB";
-const NET_POS = { U: [1, 0], L: [0, 1], F: [1, 1], R: [2, 1], B: [3, 1], D: [1, 2] };
 const PROVIDER_ORDER = ["anthropic", "openai", "google", "fake"];
 const PROVIDER_COLORS = { anthropic: "#c96442", openai: "#0f8f6f", google: "#3b78e7", fake: "#7f8c8d" };
 const UNKNOWN_PROVIDER_COLOR = "#9aa0a6";
-const SVGNS = "http://www.w3.org/2000/svg";
 
 // ---- Application state -----------------------------------------------------
 const S = {
@@ -60,12 +59,6 @@ function el(tag, props, ...kids) {
   return node;
 }
 
-function svg(tag, attrs) {
-  const node = document.createElementNS(SVGNS, tag);
-  for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
-  return node;
-}
-
 function say(id, text, kind) {
   const node = $(id);
   node.textContent = text || "";
@@ -86,32 +79,6 @@ async function api(method, path, body) {
   try { data = await res.json(); } catch (e) { /* non-JSON body */ }
   if (!res.ok) throw new Error((data && data.error) || `${method} ${path} failed (${res.status})`);
   return data;
-}
-
-// ---- Cube net --------------------------------------------------------------
-function solvedState(n) {
-  return [...FACE_ORDER].map((f) => f.repeat(n * n)).join("");
-}
-
-// Returns an <svg> of a cube net for a 6*n*n state; sized by viewBox, 4x3 faces.
-function cubeNet(state, attrs) {
-  const n = Math.round(Math.sqrt(state.length / 6));
-  const root = svg("svg", { viewBox: "0 0 4 3", ...attrs });
-  if (n < 1 || 6 * n * n !== state.length) return root;
-  const cell = 1 / n;
-  const pad = 0.012;
-  [...FACE_ORDER].forEach((face, fi) => {
-    const [fx, fy] = NET_POS[face];
-    for (let i = 0; i < n * n; i++) {
-      const ch = state[fi * n * n + i];
-      root.append(svg("rect", {
-        x: fx + (i % n) * cell + pad, y: fy + Math.floor(i / n) * cell + pad,
-        width: cell - 2 * pad, height: cell - 2 * pad,
-        fill: STICKERS[ch] || "#999", stroke: "#2a2f38", "stroke-width": 0.02,
-      }));
-    }
-  });
-  return root;
 }
 
 // ---- Ring of arcs ----------------------------------------------------------

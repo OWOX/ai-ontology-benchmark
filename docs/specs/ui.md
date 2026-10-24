@@ -178,7 +178,9 @@ Arc colours:
 | `malformed_output` | `#1a9bb0` |
 | `infrastructure_failure` | `#5d6d7e` |
 
-Cube net: a state is `6·n·n` characters over `URFDLB`, faces in that order, each face row-major. The net puts U above F, L, F, R, and B in a row, and D below F. Sticker colours: U white, R red, F green, D yellow, L orange, B blue. These colours live in `app.js` only.
+Cube net: a state is `6·n·n` characters over `URFDLB`, faces in that order, each face row-major. The net puts U above F, L, F, R, and B in a row, and D below F. Sticker colours: U white, R red, F green, D yellow, L orange, B blue. These colours live in `cube.js` only, and `app.js` uses them, so the table is never copied. `cube.js` loads before `app.js` and holds the sticker colours, `svg()`, `cubeNet`, and `cubeIso`.
+
+Cube 3D view: `cubeIso(state, n, highlightFace)` draws the U face on top, F front-left, and R front-right, each as an `n × n` grid of parallelograms in the net's colours. Sticker order follows the state's reading convention ([cube.md](cube.md)): U is read from above with B at the top, so its first row is the back row, and F and R are read with U at the top, with R's first column next to F. The placement uses `READING` and `NORMAL` of `src/puzzles/cube.py` for U, F, and R as drawing geometry only. `highlightFace` draws that face's outline thicker, and a face the view does not show (D, L, B) is not outlined.
 
 Banners: a job in state `failed` shows its last stderr line. A job in state `budget` shows "Budget reached" and a plain note to raise the budget under Parameters and press Run. Running again posts the form, which the server accepts as `budget_updated`, and resumes. The banner notes that parallel AI models can each pass the experiment budget by one worst-case request, and that "attempts left" in the message counts one AI model's attempts.
 
