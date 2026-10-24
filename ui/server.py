@@ -140,7 +140,7 @@ class Handler(BaseHTTPRequestHandler):
 
 class UiServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True  # restart at once after Ctrl-C; a live server on the port still refuses the bind
+    allow_reuse_address = True  # restart at once after Ctrl-C; main probes the port first (see port_answers)
 
     def __init__(self, address: tuple, app: App, lan: bool = True) -> None:
         super().__init__(address, Handler)
