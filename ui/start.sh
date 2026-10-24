@@ -13,7 +13,30 @@ if [ ! -d .venv ]; then
 fi
 
 # Port 7991 unless the caller passes --port.
+port=7991
+args=("$@")
+for i in "${!args[@]}"; do
+  case "${args[$i]}" in
+    --port=*) port="${args[$i]#--port=}" ;;
+    --port) port="${args[$((i + 1))]:-}" ;;
+  esac
+done
 case " $* " in
-  *" --port"*) exec .venv/bin/python -m ui.server "$@" ;;
-  *) exec .venv/bin/python -m ui.server --port 7991 "$@" ;;
+  *" --port"*) set -- "$@" ;;
+  *) set -- --port "$port" "$@" ;;
 esac
+
+# Stop whatever listens on the port: SIGTERM first, so a UI server stops its jobs, then SIGKILL after 5 seconds.
+pids=$(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+if [ -n "$pids" ]; then
+  echo "Stopping process $(echo $pids) on port $port"
+  kill -TERM $pids 2>/dev/null || true
+  for _ in $(seq 50); do
+    pids=$(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+    [ -z "$pids" ] && break
+    sleep 0.1
+  done
+  [ -n "$pids" ] && kill -KILL $pids 2>/dev/null || true
+fi
+
+exec .venv/bin/python -m ui.server "$@"
