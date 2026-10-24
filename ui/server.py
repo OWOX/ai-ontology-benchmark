@@ -21,7 +21,7 @@ from ui.common import ApiError
 
 MAX_BODY = 64 * 1024
 BIND_HOST = "0.0.0.0"
-ALLOWED_NETWORKS = tuple(ipaddress.ip_network(n) for n in ("127.0.0.0/8", "10.0.0.0/8", "192.168.0.0/16"))
+ALLOWED_NETWORKS = tuple(ipaddress.ip_network(n) for n in ("127.0.0.0/8", "10.0.0.0/16", "192.168.0.0/16"))
 STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
           "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
           "/static/cube.js": ("cube.js", "text/javascript; charset=utf-8"),
@@ -156,7 +156,7 @@ def make_server(root: Path, port: int = 0, static_dir: Path | None = None, host:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the experiment UI on 0.0.0.0, for clients in 127.0.0.0/8, 10.0.0.0/8, and 192.168.0.0/16.")
+    parser = argparse.ArgumentParser(description="Run the experiment UI on 0.0.0.0, for clients in 127.0.0.0/8, 10.0.0.0/16, and 192.168.0.0/16.")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--root", type=Path, default=Path("."))
     args = parser.parse_args(argv)

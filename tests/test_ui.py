@@ -272,20 +272,20 @@ def test_security(server):
 
 def test_host_check_accepts_allowed_networks(server):
     port = server.server_address[1]
-    for host in (f"10.1.2.3:{port}", f"192.168.1.5:{port}"):
+    for host in (f"10.0.5.6:{port}", f"192.168.1.5:{port}"):
         assert call(server, "GET", "/api/catalogue", host=host)[0] == 200
 
 
 def test_host_check_refuses_other_hosts(server):
     port = server.server_address[1]
-    for host in (f"172.16.0.1:{port}", f"8.8.8.8:{port}", f"evil.example:{port}", f"10.0.0.1:{port + 1}"):
+    for host in (f"10.1.2.3:{port}", f"10.255.0.1:{port}", f"172.16.0.1:{port}", f"8.8.8.8:{port}", f"evil.example:{port}", f"10.0.0.1:{port + 1}"):
         assert call(server, "GET", "/api/catalogue", host=host)[0] == 403
 
 
 def test_peer_allowlist():
-    for peer in ("10.1.2.3", "192.168.1.5", "127.0.0.1", "::ffff:10.0.0.5"):
+    for peer in ("10.0.5.6", "192.168.1.5", "127.0.0.1", "::ffff:10.0.0.5"):
         assert allowed_address(peer), peer
-    for peer in ("172.16.0.1", "8.8.8.8", "::1", "not-an-ip"):
+    for peer in ("10.1.2.3", "10.255.0.1", "172.16.0.1", "8.8.8.8", "::1", "not-an-ip"):
         assert not allowed_address(peer), peer
 
 
