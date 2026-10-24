@@ -2,7 +2,7 @@
 """Web server for running an experiment, for this machine and the home network. Serves ui/static/ and answers the
 JSON API, including the terminal log the page polls. With --lan (the default) it binds 0.0.0.0 and answers only clients in ALLOWED_NETWORKS; with --no-lan it binds 127.0.0.1 and answers only loopback.
 Reads the files named in the spec; writes only config/experiments/<id>.toml.
-Run as `python -m ui.server [--port 8765] [--root .]`.
+Run as `python -m ui.server [--port 8765] [--root .] [--lan | --no-lan]`.
 """
 
 import argparse
@@ -154,7 +154,7 @@ class UiServer(ThreadingHTTPServer):
 
 def make_server(root: Path, port: int = 0, static_dir: Path | None = None, host: str = "127.0.0.1",
                 lan: bool = True) -> UiServer:
-    """Build the server. `main` passes BIND_HOST; tests keep loopback, port 0, and their own static folder."""
+    """Build the server. `main` passes BIND_HOST, or 127.0.0.1 with --no-lan; tests keep loopback, port 0, and their own static folder."""
     static = static_dir or Path(__file__).resolve().parent / "static"
     return UiServer((host, port), App(Path(root).resolve(), static), lan)
 
