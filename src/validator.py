@@ -18,7 +18,7 @@ FENCE = re.compile(r"^\s*```[A-Za-z]*\s*\n(.*?)\n?\s*```\s*$", re.DOTALL)
 class Verdict:
     parsed_moves: list[str]
     hallucination: bool
-    mismatch: bool
+    mismatch: bool         # Whether model picked up the wrong state
     move_count: int | None  # None for infrastructure_failure and malformed_output
     outcome: str
 
