@@ -140,8 +140,6 @@ class App:
             else:
                 raise ApiError(400, "field 'action' must be 'save' or 'clear'")
             return key_store.inspect(self.root)
-        if path == "/api/secrets/import":
-            return {"saved": key_store.import_text(self.root, body.get("text"))}
         if path == "/api/estimate":
             return self.start_simple(body, "estimate")
         if path == "/api/evaluate":

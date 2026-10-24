@@ -68,28 +68,6 @@ def clear(root: Path, provider: object) -> None:
     file_of(root, provider).unlink(missing_ok=True)
 
 
-def import_text(root: Path, text: object) -> list[str]:
-    """Save each known KEY=VALUE line with a value. Skips comments, blanks, and unknown names."""
-    if not isinstance(text, str):
-        raise ApiError(400, "field 'text' must be a string")
-    found = {}
-    for line in text.splitlines():
-        line = line.strip().removeprefix("export ").strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, value = (part.strip() for part in line.split("=", 1))
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        if value:
-            found[name] = value
-    wanted = [(provider, found[variable]) for provider, variable in KEY_VARIABLES.items() if variable in found]
-    if not wanted:
-        raise ApiError(400, f"field 'text' holds none of {', '.join(KEY_VARIABLES.values())}")
-    for provider, key in wanted:
-        save(root, provider, key)
-    return [provider for provider, _ in wanted]
-
-
 def env(root: Path) -> dict[str, str]:
     values = {variable: read_key(file_of(root, provider)) for provider, variable in KEY_VARIABLES.items()}
     return {variable: key for variable, key in values.items() if key}

@@ -15,9 +15,9 @@
 <div class="layout">
   <main class="left">
     <section class="step" id="step-setup">
-      <h2><button type="button" class="help" aria-label="Help: Setup" aria-describedby="tip-setup">?</button><span class="tip" role="tooltip" id="tip-setup">Setup holds the API keys and the project status. Save a key for each provider, or use Upload .env file: it reads a local text file of NAME=VALUE lines (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY), saves each key it knows into secrets/, and ignores everything else. It is a shortcut for pasting the keys one by one. Install dependencies and Run tests prepare and check the project.</span><span class="num">1</span>Setup</h2>
+      <h2><button type="button" class="help" aria-label="Help: Setup" aria-describedby="tip-setup">?</button><span class="tip" role="tooltip" id="tip-setup">Setup holds the API keys and the project status. Save a key for each provider; it goes into ./secrets/, one file per provider, which is .gitignored and never committed. A real environment variable wins over a saved key. Install dependencies and Run tests prepare and check the project.</span><span class="num">1</span>Setup</h2>
       <div id="secrets"></div>
-      <label class="inline small">Upload .env file <input id="secrets-file" type="file"></label>
+      <p class="muted small">Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed.</p>
       <p id="secrets-msg" class="msg" role="status"></p>
       <p id="project" class="muted small"></p>
       <div class="actions">

@@ -148,23 +148,11 @@ def test_empty_env_var_does_not_hide_a_saved_key(tmp_path, monkeypatch):
     assert key_store.inspect(tmp_path)["anthropic"]["source"] == "file"
 
 
-def test_secret_import_parsing(tmp_path, monkeypatch):
-    for variable in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"):
-        monkeypatch.delenv(variable, raising=False)
-    text = ('# comment\n\nANTHROPIC_API_KEY="quoted-key"\nexport OPENAI_API_KEY = \'open-key\'\n'
-            'GOOGLE_API_KEY=\nOTHER=ignored\n')
-    assert key_store.import_text(tmp_path, text) == ["anthropic", "openai"]
-    assert key_store.env(tmp_path) == {"ANTHROPIC_API_KEY": "quoted-key", "OPENAI_API_KEY": "open-key"}
-    with pytest.raises(key_store.ApiError, match="text"):
-        key_store.import_text(tmp_path, "OTHER=1\nGOOGLE_API_KEY=\n")
-
-
 def test_secret_routes(server, monkeypatch):
     for variable in ("OPENAI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(variable, raising=False)
     body = {"provider": "anthropic", "action": "save", "api_key": KEY}
-    for method, path, payload in (("GET", "/api/secrets", None), ("POST", "/api/secrets", body),
-                                  ("POST", "/api/secrets/import", {"text": f"OPENAI_API_KEY={KEY}"})):
+    for method, path, payload in (("GET", "/api/secrets", None), ("POST", "/api/secrets", body)):
         assert call(server, method, path, payload, token=False)[0] == 403
     assert not (server.root / "secrets").exists()
     for path in ("/api/secrets/", "//api/secrets", "/api/secrets//"):
@@ -172,8 +160,7 @@ def test_secret_routes(server, monkeypatch):
     assert call(server, "GET", "/api/commit/t1/", token=False)[0] == 403
     status, data = call(server, "POST", "/api/secrets", body)
     assert status == 200 and data["anthropic"]["tail"] == KEY[-4:]
-    assert call(server, "POST", "/api/secrets/import", {"text": f"OPENAI_API_KEY={KEY}"}) == (200, {"saved": ["openai"]})
-    assert call(server, "POST", "/api/secrets/import", {"text": "X=1"})[0] == 400
+    assert call(server, "POST", "/api/secrets", {**body, "provider": "openai"})[0] == 200
     assert call(server, "POST", "/api/secrets", {**body, "action": "wipe"})[0] == 400
     assert call(server, "POST", "/api/secrets", {**body, "api_key": "a b"})[0] == 400
     for path in ("/api/secrets", "/api/catalogue", "/", "/api/log?after=0"):

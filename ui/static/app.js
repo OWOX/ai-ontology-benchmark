@@ -567,18 +567,6 @@ async function loadSecrets() {
   renderSecrets(await api("GET", "/api/secrets"));
 }
 
-function onImport(ev) {
-  const file = ev.target.files[0];
-  ev.target.value = "";
-  if (!file) return;
-  guarded("secrets-msg", async () => {
-    const r = await api("POST", "/api/secrets/import", { text: await file.text() });
-    await loadSecrets();
-    await refreshCatalogue();
-    say("secrets-msg", `Saved: ${r.saved.join(", ")}.`, "ok");
-  });
-}
-
 // Reload the catalogue, keeping the form: models enable, new releases appear.
 async function refreshCatalogue() {
   const keep = [$("release").value, $("eval-release").value];
@@ -893,7 +881,6 @@ async function init() {
   $("btn-estimate").addEventListener("click", onEstimate);
   $("btn-run").addEventListener("click", onRun);
   $("btn-dry").addEventListener("click", onDry);
-  $("secrets-file").addEventListener("change", onImport);
   $("btn-install").addEventListener("click", () => projectJob("setup-msg", "/api/install", {}, "Install started; see the terminal."));
   $("btn-tests").addEventListener("click", () => projectJob("setup-msg", "/api/tests", {}, "Tests started; see the terminal."));
   $("btn-release").addEventListener("click", onRelease);
