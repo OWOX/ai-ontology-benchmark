@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.config import load_experiment_config
+from src.puzzles.registry import get_engine
 from test_release import commit_all, git, run_release, repo  # noqa: F401  (repo is a fixture)
 from ui import secrets as key_store
 from ui.common import merged_env
@@ -58,6 +59,7 @@ def server(ui_repo, tmp_path_factory):
     (static / "index.html").write_text('<meta name="ui-token" content="{{UI_TOKEN}}">', encoding="utf-8")
     (static / "app.js").write_text("//js", encoding="utf-8")
     (static / "style.css").write_text("/*css*/", encoding="utf-8")
+    (static / "cube.js").write_text("//cube", encoding="utf-8")
     srv = make_server(ui_repo, 0, static)
     srv.root = ui_repo
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -578,3 +580,82 @@ def test_exclusive_job_blocks_everything_and_release_needs_clean_tree(server, sp
                        ("/api/evaluate", {"id": "t1"}), ("/api/dry-run", {"id": "t1"}),
                        ("/api/tests", {})):
         assert call(server, "POST", path, body)[0] == 409, path
+
+
+def put_raw(srv, **fields):
+    """Write one raw record by hand, so a replay test needs no run."""
+    record = {"model": "example-model", "input_id": "ID", "setup": "no_model", "attempt_number": 1,
+              "outcome": "success", "parsed_moves": [], **fields}
+    record["input_id"] = fields.get("input_id", srv.first["input_id"])
+    folder = srv.root / "results" / "t1" / "raw"
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder / "example-model.jsonl").open("a", encoding="utf-8") as out:
+        out.write(json.dumps(record) + "\n")
+
+
+REPLAY = "/api/replay/t1?model=example-model&input_id=ID&setup=no_model&attempt=1"
+
+
+def url(srv, text=REPLAY):
+    return text.replace("ID", srv.first["input_id"])
+
+
+def start_state(srv):
+    assert call(srv, "POST", "/api/experiment", FORM)[0] == 200
+    lines = (srv.root / "releases" / "1.0.0" / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
+    row = next(r for r in map(json.loads, lines) if r["puzzle"] == "2x2" and r["validity"] == "valid")
+    srv.first = row  # the test inputs differ from the real release
+    return row["state"]
+
+
+def test_replay_frames_follow_apply_move(server):
+    state = start_state(server)
+    moves = ["R", "U'", "F2"]
+    put_raw(server, parsed_moves=moves, outcome="failure")
+    status, data = call(server, "GET", url(server))
+    engine, expected = get_engine("2x2"), [state]
+    for move in moves:
+        expected.append(engine.apply_move(expected[-1], move))
+    assert status == 200 and data["frames"] == expected and data["moves"] == moves
+    assert data["stopped_at"] is None and data["solved"] is False and data["outcome"] == "failure"
+    assert data["puzzle"] == "2x2" and data["input_id"] == server.first["input_id"]
+
+
+def test_replay_stops_at_an_impossible_move(server):
+    start_state(server)
+    put_raw(server, parsed_moves=["R", "X", "U"], outcome="hallucination")
+    status, data = call(server, "GET", url(server))
+    assert status == 200 and data["stopped_at"] == 1 and len(data["frames"]) == 2
+    assert data["moves"] == ["R", "X", "U"] and data["solved"] is False and data["outcome"] == "hallucination"
+    put_raw(server, attempt_number=2, parsed_moves=["r"], outcome="hallucination")  # exact match only
+    assert call(server, "GET", url(server, REPLAY.replace("attempt=1", "attempt=2")))[1]["stopped_at"] == 0
+
+
+def test_replay_solved_flag_and_malformed_output(server):
+    state = start_state(server)
+    scramble = server.first["scramble"]
+    inverse = [m[0] + {"": "'", "'": "", "2": "2"}[m[1:]] for m in reversed(scramble)]
+    put_raw(server, parsed_moves=inverse)
+    assert call(server, "GET", url(server))[1]["solved"] is True
+    put_raw(server, attempt_number=2, outcome="malformed_output", parsed_moves=None)
+    status, data = call(server, "GET", url(server, REPLAY.replace("attempt=1", "attempt=2")))
+    assert status == 200 and data["frames"] == [state] and data["moves"] == [] and data["solved"] is False
+
+
+def test_replay_errors(server):
+    start_state(server)
+    put_raw(server)
+    assert call(server, "GET", REPLAY.replace("ID", "nope"))[0] == 404
+    assert call(server, "GET", url(server, REPLAY.replace("attempt=1", "attempt=2")))[0] == 404
+    assert call(server, "GET", url(server, REPLAY.replace("model=example-model", "model=other")))[0] == 404
+    assert call(server, "GET", "/api/replay/nope?model=a&input_id=b&setup=no_model&attempt=1")[0] == 404
+    for bad in ("attempt=0", "attempt=x", "attempt=-1", "attempt=", "setup=bogus"):
+        name = bad.split("=")[0]
+        status, data = call(server, "GET", url(server, REPLAY.replace(f"{name}={'1' if name == 'attempt' else 'no_model'}", bad)))
+        assert status == 400 and name in data["error"], bad
+    assert call(server, "GET", "/api/replay/t1?model=example-model&input_id=x&setup=no_model")[0] == 400
+
+
+def test_static_cube_js_is_served(server):
+    assert call(server, "GET", "/static/cube.js", token=False)[0] == 200
+    assert call(server, "GET", "/static/other.js", token=False)[0] == 404

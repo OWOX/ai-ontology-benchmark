@@ -1,6 +1,6 @@
 # ui
 
-Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/style.css`, `ui/start.sh`, `config/models.toml`.
+Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/cube.js`, `ui/static/style.css`, `ui/start.sh`, `config/models.toml`.
 
 Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments. Later updates go through the Install button.
 
@@ -45,7 +45,7 @@ The page polls. The server has no event stream.
 1. At start the server makes a token with `secrets.token_urlsafe(24)` and writes it into `index.html` as `<meta name="ui-token" content="...">`.
 2. Every request whose `Host` header is not `127.0.0.1:<port>` or `localhost:<port>` gets 403.
 3. Every `POST` without the header `X-Token: <token>` gets 403. So does every `GET /api/commit/<id>`, because the preview runs `git fetch`, and `GET /api/secrets`.
-4. Static files come from an allowlist: `/` serves `index.html`, and `/static/app.js` and `/static/style.css`. Any other path gets 404. Nothing outside `ui/static/` is ever served, so `secrets/` can't be reached.
+4. Static files come from an allowlist: `/` serves `index.html`, and `/static/app.js`, `/static/cube.js`, and `/static/style.css`. Any other path gets 404. Nothing outside `ui/static/` is ever served, so `secrets/` can't be reached.
 5. A `POST` body is JSON of at most 64 KiB, or 400.
 
 ## HTTP API
@@ -123,6 +123,15 @@ Project jobs belong to no experiment and use the id `""`. Their names are `insta
 17. `POST /api/push` runs `git push -u origin <branch>`, then `git push origin <tag>...` for the `release-*` tags reachable from the branch (`git tag --merged <branch> --list 'release-*'`; skipped when there are none), then finds the open pull request with `gh pr view` or makes one with `gh pr create --base main --head <branch> --fill`, and returns `{"branch", "pr_url"}`. It adds no attribution. It runs inline, like commit.
 18. `POST /api/dry-run {"id"}` starts `python -u -m src.run.run --experiment <id> --dry-run`.
 19. Release and push give 409 when the branch is `main` or HEAD is detached. Install, release, and push give 409 while any job of any experiment, or any project job, is running, and while one of them runs every other job gives 409. Release also gives 409, naming up to 10 paths, when `git status --porcelain` is not empty. `tests` and `dry-run` give 409 only while the same job is running.
+
+20. `GET /api/replay/<id>?model=<name>&input_id=<id>&setup=<setup>&attempt=<n>` needs no token, like `/api/state`. It plays one attempt's moves on its input and returns every state on the way:
+
+    ```json
+    {"input_id": "2x2-d5-001", "puzzle": "2x2", "outcome": "hallucination", "moves": ["R", "U'", "X"],
+     "frames": ["<state 0>", "<after move 1>", "<after move 2>"], "stopped_at": 2, "solved": false}
+    ```
+
+    The record is the one in `results/<id>/raw/<model>.jsonl`, read with `src.run.raw.read_raw`, with that `input_id`, `setup`, and `attempt_number`. `moves` is its `parsed_moves`, empty for `malformed_output` and `infrastructure_failure`. `frames[0]` is the input's state from the experiment's release. Each next frame is the engine's `apply_move` of the next move. A move that is not in `legal_moves()` (exact string match) stops the replay: `stopped_at` is its index, and it and every later move get no frame. Otherwise `stopped_at` is `null`. `solved` is `is_solved` of the last frame when the replay did not stop and at least one move was applied, else false, and is for display only: `outcome` is always the record's own. A puzzle with no engine in the registry gives one frame. A missing or malformed `model`, `input_id`, `setup`, or `attempt` gives 400 naming the query field. An unknown experiment, a model outside the experiment, an unknown input, or no matching record gives 404. The move group is never sent to the page: the page only draws the frames.
 
 Job names are `run:<model>`, `estimate`, `dry-run`, `evaluate`, and `commit`, plus the project jobs above. Every job runs with `cwd` at the root and the merged env from Inputs 4. The registry keys a job by experiment id and name, so a job that belongs to no experiment can use the id `""`.
 

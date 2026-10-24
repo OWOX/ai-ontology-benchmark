@@ -19,6 +19,7 @@ from ui.common import ApiError
 MAX_BODY = 64 * 1024
 STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
           "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
+          "/static/cube.js": ("cube.js", "text/javascript; charset=utf-8"),
           "/static/style.css": ("style.css", "text/css; charset=utf-8")}
 
 
