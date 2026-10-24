@@ -16,10 +16,16 @@ FENCE = re.compile(r"^\s*```[A-Za-z]*\s*\n(.*?)\n?\s*```\s*$", re.DOTALL)
 
 @dataclass(frozen=True)
 class Verdict:
+    # Moves read from the AI model's JSON output, in order. Empty when there is no usable output.
     parsed_moves: list[str]
+    # True when at least one parsed move is an impossible move, i.e. not in legal_moves().
     hallucination: bool
+    # The AI model's own claim that the input can't be reached from the solved state.
+    # Read from its output, not computed. False when there is no usable output.
     mismatch: bool
-    move_count: int | None  # None for infrastructure_failure and malformed_output
+    # Number of parsed moves in the half-turn metric. None for infrastructure_failure and malformed_output.
+    move_count: int | None
+    # infrastructure_failure, malformed_output, hallucination, success, or failure.
     outcome: str
 
 
