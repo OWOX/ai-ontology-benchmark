@@ -41,6 +41,7 @@ const S = {
   project: null,           // last /api/project
   logTimer: null,          // timer of the log poll
   projRunning: new Set(),  // job names running at the last log poll
+  fresh: [],               // records that landed in the last snapshot
 };
 const STATE_POLL_MS = 1500;
 const LOG_POLL_MS = { busy: 1000, idle: 5000 };
@@ -114,6 +115,7 @@ function paintArc(key) {
   const state = arcState(key, model);
   path.setAttribute("fill", COLORS[state] || COLORS.pending);
   path.classList.toggle("pulse", state === "in_progress");
+  path.classList.toggle("done", S.records.has(key));
   path.firstChild.textContent = arcTitle(key, model, setup, Number(attempt), input);
 }
 
@@ -131,6 +133,7 @@ function buildRing(model, input) {
       path.append(svg("title"));
       const key = recKey(model, input.input_id, setup, a);
       S.arcs.set(key, path);
+      path.addEventListener("click", () => cubeOpen(model, input.input_id, setup, a));
       root.append(path);
       paintArc(key);
     }
@@ -300,6 +303,7 @@ function addRecord(rec) {
   if (old && old.outcome === rec.outcome) return;
   if (old) { c.done--; c.out[old.outcome]--; }
   S.records.set(key, rec);
+  if (!old) S.fresh.push(rec);
   c.done++; c.out[rec.outcome] = (c.out[rec.outcome] || 0) + 1;
   paintArc(key);
   updateHeaders(rec.model, input.puzzle);
@@ -334,6 +338,7 @@ async function loadState(id) {
   const snap = await api("GET", "/api/state/" + encodeURIComponent(id));
   const shape = JSON.stringify([id, snap.release, snap.models, snap.attempts, snap.inputs.map((i) => i.input_id)]);
   const rebuild = shape !== S.shape;
+  S.fresh = [];
   if (rebuild) {
     resetProgress();
     S.shape = shape; S.id = id;
@@ -344,7 +349,9 @@ async function loadState(id) {
   S.jobs = { ...snap.jobs };
   if (rebuild) renderProgress();
   for (const r of snap.records) addRecord(r);
+  if (rebuild) { S.fresh = []; cubeReset(); }  // records that were already there are not replayed
   markInProgress();
+  cubeLive();
   renderBanners();
   refreshControls();
   scheduleState();
@@ -673,6 +680,135 @@ async function onConfirm() {
   }
 }
 
+// ---- Cube panel ------------------------------------------------------------
+// Plays one attempt on the 3D view and the net. The server sends every frame (GET /api/replay), so the
+// page never holds the move group. Live mode follows the newest record of the chosen model.
+const BASE_STEP_MS = 300;
+const P = { live: true, model: "", data: null, input: null, frame: 0, playing: false, timer: null,
+            speed: 1, seq: 0, shown: "", info: null };
+const reducedMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function cubeReset() {
+  clearTimeout(P.timer);
+  Object.assign(P, { data: null, input: null, frame: 0, playing: false, shown: "", info: null, seq: P.seq + 1 });
+  const models = S.snap ? S.snap.models : [];
+  if (!models.includes(P.model)) P.model = models.find((m) => S.jobs["run:" + m] === "running") || models[0] || "";
+  $("cube-model").replaceChildren(...models.map((m) => el("option", { value: m, text: m })));
+  $("cube-model").value = P.model;
+  $("cube-model").hidden = models.length < 2;
+  cubeDraw();
+}
+
+function cubeCan(puzzle, state) {
+  return /^\d+x\d+$/.test(puzzle) && puzzle.split("x")[0] === puzzle.split("x")[1] && cubeSize(state) > 0;
+}
+
+function cubeDraw() {
+  const box = $("cube-panel"), views = $("cube-views"), movesBox = $("cube-moves");
+  const state = P.data ? P.data.frames[P.frame] : P.input ? P.input.state : null;
+  const puzzle = P.data ? P.data.puzzle : P.input ? P.input.puzzle : "";
+  box.classList.toggle("waiting", !P.data && !!P.input);
+  for (const id of ["cube-back", "cube-play", "cube-fwd"]) $(id).disabled = !P.data;
+  $("cube-play").textContent = P.playing ? "Pause" : "Play";
+  movesBox.replaceChildren();
+  if (state === null) {
+    views.replaceChildren(el("span", { class: "muted", text: "Run an experiment or click an arc to see its cube." }));
+    $("cube-info").textContent = "";
+    return;
+  }
+  if (!cubeCan(puzzle, state)) {
+    views.replaceChildren(el("span", { class: "muted", text: `no drawing for ${puzzle}` }));
+    $("cube-info").textContent = "";
+    return;
+  }
+  const n = cubeSize(state);
+  const move = P.data && P.frame > 0 ? P.data.moves[P.frame - 1] : null;
+  const turned = move && !reducedMotion() ? move[0] : null;
+  views.replaceChildren(cubeIso(state, n, turned, { height: 200 }), cubeNet(state, { width: 240 }));
+  if (P.data) {
+    P.data.moves.forEach((m, i) => {
+      const bad = i === P.data.stopped_at;
+      const chip = el("span", { class: "mv" + (i === P.frame - 1 ? " cur" : "") + (bad ? " bad" : ""), text: m });
+      if (bad) chip.style.color = COLORS.hallucination;
+      movesBox.append(chip, " ");
+    });
+    if (!P.data.moves.length) movesBox.append(el("span", { class: "muted", text: "no moves" }));
+  }
+  const info = P.info || {};
+  if (!P.data) { $("cube-info").textContent = `waiting for ${P.model}`; return; }
+  const outcome = el("span", { class: "outcome", text: P.data.outcome.replace("_", " ") });
+  outcome.style.color = COLORS[P.data.outcome] || "inherit";
+  $("cube-info").replaceChildren(outcome, ` · ${info.input_id} · ${info.setup} · attempt ${info.attempt}`
+    + (P.data.stopped_at !== null ? ` · stopped at impossible move ${P.data.moves[P.data.stopped_at]}` : ""));
+}
+
+function cubeStop() { clearTimeout(P.timer); P.playing = false; }
+
+function cubeStep(delta) {
+  if (!P.data) return;
+  P.frame = Math.max(0, Math.min(P.data.frames.length - 1, P.frame + delta));
+  if (P.frame === P.data.frames.length - 1) cubeStop();
+  cubeDraw();
+}
+
+function cubePlay() {
+  cubeStop();
+  if (!P.data) return;
+  if (P.frame >= P.data.frames.length - 1) P.frame = 0;
+  P.playing = true;
+  cubeDraw();
+  const tick = () => {
+    if (!P.playing) return;
+    cubeStep(1);
+    if (P.playing) P.timer = setTimeout(tick, BASE_STEP_MS / P.speed);
+  };
+  P.timer = setTimeout(tick, BASE_STEP_MS / P.speed);
+}
+
+async function cubeLoad(model, inputId, setup, attempt) {
+  const seq = ++P.seq;
+  const q = new URLSearchParams({ model, input_id: inputId, setup, attempt });
+  const data = await api("GET", `/api/replay/${encodeURIComponent(S.id)}?${q}`);
+  if (seq !== P.seq) return;  // a newer request took over
+  cubeStop();
+  Object.assign(P, { data, input: null, frame: 0, shown: "", info: { input_id: inputId, setup, attempt } });
+  cubePlay();
+}
+
+function cubeOpen(model, inputId, setup, attempt) {
+  if (!S.records.has(recKey(model, inputId, setup, attempt))) return;
+  P.live = false; $("cube-live").checked = false;
+  P.model = model; $("cube-model").value = model;
+  cubeLoad(model, inputId, setup, attempt).catch((e) => say("form-msg", e.message, "err"));
+}
+
+// Called after every snapshot: play the newest record of the followed model, or show the attempt in flight.
+function cubeLive() {
+  if (!P.live || !S.snap) return;
+  const fresh = S.fresh.filter((r) => r.model === P.model).pop();
+  if (fresh) {
+    cubeLoad(fresh.model, fresh.input_id, fresh.setup, fresh.attempt_number).catch((e) => say("form-msg", e.message, "err"));
+    return;
+  }
+  const key = S.lastArc[P.model];
+  if (!key || P.playing) return;
+  if (P.shown === key) return;
+  P.shown = key; P.seq++;
+  P.data = null; P.info = null;
+  P.input = S.inputs.get(key.split("|")[1]);
+  cubeDraw();
+}
+
+function cubeInit() {
+  $("cube-play").addEventListener("click", () => (P.playing ? (cubeStop(), cubeDraw()) : cubePlay()));
+  $("cube-back").addEventListener("click", () => { cubeStop(); cubeStep(-1); });
+  $("cube-fwd").addEventListener("click", () => { cubeStop(); cubeStep(1); });
+  $("cube-speed").addEventListener("change", (e) => { P.speed = Number(e.target.value); if (P.playing) cubePlay(); });
+  $("cube-live").addEventListener("change", (e) => { P.live = e.target.checked; P.shown = ""; cubeLive(); });
+  $("cube-model").addEventListener("change", (e) => { P.model = e.target.value; P.data = null; P.input = null; P.shown = ""; cubeStop(); cubeDraw(); cubeLive(); });
+  cubeDraw();
+}
+
 // ---- Terminal --------------------------------------------------------------
 function termLine(ev) {
   const term = $("terminal");
@@ -718,6 +854,7 @@ async function init() {
   const meta = document.querySelector('meta[name="ui-token"]');
   S.token = meta ? meta.content : "";
   renderLegend();
+  cubeInit();
   $("btn-estimate").addEventListener("click", onEstimate);
   $("btn-run").addEventListener("click", onRun);
   $("btn-dry").addEventListener("click", onDry);

@@ -70,6 +70,22 @@
 
     <section class="step" id="step-progress">
       <h2><span class="num">5</span>Progress</h2>
+      <div id="cube-panel" class="cube-panel">
+        <div class="cube-head">
+          <strong>Cube</strong>
+          <label><input type="checkbox" id="cube-live" checked> Live</label>
+          <select id="cube-model" aria-label="Model to follow" hidden></select>
+        </div>
+        <div id="cube-views" class="cube-views"></div>
+        <div id="cube-moves" class="cube-moves"></div>
+        <div id="cube-info" class="cube-info"></div>
+        <div class="cube-ctl">
+          <button type="button" id="cube-back" class="small" disabled>Step back</button>
+          <button type="button" id="cube-play" class="small" disabled>Play</button>
+          <button type="button" id="cube-fwd" class="small" disabled>Step forward</button>
+          <label>Speed <select id="cube-speed"><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option><option value="4">4x</option></select></label>
+        </div>
+      </div>
       <div id="legend" class="legend"></div>
       <div id="banners"></div>
       <div id="progress" class="muted">Run or load an experiment to see progress.</div>
