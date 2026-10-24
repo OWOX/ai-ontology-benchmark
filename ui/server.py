@@ -151,6 +151,11 @@ class UiServer(ThreadingHTTPServer):
         """Drop a peer outside ALLOWED_NETWORKS before its request is parsed. The handler checks again."""
         return allowed_address(client_address[0], self.lan)
 
+    def handle_error(self, request, client_address) -> None:
+        """A browser's idle or dropped connection (timeout, reset) is routine: say nothing."""
+        if not isinstance(sys.exc_info()[1], OSError):
+            super().handle_error(request, client_address)
+
 
 def make_server(root: Path, port: int = 0, static_dir: Path | None = None, host: str = "127.0.0.1",
                 lan: bool = True) -> UiServer:

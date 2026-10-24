@@ -8,6 +8,8 @@ import json
 import os
 import re
 import signal
+import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -726,3 +728,14 @@ def test_replay_errors(server):
 def test_static_cube_js_is_served(server):
     assert call(server, "GET", "/static/cube.js", token=False)[0] == 200
     assert call(server, "GET", "/static/other.js", token=False)[0] == 404
+
+
+def test_dropped_connection_prints_no_traceback(server, capsys):
+    """A browser that resets an idle socket (a preconnect it never used) causes no traceback."""
+    port = server.server_address[1]
+    dropped = socket.create_connection(("127.0.0.1", port))
+    dropped.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))  # close with RST
+    dropped.send(b"GET / HT")
+    dropped.close()
+    time.sleep(0.3)
+    assert "Traceback" not in capsys.readouterr().err
