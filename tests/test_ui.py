@@ -582,11 +582,12 @@ def test_exclusive_job_blocks_everything_and_release_needs_clean_tree(server, sp
         assert call(server, "POST", path, body)[0] == 409, path
 
 
-def put_raw(srv, **fields):
+def put_raw(srv, drop=(), **fields):
     """Write one raw record by hand, so a replay test needs no run."""
-    record = {"model": "example-model", "input_id": "ID", "setup": "no_model", "attempt_number": 1,
-              "outcome": "success", "parsed_moves": [], **fields}
-    record["input_id"] = fields.get("input_id", srv.first["input_id"])
+    record = {"model": "example-model", "input_id": srv.first["input_id"], "setup": "no_model",
+              "attempt_number": 1, "outcome": "success", "parsed_moves": [], **fields}
+    for key in drop:
+        del record[key]
     folder = srv.root / "results" / "t1" / "raw"
     folder.mkdir(parents=True, exist_ok=True)
     with (folder / "example-model.jsonl").open("a", encoding="utf-8") as out:
@@ -640,6 +641,16 @@ def test_replay_solved_flag_and_malformed_output(server):
     put_raw(server, attempt_number=2, outcome="malformed_output", parsed_moves=None)
     status, data = call(server, "GET", url(server, REPLAY.replace("attempt=1", "attempt=2")))
     assert status == 200 and data["frames"] == [state] and data["moves"] == [] and data["solved"] is False
+
+
+def test_replay_survives_a_torn_line_and_a_record_without_parsed_moves(server):
+    state = start_state(server)
+    put_raw(server, drop=("parsed_moves",), outcome="infrastructure_failure")
+    with (server.root / "results" / "t1" / "raw" / "example-model.jsonl").open("a", encoding="utf-8") as out:
+        out.write('{"model": "example-model", "input_id": "tor')  # a stopped write leaves a torn last line
+    status, data = call(server, "GET", url(server))
+    assert status == 200 and data["frames"] == [state] and data["moves"] == [] and data["outcome"] == "infrastructure_failure"
+    assert call(server, "GET", url(server, REPLAY.replace("attempt=1", "attempt=2")))[0] == 404
 
 
 def test_replay_errors(server):

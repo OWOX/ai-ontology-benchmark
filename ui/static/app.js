@@ -684,13 +684,14 @@ async function onConfirm() {
 // Plays one attempt on the 3D view and the net. The server sends every frame (GET /api/replay), so the
 // page never holds the move group. Live mode follows the newest record of the chosen model.
 const BASE_STEP_MS = 300;
+const REPLAY_GAP_MS = 600;  // pause between a finished replay and the queued one
 const P = { live: true, model: "", data: null, input: null, frame: 0, playing: false, timer: null,
-            speed: 1, seq: 0, shown: "", info: null };
+            speed: 1, seq: 0, shown: "", info: null, queue: null, gap: null, last: null };
 const reducedMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function cubeReset() {
-  clearTimeout(P.timer);
-  Object.assign(P, { data: null, input: null, frame: 0, playing: false, shown: "", info: null, seq: P.seq + 1 });
+  cubeDrop();
+  Object.assign(P, { data: null, input: null, frame: 0, playing: false, shown: "", info: null, last: null, seq: P.seq + 1 });
   const models = S.snap ? S.snap.models : [];
   if (!models.includes(P.model)) P.model = models.find((m) => S.jobs["run:" + m] === "running") || models[0] || "";
   $("cube-model").replaceChildren(...models.map((m) => el("option", { value: m, text: m })));
@@ -723,7 +724,7 @@ function cubeDraw() {
   }
   const n = cubeSize(state);
   const move = P.data && P.frame > 0 ? P.data.moves[P.frame - 1] : null;
-  const turned = move && !reducedMotion() ? move[0] : null;
+  const turned = move ? move[0] : null;  // the flash is CSS and stops under reduced motion; the outline stays
   views.replaceChildren(cubeIso(state, n, turned, { height: 200 }), cubeNet(state, { width: 240 }));
   if (P.data) {
     P.data.moves.forEach((m, i) => {
@@ -744,11 +745,33 @@ function cubeDraw() {
 
 function cubeStop() { clearTimeout(P.timer); P.playing = false; }
 
+// Forget the queued record and any pending pause, and drop a load still in flight.
+function cubeDrop() { cubeStop(); clearTimeout(P.gap); P.gap = null; P.queue = null; P.seq++; }
+
+function cubeFail(e) {
+  cubeStop();
+  const info = $("cube-info");
+  info.textContent = e.message;
+  info.style.color = COLORS.failure;
+}
+
+// Playback reached its last frame: pause, then start the queued record, if Live is on and one waits.
+function cubeEnded() {
+  if (!P.live || !P.queue || P.gap) return;
+  P.gap = setTimeout(() => {
+    const r = P.queue;
+    P.gap = null; P.queue = null;
+    if (P.live && r) cubeLoad(r.model, r.input_id, r.setup, r.attempt_number).catch(cubeFail);
+  }, REPLAY_GAP_MS);
+}
+
 function cubeStep(delta) {
   if (!P.data) return;
   P.frame = Math.max(0, Math.min(P.data.frames.length - 1, P.frame + delta));
-  if (P.frame === P.data.frames.length - 1) cubeStop();
+  const ended = P.frame === P.data.frames.length - 1;
+  if (ended) cubeStop();
   cubeDraw();
+  if (ended) cubeEnded();
 }
 
 function cubePlay() {
@@ -771,6 +794,7 @@ async function cubeLoad(model, inputId, setup, attempt) {
   const data = await api("GET", `/api/replay/${encodeURIComponent(S.id)}?${q}`);
   if (seq !== P.seq) return;  // a newer request took over
   cubeStop();
+  $("cube-info").style.color = "";
   Object.assign(P, { data, input: null, frame: 0, shown: "", info: { input_id: inputId, setup, attempt } });
   cubePlay();
 }
@@ -778,8 +802,9 @@ async function cubeLoad(model, inputId, setup, attempt) {
 function cubeOpen(model, inputId, setup, attempt) {
   if (!S.records.has(recKey(model, inputId, setup, attempt))) return;
   P.live = false; $("cube-live").checked = false;
+  cubeDrop();
   P.model = model; $("cube-model").value = model;
-  cubeLoad(model, inputId, setup, attempt).catch((e) => say("form-msg", e.message, "err"));
+  cubeLoad(model, inputId, setup, attempt).catch(cubeFail);
 }
 
 // Called after every snapshot: play the newest record of the followed model, or show the attempt in flight.
@@ -787,13 +812,20 @@ function cubeLive() {
   if (!P.live || !S.snap) return;
   const fresh = S.fresh.filter((r) => r.model === P.model).pop();
   if (fresh) {
-    cubeLoad(fresh.model, fresh.input_id, fresh.setup, fresh.attempt_number).catch((e) => say("form-msg", e.message, "err"));
+    if (P.playing || P.gap) P.queue = fresh;  // a queue of one: only the newest unplayed record waits
+    else cubeLoad(fresh.model, fresh.input_id, fresh.setup, fresh.attempt_number).catch(cubeFail);
     return;
   }
   const key = S.lastArc[P.model];
-  if (!key || P.playing) return;
-  if (P.shown === key) return;
+  if (!key && P.input) {  // the run ended with no final record: drop the waiting state
+    P.input = null; P.shown = "";
+    P.data = P.last ? P.last.data : null; P.info = P.last ? P.last.info : null;
+    P.frame = P.data ? P.data.frames.length - 1 : 0;
+    cubeDraw();
+  }
+  if (!key || P.playing || P.gap || P.queue || P.shown === key) return;
   P.shown = key; P.seq++;
+  if (P.data) P.last = { data: P.data, info: P.info };
   P.data = null; P.info = null;
   P.input = S.inputs.get(key.split("|")[1]);
   cubeDraw();
@@ -804,8 +836,11 @@ function cubeInit() {
   $("cube-back").addEventListener("click", () => { cubeStop(); cubeStep(-1); });
   $("cube-fwd").addEventListener("click", () => { cubeStop(); cubeStep(1); });
   $("cube-speed").addEventListener("change", (e) => { P.speed = Number(e.target.value); if (P.playing) cubePlay(); });
-  $("cube-live").addEventListener("change", (e) => { P.live = e.target.checked; P.shown = ""; cubeLive(); });
-  $("cube-model").addEventListener("change", (e) => { P.model = e.target.value; P.data = null; P.input = null; P.shown = ""; cubeStop(); cubeDraw(); cubeLive(); });
+  $("cube-live").addEventListener("change", (e) => { P.live = e.target.checked; P.shown = ""; if (!P.live) cubeDrop(); cubeLive(); });
+  $("cube-model").addEventListener("change", (e) => {
+    P.model = e.target.value; P.data = null; P.input = null; P.shown = ""; P.last = null;
+    cubeDrop(); cubeDraw(); cubeLive();
+  });
   cubeDraw();
 }
 
