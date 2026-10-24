@@ -739,3 +739,16 @@ def test_dropped_connection_prints_no_traceback(server, capsys):
     dropped.close()
     time.sleep(0.3)
     assert "Traceback" not in capsys.readouterr().err
+
+
+def test_main_refuses_a_port_another_server_answers_on(ui_repo, capsys):
+    """On macOS a --no-lan bind can share a port with a --lan server; main must refuse it."""
+    holder = socket.socket()
+    holder.bind(("127.0.0.1", 0))
+    holder.listen()
+    port = holder.getsockname()[1]
+    try:
+        assert server_module.main(["--port", str(port), "--root", str(ui_repo), "--no-lan"]) == 1
+        assert "another server is listening" in capsys.readouterr().err
+    finally:
+        holder.close()

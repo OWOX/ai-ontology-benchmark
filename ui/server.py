@@ -152,9 +152,18 @@ class UiServer(ThreadingHTTPServer):
         return allowed_address(client_address[0], self.lan)
 
     def handle_error(self, request, client_address) -> None:
-        """A browser's idle or dropped connection (timeout, reset) is routine: say nothing."""
+        """A browser that resets or drops its connection is routine: say nothing."""
         if not isinstance(sys.exc_info()[1], OSError):
             super().handle_error(request, client_address)
+
+
+def port_answers(port: int) -> bool:
+    """True when something already accepts connections on 127.0.0.1:<port>."""
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
+        return True
+    except OSError:
+        return False
 
 
 def make_server(root: Path, port: int = 0, static_dir: Path | None = None, host: str = "127.0.0.1",
@@ -173,6 +182,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not (args.root / "releases").is_dir():
         print(f"error: {args.root / 'releases'}: folder not found", file=sys.stderr)
+        return 1
+    if port_answers(args.port):  # SO_REUSEADDR lets 0.0.0.0 and 127.0.0.1 share a port on macOS
+        print(f"error: port {args.port}: another server is listening", file=sys.stderr)
         return 1
     try:
         server = make_server(args.root, args.port, host=BIND_HOST if args.lan else "127.0.0.1", lan=args.lan)
