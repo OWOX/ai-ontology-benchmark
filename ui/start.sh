@@ -12,4 +12,8 @@ if [ ! -d .venv ]; then
   .venv/bin/python -m pip install -e '.[test]'
 fi
 
-exec .venv/bin/python -m ui.server "$@"
+# Port 7991 unless the caller passes --port.
+case " $* " in
+  *" --port"*) exec .venv/bin/python -m ui.server "$@" ;;
+  *) exec .venv/bin/python -m ui.server --port 7991 "$@" ;;
+esac
