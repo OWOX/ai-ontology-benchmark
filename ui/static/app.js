@@ -545,20 +545,25 @@ function renderSecrets(list) {
   $("secrets").replaceChildren(...Object.entries(list).map(([provider, s]) => {
     const status = s.source === "file" ? `Key …${s.tail} from ${s.location}`
       : s.source === "env" ? `Set by ${s.location}` : "No key";
-    const key = el("input", { type: "password", autocomplete: "off", placeholder: s.variable });
-    const act = (action) => guarded("secrets-msg", async () => {
-      if (action === "clear" && !confirm(`Delete the saved ${provider} key?`)) return;
-      renderSecrets(await api("POST", "/api/secrets", { provider, action, api_key: key.value }));
-      key.value = "";
-      await refreshCatalogue();
-    });
-    const save = el("button", { type: "button", text: "Save" });
-    const clear = el("button", { type: "button", text: "Clear" });
-    clear.disabled = s.source !== "file";
-    save.addEventListener("click", () => act("save"));
-    clear.addEventListener("click", () => act("clear"));
-    return el("div", { class: "row key-row" }, el("strong", { text: provider }),
-      el("span", { class: "muted small", text: status }), key, save, clear);
+    const row = el("div", { class: "row key-row" });
+    const btn = (text, fn) => { const b = el("button", { type: "button", text }); b.addEventListener("click", fn); return b; };
+    const draw = (editing) => {
+      const key = el("input", { type: "password", autocomplete: "off", placeholder: s.variable });
+      const act = (action) => guarded("secrets-msg", async () => {
+        if (action === "clear" && !confirm(`Delete the saved ${provider} key?`)) return;
+        const body = { provider, action, api_key: key.value };
+        key.value = "";
+        renderSecrets(await api("POST", "/api/secrets", body));
+        await refreshCatalogue();
+      });
+      const parts = [el("strong", { text: provider }), el("span", { class: "muted small", text: status })];
+      if (s.source === "missing" || editing) parts.push(key, btn("Save", () => act("save")));
+      if (editing) parts.push(btn("Cancel", () => { key.value = ""; draw(false); }));
+      else if (s.source === "file") parts.push(btn("Edit", () => draw(true)), btn("Clear", () => act("clear")));
+      row.replaceChildren(...parts);
+    };
+    draw(false);
+    return row;
   }));
 }
 
