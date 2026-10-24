@@ -67,6 +67,11 @@ Cube Bench (arXiv 2512.20595, code at github.com/dana-23/cube-bench) is the prio
 1. Do every change on a branch and open a pull request for it.
 2. Never merge to `main` or push to it directly unless the user explicitly says to.
 
+## UI
+
+1. After changes reach the checkout that the running UI serves from, restart the UI server so it runs the new code. The page files in `ui/static/` are read on every request, but Python code is loaded once at start-up.
+2. Restart only when no job is running. Stop the server with SIGTERM, which stops its jobs, and start it again with `./ui/start.sh`. If a job is running, say so and leave the server as it is.
+
 ## Writing
 
 1. Write all prose in plain Oxford English. Use British spelling with -ize endings (organize, realize, analyse), and always use the Oxford comma.
