@@ -15,8 +15,7 @@ const COLORS = {
 };
 const OUTCOMES = ["success", "failure", "hallucination", "malformed_output", "infrastructure_failure"];
 const PROVIDER_ORDER = ["anthropic", "openai", "google", "fake"];
-const PROVIDER_COLORS = { anthropic: "#c96442", openai: "#0f8f6f", google: "#3b78e7", fake: "#7f8c8d" };
-const UNKNOWN_PROVIDER_COLOR = "#9aa0a6";
+const NO_KEY = "no API key: add it in Setup"; // the catalogue's disabled_reason for a provider with no key
 
 // ---- Application state -----------------------------------------------------
 const S = {
@@ -216,9 +215,9 @@ function renderModels() {
   const rank = (p) => (PROVIDER_ORDER.includes(p) ? PROVIDER_ORDER.indexOf(p) : PROVIDER_ORDER.length);
   const providers = [...groups.keys()].sort((a, b) => rank(a) - rank(b));
   for (const p of providers) {
-    const badge = el("span", { class: "badge", text: (p[0] || "?"), "aria-hidden": "true" });
-    badge.style.background = PROVIDER_COLORS[p] || UNKNOWN_PROVIDER_COLOR;
-    const group = el("div", { class: "provider" }, el("div", { class: "provider-head" }, badge, el("span", { text: p })));
+    const head = el("div", { class: "provider-head" }, el("span", { text: p }));
+    if (groups.get(p).some((m) => m.disabled_reason === NO_KEY)) head.append(el("span", { class: "reason", text: NO_KEY }));
+    const group = el("div", { class: "provider" }, head);
     for (const m of groups.get(p)) {
       const off = !!m.disabled_reason;
       const box_ = el("input", { type: "checkbox", "data-model": m.name });
@@ -228,7 +227,7 @@ function renderModels() {
         if (box_.checked) S.models.add(m.name); else S.models.delete(m.name);
       });
       const label = el("label", { class: "model" + (off ? " off" : "") }, box_, el("span", { text: m.name }));
-      if (off) label.append(el("span", { class: "reason", text: m.disabled_reason }));
+      if (off && m.disabled_reason !== NO_KEY) label.append(el("span", { class: "reason", text: m.disabled_reason }));
       group.append(label);
     }
     box.append(group);
