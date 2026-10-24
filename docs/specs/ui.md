@@ -16,7 +16,7 @@ The UI may run `release` (which calls `generate` for a major bump) on a branch o
 python -m ui.server [--port 8765] [--root .]
 ```
 
-It binds to `127.0.0.1` only and prints the URL. `--root` is the repo root, for tests. It exits with code 1 if the port is taken or `--root` has no `releases/` folder.
+It binds to `0.0.0.0` and serves only clients in `127.0.0.0/8`, `10.0.0.0/8`, and `192.168.0.0/16`. On start it prints the loopback URL and one URL for each of this machine's addresses in those networks. `--root` is the repo root, for tests. It exits with code 1 if the port is taken or `--root` has no `releases/` folder.
 
 The server uses `http.server.ThreadingHTTPServer` with `daemon_threads = True`. Shared job state sits behind one `threading.Lock`.
 
@@ -43,10 +43,11 @@ The page polls. The server has no event stream.
 ## Security
 
 1. At start the server makes a token with `secrets.token_urlsafe(24)` and writes it into `index.html` as `<meta name="ui-token" content="...">`.
-2. Every request whose `Host` header is not `127.0.0.1:<port>` or `localhost:<port>` gets 403.
-3. Every `POST` without the header `X-Token: <token>` gets 403. So does every `GET /api/commit/<id>`, because the preview runs `git fetch`, and `GET /api/secrets`.
-4. Static files come from an allowlist: `/` serves `index.html`, and `/static/app.js`, `/static/cube.js`, and `/static/style.css`. Any other path gets 404. Nothing outside `ui/static/` is ever served, so `secrets/` can't be reached.
-5. A `POST` body is JSON of at most 64 KiB, or 400.
+2. Every request from a peer address outside `127.0.0.0/8`, `10.0.0.0/8`, and `192.168.0.0/16` gets 403, and so does every request whose `Host` header is not `localhost:<port>` or `<ip>:<port>`, where `<ip>` is a literal IPv4 address in those networks. An IPv4-mapped IPv6 peer counts as its IPv4 address. Hostnames are refused, which stops DNS rebinding.
+3. Warning: anyone on those networks who opens the page gets its token, and can start paid runs and push. The traffic is plain HTTP, so anyone who can watch the network can read the token and any API key sent through the page. Run the server only on a network you trust.
+4. Every `POST` without the header `X-Token: <token>` gets 403. So does every `GET /api/commit/<id>`, because the preview runs `git fetch`, and `GET /api/secrets`.
+5. Static files come from an allowlist: `/` serves `index.html`, and `/static/app.js`, `/static/cube.js`, and `/static/style.css`. Any other path gets 404. Nothing outside `ui/static/` is ever served, so `secrets/` can't be reached.
+6. A `POST` body is JSON of at most 64 KiB, or 400.
 
 ## HTTP API
 
