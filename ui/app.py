@@ -10,6 +10,7 @@ from pathlib import Path
 from ui import commit as commit_module
 from ui import experiments
 from ui import project
+from ui import replay
 from ui import secrets as key_store
 from ui.common import ApiError, check_id, merged_env
 from ui.jobs import Jobs
@@ -117,6 +118,8 @@ class App:
                 return experiments.load_form(self.root, experiment_id)
             if parts[1] == "state":
                 return experiments.snapshot(self.root, experiment_id, self.jobs.states(experiment_id))
+            if parts[1] == "replay":
+                return replay.replay(self.root, experiment_id, query)
             if parts[1] == "commit":
                 self.guard_commit(experiment_id)
                 return commit_module.preview(self.root, experiment_id, lambda s, t: self.jobs.say("commit", s, t))
@@ -137,8 +140,6 @@ class App:
             else:
                 raise ApiError(400, "field 'action' must be 'save' or 'clear'")
             return key_store.inspect(self.root)
-        if path == "/api/secrets/import":
-            return {"saved": key_store.import_text(self.root, body.get("text"))}
         if path == "/api/estimate":
             return self.start_simple(body, "estimate")
         if path == "/api/evaluate":

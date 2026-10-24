@@ -1,13 +1,16 @@
 # Spec: docs/specs/ui.md
-"""Local web server for running an experiment. Serves ui/static/ and answers the JSON API,
-including the terminal log the page polls. Reads the files named in the spec; writes only config/experiments/<id>.toml.
-Run as `python -m ui.server [--port 8765] [--root .]`.
+"""Web server for running an experiment, for this machine and the home network. Serves ui/static/ and answers the
+JSON API, including the terminal log the page polls. With --lan (the default) it binds 0.0.0.0 and answers only clients in ALLOWED_NETWORKS; with --no-lan it binds 127.0.0.1 and answers only loopback.
+Reads the files named in the spec; writes only config/experiments/<id>.toml.
+Run as `python -m ui.server [--port 8765] [--root .] [--lan | --no-lan]`.
 """
 
 import argparse
 import hmac
+import ipaddress
 import json
 import signal
+import socket
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,13 +20,41 @@ from ui.app import App
 from ui.common import ApiError
 
 MAX_BODY = 64 * 1024
+BIND_HOST = "0.0.0.0"
+LOOPBACK = ipaddress.ip_network("127.0.0.0/8")
+LAN_NETWORKS = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/16", "192.168.0.0/16"))
+ALLOWED_NETWORKS = (LOOPBACK, *LAN_NETWORKS)  # the default, with --lan
 STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
           "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
+          "/static/cube.js": ("cube.js", "text/javascript; charset=utf-8"),
           "/static/style.css": ("style.css", "text/css; charset=utf-8")}
+
+
+def allowed_address(text: str, lan: bool = True) -> bool:
+    """True when text is an IP address inside ALLOWED_NETWORKS (only LOOPBACK when lan is false). An IPv4-mapped IPv6 address counts as its IPv4 form."""
+    try:
+        ip = ipaddress.ip_address(text)
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return isinstance(ip, ipaddress.IPv4Address) and any(ip in net for net in (ALLOWED_NETWORKS if lan else (LOOPBACK,)))
+
+
+def lan_addresses() -> list[str]:  # only called with --lan
+    """This machine's primary LAN address, if it is inside ALLOWED_NETWORKS and not loopback. Empty otherwise."""
+    try:  # a UDP connect sends nothing; it only makes the OS pick the outgoing address
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("10.255.255.255", 9))
+            address = probe.getsockname()[0]
+    except OSError:
+        return []
+    return [address] if allowed_address(address) and not address.startswith("127.") else []
 
 
 class Handler(BaseHTTPRequestHandler):
     server: "UiServer"
+    timeout = 30  # a silent client can't hold a thread
 
     def log_message(self, *args) -> None:
         pass
@@ -40,8 +71,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_bytes(status, json.dumps(data).encode("utf-8"), "application/json")
 
     def host_ok(self) -> bool:
-        port = self.server.server_address[1]
-        return self.headers.get("Host") in (f"127.0.0.1:{port}", f"localhost:{port}")
+        """Host must be localhost or a literal allowed IPv4 address, with this server's port. Hostnames are refused."""
+        host, _, port = (self.headers.get("Host") or "").rpartition(":")
+        if port != str(self.server.server_address[1]):
+            return False
+        return host == "localhost" or ("." in host and ":" not in host and allowed_address(host, self.server.lan))
 
     def do_GET(self) -> None:
         self.handle_request("GET")
@@ -54,6 +88,8 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         path = url.path
         try:
+            if not allowed_address(self.client_address[0], self.server.lan):
+                raise ApiError(403, "client address not allowed")
             if not self.host_ok():
                 raise ApiError(403, "bad Host header")
             guarded = path.strip("/").split("/")[:2] in (["api", "commit"], ["api", "secrets"])  # as app.get routes
@@ -104,33 +140,62 @@ class Handler(BaseHTTPRequestHandler):
 
 class UiServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = False
+    allow_reuse_address = True  # restart at once after Ctrl-C; main probes the port first (see port_answers)
 
-    def __init__(self, address: tuple, app: App) -> None:
+    def __init__(self, address: tuple, app: App, lan: bool = True) -> None:
         super().__init__(address, Handler)
         self.app = app
+        self.lan = lan
+
+    def verify_request(self, request, client_address) -> bool:
+        """Drop a peer outside ALLOWED_NETWORKS before its request is parsed. The handler checks again."""
+        return allowed_address(client_address[0], self.lan)
+
+    def handle_error(self, request, client_address) -> None:
+        """A browser that resets or drops its connection is routine: say nothing."""
+        if not isinstance(sys.exc_info()[1], OSError):
+            super().handle_error(request, client_address)
 
 
-def make_server(root: Path, port: int = 0, static_dir: Path | None = None) -> UiServer:
-    """Build the server on 127.0.0.1. Tests pass port 0 and their own static folder."""
+def port_answers(port: int) -> bool:
+    """True when something already accepts connections on 127.0.0.1:<port>."""
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
+        return True
+    except OSError:
+        return False
+
+
+def make_server(root: Path, port: int = 0, static_dir: Path | None = None, host: str = "127.0.0.1",
+                lan: bool = True) -> UiServer:
+    """Build the server. `main` passes BIND_HOST, or 127.0.0.1 with --no-lan; tests keep loopback, port 0, and their own static folder."""
     static = static_dir or Path(__file__).resolve().parent / "static"
-    return UiServer(("127.0.0.1", port), App(Path(root).resolve(), static))
+    return UiServer((host, port), App(Path(root).resolve(), static), lan)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the experiment UI on 127.0.0.1.")
+    parser = argparse.ArgumentParser(description="Run the experiment UI. With --lan (the default) it binds 0.0.0.0 and serves "
+                                     "clients in 127.0.0.0/8, 10.0.0.0/16, and 192.168.0.0/16; with --no-lan, only this machine.")
+    parser.add_argument("--lan", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--root", type=Path, default=Path("."))
     args = parser.parse_args(argv)
     if not (args.root / "releases").is_dir():
         print(f"error: {args.root / 'releases'}: folder not found", file=sys.stderr)
         return 1
+    if port_answers(args.port):  # SO_REUSEADDR lets 0.0.0.0 and 127.0.0.1 share a port on macOS
+        print(f"error: port {args.port}: another server is listening", file=sys.stderr)
+        return 1
     try:
-        server = make_server(args.root, args.port)
+        server = make_server(args.root, args.port, host=BIND_HOST if args.lan else "127.0.0.1", lan=args.lan)
     except OSError as error:
         print(f"error: port {args.port}: {error.strerror}", file=sys.stderr)
         return 1
-    print(f"UI at http://127.0.0.1:{server.server_address[1]}/", flush=True)
+    port = server.server_address[1]
+    for address in ["127.0.0.1", *(lan_addresses() if args.lan else [])]:
+        print(f"UI at http://{address}:{port}/", flush=True)
+    if args.lan:
+        print("LAN access on: " + ", ".join(str(n) for n in LAN_NETWORKS) + " (use --no-lan to turn it off)", flush=True)
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     try:
         server.serve_forever()

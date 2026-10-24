@@ -1,8 +1,8 @@
 # ui
 
-Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/style.css`, `ui/start.sh`, `config/models.toml`.
+Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/cube.js`, `ui/static/style.css`, `ui/start.sh`, `config/models.toml`.
 
-Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments. Later updates go through the Install button.
+Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments, adding `--port 7991` unless they include `--port`. Later updates go through the Install button.
 
 ## Purpose
 
@@ -13,10 +13,10 @@ The UI may run `release` (which calls `generate` for a major bump) on a branch o
 ## Start
 
 ```
-python -m ui.server [--port 8765] [--root .]
+python -m ui.server [--port 8765] [--root .] [--lan | --no-lan]
 ```
 
-It binds to `127.0.0.1` only and prints the URL. `--root` is the repo root, for tests. It exits with code 1 if the port is taken or `--root` has no `releases/` folder.
+`--lan` is the default. It binds to `0.0.0.0` and serves only clients in `127.0.0.0/8`, `10.0.0.0/16`, and `192.168.0.0/16`. On start it prints the loopback URL, one URL for this machine's primary LAN address when it is in those networks, and a line naming the allowed LAN networks. `--no-lan` binds to `127.0.0.1`, serves only `127.0.0.0/8` for both the peer check and the Host check, and prints only the loopback URL. A peer outside them is dropped before its request is read, and an idle connection times out after 30 seconds. `--root` is the repo root, for tests. A restart binds at once, even while old connections are closing. It exits with code 1 if another server answers on `127.0.0.1:<port>` (checked before binding, because macOS lets a `0.0.0.0` and a `127.0.0.1` server share a port), or if `--root` has no `releases/` folder.
 
 The server uses `http.server.ThreadingHTTPServer` with `daemon_threads = True`. Shared job state sits behind one `threading.Lock`.
 
@@ -43,10 +43,11 @@ The page polls. The server has no event stream.
 ## Security
 
 1. At start the server makes a token with `secrets.token_urlsafe(24)` and writes it into `index.html` as `<meta name="ui-token" content="...">`.
-2. Every request whose `Host` header is not `127.0.0.1:<port>` or `localhost:<port>` gets 403.
-3. Every `POST` without the header `X-Token: <token>` gets 403. So does every `GET /api/commit/<id>`, because the preview runs `git fetch`, and `GET /api/secrets`.
-4. Static files come from an allowlist: `/` serves `index.html`, and `/static/app.js` and `/static/style.css`. Any other path gets 404. Nothing outside `ui/static/` is ever served, so `secrets/` can't be reached.
-5. A `POST` body is JSON of at most 64 KiB, or 400.
+2. With `--no-lan`, the networks below shrink to `127.0.0.0/8`. Every request from a peer address outside `127.0.0.0/8`, `10.0.0.0/16`, and `192.168.0.0/16` gets 403, and so does every request whose `Host` header is not `localhost:<port>` or `<ip>:<port>`, where `<ip>` is a literal IPv4 address in those networks. An IPv4-mapped IPv6 peer counts as its IPv4 address. Hostnames are refused, which stops DNS rebinding.
+3. Warning: anyone on those networks who opens the page gets its token, and can start paid runs and push. The traffic is plain HTTP, so anyone who can watch the network can read the token and any API key sent through the page. Run the server only on a network you trust.
+4. Every `POST` without the header `X-Token: <token>` gets 403. So does every `GET /api/commit/<id>`, because the preview runs `git fetch`, and `GET /api/secrets`.
+5. Static files come from an allowlist: `/` serves `index.html`, and `/static/app.js`, `/static/cube.js`, and `/static/style.css`. Any other path gets 404. Nothing outside `ui/static/` is ever served, so `secrets/` can't be reached.
+6. A `POST` body is JSON of at most 64 KiB, or 400.
 
 ## HTTP API
 
@@ -112,7 +113,7 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
     ```
 
     The server keeps one in-memory list of lines for all jobs, at most 5,000, dropping the oldest. `stream` is `cmd`, `stdout`, or `stderr`. The `cmd` line is the full command, logged before the process starts. `seq` counts up from 1 for the life of the server. `state` is `running`, `done`, `failed`, `budget`, or `stopped`. `budget` means the job exited 1 with a stderr line starting `error: budget reached:`. `stopped` means the UI stopped it.
-12. `GET /api/secrets` returns `{"<provider>": {"variable": "ANTHROPIC_API_KEY", "configured": true, "tail": "ab12", "source": "env" | "file" | "missing", "location": "secrets/anthropic.json" | "env var ANTHROPIC_API_KEY" | null}}` for each provider. `POST /api/secrets {"provider", "action": "save" | "clear", "api_key"}` saves a stripped key or deletes the file, and returns the same listing. An empty key, or one with whitespace inside, gives 400 naming `api_key`. `POST /api/secrets/import {"text"}` takes `.env`-style text, saves each known variable with a value, and returns `{"saved": ["anthropic"]}`. Text with no known variable gives 400. All three need the token.
+12. `GET /api/secrets` returns `{"<provider>": {"variable": "ANTHROPIC_API_KEY", "configured": true, "tail": "ab12", "source": "env" | "file" | "missing", "location": "secrets/anthropic.json" | "env var ANTHROPIC_API_KEY" | null}}` for each provider. `POST /api/secrets {"provider", "action": "save" | "clear", "api_key"}` saves a stripped key or deletes the file, and returns the same listing. An empty key, or one with whitespace inside, gives 400 naming `api_key`. Both need the token.
 
 Project jobs belong to no experiment and use the id `""`. Their names are `install`, `tests`, `release`, and `push`. Each is echoed to the terminal like the others.
 
@@ -123,6 +124,15 @@ Project jobs belong to no experiment and use the id `""`. Their names are `insta
 17. `POST /api/push` runs `git push -u origin <branch>`, then `git push origin <tag>...` for the `release-*` tags reachable from the branch (`git tag --merged <branch> --list 'release-*'`; skipped when there are none), then finds the open pull request with `gh pr view` or makes one with `gh pr create --base main --head <branch> --fill`, and returns `{"branch", "pr_url"}`. It adds no attribution. It runs inline, like commit.
 18. `POST /api/dry-run {"id"}` starts `python -u -m src.run.run --experiment <id> --dry-run`.
 19. Release and push give 409 when the branch is `main` or HEAD is detached. Install, release, and push give 409 while any job of any experiment, or any project job, is running, and while one of them runs every other job gives 409. Release also gives 409, naming up to 10 paths, when `git status --porcelain` is not empty. `tests` and `dry-run` give 409 only while the same job is running.
+
+20. `GET /api/replay/<id>?model=<name>&input_id=<id>&setup=<setup>&attempt=<n>` needs no token, like `/api/state`. It plays one attempt's moves on its input and returns every state on the way:
+
+    ```json
+    {"input_id": "2x2-d5-001", "puzzle": "2x2", "outcome": "hallucination", "moves": ["R", "U'", "X"],
+     "frames": ["<state 0>", "<after move 1>", "<after move 2>"], "stopped_at": 2, "solved": false}
+    ```
+
+    The record is the one in `results/<id>/raw/<model>.jsonl`, read with `src.run.raw.read_raw`, with that `input_id`, `setup`, and `attempt_number`. `moves` is its `parsed_moves`, empty for `malformed_output` and `infrastructure_failure`. `frames[0]` is the input's state from the experiment's release. Each next frame is the engine's `apply_move` of the next move. A move that is not in `legal_moves()` (exact string match) stops the replay: `stopped_at` is its index, and it and every later move get no frame. Otherwise `stopped_at` is `null`. `solved` is `is_solved` of the last frame when the replay did not stop and at least one move was applied, else false, and is for display only: `outcome` is always the record's own. A puzzle with no engine in the registry gives one frame. A missing or malformed `model`, `input_id`, `setup`, or `attempt` gives 400 naming the query field. An unknown experiment, a model outside the experiment, an unknown input, or no matching record gives 404. The move group is never sent to the page: the page only draws the frames.
 
 Job names are `run:<model>`, `estimate`, `dry-run`, `evaluate`, and `commit`, plus the project jobs above. Every job runs with `cwd` at the root and the merged env from Inputs 4. The registry keys a job by experiment id and name, so a job that belongs to no experiment can use the id `""`.
 
@@ -147,15 +157,23 @@ Every git and gh command is echoed to the terminal as a `commit` job.
 
 ## Page
 
-Two columns. The left column holds seven numbered steps. The right column is the terminal, sticky to the viewport height.
+Two columns. The left column holds seven numbered steps. The right column is the terminal, sticky to the viewport height. Each step header ends with a grey "?" help button in its top-right corner whose tooltip, which opens towards the left and shows on hover or keyboard focus, says in plain words what the step is for and what its controls do. The texts sit in `index.html`.
 
-1. Setup. One row per provider: its status (`Key …abcd from secrets/anthropic.json`, `Set by env var ANTHROPIC_API_KEY`, or `No key`), a password field, Save, and Clear (after `confirm()`). "Upload .env file" reads the file as text and posts it to `/api/secrets/import`. Save, Clear, and Import reload the secrets panel and the catalogue, so models enable. The password field is cleared after Save, and a key is never shown. Below the rows are the project status from `/api/project` (branch, clean tree, packages, `gh`) and the buttons Install dependencies and Run tests. Errors show the server's text in the step's message line.
+1. Setup. One row per provider: its status (`Key …abcd from secrets/anthropic.json`, `Set by env var ANTHROPIC_API_KEY`, or `No key`), a password field, Save, and Clear (after `confirm()`). Under the rows a note says "Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed." Save and Clear reload the secrets panel and the catalogue, so models enable. The password field is cleared after Save, and a key is never shown. Below the rows are the project status from `/api/project` (branch, clean tree, packages, `gh`) and the buttons Install dependencies and Run tests. Errors show the server's text in the step's message line.
 2. Shapes. A release picker (default latest), then one `<button aria-pressed>` card per puzzle in that release: the puzzle name, its input count, and, for an `NxN` name only, an SVG cube net in solved colours with `n` taken from the name. Any other puzzle shows its name with no net. Click toggles selection. At least one is needed.
-3. Models. Grouped by provider in the order anthropic, openai, google, fake. Each group header has a text badge: a coloured circle with the provider's initial. There are no third-party logos. Disabled models show their reason.
+3. Models. Grouped by provider in the order anthropic, openai, google, fake. The group header is the provider name alone, with no badge or logo. When a provider has no key, the header also shows "no API key: add it in Setup" once, and its models are disabled with no per-model text. Other disabled reasons, such as a missing price, show beside the model.
 4. Parameters. Experiment id (default `ui-YYYYMMDD-HHMMSS`, editable, with a "Load existing" button that fills the form from `GET /api/experiment/<id>`), attempts (labelled "Attempts per input and setup: sends the same input N times"), retry cap, max output tokens, the three budgets, and "Limit per model" (optional). Buttons: Estimate, Dry run, Run, Stop. Run first posts the form to `/api/experiment`, then calls `/api/run`.
-5. Progress. A legend, then one accordion per model, inside it one per puzzle, inside that one row per input. Headers show done/total and a count per outcome. Each row has a ring SVG split into `3 × attempts` arcs, in setup order then attempt order, with the input's cube net inside the ring, the input id, the depth, and the validity. Rows render when their accordion first opens. Hovering an arc shows setup, attempt, outcome, and, on invalid inputs, mismatch. A later snapshot only adds records, so open accordions stay open.
+5. Progress. A Cube panel, then a legend, then one accordion per model, inside it one per puzzle, inside that one row per input. Headers show done/total and a count per outcome. Each row has a ring SVG split into `3 × attempts` arcs, in setup order then attempt order, with the input's cube net inside the ring, the input id, the depth, and the validity. Rows render when their accordion first opens. Hovering an arc shows setup, attempt, outcome, and, on invalid inputs, mismatch. A later snapshot only adds records, so open accordions stay open.
 6. Evaluate and commit. An optional "Score under release" select lists every release, and its default, "experiment's release", sends `release: null`. Evaluate runs the evaluate job and then shows the report path. Commit opens a dialog with the preview's branch, files, and diffstat, and Confirm calls `POST /api/commit` and shows the PR link. Commit is disabled while any job is alive or before the report exists.
 7. Release. A bump select, a note field, and a Release button, then "Push and open PR". The step shows the latest release and the branch. Release is disabled, with the reason beside it, on `main` ("on main"), on a detached HEAD ("detached HEAD"), and with a dirty tree ("working tree has changes: commit them first"). Push is disabled on `main` and on a detached HEAD. Both are also disabled while any job runs. The server enforces all of this. When an install, release, or push job ends, the page reloads the project status, the catalogue, and the release lists.
+
+Cube panel: the first thing in the Progress step. The 3D view (`cubeIso`) is on the left and the net (`cubeNet`) of the same frame is on the right, always both. Below them are the move list, with the current move highlighted and an impossible move in the hallucination colour, and then the outcome, the input id, the setup, and the attempt number. The page never holds the move group: it draws the `frames` of `GET /api/replay/<id>`.
+
+1. Controls: Play/Pause, Step back, Step forward, and a speed select of 0.5x, 1x, 2x, and 4x, where 1x is 300 ms per move. A frame that follows a move highlights the face named by the move's first letter. Play at the last frame starts again from the first.
+2. Live mode is on by default. When a record lands in a snapshot taken during a run, the panel loads its replay and plays it. Records already there when the experiment loads are not replayed. The queue holds one record: while a replay plays, or during the pause after it, only the newest unplayed record of the followed AI model waits, and an older waiting one is dropped. When the playback ends, the panel pauses for about 600 ms and then plays the queued record, so a replay is never cut off by a newer record. While an attempt is in flight with no newer record, the panel shows that attempt's input and a slow pulse, with the text "waiting for <model>". The in-flight attempt is the page's own inference ([Polling](#polling)). When no job of the followed AI model is running, the waiting state clears and the panel shows the last replay, or stays empty. Changing the model, turning Live off, or clicking an arc drops the queue and any load still in flight. A replay error shows in the panel's own line, not in the form message. With more than one AI model, a model select picks which one the panel follows.
+3. Clicking an arc that has a record replays that attempt and turns Live off. The Live toggle turns it back on.
+4. A puzzle that is not an `NxN` cube, or one with no engine in the registry, shows "no drawing for <puzzle>" or a single frame.
+5. With `prefers-reduced-motion`, the pulse and the face highlight flash are off, and playback only steps. The thicker outline on the turned face stays, because it is static.
 
 Arc colours:
 
@@ -169,7 +187,9 @@ Arc colours:
 | `malformed_output` | `#1a9bb0` |
 | `infrastructure_failure` | `#5d6d7e` |
 
-Cube net: a state is `6·n·n` characters over `URFDLB`, faces in that order, each face row-major. The net puts U above F, L, F, R, and B in a row, and D below F. Sticker colours: U white, R red, F green, D yellow, L orange, B blue. These colours live in `app.js` only.
+Cube net: a state is `6·n·n` characters over `URFDLB`, faces in that order, each face row-major. The net puts U above F, L, F, R, and B in a row, and D below F. Sticker colours: U white, R red, F green, D yellow, L orange, B blue. These colours live in `cube.js` only, and `app.js` uses them, so the table is never copied. `cube.js` loads before `app.js` and holds the sticker colours, `svg()`, `cubeNet`, and `cubeIso`.
+
+Cube 3D view: `cubeIso(state, n, highlightFace)` draws the U face on top, F front-left, and R front-right, each as an `n × n` grid of parallelograms in the net's colours. Sticker order follows the state's reading convention ([cube.md](cube.md)): U is read from above with B at the top, so its first row is the back row, and F and R are read with U at the top, with R's first column next to F. The placement uses `READING` and `NORMAL` of `src/puzzles/cube.py` for U, F, and R as drawing geometry only. `highlightFace` draws that face's outline thicker, and a face the view does not show (D, L, B) is not outlined.
 
 Banners: a job in state `failed` shows its last stderr line. A job in state `budget` shows "Budget reached" and a plain note to raise the budget under Parameters and press Run. Running again posts the form, which the server accepts as `budget_updated`, and resumes. The banner notes that parallel AI models can each pass the experiment budget by one worst-case request, and that "attempts left" in the message counts one AI model's attempts.
 
@@ -177,7 +197,7 @@ Banners: a job in state `failed` shows its last stderr line. A job in state `bud
 
 `tests/test_ui.py`, with temporary folders, the `fake` provider, and no network. The server is started on port 0 in a thread.
 
-1. Keys: file modes, no backup copy, a real env var winning, an empty env var losing to a saved key, and only the last 4 characters in any `GET` body. Import parses `KEY=VALUE` text (comments, blanks, `export`, quotes, unknown names ignored) and refuses text with no known key. Every secrets route needs the token.
+1. Keys: file modes, no backup copy, a real env var winning, an empty env var losing to a saved key, and only the last 4 characters in any `GET` body. Every secrets route needs the token.
 2. The catalogue marks a model with no price, and a model with no key, as disabled, with the reasons above.
 3. `POST /api/experiment` for each of `created`, `unchanged`, `budget_updated`, and 409. On 409 the file is byte-identical afterwards.
 4. `updated` while `results/<id>/experiment.toml` is missing, and a config without `puzzles` comparing equal to the same choice made on the page.
@@ -191,4 +211,6 @@ Banners: a job in state `failed` shows its last stderr line. A job in state `bud
 12. A failed push and a failed `gh pr create` can each be run again, and only an open pull request counts.
 13. Commit is refused when the report is older than a raw file.
 14. Project jobs: the argv of each job, the 409 on `main` and on a detached HEAD, the blank-note 400, mutating jobs refused while any job runs, the `/api/project` shape, and push against a temporary bare remote with a stub `gh`.
-15. Outcome colours and the in-progress inference are in `app.js` and are not tested here. `app.js` keeps the colour table in one object.
+15. Replay: the frames equal successive `apply_move` calls, an impossible move stops the replay at its index, malformed output gives one frame and no moves, a missing record gives 404, a bad query field gives 400 naming it, and `/static/cube.js` is served while other unknown static paths give 404.
+16. Outcome colours and the in-progress inference are in `app.js` and are not tested here. `app.js` keeps the colour table in one object.
+17. The cube drawing is checked by hand with `node --check` on both scripts and a throwaway node script that loads `cube.js`, draws scrambled states from a release, and compares every sticker of `cubeIso` with `cubeNet`, and the edges where U, F, and R meet.

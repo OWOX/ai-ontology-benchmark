@@ -8,6 +8,8 @@ import json
 import os
 import re
 import signal
+import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -19,11 +21,13 @@ from types import SimpleNamespace
 import pytest
 
 from src.config import load_experiment_config
+from src.puzzles.registry import get_engine
 from test_release import commit_all, git, run_release, repo  # noqa: F401  (repo is a fixture)
 from ui import secrets as key_store
 from ui.common import merged_env
 from ui import jobs as jobs_module
-from ui.server import make_server
+from ui import server as server_module
+from ui.server import allowed_address, make_server
 
 MODELS = (
     '[[models]]\nname = "example-model"\nprovider = "fake"\napi_model_id = "ex-1"\n'
@@ -58,6 +62,7 @@ def server(ui_repo, tmp_path_factory):
     (static / "index.html").write_text('<meta name="ui-token" content="{{UI_TOKEN}}">', encoding="utf-8")
     (static / "app.js").write_text("//js", encoding="utf-8")
     (static / "style.css").write_text("/*css*/", encoding="utf-8")
+    (static / "cube.js").write_text("//cube", encoding="utf-8")
     srv = make_server(ui_repo, 0, static)
     srv.root = ui_repo
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -146,23 +151,11 @@ def test_empty_env_var_does_not_hide_a_saved_key(tmp_path, monkeypatch):
     assert key_store.inspect(tmp_path)["anthropic"]["source"] == "file"
 
 
-def test_secret_import_parsing(tmp_path, monkeypatch):
-    for variable in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"):
-        monkeypatch.delenv(variable, raising=False)
-    text = ('# comment\n\nANTHROPIC_API_KEY="quoted-key"\nexport OPENAI_API_KEY = \'open-key\'\n'
-            'GOOGLE_API_KEY=\nOTHER=ignored\n')
-    assert key_store.import_text(tmp_path, text) == ["anthropic", "openai"]
-    assert key_store.env(tmp_path) == {"ANTHROPIC_API_KEY": "quoted-key", "OPENAI_API_KEY": "open-key"}
-    with pytest.raises(key_store.ApiError, match="text"):
-        key_store.import_text(tmp_path, "OTHER=1\nGOOGLE_API_KEY=\n")
-
-
 def test_secret_routes(server, monkeypatch):
     for variable in ("OPENAI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(variable, raising=False)
     body = {"provider": "anthropic", "action": "save", "api_key": KEY}
-    for method, path, payload in (("GET", "/api/secrets", None), ("POST", "/api/secrets", body),
-                                  ("POST", "/api/secrets/import", {"text": f"OPENAI_API_KEY={KEY}"})):
+    for method, path, payload in (("GET", "/api/secrets", None), ("POST", "/api/secrets", body)):
         assert call(server, method, path, payload, token=False)[0] == 403
     assert not (server.root / "secrets").exists()
     for path in ("/api/secrets/", "//api/secrets", "/api/secrets//"):
@@ -170,8 +163,7 @@ def test_secret_routes(server, monkeypatch):
     assert call(server, "GET", "/api/commit/t1/", token=False)[0] == 403
     status, data = call(server, "POST", "/api/secrets", body)
     assert status == 200 and data["anthropic"]["tail"] == KEY[-4:]
-    assert call(server, "POST", "/api/secrets/import", {"text": f"OPENAI_API_KEY={KEY}"}) == (200, {"saved": ["openai"]})
-    assert call(server, "POST", "/api/secrets/import", {"text": "X=1"})[0] == 400
+    assert call(server, "POST", "/api/secrets", {**body, "provider": "openai"})[0] == 200
     assert call(server, "POST", "/api/secrets", {**body, "action": "wipe"})[0] == 400
     assert call(server, "POST", "/api/secrets", {**body, "api_key": "a b"})[0] == 400
     for path in ("/api/secrets", "/api/catalogue", "/", "/api/log?after=0"):
@@ -278,6 +270,74 @@ def test_security(server):
     conn = http.client.HTTPConnection("127.0.0.1", port)
     conn.request("POST", "/api/experiment", "x" * 70000, {"X-Token": server.app.token})
     assert conn.getresponse().status == 400
+
+
+def test_host_check_accepts_allowed_networks(server):
+    port = server.server_address[1]
+    for host in (f"10.0.5.6:{port}", f"192.168.1.5:{port}"):
+        assert call(server, "GET", "/api/catalogue", host=host)[0] == 200
+
+
+def test_host_check_refuses_other_hosts(server):
+    port = server.server_address[1]
+    for host in (f"10.1.2.3:{port}", f"10.255.0.1:{port}", f"172.16.0.1:{port}", f"8.8.8.8:{port}", f"evil.example:{port}", f"10.0.0.1:{port + 1}"):
+        assert call(server, "GET", "/api/catalogue", host=host)[0] == 403
+
+
+def test_peer_allowlist():
+    for peer in ("10.0.5.6", "192.168.1.5", "127.0.0.1", "::ffff:10.0.0.5"):
+        assert allowed_address(peer), peer
+    for peer in ("10.1.2.3", "10.255.0.1", "172.16.0.1", "8.8.8.8", "::1", "not-an-ip"):
+        assert not allowed_address(peer), peer
+
+
+def test_refused_peer_is_dropped_and_refused_by_the_handler(server):
+    assert server.verify_request(None, ("172.16.0.1", 1234)) is False
+    assert server.verify_request(None, ("10.0.0.5", 1234)) is True
+    sent = []
+    fake = SimpleNamespace(client_address=("172.16.0.1", 1), server=server, path="/api/catalogue", headers={},
+                           send_json=lambda status, data: sent.append((status, data)))
+    server_module.Handler.handle_request(fake, "GET")
+    assert sent and sent[0][0] == 403 and "client address" in sent[0][1]["error"]
+
+
+def test_no_lan_refuses_lan_peers_and_hosts(ui_repo, tmp_path):
+    srv = make_server(ui_repo, 0, tmp_path, lan=False)
+    try:
+        assert srv.verify_request(None, ("127.0.0.1", 1)) is True
+        for peer in ("10.0.5.6", "192.168.1.5"):
+            assert srv.verify_request(None, (peer, 1)) is False
+        port = srv.server_address[1]
+        for host, ok in ((f"localhost:{port}", True), (f"127.0.0.1:{port}", True),
+                         (f"10.0.5.6:{port}", False), (f"192.168.1.5:{port}", False)):
+            fake = SimpleNamespace(server=srv, headers={"Host": host})
+            assert server_module.Handler.host_ok(fake) is ok, host
+    finally:
+        srv.server_close()
+
+
+def test_main_no_lan_binds_loopback(ui_repo, monkeypatch):
+    seen = {}
+
+    def fake_make_server(root, port, static_dir=None, host="x", lan=True):
+        seen.update(host=host, lan=lan)
+        raise OSError(0, "stop here")
+
+    monkeypatch.setattr(server_module, "make_server", fake_make_server)
+    assert server_module.main(["--root", str(ui_repo), "--port", "0", "--no-lan"]) == 1
+    assert seen == {"host": "127.0.0.1", "lan": False}
+
+
+def test_main_binds_all_interfaces(ui_repo, monkeypatch):
+    seen = {}
+
+    def fake_make_server(root, port, static_dir=None, host="127.0.0.1", lan=True):
+        seen["host"] = host
+        raise OSError(0, "stop here")
+
+    monkeypatch.setattr(server_module, "make_server", fake_make_server)
+    assert server_module.main(["--root", str(ui_repo), "--port", "0"]) == 1
+    assert seen["host"] == "0.0.0.0"
 
 
 def test_log_keeps_the_newest_lines_and_serves_after(server, monkeypatch):
@@ -578,3 +638,117 @@ def test_exclusive_job_blocks_everything_and_release_needs_clean_tree(server, sp
                        ("/api/evaluate", {"id": "t1"}), ("/api/dry-run", {"id": "t1"}),
                        ("/api/tests", {})):
         assert call(server, "POST", path, body)[0] == 409, path
+
+
+def put_raw(srv, drop=(), **fields):
+    """Write one raw record by hand, so a replay test needs no run."""
+    record = {"model": "example-model", "input_id": srv.first["input_id"], "setup": "no_model",
+              "attempt_number": 1, "outcome": "success", "parsed_moves": [], **fields}
+    for key in drop:
+        del record[key]
+    folder = srv.root / "results" / "t1" / "raw"
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder / "example-model.jsonl").open("a", encoding="utf-8") as out:
+        out.write(json.dumps(record) + "\n")
+
+
+REPLAY = "/api/replay/t1?model=example-model&input_id=ID&setup=no_model&attempt=1"
+
+
+def url(srv, text=REPLAY):
+    return text.replace("ID", srv.first["input_id"])
+
+
+def start_state(srv):
+    assert call(srv, "POST", "/api/experiment", FORM)[0] == 200
+    lines = (srv.root / "releases" / "1.0.0" / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
+    row = next(r for r in map(json.loads, lines) if r["puzzle"] == "2x2" and r["validity"] == "valid")
+    srv.first = row  # the test inputs differ from the real release
+    return row["state"]
+
+
+def test_replay_frames_follow_apply_move(server):
+    state = start_state(server)
+    moves = ["R", "U'", "F2"]
+    put_raw(server, parsed_moves=moves, outcome="failure")
+    status, data = call(server, "GET", url(server))
+    engine, expected = get_engine("2x2"), [state]
+    for move in moves:
+        expected.append(engine.apply_move(expected[-1], move))
+    assert status == 200 and data["frames"] == expected and data["moves"] == moves
+    assert data["stopped_at"] is None and data["solved"] is False and data["outcome"] == "failure"
+    assert data["puzzle"] == "2x2" and data["input_id"] == server.first["input_id"]
+
+
+def test_replay_stops_at_an_impossible_move(server):
+    start_state(server)
+    put_raw(server, parsed_moves=["R", "X", "U"], outcome="hallucination")
+    status, data = call(server, "GET", url(server))
+    assert status == 200 and data["stopped_at"] == 1 and len(data["frames"]) == 2
+    assert data["moves"] == ["R", "X", "U"] and data["solved"] is False and data["outcome"] == "hallucination"
+    put_raw(server, attempt_number=2, parsed_moves=["r"], outcome="hallucination")  # exact match only
+    assert call(server, "GET", url(server, REPLAY.replace("attempt=1", "attempt=2")))[1]["stopped_at"] == 0
+
+
+def test_replay_solved_flag_and_malformed_output(server):
+    state = start_state(server)
+    scramble = server.first["scramble"]
+    inverse = [m[0] + {"": "'", "'": "", "2": "2"}[m[1:]] for m in reversed(scramble)]
+    put_raw(server, parsed_moves=inverse)
+    assert call(server, "GET", url(server))[1]["solved"] is True
+    put_raw(server, attempt_number=2, outcome="malformed_output", parsed_moves=None)
+    status, data = call(server, "GET", url(server, REPLAY.replace("attempt=1", "attempt=2")))
+    assert status == 200 and data["frames"] == [state] and data["moves"] == [] and data["solved"] is False
+
+
+def test_replay_survives_a_torn_line_and_a_record_without_parsed_moves(server):
+    state = start_state(server)
+    put_raw(server, drop=("parsed_moves",), outcome="infrastructure_failure")
+    with (server.root / "results" / "t1" / "raw" / "example-model.jsonl").open("a", encoding="utf-8") as out:
+        out.write('{"model": "example-model", "input_id": "tor')  # a stopped write leaves a torn last line
+    status, data = call(server, "GET", url(server))
+    assert status == 200 and data["frames"] == [state] and data["moves"] == [] and data["outcome"] == "infrastructure_failure"
+    assert call(server, "GET", url(server, REPLAY.replace("attempt=1", "attempt=2")))[0] == 404
+
+
+def test_replay_errors(server):
+    start_state(server)
+    put_raw(server)
+    assert call(server, "GET", REPLAY.replace("ID", "nope"))[0] == 404
+    assert call(server, "GET", url(server, REPLAY.replace("attempt=1", "attempt=2")))[0] == 404
+    assert call(server, "GET", url(server, REPLAY.replace("model=example-model", "model=other")))[0] == 404
+    assert call(server, "GET", "/api/replay/nope?model=a&input_id=b&setup=no_model&attempt=1")[0] == 404
+    for bad in ("attempt=0", "attempt=x", "attempt=-1", "attempt=", "setup=bogus"):
+        name = bad.split("=")[0]
+        status, data = call(server, "GET", url(server, REPLAY.replace(f"{name}={'1' if name == 'attempt' else 'no_model'}", bad)))
+        assert status == 400 and name in data["error"], bad
+    assert call(server, "GET", "/api/replay/t1?model=example-model&input_id=x&setup=no_model")[0] == 400
+
+
+def test_static_cube_js_is_served(server):
+    assert call(server, "GET", "/static/cube.js", token=False)[0] == 200
+    assert call(server, "GET", "/static/other.js", token=False)[0] == 404
+
+
+def test_dropped_connection_prints_no_traceback(server, capsys):
+    """A browser that resets an idle socket (a preconnect it never used) causes no traceback."""
+    port = server.server_address[1]
+    dropped = socket.create_connection(("127.0.0.1", port))
+    dropped.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))  # close with RST
+    dropped.send(b"GET / HT")
+    dropped.close()
+    time.sleep(0.3)
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_main_refuses_a_port_another_server_answers_on(ui_repo, capsys):
+    """On macOS a --no-lan bind can share a port with a --lan server; main must refuse it."""
+    holder = socket.socket()
+    holder.bind(("127.0.0.1", 0))
+    holder.listen()
+    port = holder.getsockname()[1]
+    try:
+        assert server_module.main(["--port", str(port), "--root", str(ui_repo), "--no-lan"]) == 1
+        assert "another server is listening" in capsys.readouterr().err
+    finally:
+        holder.close()

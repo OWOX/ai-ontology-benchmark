@@ -1,4 +1,7 @@
 "use strict";
+// Spec: docs/specs/ui.md
+// The page: reads the JSON API and draws the steps. cube.js loads first and holds svg(), STICKERS,
+// and the cube drawings. Writes only through POSTs to the API and the DOM.
 
 // ---- Constants: every colour lives here ----------------------------------
 const COLORS = {
@@ -11,13 +14,8 @@ const COLORS = {
   infrastructure_failure: "#5d6d7e",
 };
 const OUTCOMES = ["success", "failure", "hallucination", "malformed_output", "infrastructure_failure"];
-const STICKERS = { U: "#ffffff", R: "#d62d20", F: "#1f9d55", D: "#f5d90a", L: "#f08a1c", B: "#2155c4" };
-const FACE_ORDER = "URFDLB";
-const NET_POS = { U: [1, 0], L: [0, 1], F: [1, 1], R: [2, 1], B: [3, 1], D: [1, 2] };
 const PROVIDER_ORDER = ["anthropic", "openai", "google", "fake"];
-const PROVIDER_COLORS = { anthropic: "#c96442", openai: "#0f8f6f", google: "#3b78e7", fake: "#7f8c8d" };
-const UNKNOWN_PROVIDER_COLOR = "#9aa0a6";
-const SVGNS = "http://www.w3.org/2000/svg";
+const NO_KEY = "no API key: add it in Setup"; // the catalogue's disabled_reason for a provider with no key
 
 // ---- Application state -----------------------------------------------------
 const S = {
@@ -42,6 +40,7 @@ const S = {
   project: null,           // last /api/project
   logTimer: null,          // timer of the log poll
   projRunning: new Set(),  // job names running at the last log poll
+  fresh: [],               // records that landed in the last snapshot
 };
 const STATE_POLL_MS = 1500;
 const LOG_POLL_MS = { busy: 1000, idle: 5000 };
@@ -57,12 +56,6 @@ function el(tag, props, ...kids) {
     else node.setAttribute(k, v);
   }
   for (const kid of kids) if (kid != null) node.append(kid);
-  return node;
-}
-
-function svg(tag, attrs) {
-  const node = document.createElementNS(SVGNS, tag);
-  for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
   return node;
 }
 
@@ -86,32 +79,6 @@ async function api(method, path, body) {
   try { data = await res.json(); } catch (e) { /* non-JSON body */ }
   if (!res.ok) throw new Error((data && data.error) || `${method} ${path} failed (${res.status})`);
   return data;
-}
-
-// ---- Cube net --------------------------------------------------------------
-function solvedState(n) {
-  return [...FACE_ORDER].map((f) => f.repeat(n * n)).join("");
-}
-
-// Returns an <svg> of a cube net for a 6*n*n state; sized by viewBox, 4x3 faces.
-function cubeNet(state, attrs) {
-  const n = Math.round(Math.sqrt(state.length / 6));
-  const root = svg("svg", { viewBox: "0 0 4 3", ...attrs });
-  if (n < 1 || 6 * n * n !== state.length) return root;
-  const cell = 1 / n;
-  const pad = 0.012;
-  [...FACE_ORDER].forEach((face, fi) => {
-    const [fx, fy] = NET_POS[face];
-    for (let i = 0; i < n * n; i++) {
-      const ch = state[fi * n * n + i];
-      root.append(svg("rect", {
-        x: fx + (i % n) * cell + pad, y: fy + Math.floor(i / n) * cell + pad,
-        width: cell - 2 * pad, height: cell - 2 * pad,
-        fill: STICKERS[ch] || "#999", stroke: "#2a2f38", "stroke-width": 0.02,
-      }));
-    }
-  });
-  return root;
 }
 
 // ---- Ring of arcs ----------------------------------------------------------
@@ -147,6 +114,7 @@ function paintArc(key) {
   const state = arcState(key, model);
   path.setAttribute("fill", COLORS[state] || COLORS.pending);
   path.classList.toggle("pulse", state === "in_progress");
+  path.classList.toggle("done", S.records.has(key));
   path.firstChild.textContent = arcTitle(key, model, setup, Number(attempt), input);
 }
 
@@ -164,6 +132,7 @@ function buildRing(model, input) {
       path.append(svg("title"));
       const key = recKey(model, input.input_id, setup, a);
       S.arcs.set(key, path);
+      path.addEventListener("click", () => cubeOpen(model, input.input_id, setup, a));
       root.append(path);
       paintArc(key);
     }
@@ -246,9 +215,9 @@ function renderModels() {
   const rank = (p) => (PROVIDER_ORDER.includes(p) ? PROVIDER_ORDER.indexOf(p) : PROVIDER_ORDER.length);
   const providers = [...groups.keys()].sort((a, b) => rank(a) - rank(b));
   for (const p of providers) {
-    const badge = el("span", { class: "badge", text: (p[0] || "?"), "aria-hidden": "true" });
-    badge.style.background = PROVIDER_COLORS[p] || UNKNOWN_PROVIDER_COLOR;
-    const group = el("div", { class: "provider" }, el("div", { class: "provider-head" }, badge, el("span", { text: p })));
+    const head = el("div", { class: "provider-head" }, el("span", { text: p }));
+    if (groups.get(p).some((m) => m.disabled_reason === NO_KEY)) head.append(el("span", { class: "reason", text: NO_KEY }));
+    const group = el("div", { class: "provider" }, head);
     for (const m of groups.get(p)) {
       const off = !!m.disabled_reason;
       const box_ = el("input", { type: "checkbox", "data-model": m.name });
@@ -258,7 +227,7 @@ function renderModels() {
         if (box_.checked) S.models.add(m.name); else S.models.delete(m.name);
       });
       const label = el("label", { class: "model" + (off ? " off" : "") }, box_, el("span", { text: m.name }));
-      if (off) label.append(el("span", { class: "reason", text: m.disabled_reason }));
+      if (off && m.disabled_reason !== NO_KEY) label.append(el("span", { class: "reason", text: m.disabled_reason }));
       group.append(label);
     }
     box.append(group);
@@ -333,6 +302,7 @@ function addRecord(rec) {
   if (old && old.outcome === rec.outcome) return;
   if (old) { c.done--; c.out[old.outcome]--; }
   S.records.set(key, rec);
+  if (!old) S.fresh.push(rec);
   c.done++; c.out[rec.outcome] = (c.out[rec.outcome] || 0) + 1;
   paintArc(key);
   updateHeaders(rec.model, input.puzzle);
@@ -367,6 +337,7 @@ async function loadState(id) {
   const snap = await api("GET", "/api/state/" + encodeURIComponent(id));
   const shape = JSON.stringify([id, snap.release, snap.models, snap.attempts, snap.inputs.map((i) => i.input_id)]);
   const rebuild = shape !== S.shape;
+  S.fresh = [];
   if (rebuild) {
     resetProgress();
     S.shape = shape; S.id = id;
@@ -377,7 +348,9 @@ async function loadState(id) {
   S.jobs = { ...snap.jobs };
   if (rebuild) renderProgress();
   for (const r of snap.records) addRecord(r);
+  if (rebuild) { S.fresh = []; cubeReset(); }  // records that were already there are not replayed
   markInProgress();
+  cubeLive();
   renderBanners();
   refreshControls();
   scheduleState();
@@ -593,18 +566,6 @@ async function loadSecrets() {
   renderSecrets(await api("GET", "/api/secrets"));
 }
 
-function onImport(ev) {
-  const file = ev.target.files[0];
-  ev.target.value = "";
-  if (!file) return;
-  guarded("secrets-msg", async () => {
-    const r = await api("POST", "/api/secrets/import", { text: await file.text() });
-    await loadSecrets();
-    await refreshCatalogue();
-    say("secrets-msg", `Saved: ${r.saved.join(", ")}.`, "ok");
-  });
-}
-
 // Reload the catalogue, keeping the form: models enable, new releases appear.
 async function refreshCatalogue() {
   const keep = [$("release").value, $("eval-release").value];
@@ -706,6 +667,170 @@ async function onConfirm() {
   }
 }
 
+// ---- Cube panel ------------------------------------------------------------
+// Plays one attempt on the 3D view and the net. The server sends every frame (GET /api/replay), so the
+// page never holds the move group. Live mode follows the newest record of the chosen model.
+const BASE_STEP_MS = 300;
+const REPLAY_GAP_MS = 600;  // pause between a finished replay and the queued one
+const P = { live: true, model: "", data: null, input: null, frame: 0, playing: false, timer: null,
+            speed: 1, seq: 0, shown: "", info: null, queue: null, gap: null, last: null };
+const reducedMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function cubeReset() {
+  cubeDrop();
+  Object.assign(P, { data: null, input: null, frame: 0, playing: false, shown: "", info: null, last: null, seq: P.seq + 1 });
+  const models = S.snap ? S.snap.models : [];
+  if (!models.includes(P.model)) P.model = models.find((m) => S.jobs["run:" + m] === "running") || models[0] || "";
+  $("cube-model").replaceChildren(...models.map((m) => el("option", { value: m, text: m })));
+  $("cube-model").value = P.model;
+  $("cube-model").hidden = models.length < 2;
+  cubeDraw();
+}
+
+function cubeCan(puzzle, state) {
+  return /^\d+x\d+$/.test(puzzle) && puzzle.split("x")[0] === puzzle.split("x")[1] && cubeSize(state) > 0;
+}
+
+function cubeDraw() {
+  const box = $("cube-panel"), views = $("cube-views"), movesBox = $("cube-moves");
+  const state = P.data ? P.data.frames[P.frame] : P.input ? P.input.state : null;
+  const puzzle = P.data ? P.data.puzzle : P.input ? P.input.puzzle : "";
+  box.classList.toggle("waiting", !P.data && !!P.input);
+  for (const id of ["cube-back", "cube-play", "cube-fwd"]) $(id).disabled = !P.data;
+  $("cube-play").textContent = P.playing ? "Pause" : "Play";
+  movesBox.replaceChildren();
+  if (state === null) {
+    views.replaceChildren(el("span", { class: "muted", text: "Run an experiment or click an arc to see its cube." }));
+    $("cube-info").textContent = "";
+    return;
+  }
+  if (!cubeCan(puzzle, state)) {
+    views.replaceChildren(el("span", { class: "muted", text: `no drawing for ${puzzle}` }));
+    $("cube-info").textContent = "";
+    return;
+  }
+  const n = cubeSize(state);
+  const move = P.data && P.frame > 0 ? P.data.moves[P.frame - 1] : null;
+  const turned = move ? move[0] : null;  // the flash is CSS and stops under reduced motion; the outline stays
+  views.replaceChildren(cubeIso(state, n, turned, { height: 200 }), cubeNet(state, { width: 240 }));
+  if (P.data) {
+    P.data.moves.forEach((m, i) => {
+      const bad = i === P.data.stopped_at;
+      const chip = el("span", { class: "mv" + (i === P.frame - 1 ? " cur" : "") + (bad ? " bad" : ""), text: m });
+      if (bad) chip.style.color = COLORS.hallucination;
+      movesBox.append(chip, " ");
+    });
+    if (!P.data.moves.length) movesBox.append(el("span", { class: "muted", text: "no moves" }));
+  }
+  const info = P.info || {};
+  if (!P.data) { $("cube-info").textContent = `waiting for ${P.model}`; return; }
+  const outcome = el("span", { class: "outcome", text: P.data.outcome.replace("_", " ") });
+  outcome.style.color = COLORS[P.data.outcome] || "inherit";
+  $("cube-info").replaceChildren(outcome, ` · ${info.input_id} · ${info.setup} · attempt ${info.attempt}`
+    + (P.data.stopped_at !== null ? ` · stopped at impossible move ${P.data.moves[P.data.stopped_at]}` : ""));
+}
+
+function cubeStop() { clearTimeout(P.timer); P.playing = false; }
+
+// Forget the queued record and any pending pause, and drop a load still in flight.
+function cubeDrop() { cubeStop(); clearTimeout(P.gap); P.gap = null; P.queue = null; P.seq++; }
+
+function cubeFail(e) {
+  cubeStop();
+  const info = $("cube-info");
+  info.textContent = e.message;
+  info.style.color = COLORS.failure;
+}
+
+// Playback reached its last frame: pause, then start the queued record, if Live is on and one waits.
+function cubeEnded() {
+  if (!P.live || !P.queue || P.gap) return;
+  P.gap = setTimeout(() => {
+    const r = P.queue;
+    P.gap = null; P.queue = null;
+    if (P.live && r) cubeLoad(r.model, r.input_id, r.setup, r.attempt_number).catch(cubeFail);
+  }, REPLAY_GAP_MS);
+}
+
+function cubeStep(delta) {
+  if (!P.data) return;
+  P.frame = Math.max(0, Math.min(P.data.frames.length - 1, P.frame + delta));
+  const ended = P.frame === P.data.frames.length - 1;
+  if (ended) cubeStop();
+  cubeDraw();
+  if (ended) cubeEnded();
+}
+
+function cubePlay() {
+  cubeStop();
+  if (!P.data) return;
+  if (P.frame >= P.data.frames.length - 1) P.frame = 0;
+  P.playing = true;
+  cubeDraw();
+  const tick = () => {
+    if (!P.playing) return;
+    cubeStep(1);
+    if (P.playing) P.timer = setTimeout(tick, BASE_STEP_MS / P.speed);
+  };
+  P.timer = setTimeout(tick, BASE_STEP_MS / P.speed);
+}
+
+async function cubeLoad(model, inputId, setup, attempt) {
+  const seq = ++P.seq;
+  const q = new URLSearchParams({ model, input_id: inputId, setup, attempt });
+  const data = await api("GET", `/api/replay/${encodeURIComponent(S.id)}?${q}`);
+  if (seq !== P.seq) return;  // a newer request took over
+  cubeStop();
+  $("cube-info").style.color = "";
+  Object.assign(P, { data, input: null, frame: 0, shown: "", info: { input_id: inputId, setup, attempt } });
+  cubePlay();
+}
+
+function cubeOpen(model, inputId, setup, attempt) {
+  if (!S.records.has(recKey(model, inputId, setup, attempt))) return;
+  P.live = false; $("cube-live").checked = false;
+  cubeDrop();
+  P.model = model; $("cube-model").value = model;
+  cubeLoad(model, inputId, setup, attempt).catch(cubeFail);
+}
+
+// Called after every snapshot: play the newest record of the followed model, or show the attempt in flight.
+function cubeLive() {
+  if (!P.live || !S.snap) return;
+  const fresh = S.fresh.filter((r) => r.model === P.model).pop();
+  if (fresh) {
+    if (P.playing || P.gap) P.queue = fresh;  // a queue of one: only the newest unplayed record waits
+    else cubeLoad(fresh.model, fresh.input_id, fresh.setup, fresh.attempt_number).catch(cubeFail);
+    return;
+  }
+  const key = S.lastArc[P.model];
+  if (!key && P.input) {  // the run ended with no final record: drop the waiting state
+    P.input = null; P.shown = "";
+    P.data = P.last ? P.last.data : null; P.info = P.last ? P.last.info : null;
+    P.frame = P.data ? P.data.frames.length - 1 : 0;
+    cubeDraw();
+  }
+  if (!key || P.playing || P.gap || P.queue || P.shown === key) return;
+  P.shown = key; P.seq++;
+  if (P.data) P.last = { data: P.data, info: P.info };
+  P.data = null; P.info = null;
+  P.input = S.inputs.get(key.split("|")[1]);
+  cubeDraw();
+}
+
+function cubeInit() {
+  $("cube-play").addEventListener("click", () => (P.playing ? (cubeStop(), cubeDraw()) : cubePlay()));
+  $("cube-back").addEventListener("click", () => { cubeStop(); cubeStep(-1); });
+  $("cube-fwd").addEventListener("click", () => { cubeStop(); cubeStep(1); });
+  $("cube-speed").addEventListener("change", (e) => { P.speed = Number(e.target.value); if (P.playing) cubePlay(); });
+  $("cube-live").addEventListener("change", (e) => { P.live = e.target.checked; P.shown = ""; if (!P.live) cubeDrop(); cubeLive(); });
+  $("cube-model").addEventListener("change", (e) => {
+    P.model = e.target.value; P.data = null; P.input = null; P.shown = ""; P.last = null;
+    cubeDrop(); cubeDraw(); cubeLive();
+  });
+  cubeDraw();
+}
+
 // ---- Terminal --------------------------------------------------------------
 function termLine(ev) {
   const term = $("terminal");
@@ -751,10 +876,10 @@ async function init() {
   const meta = document.querySelector('meta[name="ui-token"]');
   S.token = meta ? meta.content : "";
   renderLegend();
+  cubeInit();
   $("btn-estimate").addEventListener("click", onEstimate);
   $("btn-run").addEventListener("click", onRun);
   $("btn-dry").addEventListener("click", onDry);
-  $("secrets-file").addEventListener("change", onImport);
   $("btn-install").addEventListener("click", () => projectJob("setup-msg", "/api/install", {}, "Install started; see the terminal."));
   $("btn-tests").addEventListener("click", () => projectJob("setup-msg", "/api/tests", {}, "Tests started; see the terminal."));
   $("btn-release").addEventListener("click", onRelease);
