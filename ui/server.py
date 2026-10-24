@@ -40,23 +40,19 @@ def allowed_address(text: str) -> bool:
 
 
 def lan_addresses() -> list[str]:
-    """This machine's IPv4 addresses inside ALLOWED_NETWORKS, except loopback, primary LAN address first."""
-    found = []
+    """This machine's primary LAN address, if it is inside ALLOWED_NETWORKS and not loopback. Empty otherwise."""
     try:  # a UDP connect sends nothing; it only makes the OS pick the outgoing address
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("10.255.255.255", 9))
-            found.append(probe.getsockname()[0])
+            address = probe.getsockname()[0]
     except OSError:
-        pass
-    try:
-        found += [info[4][0] for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)]
-    except OSError:
-        pass
-    return [a for i, a in enumerate(found) if allowed_address(a) and not a.startswith("127.") and a not in found[:i]]
+        return []
+    return [address] if allowed_address(address) and not address.startswith("127.") else []
 
 
 class Handler(BaseHTTPRequestHandler):
     server: "UiServer"
+    timeout = 30  # a silent client can't hold a thread
 
     def log_message(self, *args) -> None:
         pass
@@ -147,6 +143,10 @@ class UiServer(ThreadingHTTPServer):
     def __init__(self, address: tuple, app: App) -> None:
         super().__init__(address, Handler)
         self.app = app
+
+    def verify_request(self, request, client_address) -> bool:
+        """Drop a peer outside ALLOWED_NETWORKS before its request is parsed. The handler checks again."""
+        return allowed_address(client_address[0])
 
 
 def make_server(root: Path, port: int = 0, static_dir: Path | None = None, host: str = "127.0.0.1") -> UiServer:

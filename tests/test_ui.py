@@ -24,6 +24,7 @@ from test_release import commit_all, git, run_release, repo  # noqa: F401  (repo
 from ui import secrets as key_store
 from ui.common import merged_env
 from ui import jobs as jobs_module
+from ui import server as server_module
 from ui.server import allowed_address, make_server
 
 MODELS = (
@@ -286,6 +287,28 @@ def test_peer_allowlist():
         assert allowed_address(peer), peer
     for peer in ("172.16.0.1", "8.8.8.8", "::1", "not-an-ip"):
         assert not allowed_address(peer), peer
+
+
+def test_refused_peer_is_dropped_and_refused_by_the_handler(server):
+    assert server.verify_request(None, ("172.16.0.1", 1234)) is False
+    assert server.verify_request(None, ("10.0.0.5", 1234)) is True
+    sent = []
+    fake = SimpleNamespace(client_address=("172.16.0.1", 1), server=server, path="/api/catalogue", headers={},
+                           send_json=lambda status, data: sent.append((status, data)))
+    server_module.Handler.handle_request(fake, "GET")
+    assert sent and sent[0][0] == 403 and "client address" in sent[0][1]["error"]
+
+
+def test_main_binds_all_interfaces(ui_repo, monkeypatch):
+    seen = {}
+
+    def fake_make_server(root, port, static_dir=None, host="127.0.0.1"):
+        seen["host"] = host
+        raise OSError(0, "stop here")
+
+    monkeypatch.setattr(server_module, "make_server", fake_make_server)
+    assert server_module.main(["--root", str(ui_repo), "--port", "0"]) == 1
+    assert seen["host"] == "0.0.0.0"
 
 
 def test_log_keeps_the_newest_lines_and_serves_after(server, monkeypatch):

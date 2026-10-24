@@ -16,7 +16,7 @@ The UI may run `release` (which calls `generate` for a major bump) on a branch o
 python -m ui.server [--port 8765] [--root .]
 ```
 
-It binds to `0.0.0.0` and serves only clients in `127.0.0.0/8`, `10.0.0.0/8`, and `192.168.0.0/16`. On start it prints the loopback URL and one URL for each of this machine's addresses in those networks. `--root` is the repo root, for tests. It exits with code 1 if the port is taken or `--root` has no `releases/` folder.
+It binds to `0.0.0.0` and serves only clients in `127.0.0.0/8`, `10.0.0.0/8`, and `192.168.0.0/16`. On start it prints the loopback URL and one URL for this machine's primary LAN address when it is in those networks. A peer outside them is dropped before its request is read, and an idle connection times out after 30 seconds. `--root` is the repo root, for tests. It exits with code 1 if the port is taken or `--root` has no `releases/` folder.
 
 The server uses `http.server.ThreadingHTTPServer` with `daemon_threads = True`. Shared job state sits behind one `threading.Lock`.
 
