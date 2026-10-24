@@ -299,10 +299,37 @@ def test_refused_peer_is_dropped_and_refused_by_the_handler(server):
     assert sent and sent[0][0] == 403 and "client address" in sent[0][1]["error"]
 
 
+def test_no_lan_refuses_lan_peers_and_hosts(ui_repo, tmp_path):
+    srv = make_server(ui_repo, 0, tmp_path, lan=False)
+    try:
+        assert srv.verify_request(None, ("127.0.0.1", 1)) is True
+        for peer in ("10.0.5.6", "192.168.1.5"):
+            assert srv.verify_request(None, (peer, 1)) is False
+        port = srv.server_address[1]
+        for host, ok in ((f"localhost:{port}", True), (f"127.0.0.1:{port}", True),
+                         (f"10.0.5.6:{port}", False), (f"192.168.1.5:{port}", False)):
+            fake = SimpleNamespace(server=srv, headers={"Host": host})
+            assert server_module.Handler.host_ok(fake) is ok, host
+    finally:
+        srv.server_close()
+
+
+def test_main_no_lan_binds_loopback(ui_repo, monkeypatch):
+    seen = {}
+
+    def fake_make_server(root, port, static_dir=None, host="x", lan=True):
+        seen.update(host=host, lan=lan)
+        raise OSError(0, "stop here")
+
+    monkeypatch.setattr(server_module, "make_server", fake_make_server)
+    assert server_module.main(["--root", str(ui_repo), "--port", "0", "--no-lan"]) == 1
+    assert seen == {"host": "127.0.0.1", "lan": False}
+
+
 def test_main_binds_all_interfaces(ui_repo, monkeypatch):
     seen = {}
 
-    def fake_make_server(root, port, static_dir=None, host="127.0.0.1"):
+    def fake_make_server(root, port, static_dir=None, host="127.0.0.1", lan=True):
         seen["host"] = host
         raise OSError(0, "stop here")
 
