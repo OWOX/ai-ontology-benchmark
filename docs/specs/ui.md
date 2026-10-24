@@ -193,7 +193,7 @@ Cube net: a state is `6·n·n` characters over `URFDLB`, faces in that order, ea
 
 Cube 3D view: `cubeIso(state, n, highlightFace)` draws the U face on top, F front-left, and R front-right, each as an `n × n` grid of parallelograms in the net's colours. Sticker order follows the state's reading convention ([cube.md](cube.md)): U is read from above with B at the top, so its first row is the back row, and F and R are read with U at the top, with R's first column next to F. The placement uses `READING` and `NORMAL` of `src/puzzles/cube.py` for U, F, and R as drawing geometry only. `highlightFace` draws that face's outline thicker, and a face the view does not show (D, L, B) is not outlined.
 
-Banners: a job in state `failed` shows its last stderr line. A job in state `budget` shows "Budget reached" and a plain note to raise the budget under Parameters and press Run. Running again posts the form, which the server accepts as `budget_updated`, and resumes. The banner notes that parallel AI models can each pass the experiment budget by one worst-case request, and that "attempts left" in the message counts one AI model's attempts.
+Banners: a job in state `failed` shows its last stderr line. The line comes from the log poll and the state from the snapshot poll, and either can arrive first, so each log poll that brings a stderr line redraws the banners. A job in state `budget` shows "Budget reached" and a plain note to raise the budget under Parameters and press Run. Running again posts the form, which the server accepts as `budget_updated`, and resumes. The banner notes that parallel AI models can each pass the experiment budget by one worst-case request, and that "attempts left" in the message counts one AI model's attempts.
 
 ## How to test
 

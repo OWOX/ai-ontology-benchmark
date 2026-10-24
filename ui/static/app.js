@@ -854,10 +854,12 @@ async function pollLog() {
   try {
     const data = await api("GET", "/api/log?after=" + S.logAfter);
     conn.textContent = "live"; conn.className = "conn ok";
+    let errs = false;
     for (const line of data.lines) {
       termLine(line);
-      if (line.stream === "stderr") S.lastErr[line.job] = line.text;
+      if (line.stream === "stderr") { S.lastErr[line.job] = line.text; errs = true; }
     }
+    if (errs && S.snap) renderBanners();  // the snapshot can show a failed job before its stderr line arrives
     S.logAfter = data.last;
     S.anyAlive = data.jobs.some((j) => j.state === "running");
     const running = new Set(data.jobs.filter((j) => j.state === "running").map((j) => j.job));
@@ -873,7 +875,7 @@ async function pollLog() {
     conn.textContent = "reconnecting"; conn.className = "conn bad";
   }
   clearTimeout(S.logTimer);
-  S.logTimer = setTimeout(pollLog, S.anyAlive ? LOG_POLL_MS.busy : LOG_POLL_MS.idle);
+  S.logTimer = setTimeout(pollLog, S.anyAlive || anyAlive() ? LOG_POLL_MS.busy : LOG_POLL_MS.idle);
 }
 
 // ---- Startup ---------------------------------------------------------------

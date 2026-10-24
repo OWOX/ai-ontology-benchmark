@@ -775,3 +775,15 @@ def test_main_refuses_a_port_another_server_answers_on(ui_repo, capsys):
         assert "another server is listening" in capsys.readouterr().err
     finally:
         holder.close()
+
+
+def test_failed_dry_run_logs_its_error_line(server):
+    """A dry run that fails leaves its stderr line in the log under its job name, so the banner can show it."""
+    call(server, "POST", "/api/experiment", FORM)
+    validator = server.root / "src" / "validator.py"
+    validator.write_text(validator.read_text() + "\n# changed after the release\n", encoding="utf-8")
+    assert call(server, "POST", "/api/dry-run", {"id": "t1"})[0] == 200
+    wait_job(server, "dry-run", "failed")
+    lines = call(server, "GET", "/api/log?after=0")[1]["lines"]
+    errors = [l for l in lines if l["job"] == "dry-run" and l["stream"] == "stderr"]
+    assert errors and errors[-1]["text"].startswith("error:")
