@@ -2,7 +2,7 @@
 
 Files: `ui/server.py`, `ui/app.py`, `ui/experiments.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/app.js`, `ui/static/cube.js`, `ui/static/style.css`, `ui/start.sh`, `config/models.toml`.
 
-Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments, adding `--port 7991` unless they include `--port`. Later updates go through the Install button.
+Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments, adding `--port 7991` unless they include `--port`. Before that it stops any process listening on that port: SIGTERM first, so a UI server stops its jobs, then SIGKILL for whatever still listens after 5 seconds. Later updates go through the Install button.
 
 ## Purpose
 
