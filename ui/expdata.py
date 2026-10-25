@@ -109,6 +109,9 @@ def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
     except (EvalError, KeyError) as error:
         exp["error"] = str(error.args[0]) if error.args else str(error)
         return []
+    except Exception as error:  # a malformed record or prices entry must not take the release down
+        exp["error"] = f"results/{exp['id']}: {type(error).__name__}: {error}"
+        return []
 
 
 def all_scope_rates(done: list[dict]) -> dict:
@@ -134,6 +137,15 @@ def cell(value: object) -> object:
 
 
 def experiment_rows(exp: dict, inputs: list[dict]) -> list[dict]:
+    """One row per model, puzzle, and scope; any failure while building them gives the error rows instead."""
+    try:
+        return _experiment_rows(exp, inputs)
+    except Exception as error:
+        exp["error"] = f"results/{exp['id']}: {type(error).__name__}: {error}"
+        return _experiment_rows(exp, inputs)
+
+
+def _experiment_rows(exp: dict, inputs: list[dict]) -> list[dict]:
     config = exp["config"]
     rows = attempt_rows(exp, inputs)
     source = "report" if exp["csv_rows"] is not None else "computed"
@@ -180,6 +192,14 @@ def numbers(exp: dict, model: str, puzzle: str, scope: str, part: list[dict]) ->
 
 def detail_metrics(exp: dict, inputs: list[dict]) -> tuple[list[dict], list[dict], str]:
     """(metric_rows, summary_rows, metrics_source): the report CSV when there is one, else computed."""
+    try:
+        return _detail_metrics(exp, inputs)
+    except Exception as error:
+        exp["error"] = f"results/{exp['id']}: {type(error).__name__}: {error}"
+        return [], [], "computed"
+
+
+def _detail_metrics(exp: dict, inputs: list[dict]) -> tuple[list[dict], list[dict], str]:
     order = model_names(exp)
     rows = attempt_rows(exp, inputs)
     if exp["csv_rows"] is not None:
