@@ -75,7 +75,7 @@ Every path below is read from a git ref, never from the work tree, except the AP
               "legal_moves": ["U", "U'"], "legal_moves_source": "<url>",
               "impossible_seen": [{"move": "u", "count": 3, "models": ["..."], "experiments": ["<id>"]}],
               "inputs_source": "<url>"}],
- "experiments": [{"id": "...", "model": "...", "provider": "...", "api_model_id": "...", "puzzle": "2x2",
+ "experiments": [{"id": "...", "model": "...", "provider": "...", "api_model_id": "...", "puzzle": "2x2", "validity": "all",
                   "release": "1.1.1", "attempts": 180, "infrastructure_failures": 0,
                   "success_rate": 0.41, "hallucination_rate": 0.12, "mismatch_detection_rate": 0.6,
                   "false_mismatch_rate": 0.05, "malformed_output_rate": 0.0,
@@ -87,8 +87,8 @@ Every path below is read from a git ref, never from the work tree, except the AP
 
 1. `providers` come in the order anthropic, openai, google, fake, each with its catalogue models in file order. A model's `experiments` are the ids whose config holds an entry with the same `provider` and `api_model_id`, so experiments are matched on what was called, not on the name.
 2. `puzzles` are the release's `release_config.puzzles`. `n` is the side for an `NxN` name, else `null`. `prompts` hold the template for each setup with the placeholder `{state}` left in, and the prompt version from the manifest. `legal_moves` is the engine's `legal_moves()` from the registry. The page shows it and the server never sends a second copy anywhere else. A puzzle with no engine has `legal_moves: null`. `impossible_seen` lists every parsed move of every record of that puzzle in this release's experiments that is not in `legal_moves()` (exact string match), with its count, the AI models that returned it, and the experiment ids, sorted by count. It comes from the raw records and is never written down.
-3. `experiments` has one row per experiment, AI model, and puzzle, for the experiments whose release is the bundle's release or one of its mirrors. Rates leave out `infrastructure_failure` attempts, as [definitions.md](../definitions.md#metrics) says, and are `null` with an empty denominator. `total_tokens` is input, output, retry input, and retry output tokens summed. `cost_usd` uses the prices in `results/<id>/prices.toml` on the branch when there is one, else `config/prices.toml` on `main`.
-   1. When the branch has `results/<id>/<version>.metrics.csv` for the newest such version, the row's rates are pooled from its rows for that AI model and puzzle (each rate's numerator over its `_n`), and `metrics_source` is `report`.
+3. `experiments` has three rows per experiment, AI model, and puzzle, one for each `validity` scope: `all`, `valid`, and `invalid`, for the experiments whose release is the bundle's release or one of its mirrors. Rates leave out `infrastructure_failure` attempts, as [definitions.md](../definitions.md#metrics) says, and are `null` with an empty denominator. `total_tokens` is input, output, retry input, and retry output tokens summed. `cost_usd` uses the prices in `results/<id>/prices.toml` on the branch when there is one, else `config/prices.toml` on `main`.
+   1. When the branch has `results/<id>/<version>.metrics.csv` for the newest such version, the row's rates are pooled from its rows for that AI model, puzzle, and scope (each rate's numerator over its `_n`), and `metrics_source` is `report`.
    2. Otherwise the server computes them from the raw records with `src.evaluate.metrics.compute` under the experiment's release, for display only, and `metrics_source` is `computed`. Nothing is stored.
    3. `differs_from_catalogue` is true when the experiment's entry for the AI model differs from the catalogue entry with the same name in `api_model_id`, `provider`, or `params`, or the catalogue has no such name.
    4. A branch whose config does not parse, or whose raw file has a record that lacks a required field, gives one row with `error` set to the message and every metric `null`. The other rows still build. Torn lines are skipped and counted, as in `evaluate`.
@@ -117,7 +117,7 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
     "metric_rows": [], "summary_rows": [], "served_models": {"<model>": ["..."]}, "error": null}
    ```
 
-   `metric_rows` and `summary_rows` are the columns of [evaluate](evaluate.md#outputs): from the newest report CSV on the branch when there is one (`summary_rows` then empty), else from `src.evaluate.metrics.compute`, with `metrics_source` `computed`. `report` is `null` when the branch has none. An unknown id gives 404.
+   `metric_rows` and `summary_rows` are the columns of [evaluate](evaluate.md#outputs): from the newest report CSV on the branch when there is one (`summary_rows` then pooled from it by AI model, setup, and validity), else from `src.evaluate.metrics.compute`, with `metrics_source` `computed`. `report` is `null` when the branch has none. An unknown id gives 404.
 3. `GET /api/inputs?release=<version>&puzzle=<name>` returns the release's inputs of that puzzle, in release order: `[{"input_id", "scramble_depth", "validity", "state", "scramble", "source_input_id", "corruption"}]`. An unknown release or puzzle gives 400 naming the field.
 4. `GET /api/branches` returns every experiment branch, `[{"id", "release", "local": true, "remote": true}]`, sorted by id, for the New Experiment branch select. An id is listed when `results/<id>/experiment.toml` is on its local or remote branch.
 5. `GET /api/experiment/<id>/config` returns the config on the experiment's branch (the local one first, else the remote one) as the form below, or 404. A config without `puzzles` returns every puzzle of its release.
@@ -258,8 +258,8 @@ The inputs page lists every input of the puzzle: the input id, the depth, the va
 ### Experiments
 
 1. A "New Experiment" button in the top-left corner opens `#/new`.
-2. Filters: AI model and puzzle. The release comes from the menu. Filters are kept in the hash.
-3. A table, one row per experiment, AI model, and puzzle, with the columns: experiment id, AI model, puzzle, release, attempts, success rate, hallucination rate, mismatch detection rate, false mismatch rate, malformed output rate, infrastructure failures, total tokens, cost, and report. Rates show as percentages, and `n/a` when `null`. Clicking a column header sorts by it, and a second click reverses.
+2. Filters: AI model, puzzle, and validity (all inputs, valid only, or invalid only; default all). The release comes from the menu. Filters are kept in the hash. Mismatch detection rate is `n/a` under valid only, and false mismatch rate under invalid only, by definition.
+3. A table, one row per experiment, AI model, and puzzle in the chosen validity scope, with the columns: experiment id, AI model, puzzle, release, attempts, success rate, hallucination rate, mismatch detection rate, false mismatch rate, malformed output rate, infrastructure failures, total tokens, cost, and report. Rates show as percentages, and `n/a` when `null`. Clicking a column header sorts by it, and a second click reverses.
 4. A row with `metrics_source: computed` shows `*` after each metric and in the report column, and the table ends with the note "* computed from the raw records by the UI for display. No report is committed for this experiment, so these are not official numbers." A row with a report shows its version.
 5. A row with `differs_from_catalogue` shows ⚠️ after the AI model, with the tooltip "this experiment's settings for the AI model differ from config/models.toml". A row with `pushed: false` shows "running, not pushed". A row with `error` shows the message across the metric columns.
 6. Each row links to `#/experiments/<id>`.
@@ -269,11 +269,12 @@ The inputs page lists every input of the puzzle: the input id, the depth, the va
 One experiment, from `GET /api/experiments/<id>`:
 
 1. The header: the id, the release, a link to the branch on GitHub, "running, not pushed" when it applies, and the served models.
-2. The config: puzzles, AI models with their `api_model_id` and `params`, attempts, retry cap, max output tokens, and budgets.
-3. The metrics table: one row per puzzle, setup, AI model, scramble depth, and validity label, with each rate, its `n`, and its interval, and the `*` note when computed.
-4. The report, rendered, with its source link, when there is one.
-5. Progress: the Cube panel and the per-input rings described below, from `GET /api/state/<id>`.
-6. Actions while the experiment's results are in this checkout: Evaluate, with an optional "Score under release" select, and Commit, which opens a dialog with the preview's branch, files, and diffstat. Confirm calls `POST /api/commit` and shows the PR link. Commit is disabled while any job is alive or before the report exists.
+2. Summary, first under the header: one row per AI model and setup, split by validity label, from `summary_rows` (pooled over puzzles and depths, as in [evaluate](evaluate.md#outputs)), with success, hallucination, mismatch detection, false mismatch, and malformed output rates, each with `n` and its interval, plus attempts, total tokens, and cost per AI model. With a report CSV, which holds no summary rows, the server pools them from the CSV's rows the same way. The `*` note applies when computed.
+3. The config: puzzles, AI models with their `api_model_id` and `params`, attempts, retry cap, max output tokens, and budgets.
+4. The full metrics table, folded: one row per puzzle, setup, AI model, scramble depth, and validity label, with each rate, its `n`, and its interval, and the `*` note when computed.
+5. The report, rendered, with its source link, when there is one.
+6. Progress: the Cube panel and the per-input rings described below, from `GET /api/state/<id>`.
+7. Actions while the experiment's results are in this checkout: Evaluate, with an optional "Score under release" select, and Commit, which opens a dialog with the preview's branch, files, and diffstat. Confirm calls `POST /api/commit` and shows the PR link. Commit is disabled while any job is alive or before the report exists.
 
 ### New Experiment
 
@@ -342,7 +343,7 @@ Cube 3D view: `cubeIso(state, n, highlightFace)` draws the U face on top, F fron
 13. Replay: the frames equal successive `apply_move` calls, an impossible move stops the replay at its index, malformed output gives one frame and no moves, a missing record gives 404, a bad query field gives 400 naming it, and every file named under Files is served from `/static/` while other unknown static paths give 404.
 14. Bundle from refs only: a results folder in the work tree with no branch does not show, and a branch pushed to the bare remote shows after `refresh=1`. A branch with no `experiment.toml` is left out.
 15. Bundle memory: the same ref shas return the same object without rebuilding, and a ref that moves gives a new bundle. The server writes no file anywhere while it serves every read route.
-16. Rows and metrics: one row per experiment, AI model, and puzzle. With a report CSV on the branch, the rates equal the CSV's pooled numbers and `metrics_source` is `report`. Without one, they equal `src.evaluate.metrics.compute` on the same records and `metrics_source` is `computed`. Infrastructure failures change no rate. A branch with a broken config gives one row with `error`, and the other rows still build.
+16. Rows and metrics: three rows per experiment, AI model, and puzzle, one per validity scope, and the `valid` and `invalid` rows' attempts add up to the `all` row's. `summary_rows` from a CSV equal those `compute` gives on the same records. With a report CSV on the branch, the rates equal the CSV's pooled numbers and `metrics_source` is `report`. Without one, they equal `src.evaluate.metrics.compute` on the same records and `metrics_source` is `computed`. Infrastructure failures change no rate. A branch with a broken config gives one row with `error`, and the other rows still build.
 17. Model matching: an experiment whose entry has the catalogue's `provider` and `api_model_id` under another name is listed under that catalogue model, and one with the catalogue's name but another `api_model_id` gets `differs_from_catalogue`.
 18. Impossible moves: fixture records with known impossible moves give the expected moves, counts, models, and experiment ids, and legal moves never appear.
 19. Source links carry the sha of the ref read, for both `https://` and `git@github.com:` remotes, and there are none with no `origin`.
