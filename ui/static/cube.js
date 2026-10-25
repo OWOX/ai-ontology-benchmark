@@ -1,7 +1,7 @@
 "use strict";
 // Spec: docs/specs/ui.md
 // Cube drawing for the page: the sticker colours, the net, and the isometric view. Loaded before
-// app.js, which uses these names. Reads only the states it is given and writes only the SVG it returns.
+// the page scripts, which use these names. Reads only the states it is given and writes only the SVG it returns.
 
 const STICKERS = { U: "#ffffff", R: "#d62d20", F: "#1f9d55", D: "#f5d90a", L: "#f08a1c", B: "#2155c4" };
 const FACE_ORDER = "URFDLB";
