@@ -1,6 +1,7 @@
 # Spec: docs/specs/config.md
 """Loads and checks the config files. Reads config/release.toml,
-config/experiments/<experiment id>.toml, and config/prices.toml. Writes nothing.
+config/experiments/<experiment id>.toml, and config/prices.toml, or parses experiment config
+text given by the caller (run reads it from stdin). Writes nothing.
 """
 
 import re
@@ -25,7 +26,7 @@ DEFAULT_PER_MODEL_USD = 5.00
 DEFAULT_PER_EXPERIMENT_USD = 10.00
 
 
-def _fail(path: Path, field: str, problem: str) -> None:
+def _fail(path: object, field: str, problem: str) -> None:
     raise ValueError(f"{path}: field '{field}' {problem}")
 
 
@@ -40,7 +41,7 @@ def _read(path: Path) -> dict:
         raise ValueError(f"{path}: not valid TOML ({error})") from None
 
 
-def _get(path: Path, table: dict, field: str, kind: type, where: str = "") -> object:
+def _get(path: object, table: dict, field: str, kind: type, where: str = "") -> object:
     """Return table[field] after checking it is present and of the given type."""
     name = where + field
     if field not in table:
@@ -55,7 +56,7 @@ def _get(path: Path, table: dict, field: str, kind: type, where: str = "") -> ob
     return value
 
 
-def _check_min(path: Path, field: str, value: float, minimum: int) -> None:
+def _check_min(path: object, field: str, value: float, minimum: int) -> None:
     if value < minimum:
         _fail(path, field, f"must be at least {minimum}")
 
@@ -89,7 +90,7 @@ def load_release_config(path: Path) -> dict:
     return config
 
 
-def _check_model(path: Path, model: object, index: int, seen: set[str]) -> None:
+def _check_model(path: object, model: object, index: int, seen: set[str]) -> None:
     where = f"models[{index}]."
     if not isinstance(model, dict):
         _fail(path, f"models[{index}]", "must be a table")
@@ -108,7 +109,7 @@ def _check_model(path: Path, model: object, index: int, seen: set[str]) -> None:
                 _fail(path, where + "params", f"must not set {key!r}; the run script sets it")
 
 
-def _check_budget(path: Path, config: dict) -> dict:
+def _check_budget(path: object, config: dict) -> dict:
     """Return the budget with every default filled in; each limit must be above 0."""
     budget = {
         "per_request_usd": DEFAULT_PER_REQUEST_USD,
@@ -128,7 +129,7 @@ def _check_budget(path: Path, config: dict) -> dict:
     return budget
 
 
-def _check_puzzles(path: Path, config: dict) -> None:
+def _check_puzzles(path: object, config: dict) -> None:
     """An optional `puzzles` is a non-empty list of unique registry names."""
     puzzles = _get(path, config, "puzzles", list)
     if not puzzles:
@@ -143,11 +144,13 @@ def _check_puzzles(path: Path, config: dict) -> None:
         _fail(path, "puzzles", "must not repeat a puzzle")
 
 
-def load_experiment_config(path: Path) -> dict:
-    """Return the experiment config with the file stem added as `experiment_id`."""
-    path = Path(path)
-    config = _read(path)
-    experiment_id = path.stem
+def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
+    """Return the experiment config parsed from TOML text, with `experiment_id` added. Errors name `source`."""
+    path = source
+    try:
+        config = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        raise ValueError(f"{path}: not valid TOML ({error})") from None
     if not EXPERIMENT_ID_PATTERN.fullmatch(experiment_id):
         _fail(path, "experiment_id", "may contain only letters, digits, '-', and '_'")
     release = _get(path, config, "release", str)
@@ -170,6 +173,16 @@ def load_experiment_config(path: Path) -> dict:
     config["budget"] = _check_budget(path, config)
     config["experiment_id"] = experiment_id
     return config
+
+
+def load_experiment_config(path: Path) -> dict:
+    """Return the experiment config with the file stem added as `experiment_id`."""
+    path = Path(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise ValueError(f"{path}: file not found") from None
+    return parse_experiment_config(text, path.stem, str(path))
 
 
 def load_prices(path: Path) -> dict:
