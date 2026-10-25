@@ -1,6 +1,6 @@
 # ui
 
-Files: `ui/server.py`, `ui/app.py`, `ui/gitdata.py`, `ui/bundle.py`, `ui/experiments.py`, `ui/expdata.py`, `ui/pooling.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/router.js`, `ui/static/markdown.js`, `ui/static/cube.js`, `ui/static/pages/models.js`, `ui/static/pages/puzzles.js`, `ui/static/pages/inputs.js`, `ui/static/pages/experiments.js`, `ui/static/pages/experiment.js`, `ui/static/pages/new.js`, `ui/static/pages/about.js`, `ui/static/style.css`, `ui/start.sh`.
+Files: `ui/server.py`, `ui/app.py`, `ui/gitdata.py`, `ui/bundle.py`, `ui/puzzleinfo.py`, `ui/experiments.py`, `ui/expdata.py`, `ui/pooling.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/router.js`, `ui/static/markdown.js`, `ui/static/cube.js`, `ui/static/pages/models.js`, `ui/static/pages/puzzles.js`, `ui/static/pages/inputs.js`, `ui/static/pages/experiments.js`, `ui/static/pages/experiment.js`, `ui/static/pages/new.js`, `ui/static/pages/about.js`, `ui/static/style.css`, `ui/start.sh`.
 
 Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments, adding `--port 7991` unless they include `--port`. Before that it stops any process listening on that port: SIGTERM first, so a UI server stops its jobs, then SIGKILL for whatever still listens after 5 seconds. Later updates go through the Install button.
 
@@ -65,6 +65,8 @@ Every path below is read from a git ref, never from the work tree, except the AP
 {"schema": 1, "release": "1.1.1", "releases": ["1.1.1", "1.1.0", "1.0.0"],
  "fetched_at": "2026-10-25T10:12:00Z", "fetch_error": null, "repo": "https://github.com/<owner>/<repo>",
  "main_sha": "<sha>",
+ "defaults": {"attempts": 3, "retry_cap": 3, "max_output_tokens": 4096,
+              "budget": {"per_request_usd": 0.5, "per_model_usd": 5.0, "per_experiment_usd": 10.0}},
  "providers": [{"name": "anthropic", "variable": "ANTHROPIC_API_KEY", "key": {"source": "file", "tail": "ab12"},
                 "models": [{"name": "claude-opus-5-5", "api_model_id": "claude-opus-5-5", "params": {},
                             "price": {"input_per_mtok": 5.0, "output_per_mtok": 25.0}, "disabled_reason": null,
@@ -85,7 +87,7 @@ Every path below is read from a git ref, never from the work tree, except the AP
  "about": {"markdown": "...", "source": "<url>"}}
 ```
 
-1. `providers` come in the order anthropic, openai, google, fake, each with its catalogue models in file order. A model's `experiments` are the ids whose config holds an entry with the same `provider` and `api_model_id`, so experiments are matched on what was called, not on the name.
+1. `providers` come in the order anthropic, openai, google, fake, each with its catalogue models in file order. A model's `experiments` are the ids whose config holds an entry with the same `provider` and `api_model_id`, so experiments are matched on what was called, not on the name. `defaults` is the `DEFAULTS` dict of `ui/experiments.py`, the starting values of New Experiment.
 2. `puzzles` are the release's `release_config.puzzles`. `n` is the side for an `NxN` name, else `null`. `prompts` hold the template for each setup with the placeholder `{state}` left in, and the prompt version from the manifest. `legal_moves` is the engine's `legal_moves()` from the registry. The page shows it and the server never sends a second copy anywhere else. A puzzle with no engine has `legal_moves: null`. `impossible_seen` lists every parsed move of every record of that puzzle in this release's experiments that is not in `legal_moves()` (exact string match), with its count, the AI models that returned it, and the experiment ids, sorted by count. It comes from the raw records and is never written down.
 3. `experiments` has three rows per experiment, AI model, and puzzle, one for each `validity` scope: `all`, `valid`, and `invalid`, for the experiments whose release is the bundle's release or one of its mirrors. Rates leave out `infrastructure_failure` attempts, as [definitions.md](../definitions.md#metrics) says, and are `null` with an empty denominator. `total_tokens` is input, output, retry input, and retry output tokens summed. `cost_usd` uses the prices in `results/<id>/prices.toml` on the branch when there is one, else `config/prices.toml` on `main`.
    1. When the branch has `results/<id>/<version>.metrics.csv` for the newest such version, the row's rates are pooled from its rows for that AI model, puzzle, and scope (each rate's numerator over its `_n`), and `metrics_source` is `report`.
