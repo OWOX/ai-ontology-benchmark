@@ -502,3 +502,98 @@ def test_rich_progress_smoke(exp):
             shown.update(row)
     text = out.getvalue()
     assert "A 2x2" in text and "B 2x2" in text and "total" in text and "last attempt" in text
+
+
+# Fix round: sync with origin, removals, temporary files, commit failures, interrupts.
+
+def test_a_file_missing_from_the_work_tree_survives_the_commit(exp):
+    assert go() == 0
+    (exp / "results/exp/raw/A.jsonl").unlink()
+    (exp / "results/exp/.experiment.toml.99.tmp").write_text("x", encoding="utf-8")
+    assert go("--model", "B") == 0
+    names = git(exp, "ls-tree", "-r", "--name-only", BRANCH).splitlines()
+    assert "results/exp/raw/A.jsonl" in names and "results/exp/raw/B.jsonl" in names
+
+
+def test_temporary_copies_are_never_committed(exp):
+    (exp / "results/exp").mkdir(parents=True)
+    (exp / "results/exp/.experiment.toml.99.tmp").write_text("x", encoding="utf-8")
+    assert go("--limit", "1") == 0
+    assert not [n for n in git(exp, "ls-tree", "-r", "--name-only", BRANCH).splitlines() if n.endswith(".tmp")]
+
+
+def test_a_stale_local_branch_is_fast_forwarded_to_origin(exp, tmp_path_factory):
+    with_remote(exp, tmp_path_factory)
+    assert go() == 0
+    tip = git(exp, "rev-parse", BRANCH)
+    git(exp, "update-ref", BRANCH, f"{BRANCH}~3")
+    assert go() == 0
+    assert git(exp, "rev-parse", BRANCH) == tip
+
+
+def test_a_diverged_branch_is_refused_before_any_call(exp, tmp_path_factory, capsys):
+    with_remote(exp, tmp_path_factory)
+    assert go() == 0
+    tree = git(exp, "rev-parse", f"{BRANCH}^{{tree}}")
+    git(exp, "update-ref", BRANCH, git(exp, "commit-tree", tree, "-p", f"{BRANCH}~1", "-m", "local only"))
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    (exp / "results/exp/raw/A.jsonl").unlink()
+    assert go() == 1
+    assert len(models.FAKE_REPLIES) == 1
+    err = capsys.readouterr().err
+    assert "diverged" in err and BRANCH in err and "refs/remotes/origin/results/exp" in err
+
+
+def test_a_commit_failure_warns_and_the_budget_line_stays_last(exp, capsys, monkeypatch):
+    from src.run.branch import BranchError, ResultsBranch
+
+    def boom(self, message):
+        raise BranchError("boom")
+
+    monkeypatch.setattr(ResultsBranch, "commit", boom)
+    with_budget(exp, per_model_usd=0.035)
+    assert go() == 1
+    lines = capsys.readouterr().err.strip().splitlines()
+    assert any(l.startswith("warning: commit of results/exp failed: boom") for l in lines)
+    assert lines[-1].startswith("error: budget reached:")
+    assert len(records(exp, "A")) == 3
+
+
+def interrupt_on_third_record(monkeypatch, how):
+    real, calls = run_module.append_record, []
+
+    def append(path, record):
+        calls.append(1)
+        if len(calls) == 3:
+            how()
+        real(path, record)
+
+    monkeypatch.setattr(run_module, "append_record", append)
+
+
+def test_interrupt_commits_and_pushes_what_was_written(exp, tmp_path_factory, monkeypatch):
+    remote = with_remote(exp, tmp_path_factory)
+
+    def stop():
+        raise KeyboardInterrupt
+
+    interrupt_on_third_record(monkeypatch, stop)
+    with pytest.raises(KeyboardInterrupt):
+        go("--model", "A")
+    assert len(records(exp, "A")) == 2
+    assert git(exp, "show", f"{BRANCH}:results/exp/raw/A.jsonl") + "\n" == \
+        (exp / "results/exp/raw/A.jsonl").read_text(encoding="utf-8")
+    assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
+
+
+def test_sigterm_unwinds_with_a_non_zero_exit_and_pushes(exp, tmp_path_factory, monkeypatch):
+    import os
+    import signal
+    remote = with_remote(exp, tmp_path_factory)
+    before = signal.getsignal(signal.SIGTERM)
+    interrupt_on_third_record(monkeypatch, lambda: os.kill(os.getpid(), signal.SIGTERM))
+    with pytest.raises(SystemExit) as stopped:
+        go("--model", "A")
+    assert stopped.value.code == 128 + signal.SIGTERM
+    assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
+    assert signal.getsignal(signal.SIGTERM) == before  # the handler is put back

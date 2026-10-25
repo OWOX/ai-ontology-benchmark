@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import signal
 import sys
 import tomllib
 from collections import Counter
@@ -206,10 +207,9 @@ def run(args: argparse.Namespace) -> int:
             temp.write_bytes(config_path.read_bytes())  # never read half a file
             os.replace(temp, copy)  # first run, or only [budget] changed
     outcomes: Counter = Counter()
-    if branch:
-        branch.commit(f"Results: experiment {config['experiment_id']}, start")
     progress = None if args.dry_run else make_progress(config, prices, results / "raw", pending, args.model)
     try:
+        safe_commit(branch, f"Results: experiment {config['experiment_id']}, start")
         with progress or nullcontext():
             play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress)
     finally:
@@ -220,15 +220,23 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 
+def safe_commit(branch: ResultsBranch | None, message: str) -> None:
+    """Commit to the results branch. A failure warns and the run goes on, so a budget stop stays the last line."""
+    if not branch:
+        return
+    try:
+        branch.commit(message)
+    except (BranchError, OSError) as error:
+        print(f"warning: commit of {branch.branch} failed: {error}", file=sys.stderr)
+
+
 def finish(branch: ResultsBranch, experiment_id: str) -> None:
     """Commit what is left and push the branch once. Warn, never fail, so the run's own error stays last."""
-    try:
-        branch.commit(f"Results: experiment {experiment_id}, end")
-    except BranchError as error:
-        print(f"warning: commit to results/{experiment_id} failed: {error}", file=sys.stderr)
+    safe_commit(branch, f"Results: experiment {experiment_id}, end")
     problem = branch.push()
     if problem:
         print(f"warning: push of results/{experiment_id} failed: {problem}", file=sys.stderr)
+    branch.gc()
 
 
 def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress) -> None:
@@ -250,9 +258,8 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
         outcomes[record["outcome"]] += 1
         progress.update(record)
-        if branch:
-            branch.commit(f"Results: experiment {config['experiment_id']}, {model['name']} "
-                          f"{row['input_id']} {setup} attempt {number}")
+        safe_commit(branch, f"Results: experiment {config['experiment_id']}, {model['name']} "
+                            f"{row['input_id']} {setup} attempt {number}")
         if stop:
             raise stop
 
@@ -269,11 +276,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--configs", default="config/experiments", type=Path)
     parser.add_argument("--prices", default="config/prices.toml", type=Path)
     parser.add_argument("--results", default="results", type=Path)
+    args = parser.parse_args(argv)
+
+    def terminate(signum, frame):
+        raise SystemExit(128 + signum)  # unwinds through run's finally, then exits non-zero
+
     try:
-        return run(parser.parse_args(argv))
+        previous = signal.signal(signal.SIGTERM, terminate)
+    except ValueError:  # not the main thread
+        previous = None
+    try:
+        return run(args)
     except (RunError, BudgetError, BranchError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGTERM, previous)
 
 
 if __name__ == "__main__":
