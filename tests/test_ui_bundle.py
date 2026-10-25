@@ -433,6 +433,8 @@ def test_detail_inputs_branches(ui_repo, samples):
     (ui_repo / "results" / "e" / "experiment.toml").write_text("x", encoding="utf-8")
     assert bundles.experiment("e", set(), set())["local_results"] is True
     assert bundles.experiment("e", set(), set())["local_report"] is False
+    (ui_repo / "results" / "e" / "0.9.0.md").write_text("r", encoding="utf-8")
+    assert bundles.experiment("e", set(), set())["local_report"] is False
     (ui_repo / "results" / "e" / "1.0.0.md").write_text("r", encoding="utf-8")
     assert bundles.experiment("e", set(), set())["local_report"] is True
     with pytest.raises(ApiError) as caught:
@@ -489,3 +491,28 @@ def test_is_mirror():
     assert not is_mirror("1.0.1", "1.0.2", manifests)    # different inputs
     assert not is_mirror("1.0.1", "2.0.0", manifests) and not is_mirror("1.0.1", "9.9.9", manifests)
     assert not is_mirror("1.0.1", None, manifests)
+
+
+def broken_files(kind, records, valid):
+    if kind == "null_tokens":
+        bad = dict(record(valid, "no_model", 1, SUCCESS), input_tokens=None)
+        return files_for([bad])
+    if kind == "prices_not_table":
+        return files_for(records, **{"results/e/prices.toml": 'example-model = 5\n'})
+    header = "puzzle,setup,model,scramble_depth,infrastructure_failure_count,success_rate,success_rate_n\n"
+    return files_for(records, **{"results/e/1.0.0.metrics.csv": header + "2x2,no_model,example-model,5,0,0.5,2\n"})
+
+
+@pytest.mark.parametrize("kind", ["null_tokens", "prices_not_table", "csv_missing_column"])
+def test_malformed_branch_isolated(ui_repo, samples, kind):
+    valid, _, records = samples
+    push_results(ui_repo, "ok", files_as("ok", files_for(records)))
+    push_results(ui_repo, "e", broken_files(kind, records, valid))
+    bundles = make_bundles(ui_repo)
+    rows = bundles.get(None, True, set(), {}, set())["experiments"]
+    bad = [r for r in rows if r["id"] == "e"]
+    good = [r for r in rows if r["id"] == "ok"]
+    assert bad and all(r["error"] and "results/e" in r["error"] for r in bad)
+    assert good and all(r["error"] is None for r in good) and any(r["attempts"] for r in good)
+    detail = bundles.experiment("e", set(), set())
+    assert detail["error"] and "results/e" in detail["error"]
