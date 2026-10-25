@@ -1,16 +1,7 @@
 // Spec: docs/specs/ui.md (About)
 // The README from main, rendered, and the Project box: status (/api/project), install, tests, release, push.
 (function () {
-  function h(tag, props, ...kids) {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(props || {})) {
-      if (k === "class") n.className = v;
-      else if (k === "text") n.textContent = v;
-      else n.setAttribute(k, v);
-    }
-    for (const kid of kids) if (kid != null) n.append(kid);
-    return n;
-  }
+  const h = UI.el;
 
   let box = null;  // the live Project box, if the About page is showing
   let project = null;

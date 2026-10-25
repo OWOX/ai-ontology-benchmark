@@ -1,16 +1,7 @@
 // Spec: docs/specs/ui.md (Models)
 // One block per provider: the API key controls (/api/secrets) and the catalogue models. Reads the bundle only.
 (function () {
-  function h(tag, props, ...kids) {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(props || {})) {
-      if (k === "class") n.className = v;
-      else if (k === "text") n.textContent = v;
-      else n.setAttribute(k, v);
-    }
-    for (const kid of kids) if (kid != null) n.append(kid);
-    return n;
-  }
+  const h = UI.el;
 
   const usd = (v) => "$" + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 

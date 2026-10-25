@@ -14,7 +14,20 @@
     drop(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
   };
 
+  // Builds an element: props "class" and "text" are shortcuts, the rest are attributes.
+  function el(tag, props, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(props || {})) {
+      if (k === "class") n.className = v;
+      else if (k === "text") n.textContent = v;
+      else n.setAttribute(k, v);
+    }
+    for (const kid of kids) if (kid != null) n.append(kid);
+    return n;
+  }
+
   const UI = window.UI = {
+    el,
     token: meta ? meta.content : "",
     async api(path, opts) {
       const o = Object.assign({ method: "GET" }, opts || {});
@@ -31,8 +44,8 @@
     },
     // Resolves with the server's bundle. onCached(cached) runs first when the cache holds one.
     async bundle(release, refresh, onCached) {
-      const key = "bundle:" + (release || "latest");
-      const cached = store.get(key);
+      const key = "bundle:" + release;
+      const cached = release ? store.get(key) : null;  // with no release known there is nothing to look up
       if (cached && cached.schema !== 1) store.drop(key);
       else if (cached && onCached) onCached(cached);
       const q = new URLSearchParams();
@@ -40,7 +53,6 @@
       if (refresh) q.set("refresh", "1");
       const fresh = await UI.api("/api/bundle?" + q);
       store.set("bundle:" + fresh.release, fresh);
-      store.set("bundle:latest", fresh);
       return fresh;
     },
     go(hash) { if (location.hash === hash) route(); else location.hash = hash; },
@@ -94,7 +106,11 @@
     status.title = b.fetch_error || "";
   }
 
-  function draw(b) {
+  function draw(b, force) {
+    // A reload that brings nothing new keeps the page, so typed fields survive.
+    const sig = JSON.stringify([b, st.params]);
+    if (!force && sig === st.drawn) return;
+    st.drawn = sig;
     st.bundle = b;
     drawMenu();
     const page = pages[st.params.name];
@@ -124,7 +140,7 @@
     const prev = st.params;
     st.params = parse();
     if (location.hash === "" || location.hash === "#") history.replaceState(null, "", "#/experiments");
-    if (st.bundle && prev && prev.release === st.params.release) draw(st.bundle);
+    if (st.bundle && prev && prev.release === st.params.release) draw(st.bundle, true);
     else load(st.params.release, false);
   }
 
@@ -138,7 +154,7 @@
       const running = new Set(data.jobs.filter((j) => j.state === "running").map((j) => j.job));
       const ended = st.jobs.filter((j) => j.state === "running" && !running.has(j.job)).map((j) => j.job);
       st.jobs = data.jobs;
-      for (const fn of st.listeners) fn(st.jobs, ended);
+      for (const fn of st.listeners) { try { fn(st.jobs, ended); } catch (e) { console.error(e); } }
       if (ended.length) UI.reload(false);
     } catch (e) {
       conn.textContent = "reconnecting"; conn.className = "conn bad";
