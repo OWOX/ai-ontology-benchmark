@@ -13,19 +13,7 @@
   const OUTCOMES = ["success", "failure", "hallucination", "malformed_output", "infrastructure_failure"];
   const POLL_MS = 1500;
   const key = (model, input, setup, attempt) => `${model}|${input}|${setup}|${attempt}`;
-  const anyRunning = () => UI.jobs.some((j) => j.state === "running");
   let current = null;
-
-  function arcPath(cx, cy, r0, r1, a0, a1) {
-    const pt = (r, a) => `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
-    const large = a1 - a0 > Math.PI ? 1 : 0;
-    return `M ${pt(r1, a0)} A ${r1} ${r1} 0 ${large} 1 ${pt(r1, a1)} L ${pt(r0, a1)} A ${r0} ${r0} 0 ${large} 0 ${pt(r0, a0)} Z`;
-  }
-
-  function chip(outcome, n) {
-    const i = h("i"); i.style.background = COLORS[outcome];
-    return h("span", { title: outcome }, i, String(n));
-  }
 
   function mount(el, id, opts) {
     if (current) current.destroy();
@@ -41,12 +29,7 @@
     const status = h("p", { class: "muted small", text: "Loading progress." });
     const banners = h("div");
     const tree = h("div");
-    const legend = h("div", { class: "legend" }, ...[["pending", "pending"], ["in_progress", "in progress"],
-      ...OUTCOMES.map((k) => [k, k.replace("_", " ")])].map(([k, label]) => {
-      const i = h("i"); i.style.background = COLORS[k];
-      return h("span", {}, i, label);
-    }));
-    el.replaceChildren(panel.node, legend, banners, status, tree);
+    el.replaceChildren(panel.node, ProgressView.legend(COLORS, OUTCOMES), banners, status, tree);
 
     const alive = () => Object.values(S.jobs).includes("running");
     const countFor = (m, p) => {
@@ -57,7 +40,7 @@
 
     function fill(box, done, all, out) {
       box.replaceChildren(h("span", { text: `${done}/${all}` }));
-      for (const k of OUTCOMES) if (out[k]) box.append(chip(k, out[k]));
+      for (const k of OUTCOMES) if (out[k]) box.append(ProgressView.chip(COLORS, k, out[k]));
     }
 
     function headers(model, puzzle) {
@@ -101,7 +84,7 @@
         for (let a = 1; a <= S.snap.attempts; a++, idx++) {
           const a0 = -Math.PI / 2 + (idx / n) * 2 * Math.PI + gap / 2;
           const a1 = -Math.PI / 2 + ((idx + 1) / n) * 2 * Math.PI - gap / 2;
-          const path = svg("path", { d: arcPath(50, 50, 38, 48, a0, a1), class: "arc" });
+          const path = svg("path", { d: ProgressView.arcPath(50, 50, 38, 48, a0, a1), class: "arc" });
           path.append(svg("title"));
           const k = key(model, input.input_id, setup, a);
           S.arcs.set(k, path);
@@ -164,20 +147,7 @@
       return null;
     }
 
-    function drawBanners() {
-      banners.replaceChildren();
-      for (const [job, state] of Object.entries(S.jobs)) {
-        if (state === "failed") {
-          banners.append(h("div", { class: "banner" }, h("strong", { text: `${job} failed` }),
-            h("div", {}, h("code", { text: S.lastErr[job] || "no error output" }))));
-        } else if (state === "budget") {
-          banners.append(h("div", { class: "banner budget" }, h("strong", { text: `Budget reached (${job})` }),
-            h("div", { class: "small", text: S.lastErr[job] || "" }),
-            h("div", { class: "small", text: "To resume, raise the budget under Parameters and press Run." }),
-            h("div", { class: "small muted", text: "Parallel AI models can each pass the experiment budget by one worst-case request. \"Attempts left\" in the message counts one AI model's attempts." })));
-        }
-      }
-    }
+    const drawBanners = () => banners.replaceChildren(...ProgressView.banners(S.jobs, S.lastErr));
 
     // A later snapshot only adds records, so open accordions stay open; a new shape rebuilds the tree.
     function apply(snap) {
@@ -217,7 +187,7 @@
         apply(await UI.api("/api/state/" + encodeURIComponent(id)));
         again = alive();
       } catch (e) {
-        again = anyRunning();
+        again = UI.jobs.some((j) => j.id === id && j.state === "running");
         status.textContent = again ? "Starting: waiting for the first results." : e.message;
       } finally { S.loading = false; }
       if (again && !S.dead) S.timer = setTimeout(load, POLL_MS);
@@ -225,7 +195,7 @@
 
     const offJobs = UI.onJobs((jobs) => {  // a job that starts after a quiet period restarts the poll
       if (S.dead) return;
-      const sig = jobs.filter((j) => j.state === "running").map((j) => j.id).join(",");
+      const sig = jobs.filter((j) => j.id === id && j.state === "running").map((j) => j.job).join(",");
       if (sig !== S.runSig) { S.runSig = sig; if (sig && !S.timer) load(); }
     });
     const offLines = UI.onLines((ev) => {  // each stderr line redraws the banners

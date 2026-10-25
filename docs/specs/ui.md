@@ -1,6 +1,6 @@
 # ui
 
-Files: `ui/server.py`, `ui/app.py`, `ui/gitdata.py`, `ui/bundle.py`, `ui/puzzleinfo.py`, `ui/catalogue.py`, `ui/experiments.py`, `ui/forms.py`, `ui/branches.py`, `ui/expdata.py`, `ui/pooling.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/router.js`, `ui/static/markdown.js`, `ui/static/cube.js`, `ui/static/progress.js`, `ui/static/cubepanel.js`, `ui/static/expmetrics.js`, `ui/static/pages/models.js`, `ui/static/pages/puzzles.js`, `ui/static/pages/inputs.js`, `ui/static/pages/experiments.js`, `ui/static/pages/experiment.js`, `ui/static/pages/new.js`, `ui/static/pages/about.js`, `ui/static/style.css`, `ui/start.sh`.
+Files: `ui/server.py`, `ui/app.py`, `ui/gitdata.py`, `ui/bundle.py`, `ui/puzzleinfo.py`, `ui/catalogue.py`, `ui/experiments.py`, `ui/forms.py`, `ui/branches.py`, `ui/expdata.py`, `ui/pooling.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/router.js`, `ui/static/markdown.js`, `ui/static/cube.js`, `ui/static/progress.js`, `ui/static/progressview.js`, `ui/static/cubepanel.js`, `ui/static/expmetrics.js`, `ui/static/pages/models.js`, `ui/static/pages/puzzles.js`, `ui/static/pages/inputs.js`, `ui/static/pages/experiments.js`, `ui/static/pages/experiment.js`, `ui/static/pages/new.js`, `ui/static/pages/about.js`, `ui/static/style.css`, `ui/start.sh`.
 
 Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments, adding `--port 7991` unless they include `--port`. Before that it stops any process listening on that port: SIGTERM first, so a UI server stops its jobs, then SIGKILL for whatever still listens after 5 seconds. Later updates go through the Install button.
 
@@ -33,7 +33,7 @@ The page polls. The server has no event stream.
 
 ## Inputs
 
-Every path below is read from a git ref, never from the work tree, except the API keys and the live experiments in item 7.
+Every path below is read from a git ref, never from the work tree, except the API keys, the live experiments in item 7, and the work-tree checks of API 2 (`local_results`, `local_report`), 8, 12, and 13.
 
 1. Refs. `ui/gitdata.py` runs `git fetch --prune origin main '+refs/heads/results/*:refs/remotes/origin/results/*'` with `GIT_TERMINAL_PROMPT=0` and a 60-second timeout, at most once every 30 seconds, when a bundle is built with `refresh=1` or none is in memory yet. A failed fetch is not an error: the server builds from the refs it already has and reports `fetch_error` and the time of the last good fetch. `main` means `origin/main`, or `HEAD` when the repo has no `origin`.
 2. Releases: the folders `releases/<version>/` on `main` with a `manifest.json`, newest first. For each, `manifest.json`, `inputs.jsonl`, and `prompts/<setup>/<puzzle>.txt`. The default release is the newest.
@@ -116,11 +116,11 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
    ```json
    {"id": "...", "release": "1.1.1", "config": {"...": "the form shape of item 5"},
     "model_entries": [{"name": "...", "provider": "...", "api_model_id": "...", "params": {}}], "pushed": true, "running": false,
-    "branch": "<url>", "metrics_source": "report", "local_results": true, "report": {"version": "1.1.1", "markdown": "...", "source": "<url>"},
+    "branch": "<url>", "metrics_source": "report", "local_results": true, "local_report": true, "report": {"version": "1.1.1", "markdown": "...", "source": "<url>"},
     "metric_rows": [], "summary_rows": [], "served_models": {"<model>": ["..."]}, "error": null}
    ```
 
-   `metric_rows` and `summary_rows` are the columns of [evaluate](evaluate.md#outputs): from the newest report CSV on the branch when there is one (`summary_rows` then pooled from it by AI model, setup, and validity), else from `src.evaluate.metrics.compute`, with `metrics_source` `computed`. `report` is `null` when the branch has none. `model_entries` are the config's AI models with the `api_model_id` and `params` the experiment used, which the form leaves out. `local_results` is true when `results/<id>/experiment.toml` is in the work tree, the one work-tree read here (like API 12). An unknown id gives 404.
+   `metric_rows` and `summary_rows` are the columns of [evaluate](evaluate.md#outputs): from the newest report CSV on the branch when there is one (`summary_rows` then pooled from it by AI model, setup, and validity), else from `src.evaluate.metrics.compute`, with `metrics_source` `computed`. `report` is `null` when the branch has none. `model_entries` are the config's AI models with the `api_model_id` and `params` the experiment used, which the form leaves out. `local_results` is true when `results/<id>/experiment.toml` is in the work tree, the one work-tree read here (like API 12). `local_report` is true when any `results/<id>/<version>.md` is in the work tree, where `evaluate` writes it before it is committed (like API 13's age check). An unknown id gives 404.
 3. `GET /api/inputs?release=<version>&puzzle=<name>` returns the release's inputs of that puzzle, in release order: `[{"input_id", "scramble_depth", "validity", "state", "scramble", "source_input_id", "corruption"}]`. An unknown release or puzzle gives 400 naming the field.
 4. `GET /api/branches` returns every experiment branch, `[{"id", "release", "local": true, "remote": true}]`, sorted by id, for the New Experiment branch select. An id is listed when `results/<id>/experiment.toml` is on its local or remote branch.
 5. `GET /api/experiment/<id>/config` returns the config on the experiment's branch (the local one first, else the remote one) as the form below, or 404. A config without `puzzles` returns every puzzle of its release.

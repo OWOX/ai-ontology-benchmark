@@ -27,8 +27,8 @@
   // One row per AI model, setup, and validity label; then tokens and cost per AI model from the list rows.
   function summary(detail, listRows) {
     const mark = detail.metrics_source === "computed" ? " *" : "";
-    const box = h("div");
     if (!detail.summary_rows.length) return h("p", { class: "muted", text: "No attempts to summarize yet." });
+    const box = h("div");
     box.append(table(["AI model", "Setup", "Validity", "Attempts", ...RATES.map((r) => r[1])],
       detail.summary_rows.map((r) => [r.model, r.setup, r.validity, r.attempts, ...RATES.map(([k]) => rate(r, k, mark))])));
     const models = [...new Set(detail.summary_rows.map((r) => r.model))];

@@ -3,16 +3,16 @@
 // Reads GET /api/experiments/<id> and the bundle; writes through POST /api/evaluate and POST /api/commit.
 (function () {
   const h = UI.el;
-  const anyAlive = (snap) => UI.jobs.some((j) => j.state === "running") || (snap && Object.values(snap.jobs).includes("running"));
-  const runAlive = (snap) => UI.jobs.some((j) => j.state === "running" && j.job.startsWith("run:"))
-    || (snap && Object.entries(snap.jobs).some(([j, s]) => j.startsWith("run:") && s === "running"));
+  // Jobs of this experiment only: the log's job id is the experiment id.
+  const mine = (id, pred) => UI.jobs.some((j) => j.id === id && j.state === "running" && pred(j.job));
+  const snapRunning = (snap, pred) => !!snap && Object.entries(snap.jobs).some(([j, s]) => s === "running" && pred(j));
 
-  function header(d, bundle) {
+  function header(d) {
     const box = h("section", {}, h("h2", { text: d.id }),
       h("p", { class: "small" }, `Release ${d.release || "unknown"}. `));
     const src = UI.sourceLink(d.branch);
     if (src) { src.textContent = "branch"; box.lastChild.append(src, " "); }
-    if (!d.pushed || d.running) box.lastChild.append(h("span", { class: "muted", text: "running, not pushed" }));
+    if (d.pushed === false) box.lastChild.append(h("span", { class: "muted", text: "running, not pushed" }));
     const served = Object.entries(d.served_models).map(([m, ids]) => `${m}: ${ids.join(", ") || "none"}`);
     if (served.length) box.append(h("p", { class: "small muted", text: "Served models. " + served.join("; ") }));
     if (d.error) box.append(h("p", { class: "msg err", text: d.error }));
@@ -90,15 +90,18 @@
 
       function controls() {
         const snap = state.ctl && state.ctl.snapshot();
-        evaluate.disabled = !!runAlive(snap);
-        commit.disabled = !!anyAlive(snap) || !(state.detail && state.detail.report);
+        const any = () => true, run = (j) => j.startsWith("run:"), evalJob = (j) => run(j) || j === "evaluate";
+        const d = state.detail;
+        evaluate.disabled = mine(id, evalJob) || snapRunning(snap, evalJob);
+        // The server's 409s stay the authority; this only keeps the button honest.
+        commit.disabled = mine(id, any) || snapRunning(snap, any) || !(d && d.local_results && d.local_report);
       }
 
       async function loadDetail() {
         try {
           const d = state.detail = await UI.api("/api/experiments/" + encodeURIComponent(id));
           if (!root.isConnected) return;
-          top.replaceChildren(header(d, bundle), section("Summary", ExpMetrics.summary(d, bundle.experiments)),
+          top.replaceChildren(header(d), section("Summary", ExpMetrics.summary(d, bundle.experiments)),
             section("Config", config(d)), section("Full metrics", ExpMetrics.full(d), true),
             section("Report", reportBox(d)));
           actions.replaceChildren(...(d.local_results ? [h("h3", { text: "Evaluate and commit" }),

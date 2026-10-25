@@ -14,8 +14,8 @@
     ["total_tokens", "Total tokens"], ["cost_usd", "Cost"], ["report_version", "Report"],
   ];
 
-  const num = (v) => (v === null || v === undefined ? "n/a" : v.toLocaleString());
-  const usd = (v) => (v === null || v === undefined ? "n/a" : "$" + v.toFixed(2));
+  const num = (v) => (typeof v === "number" ? v.toLocaleString() : "n/a");
+  const usd = (v) => (typeof v === "number" ? "$" + v.toFixed(2) : "n/a");
 
   function select(label, value, options, onChange) {
     const s = h("select", { "aria-label": label }, h("option", { value: "", text: "all" }),
@@ -48,9 +48,10 @@
     const cells = [id, model, h("td", { text: r.puzzle || "" }), h("td", { text: r.release || "" })];
     if (r.error) return h("tr", {}, ...cells, h("td", { colspan: "10", class: "msg err", text: r.error }));
     cells.push(h("td", { text: num(r.attempts) }));
-    for (const k of RATES) cells.push(h("td", { text: pct(r[k]) + (r[k] === null ? "" : mark) }));
-    cells.push(h("td", { text: num(r.infrastructure_failures) }), h("td", { text: num(r.total_tokens) + (r.total_tokens === null ? "" : mark) }),
-      h("td", { text: usd(r.cost_usd) + (r.cost_usd === null ? "" : mark) }),
+    for (const k of RATES) cells.push(h("td", { text: pct(r[k]) + (typeof r[k] === "number" ? mark : "") }));
+    const star = (v) => (typeof v === "number" ? mark : "");
+    cells.push(h("td", { text: num(r.infrastructure_failures) + star(r.infrastructure_failures) }),
+      h("td", { text: num(r.total_tokens) + star(r.total_tokens) }), h("td", { text: usd(r.cost_usd) + star(r.cost_usd) }),
       h("td", { text: computed ? "*" : r.report_version || "" }));
     return h("tr", {}, ...cells);
   }
