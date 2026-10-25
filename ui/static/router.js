@@ -44,8 +44,9 @@
     },
     // Resolves with the server's bundle. onCached(cached) runs first when the cache holds one.
     async bundle(release, refresh, onCached) {
-      const key = "bundle:" + release;
-      const cached = release ? store.get(key) : null;  // with no release known there is nothing to look up
+      // With no release in the hash, the last release the server returned stands in for the lookup.
+      const key = "bundle:" + (release || store.get("bundle:last") || "");
+      const cached = key === "bundle:" ? null : store.get(key);
       if (cached && cached.schema !== 1) store.drop(key);
       else if (cached && onCached) onCached(cached);
       const q = new URLSearchParams();
@@ -53,6 +54,7 @@
       if (refresh) q.set("refresh", "1");
       const fresh = await UI.api("/api/bundle?" + q);
       store.set("bundle:" + fresh.release, fresh);
+      store.set("bundle:last", fresh.release);
       return fresh;
     },
     go(hash) { if (location.hash === hash) route(); else location.hash = hash; },

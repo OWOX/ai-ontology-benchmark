@@ -22,3 +22,8 @@ def test_every_script_passes_node_check():
 def test_markdown_renderer():
     run = subprocess.run([NODE, "tests/js/markdown.test.mjs"], cwd=ROOT, capture_output=True, text=True)
     assert run.returncode == 0, run.stderr + run.stdout
+
+
+def test_named_net_follows_the_net_order():
+    run = subprocess.run([NODE, "tests/js/cube.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout

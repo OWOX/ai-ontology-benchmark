@@ -148,3 +148,12 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
   .shell { grid-template-columns: 1fr; }
   .menu { position: static; height: auto; }
 }
+.puzzle-pic, .puzzle-name-box { float: right; margin: 0 0 8px 12px; }
+.puzzle-name-box { border: 1px solid var(--line); border-radius: var(--radius); padding: 24px 32px; font-weight: 600; }
+.named-net svg { max-width: 100%; height: auto; display: block; background: #2a2f38; border-radius: 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; font-family: var(--mono); font-size: 12px; }
+.puzzle h3 { font-size: 13px; margin: 12px 0 4px; }
+.prompt-text { white-space: pre-wrap; background: #f0f2f5; padding: 8px; border-radius: 4px; font-size: 12px; max-height: 320px; overflow: auto; }
+#main table { border-collapse: collapse; }
+#main th, #main td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; vertical-align: top; }

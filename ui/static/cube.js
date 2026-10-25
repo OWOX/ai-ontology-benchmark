@@ -55,6 +55,27 @@ function cubeNet(state, attrs) {
   return root;
 }
 
+// The solved net with each sticker named <face><index>, the index counted from 1 row by row, in the
+// order cubeNet draws and the state is read. Returns an <svg>; empty for a size that is not a cube.
+function cubeNetNamed(n, attrs) {
+  const root = cubeNet(n >= 1 ? solvedState(n) : "", attrs);
+  if (n < 1) return root;
+  const cell = 1 / n;
+  [...FACE_ORDER].forEach((face) => {
+    const [fx, fy] = NET_POS[face];
+    for (let i = 0; i < n * n; i++) {
+      const t = svg("text", {
+        x: fx + ((i % n) + 0.5) * cell, y: fy + (Math.floor(i / n) + 0.5) * cell,
+        "text-anchor": "middle", "dominant-baseline": "central", "font-size": cell * 0.32,
+        fill: face === "U" || face === "D" ? "#111" : "#fff", "pointer-events": "none",
+      });
+      t.textContent = face + (i + 1);
+      root.append(t);
+    }
+  });
+  return root;
+}
+
 // ---- Isometric view --------------------------------------------------------
 // Orthographic view with U on top, F front-left, R front-right. A 3D point (x, y, z) lands at
 // screen x = (x - z) * cos 30, screen y = (x + z) / 2 - y. Units are half a sticker.
@@ -107,5 +128,5 @@ function cubeIso(state, n, highlightFace, attrs) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { STICKERS, FACE_ORDER, NET_POS, ISO_FACES, svg, solvedState, cubeSize, cubeNet, cubeIso, isoStickers };
+  module.exports = { STICKERS, FACE_ORDER, NET_POS, ISO_FACES, svg, solvedState, cubeSize, cubeNet, cubeNetNamed, cubeIso, isoStickers };
 }
