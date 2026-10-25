@@ -173,9 +173,13 @@ class Bundles(BranchReaders):
                   for m, found in exp["records"].items()}
         return {"id": experiment_id, "release": config["release"] if config else None,
                 "config": config_form(config, puzzles) if config else None,
+                "model_entries": [{f: m.get(f) for f in ("name", "provider", "api_model_id", "params")}
+                                  for m in config["models"]] if config else [],
                 "pushed": self._pushed(experiment_id, exp["sha"]), "running": experiment_id in running,
                 "branch": f"{base}/tree/{exp['sha']}/results/{experiment_id}" if base and exp["sha"] else None,
                 "metrics_source": source, "report": report,
+                # The one work-tree read here (like API 12): Evaluate and Commit need the results on disk.
+                "local_results": (self.root / "results" / experiment_id / "experiment.toml").is_file(),
                 "metric_rows": metric_rows, "summary_rows": summary_rows, "served_models": served,
                 "error": exp["error"]}
 

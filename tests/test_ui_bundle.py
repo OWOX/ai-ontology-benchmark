@@ -426,6 +426,12 @@ def test_detail_inputs_branches(ui_repo, samples):
     assert detail["id"] == "e" and detail["release"] == "1.0.0" and detail["config"]["models"] == ["example-model"]
     assert detail["metrics_source"] == "computed" and detail["metric_rows"] and detail["report"] is None
     assert detail["served_models"] == {"example-model": ["served-1"]}
+    assert detail["local_results"] is False
+    assert [m["name"] for m in detail["model_entries"]] == ["example-model"]
+    assert set(detail["model_entries"][0]) == {"name", "provider", "api_model_id", "params"}
+    (ui_repo / "results" / "e").mkdir(parents=True)
+    (ui_repo / "results" / "e" / "experiment.toml").write_text("x", encoding="utf-8")
+    assert bundles.experiment("e", set(), set())["local_results"] is True
     with pytest.raises(ApiError) as caught:
         bundles.experiment("nope", set(), set())
     assert caught.value.status == 404

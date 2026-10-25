@@ -7,7 +7,7 @@
   const meta = document.querySelector('meta[name="ui-token"]');
   const MENU = [["models", "Models"], ["puzzles", "Puzzles"], ["experiments", "Experiments"], ["about", "About"]];
   const pages = {};
-  const st = { bundle: null, seq: 0, params: null, jobs: [], listeners: [], logAfter: 0 };
+  const st = { bundle: null, seq: 0, params: null, jobs: [], listeners: [], lineListeners: [], logAfter: 0 };
 
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -25,6 +25,11 @@
     }
     for (const kid of kids) if (kid != null) n.append(kid);
     return n;
+  }
+
+  function listen(list, fn) {
+    list.push(fn);
+    return () => { const i = list.indexOf(fn); if (i >= 0) list.splice(i, 1); };
   }
 
   const UI = window.UI = {
@@ -69,7 +74,9 @@
     },
     // Re-request the bundle for the current release and render again.
     reload(refresh) { return load(st.params ? st.params.release : "", refresh); },
-    onJobs(fn) { st.listeners.push(fn); },
+    // Both return a function that removes the listener.
+    onJobs(fn) { return listen(st.listeners, fn); },
+    onLines(fn) { return listen(st.lineListeners, fn); },
     get jobs() { return st.jobs; },
     get bundleNow() { return st.bundle; },
   };
@@ -152,12 +159,15 @@
     try {
       const data = await UI.api("/api/log?after=" + st.logAfter);
       conn.textContent = "live"; conn.className = "conn ok";
-      for (const ev of data.lines) termLine(ev);
+      for (const ev of data.lines) {
+        termLine(ev);
+        for (const fn of st.lineListeners.slice()) { try { fn(ev); } catch (e) { console.error(e); } }
+      }
       st.logAfter = data.last;
       const running = new Set(data.jobs.filter((j) => j.state === "running").map((j) => j.job));
       const ended = st.jobs.filter((j) => j.state === "running" && !running.has(j.job)).map((j) => j.job);
       st.jobs = data.jobs;
-      for (const fn of st.listeners) { try { fn(st.jobs, ended); } catch (e) { console.error(e); } }
+      for (const fn of st.listeners.slice()) { try { fn(st.jobs, ended); } catch (e) { console.error(e); } }
       if (ended.length) UI.reload(false);
     } catch (e) {
       conn.textContent = "reconnecting"; conn.className = "conn bad";
