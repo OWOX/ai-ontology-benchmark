@@ -16,7 +16,7 @@ from ui import expdata, secrets
 from ui.catalogue import build_providers, config_form
 from ui.common import ApiError
 from ui.experiments import DEFAULTS
-from ui.gitdata import REMOTE_RESULTS, GitData
+from ui.gitdata import LOCAL_RESULTS, REMOTE_RESULTS, GitData
 from ui.puzzleinfo import build_puzzle
 
 NO_KEY = "no API key: add it under Models"
@@ -76,7 +76,10 @@ class Bundles:
 
     # --- the bundle ------------------------------------------------------------------------
 
-    def get(self, release: str | None, refresh: bool, live_ids: set[str], env: dict) -> dict:
+    def get(self, release: str | None, refresh: bool, live_ids: set[str], env: dict,
+            running: set[str] | None = None) -> dict:
+        """`live_ids` pick the local ref over the remote one; `running` (default: the same ids) mark rows running."""
+        running = live_ids if running is None else running
         with self._lock:
             if refresh or not self._cache:
                 self.git.fetch()
@@ -95,9 +98,10 @@ class Bundles:
             bundle = copy.deepcopy(self._cache[key])
             bundle["fetched_at"], bundle["fetch_error"] = self.git.fetched_at, self.git.fetch_error
             # Per request, never cached: a job starting or stopping, or a push, changes these, not a ref read.
+            pushed = {i: self._pushed(i, shas.get(i)) for i in {row["id"] for row in bundle["experiments"]}}
             for row in bundle["experiments"]:
-                row["running"] = row["id"] in live_ids
-                row["pushed"] = self._pushed(row["id"], shas.get(row["id"]))
+                row["running"] = row["id"] in running
+                row["pushed"] = pushed[row["id"]]
         return self._fill_keys(bundle, env)
 
     def _fill_keys(self, bundle: dict, env: dict) -> dict:
@@ -153,14 +157,38 @@ class Bundles:
                 "providers": build_providers(catalogue, self._prices(), experiments), "puzzles": puzzles, "experiments": rows,
                 "about": {"markdown": self.git.show(main, "README.md"), "source": link("README.md")}}
 
-    # --- the other routes ------------------------------------------------------------------
+    # --- the form and the run routes -------------------------------------------------------
 
-    def experiment(self, experiment_id: str, live_ids: set[str]) -> dict:
+    def models(self, env: dict) -> dict[str, dict]:
+        """The catalogue on main by name, each model with its provider, `disabled_reason`, and the rest of its entry."""
+        providers = self._fill_keys({"providers": build_providers({e["name"]: e for e in self._catalogue()},
+                                                                  self._prices(), [])}, env)["providers"]
+        return {m["name"]: {**m, "provider": p["name"]} for p in providers for m in p["models"]}
+
+    def release_puzzles(self, release: str) -> list[str] | None:
+        """The puzzles of a release on main, or None when main has no such release."""
+        manifest = self._manifest(release)
+        return list(manifest["release_config"]["puzzles"]) if manifest else None
+
+    def branch_config(self, experiment_id: str) -> str | None:
+        """`results/<id>/experiment.toml` on the local branch if there is one, else on the remote branch."""
+        path = f"results/{experiment_id}/experiment.toml"
+        for prefix, ids in ((LOCAL_RESULTS, self.git.local_ids()), (REMOTE_RESULTS, self.git.remote_ids())):
+            text = self.git.show(prefix + experiment_id, path) if experiment_id in ids else None
+            if text is not None:
+                return text
+        return None
+
+    def loaded(self, experiment_id: str, live_ids: set[str]) -> dict:
+        """One experiment branch read by `expdata`, from the local ref when its id is live. 404 when it has none."""
         ref = self.git.results_refs(live_ids).get(experiment_id)
-        main = self.git.main_ref()
-        exp = expdata.load_experiment(self.git, experiment_id, ref, main) if ref else None
+        exp = expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref()) if ref else None
         if exp is None or (exp["config"] is None and (exp["error"] or "").endswith("file not found")):
             raise ApiError(404, f"experiment '{experiment_id}' not found")
+        return exp
+
+    def experiment(self, experiment_id: str, live_ids: set[str], running: set[str] | None = None) -> dict:
+        exp, main = self.loaded(experiment_id, live_ids), self.git.main_ref()
         config, base = exp["config"], self.git.github()
         inputs = expdata.read_inputs(self.git, main, config["release"]) if config else []
         metric_rows, summary_rows, source = expdata.detail_metrics(exp, inputs)
@@ -174,7 +202,7 @@ class Bundles:
                   for m, found in exp["records"].items()}
         return {"id": experiment_id, "release": config["release"] if config else None,
                 "config": config_form(config, puzzles) if config else None,
-                "pushed": self._pushed(experiment_id, exp["sha"]), "running": experiment_id in live_ids,
+                "pushed": self._pushed(experiment_id, exp["sha"]), "running": experiment_id in (live_ids if running is None else running),
                 "branch": f"{base}/tree/{exp['sha']}/results/{experiment_id}" if base and exp["sha"] else None,
                 "metrics_source": source, "report": report,
                 "metric_rows": metric_rows, "summary_rows": summary_rows, "served_models": served,

@@ -1,7 +1,7 @@
 # Spec: docs/specs/ui.md
 """Web server for running an experiment. Serves ui/static/ and answers the
 JSON API, including the terminal log the page polls. With --lan (the default) it binds 0.0.0.0 and answers every client, but only Hosts that are localhost, an IP literal, or an --allow-host name; with --no-lan it binds 127.0.0.1 and answers only loopback.
-Reads the files named in the spec; writes only config/experiments/<id>.toml.
+Reads the files named in the spec; writes only ./secrets/ (through ui.secrets).
 Run as `python -m ui.server [--port 8765] [--root .] [--lan | --no-lan] [--allow-host NAME]`.
 """
 
@@ -22,10 +22,11 @@ from ui.common import ApiError
 MAX_BODY = 64 * 1024
 BIND_HOST = "0.0.0.0"
 LOOPBACK = ipaddress.ip_network("127.0.0.0/8")
-STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
-          "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
-          "/static/cube.js": ("cube.js", "text/javascript; charset=utf-8"),
-          "/static/style.css": ("style.css", "text/css; charset=utf-8")}
+KINDS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
+STATIC_FILES = ("index.html", "router.js", "markdown.js", "cube.js", "pages/models.js", "pages/puzzles.js",
+                "pages/inputs.js", "pages/experiments.js", "pages/experiment.js", "pages/new.js", "pages/about.js",
+                "style.css")  # the ui/static files named in the spec's Files line, and nothing else
+STATIC = {"/": ("index.html", KINDS[".html"])} | {f"/static/{n}": (n, KINDS[Path(n).suffix]) for n in STATIC_FILES}
 
 
 def is_loopback(text: str) -> bool:
@@ -105,7 +106,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(403, "client address not allowed")
             if not self.host_ok():
                 raise ApiError(403, f"bad Host header {(self.headers.get('Host') or '')[:100]!r}; add the name with --allow-host")
-            guarded = path.strip("/").split("/")[:2] in (["api", "commit"], ["api", "secrets"])  # as app.get routes
+            guarded = path.strip("/").split("/")[:2] in (["api", "commit"], ["api", "secrets"], ["api", "bundle"])  # as app.get routes
             if method == "POST" or guarded:
                 if not hmac.compare_digest(self.headers.get("X-Token", "").encode(), app.token.encode()):
                     raise ApiError(403, "missing or wrong X-Token")
