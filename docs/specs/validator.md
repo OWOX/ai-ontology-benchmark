@@ -22,7 +22,7 @@ Steps, in order:
 2. If `stop_reason` is `infrastructure_failure`, return outcome `infrastructure_failure`.
 3. If `stop_reason` is `truncated` or `refused`, return `malformed_output`.
 4. Strip one surrounding Markdown code fence, if there is one, and parse JSON. The result must be an object `{"moves": [string, ...], "mismatch": true|false}` with no other keys, as [invariant 9](../../AGENTS.md#invariants) says. Anything else is `malformed_output`.
-5. Mark each move as legal only if it exactly equals a string in `legal_moves()`. If any move isn't, `hallucination` is true and the outcome is `hallucination`.
+5. Mark each move as legal only if it exactly equals a string in `legal_moves()`. If any move isn't, `hallucination` is true and the outcome is `hallucination`. The first impossible move is enough: the attempt fails whatever follows it or whether the final state would be solved, `run` stores the reply whole, and the attempt is never re-asked ([run](run.md#outputs) retries only infrastructure failures).
 6. Otherwise, apply every move to the input's state with `apply_move()`.
 7. Return `success` if the expected result is reached and `failure` if not. For a valid input, the expected result is solved with mismatch off. For an invalid input, it is mismatch on.
 
