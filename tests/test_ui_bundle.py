@@ -14,7 +14,7 @@ from test_release import git, repo  # noqa: F401
 from test_ui import PRICES, ui_repo  # noqa: F401  (ui_repo is a fixture)
 from ui import expdata
 from ui import secrets as key_store
-from ui.bundle import Bundles
+from ui.bundle import Bundles, is_mirror
 from ui.common import ApiError
 from ui.gitdata import GitData
 from ui.pooling import pooled_summary
@@ -283,7 +283,9 @@ def test_pooled_cost_counts_groups_without_successes():
 # --- bundle ----------------------------------------------------------------------------------
 
 def make_bundles(ui_repo):
-    return Bundles(ui_repo, GitData(ui_repo))
+    # a clock that advances 100 s per read, so every refresh is past the 30-second throttle
+    ticks = iter(range(0, 10**6, 100))
+    return Bundles(ui_repo, GitData(ui_repo, clock=lambda: next(ticks)))
 
 
 def exp_ids(bundle):
@@ -334,6 +336,7 @@ def test_key_status_not_cached(ui_repo):
     assert key["source"] == "file" and key["tail"] == "1234" and model["disabled_reason"] is None
     bundle = bundles.get(None, False, set(), {})
     assert [p["name"] for p in bundle["providers"]] == ["anthropic", "openai", "google", "fake"]
+    assert next(p for p in bundle["providers"] if p["name"] == "fake")["key"] is None
     unpriced = next(m for p in bundle["providers"] for m in p["models"] if m["name"] == "unpriced")
     assert unpriced["disabled_reason"] == "no price in config/prices.toml" and unpriced["price"] is None
 
@@ -453,3 +456,27 @@ def test_no_writes(ui_repo, samples):
     bundles.get(None, False, {"e"}, {})
     bundles.experiment("e", set()); bundles.inputs("1.0.0", "2x2"); bundles.branches(); bundles.releases()
     assert snapshot() == before
+
+
+def test_refresh_respects_throttle(ui_repo):
+    git_data = GitData(ui_repo, clock=lambda: 100.0)
+    fetches = []
+    real = git_data._git
+    git_data._git = lambda *a, **k: (fetches.append(a) if a[0] == "fetch" else None) or real(*a, **k)
+    bundles = Bundles(ui_repo, git_data)
+    bundles.get(None, True, set(), {})
+    bundles.get(None, True, set(), {})   # inside the 30-second limit: no second fetch
+    assert len(fetches) == 1
+
+
+def test_is_mirror():
+    def manifest(inputs_hash):
+        return {"files": {"inputs.jsonl": inputs_hash}}
+
+    manifests = {"1.0.0": manifest("a"), "1.0.1": manifest("a"), "1.1.0": manifest("a"),
+                 "2.0.0": manifest("b"), "1.0.2": manifest("c"), "bad": None}
+    assert is_mirror("1.0.1", "1.0.0", manifests) and is_mirror("1.0.0", "1.0.0", manifests)
+    assert not is_mirror("1.0.1", "1.1.0", manifests)    # a different minor is not a mirror
+    assert not is_mirror("1.0.1", "1.0.2", manifests)    # different inputs
+    assert not is_mirror("1.0.1", "2.0.0", manifests) and not is_mirror("1.0.1", "9.9.9", manifests)
+    assert not is_mirror("1.0.1", None, manifests)

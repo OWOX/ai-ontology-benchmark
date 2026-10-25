@@ -12,26 +12,26 @@ from pathlib import Path
 
 from src.config import RELEASE_PATTERN
 from src.release.release import parse_version
-from src.run.models import KEY_VARIABLES
 from ui import expdata, secrets
+from ui.catalogue import build_providers, config_form
 from ui.common import ApiError
 from ui.experiments import DEFAULTS
 from ui.gitdata import REMOTE_RESULTS, GitData
 from ui.puzzleinfo import build_puzzle
 
-PROVIDER_ORDER = ("anthropic", "openai", "google", "fake")
 NO_KEY = "no API key: add it under Models"
-NO_PRICE = "no price in config/prices.toml"
 CACHE_LIMIT = 16
 
 
-def config_form(config: dict, release_puzzles: list[str]) -> dict:
-    """The experiment form (spec: HTTP API item 5) for a parsed experiment config."""
-    return {"id": config["experiment_id"], "release": config["release"],
-            "puzzles": list(config.get("puzzles") or release_puzzles),
-            "models": [m["name"] for m in config["models"]], "attempts": config["attempts"],
-            "retry_cap": config["retry_cap"], "max_output_tokens": config["max_output_tokens"],
-            "budget": dict(config["budget"])}
+def is_mirror(release: str, other: str | None, manifests: dict[str, dict | None]) -> bool:
+    """True when `other` is `release` or a mirror of it: same major and minor, same inputs.jsonl hash."""
+    if other is None or other not in manifests:
+        return False
+    if other == release:
+        return True
+    a, b = manifests.get(release), manifests[other]
+    return bool(a and b and parse_version(release)[:2] == parse_version(other)[:2]
+                and a.get("files", {}).get("inputs.jsonl") == b.get("files", {}).get("inputs.jsonl"))
 
 
 class Bundles:
@@ -70,50 +70,41 @@ class Bundles:
         except tomllib.TOMLDecodeError:
             return {}
 
-    # --- flags shared by the bundle rows and the detail ------------------------------------
-
-    def _flags(self, exp: dict, live_ids: set[str], base: str | None) -> dict:
-        remote = self.git.sha(REMOTE_RESULTS + exp["id"])
-        branch = f"{base}/tree/{exp['sha']}/results/{exp['id']}" if base and exp["sha"] else None
-        return {"pushed": remote is not None and remote == exp["sha"], "running": exp["id"] in live_ids,
-                "branch": branch}
-
-    def _is_mirror(self, release: str, other: str | None) -> bool:
-        if other is None or other not in self.releases():
-            return False
-        if other == release:
-            return True
-        a, b = self._manifest(release), self._manifest(other)
-        return bool(a and b and parse_version(release)[:2] == parse_version(other)[:2]
-                    and a.get("files", {}).get("inputs.jsonl") == b.get("files", {}).get("inputs.jsonl"))
+    def _pushed(self, exp_id: str, sha: str | None) -> bool:
+        remote = self.git.sha(REMOTE_RESULTS + exp_id)
+        return remote is not None and remote == sha
 
     # --- the bundle ------------------------------------------------------------------------
 
     def get(self, release: str | None, refresh: bool, live_ids: set[str], env: dict) -> dict:
         with self._lock:
-            if refresh or self.git.fetched_at is None and self.git.fetch_error is None:
-                self.git.fetch(force=refresh)
+            if refresh or not self._cache:
+                self.git.fetch()
             versions = self.releases()
             if release is not None and release not in versions:
                 raise ApiError(400, f"field 'release' must be one of {', '.join(versions) or '(none)'}")
             release = release or (versions[0] if versions else None)
             refs = self.git.results_refs(live_ids)
             main_sha = self.git.sha(self.git.main_ref())
-            key = (release, main_sha, tuple(sorted((i, self.git.sha(r)) for i, r in refs.items())),
-                   frozenset(live_ids))
+            shas = {i: self.git.sha(r) for i, r in refs.items()}
+            key = (release, main_sha, tuple(sorted(shas.items())))
             if key not in self._cache:
                 if len(self._cache) >= CACHE_LIMIT:
                     self._cache.pop(next(iter(self._cache)))
-                self._cache[key] = self._build(release, versions, refs, main_sha, live_ids)
+                self._cache[key] = self._build(release, versions, refs, main_sha)
             bundle = copy.deepcopy(self._cache[key])
             bundle["fetched_at"], bundle["fetch_error"] = self.git.fetched_at, self.git.fetch_error
+            # Per request, never cached: a job starting or stopping, or a push, changes these, not a ref read.
+            for row in bundle["experiments"]:
+                row["running"] = row["id"] in live_ids
+                row["pushed"] = self._pushed(row["id"], shas.get(row["id"]))
         return self._fill_keys(bundle, env)
 
     def _fill_keys(self, bundle: dict, env: dict) -> dict:
         status = secrets.inspect(self.root)
         for provider in bundle["providers"]:
             info = status.get(provider["name"])
-            provider["key"] = {"source": info["source"], "tail": info["tail"]} if info else {"source": "none", "tail": ""}
+            provider["key"] = {"source": info["source"], "tail": info["tail"]} if info else None
             have = info is None or bool(env.get(provider["variable"])) or info["configured"]
             for model in provider["models"]:
                 if model["disabled_reason"] is None and not have:
@@ -124,61 +115,43 @@ class Bundles:
         loaded = (expdata.load_experiment(self.git, i, ref, main) for i, ref in sorted(refs.items()))
         return [e for e in loaded if not (e["config"] is None and (e["error"] or "").endswith("file not found"))]
 
-    def _build(self, release: str | None, versions: list[str], refs: dict[str, str], main_sha: str | None,
-               live_ids: set[str]) -> dict:
+    def _build(self, release: str | None, versions: list[str], refs: dict[str, str], main_sha: str | None) -> dict:
         main, base = self.git.main_ref(), self.git.github()
 
         def link(path: str) -> str | None:
             return f"{base}/blob/{main_sha}/{path}" if base and main_sha else None
 
-        manifest = self._manifest(release) if release else None
+        manifests = {v: self._manifest(v) for v in versions}
+        manifest = manifests.get(release)
         inputs_by_release: dict[str, list[dict]] = {}
         catalogue = {e["name"]: e for e in self._catalogue()}
         experiments, rows = [], []
         for exp in self._load_all(refs, main):
             config = exp["config"]
-            if config is not None and not self._is_mirror(release, config["release"]):
+            if config is not None and not is_mirror(release, config["release"], manifests):
                 continue
             experiments.append(exp)
-            inputs = inputs_by_release.setdefault(config["release"], expdata.read_inputs(self.git, main, config["release"])) \
-                if config else []
-            flags = self._flags(exp, live_ids, base)
+            if config and config["release"] not in inputs_by_release:
+                inputs_by_release[config["release"]] = expdata.read_inputs(self.git, main, config["release"])
+            inputs = inputs_by_release[config["release"]] if config else []
+            branch = f"{base}/tree/{exp['sha']}/results/{exp['id']}" if base and exp["sha"] else None
             for row in expdata.experiment_rows(exp, inputs):
                 entry = next((m for m in config["models"] if m["name"] == row["model"]), None) if config else None
                 known = catalogue.get(row["model"])
                 differs = entry is not None and (known is None or any(
                     entry.get(f, {} if f == "params" else None) != known.get(f, {} if f == "params" else None)
                     for f in ("provider", "api_model_id", "params")))
-                rows.append({**row, **flags, "differs_from_catalogue": differs})
+                rows.append({**row, "branch": branch, "pushed": False, "running": False,
+                             "differs_from_catalogue": differs})
         names = list(manifest["release_config"]["puzzles"]) if manifest else []
-        puzzles = [build_puzzle(self.git, main, link, release, manifest,
-                                name, inputs_by_release.setdefault(release, expdata.read_inputs(self.git, main, release)),
+        if names and release not in inputs_by_release:
+            inputs_by_release[release] = expdata.read_inputs(self.git, main, release)
+        puzzles = [build_puzzle(self.git, main, link, release, manifest, name, inputs_by_release[release],
                                 experiments) for name in names]
         return {"schema": 1, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
                 "repo": base, "main_sha": main_sha, "defaults": DEFAULTS,
-                "providers": self._providers(catalogue, experiments), "puzzles": puzzles, "experiments": rows,
+                "providers": build_providers(catalogue, self._prices(), experiments), "puzzles": puzzles, "experiments": rows,
                 "about": {"markdown": self.git.show(main, "README.md"), "source": link("README.md")}}
-
-    def _providers(self, catalogue: dict[str, dict], experiments: list[dict]) -> list[dict]:
-        prices = self._prices()
-        used: dict[tuple, list[str]] = {}
-        for exp in experiments:
-            for m in exp["config"]["models"] if exp["config"] else []:
-                used.setdefault((m["provider"], m["api_model_id"]), []).append(exp["id"])
-        names = list(PROVIDER_ORDER) + sorted({e["provider"] for e in catalogue.values()} - set(PROVIDER_ORDER))
-        out = []
-        for name in names:
-            models = []
-            for e in (e for e in catalogue.values() if e["provider"] == name):
-                price = prices.get(e["name"])
-                ok = isinstance(price, dict) and {"price_input_per_mtok", "price_output_per_mtok"} <= set(price)
-                models.append({"name": e["name"], "api_model_id": e["api_model_id"], "params": e.get("params", {}),
-                               "price": {"input_per_mtok": price["price_input_per_mtok"],
-                                         "output_per_mtok": price["price_output_per_mtok"]} if ok else None,
-                               "disabled_reason": None if ok else NO_PRICE,
-                               "experiments": sorted(set(used.get((name, e["api_model_id"]), [])))})
-            out.append({"name": name, "variable": KEY_VARIABLES.get(name), "key": None, "models": models})
-        return out
 
     # --- the other routes ------------------------------------------------------------------
 
@@ -201,7 +174,9 @@ class Bundles:
                   for m, found in exp["records"].items()}
         return {"id": experiment_id, "release": config["release"] if config else None,
                 "config": config_form(config, puzzles) if config else None,
-                **self._flags(exp, live_ids, base), "metrics_source": source, "report": report,
+                "pushed": self._pushed(experiment_id, exp["sha"]), "running": experiment_id in live_ids,
+                "branch": f"{base}/tree/{exp['sha']}/results/{experiment_id}" if base and exp["sha"] else None,
+                "metrics_source": source, "report": report,
                 "metric_rows": metric_rows, "summary_rows": summary_rows, "served_models": served,
                 "error": exp["error"]}
 
