@@ -22,10 +22,17 @@
       const src = UI.sourceLink(info.inputs_source);
       const depth = h("select", { "aria-label": "Depth" }, h("option", { value: "", text: "all depths" }),
         ...info.depths.map((d) => h("option", { value: String(d), text: `depth ${d}` })));
+      depth.value = params.query.depth || "";
       const validity = h("select", { "aria-label": "Validity" },
         ...[["", "all inputs"], ["valid", "valid only"], ["invalid", "invalid only"]].map(([v, t]) => h("option", { value: v, text: t })));
-      const out = h("div", {}, h("p", { class: "muted", text: "Loading." }));
-      el.append(h("p", {}, depth, " ", validity, " ", src), out);
+      validity.value = params.query.validity || "";
+      // Filters live in the hash next to release; replaceState does not fire hashchange, so nothing redraws.
+      const keepInHash = () => {
+        for (const [k, v] of [["depth", depth.value], ["validity", validity.value]]) { if (v) params.query[k] = v; else delete params.query[k]; }
+        history.replaceState(null, "", "#/" + ["puzzles"].concat(params.parts).join("/") + "?" + new URLSearchParams(params.query));
+      };
+      const out = h("div", { class: "inputs" }, h("p", { class: "muted", text: "Loading." }));
+      el.append(h("p", { class: "inline" }, depth, " ", validity, " ", src), out);
       let rows = [];
       const draw = () => {
         const keep = rows.filter((r) => (!depth.value || String(r.scramble_depth) === depth.value) && (!validity.value || r.validity === validity.value));
@@ -33,8 +40,8 @@
         out.replaceChildren(h("p", { class: "small muted", text: `${keep.length} of ${rows.length} inputs` }),
           h("table", {}, h("thead", {}, head), h("tbody", {}, ...keep.map((r) => row(r, info.n)))));
       };
-      depth.addEventListener("change", draw);
-      validity.addEventListener("change", draw);
+      depth.addEventListener("change", () => { keepInHash(); draw(); });
+      validity.addEventListener("change", () => { keepInHash(); draw(); });
       const key = shown = Symbol();
       UI.api(`/api/inputs?release=${encodeURIComponent(bundle.release)}&puzzle=${encodeURIComponent(puzzle)}`)
         .then((data) => { if (shown === key) { rows = data; draw(); } })

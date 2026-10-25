@@ -58,8 +58,9 @@ function cubeNet(state, attrs) {
 // The solved net with each sticker named <face><index>, the index counted from 1 row by row, in the
 // order cubeNet draws and the state is read. Returns an <svg>; empty for a size that is not a cube.
 function cubeNetNamed(n, attrs) {
-  const root = cubeNet(n >= 1 ? solvedState(n) : "", attrs);
-  if (n < 1) return root;
+  const ok = Number.isInteger(n) && n >= 1;
+  const root = cubeNet(ok ? solvedState(n) : "", attrs);
+  if (!ok) return root;
   const cell = 1 / n;
   [...FACE_ORDER].forEach((face) => {
     const [fx, fy] = NET_POS[face];

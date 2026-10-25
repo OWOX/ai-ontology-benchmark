@@ -1,6 +1,7 @@
 // Spec: docs/specs/ui.md (Page, Left menu, Cache and refresh)
 // The shell: hash router, bundle cache, left menu, and the job log. Pages register by name and
-// get render(bundle, params, el). Reads /api/bundle and /api/log; stores only bundles in localStorage.
+// get render(bundle, params, el). Reads /api/bundle and /api/log; stores only bundles in localStorage
+// (`bundle:<release>`, plus `bundle:last`, the newest release returned, for the instant render when the hash names none).
 (function () {
   const $ = (id) => document.getElementById(id);
   const meta = document.querySelector('meta[name="ui-token"]');
@@ -44,7 +45,7 @@
     },
     // Resolves with the server's bundle. onCached(cached) runs first when the cache holds one.
     async bundle(release, refresh, onCached) {
-      // With no release in the hash, the last release the server returned stands in for the lookup.
+      // `bundle:last` remembers the newest release returned; it stands in when the hash names none.
       const key = "bundle:" + (release || store.get("bundle:last") || "");
       const cached = key === "bundle:" ? null : store.get(key);
       if (cached && cached.schema !== 1) store.drop(key);

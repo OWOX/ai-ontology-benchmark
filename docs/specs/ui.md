@@ -229,7 +229,7 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 
 ### Cache and refresh
 
-1. The page keeps each bundle in `localStorage` under `bundle:<release>`, inside try/catch, so a blocked storage only loses the cache. A cached bundle with another `schema` is dropped.
+1. The page keeps each bundle in `localStorage` under `bundle:<release>`, and the release of the newest answer under `bundle:last` (the instant cached render uses it when the hash names no release), inside try/catch, so a blocked storage only loses the cache. A cached bundle with another `schema` is dropped.
 2. On load, and on a release change, the page renders at once from the cached bundle if there is one, then requests `GET /api/bundle` and renders again when it answers. The server's answer always replaces the cache.
 3. ↻ requests the bundle with `refresh=1`, and spins until the answer. A failed request keeps the cached view and shows the error under the menu.
 4. When a job ends, the page requests the bundle again, so a pushed experiment appears.

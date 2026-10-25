@@ -30,7 +30,7 @@
   }
 
   function prompts(p) {
-    const box = h("div", {}, h("h3", { text: "What the AI model is told" }));
+    const box = h("div", {}, h("h4", { text: "What the AI model is told" }));
     const setups = Object.entries(p.prompts || {});
     if (!setups.length) box.append(h("p", { class: "muted small", text: "No prompt templates in this release." }));
     for (const [setup, t] of setups) {
@@ -44,7 +44,7 @@
   }
 
   function allowed(p) {
-    const box = h("div", {}, h("h3", { text: "Allowed moves" }));
+    const box = h("div", {}, h("h4", { text: "Allowed moves" }));
     if (p.legal_moves === null) { box.append(h("p", { class: "muted small", text: "No engine" })); return box; }
     box.append(h("div", { class: "chips" }, ...p.legal_moves.map((m) => h("code", { class: "chip", text: m }))));
     const src = UI.sourceLink(p.legal_moves_source);
@@ -53,7 +53,7 @@
   }
 
   function seen(p, q) {
-    const box = h("div", {}, h("h3", { text: "Not allowed moves seen" }));
+    const box = h("div", {}, h("h4", { text: "Not allowed moves seen" }));
     if (!p.impossible_seen.length) { box.append(h("p", { class: "muted small", text: "None in pushed experiments yet" })); return box; }
     const rows = p.impossible_seen.map((s) => h("tr", {},
       h("td", {}, h("code", { text: s.move })), h("td", { text: String(s.count) }), h("td", { text: s.models.join(", ") }),
@@ -69,7 +69,7 @@
       const q = params.release ? "release=" + encodeURIComponent(params.release) : "";
       el.append(h("h2", { text: "Puzzles" }));
       for (const p of bundle.puzzles) {
-        const card = h("section", { class: "step puzzle" }, h("h2", { text: p.name }), picture(p), description(p));
+        const card = h("section", { class: "step puzzle" }, h("h3", { text: p.name }), picture(p), description(p));
         if (p.n) card.append(h("div", { class: "named-net" }, cubeNetNamed(p.n, { width: 480 })));
         card.append(links(p, q), prompts(p), allowed(p), seen(p, q));
         el.append(card);
