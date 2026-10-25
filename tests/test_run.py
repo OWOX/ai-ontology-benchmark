@@ -10,7 +10,7 @@ import pytest
 from src.run import models, run as run_module
 from src.run.models import InfrastructureError, Reply
 from src.run.raw import read_raw
-from test_release import release_ok, repo  # noqa: F401  (repo is a fixture)
+from test_release import git, release_ok, repo  # noqa: F401  (repo is a fixture)
 
 EXPERIMENT = (
     'release = "1.0.0"\nattempts = 2\nretry_cap = 3\nmax_output_tokens = 100\n'
@@ -355,3 +355,87 @@ def test_puzzle_not_in_release_refused_before_any_call(exp, capsys):
     err = capsys.readouterr().err
     assert "exp.toml" in err and "puzzles" in err
     assert len(models.FAKE_REPLIES) == 1 and not (exp / "results/exp").exists()
+
+
+# Results branch. Every record is committed to refs/heads/results/exp without touching the work tree.
+
+BRANCH = "refs/heads/results/exp"
+
+
+def with_remote(repo, tmp_path_factory):
+    remote = tmp_path_factory.mktemp("remote")
+    git(remote, "init", "-q", "--bare")
+    git(repo, "remote", "add", "origin", str(remote))
+    return remote
+
+
+def test_records_are_committed_to_the_results_branch(exp, capsys):
+    head, status = git(exp, "rev-parse", "HEAD"), git(exp, "status", "--porcelain", "--untracked-files=no")
+    index = git(exp, "ls-files", "--stage")
+    assert go() == 0
+    for name in "AB":
+        shown = git(exp, "show", f"{BRANCH}:results/exp/raw/{name}.jsonl")
+        assert shown + "\n" == (exp / "results/exp/raw" / f"{name}.jsonl").read_text(encoding="utf-8")
+    assert git(exp, "show", f"{BRANCH}:config/experiments/exp.toml") == EXPERIMENT.strip()
+    assert git(exp, "rev-parse", "HEAD") == head
+    assert git(exp, "status", "--porcelain", "--untracked-files=no") == status
+    assert git(exp, "ls-files", "--stage") == index
+    assert "warning: push of results/exp failed: no remote origin" in capsys.readouterr().err
+
+
+def test_one_commit_per_attempt_plus_the_start(exp):
+    assert go() == 0
+    attempts = len(records(exp, "A")) + len(records(exp, "B"))
+    assert int(git(exp, "rev-list", "--count", f"HEAD..{BRANCH}")) == attempts + 1
+    assert git(exp, "log", "-1", "--format=%s", f"{BRANCH}~{attempts}") == "Results: experiment exp, start"
+
+
+def test_branch_is_pushed_at_exit(exp, tmp_path_factory):
+    remote = with_remote(exp, tmp_path_factory)
+    assert go() == 0
+    assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
+    assert go() == 0  # nothing new: the branch stays as it is
+    assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
+
+
+def test_run_without_a_remote_still_succeeds(exp, capsys):
+    assert go("--limit", "2") == 0
+    assert capsys.readouterr().err.strip() == "warning: push of results/exp failed: no remote origin"
+
+
+def test_budget_stop_commits_and_pushes(exp, capsys, tmp_path_factory):
+    remote = with_remote(exp, tmp_path_factory)
+    with_budget(exp, per_model_usd=0.035)
+    assert go() == 1
+    assert len(records(exp, "A")) == 3
+    assert git(exp, "show", f"{BRANCH}:results/exp/raw/A.jsonl") + "\n" == \
+        (exp / "results/exp/raw/A.jsonl").read_text(encoding="utf-8")
+    assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
+    assert capsys.readouterr().err.strip().splitlines()[-1].startswith("error: budget reached:")
+
+
+def test_budget_error_stays_the_last_line_when_the_push_fails(exp, capsys):
+    with_budget(exp, per_model_usd=0.035)
+    assert go() == 1
+    lines = capsys.readouterr().err.strip().splitlines()
+    assert lines[-2].startswith("warning: push of results/exp failed")
+    assert lines[-1].startswith("error: budget reached:")
+
+
+def test_no_commit_dry_run_and_estimate_make_no_branch(exp):
+    assert go("--no-commit", "--limit", "2") == 0
+    assert go("--dry-run") == 0
+    assert go("--estimate") == 0
+    assert git(exp, "branch", "--list", "results/exp") == ""
+
+
+def test_outside_a_git_work_tree_refused_before_any_call(exp, tmp_path_factory, monkeypatch, capsys):
+    import shutil
+    plain = tmp_path_factory.mktemp("plain")
+    for name in ("src", "prompts", "releases", "config"):
+        shutil.copytree(exp / name, plain / name)
+    monkeypatch.chdir(plain)
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    assert go() == 1
+    assert len(models.FAKE_REPLIES) == 1 and not (plain / "results").exists()
+    assert "needs a git work tree" in capsys.readouterr().err

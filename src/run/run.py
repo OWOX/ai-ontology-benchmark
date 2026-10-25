@@ -2,7 +2,8 @@
 """Sends every input of one release to the AI models of one experiment and appends one raw
 record per attempt. Reads config/experiments/<ID>.toml, config/prices.toml, releases/<release>/,
 the assessment files, and results/<ID>/raw/*.jsonl (to resume). Writes results/<ID>/experiment.toml
-and appends to results/<ID>/raw/<model name>.jsonl.
+and appends to results/<ID>/raw/<model name>.jsonl. Unless --no-commit, it also commits the config
+and results after every record to the local branch results/<ID>, and pushes that branch at exit.
 """
 
 import argparse
@@ -17,6 +18,7 @@ from pathlib import Path
 
 from src.config import load_experiment_config, load_prices
 from src.release.release import assessment_sha256
+from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
                             print_estimate, worst_case_request_cost)
 from src.run.models import InfrastructureError, call_model
@@ -181,6 +183,9 @@ def run(args: argparse.Namespace) -> int:
         print_estimate(config, pending, prices, folder / "prompts", results / "raw")
         return 0
     versions = manifest["prompt_versions"]
+    branch = None
+    if not (args.dry_run or args.no_commit):
+        branch = ResultsBranch(config_path, results, config["experiment_id"])  # before any write or call
     if not args.dry_run:
         (results / "raw").mkdir(parents=True, exist_ok=True)
         copy = results / "experiment.toml"
@@ -189,6 +194,30 @@ def run(args: argparse.Namespace) -> int:
             temp.write_bytes(config_path.read_bytes())  # never read half a file
             os.replace(temp, copy)  # first run, or only [budget] changed
     outcomes: Counter = Counter()
+    if branch:
+        branch.commit(f"Results: experiment {config['experiment_id']}, start")
+    try:
+        play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch)
+    finally:
+        if branch:
+            finish(branch, config["experiment_id"])
+    if not args.dry_run:
+        print(f"{sum(outcomes.values())} new attempts: " + ", ".join(f"{k}={v}" for k, v in sorted(outcomes.items())))
+    return 0
+
+
+def finish(branch: ResultsBranch, experiment_id: str) -> None:
+    """Commit what is left and push the branch once. Warn, never fail, so the run's own error stays last."""
+    try:
+        branch.commit(f"Results: experiment {experiment_id}, end")
+    except BranchError as error:
+        print(f"warning: commit to results/{experiment_id} failed: {error}", file=sys.stderr)
+    problem = branch.push()
+    if problem:
+        print(f"warning: push of results/{experiment_id} failed: {problem}", file=sys.stderr)
+
+
+def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch) -> None:
     for left, (row, model, setup, number) in zip(range(len(pending), 0, -1), pending):
         prompt = build_prompt(folder / "prompts", row, setup)
         if args.dry_run:
@@ -206,11 +235,11 @@ def run(args: argparse.Namespace) -> int:
                              reply, retry_in, retry_out)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
         outcomes[record["outcome"]] += 1
+        if branch:
+            branch.commit(f"Results: experiment {config['experiment_id']}, {model['name']} "
+                          f"{row['input_id']} {setup} attempt {number}")
         if stop:
             raise stop
-    if not args.dry_run:
-        print(f"{sum(outcomes.values())} new attempts: " + ", ".join(f"{k}={v}" for k, v in sorted(outcomes.items())))
-    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -220,13 +249,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, help="stop after this many new attempts")
     parser.add_argument("--dry-run", action="store_true", help="print prompts, write nothing")
     parser.add_argument("--estimate", action="store_true", help="print attempts and worst-case cost")
+    parser.add_argument("--no-commit", action="store_true", help="do not commit to results/<id> (for tests)")
     parser.add_argument("--releases", default="releases", type=Path)
     parser.add_argument("--configs", default="config/experiments", type=Path)
     parser.add_argument("--prices", default="config/prices.toml", type=Path)
     parser.add_argument("--results", default="results", type=Path)
     try:
         return run(parser.parse_args(argv))
-    except (RunError, BudgetError, ValueError) as error:
+    except (RunError, BudgetError, BranchError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 

@@ -1,6 +1,6 @@
 # run
 
-File: `src/run/run.py`.
+Files: `src/run/run.py`, `src/run/branch.py`.
 
 ## Purpose
 
@@ -27,7 +27,8 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
    2. `--limit N` stops after N new attempts. For smoke tests.
    3. `--dry-run` prints each prompt and writes nothing.
    4. `--estimate` prints, for each AI model, the number of attempts still to run, the input tokens estimated as prompt characters divided by 4, and the worst-case cost with every answer at `max_output_tokens`, using `config/prices.toml`, and the cost spent so far against each budget. It calls nothing and writes nothing.
-   5. `--releases DIR`, `--configs DIR`, `--prices PATH`, and `--results DIR`, for tests.
+   5. `--no-commit` skips the results branch described under Outputs. For tests.
+   6. `--releases DIR`, `--configs DIR`, `--prices PATH`, and `--results DIR`, for tests.
 
 ## Outputs
 
@@ -35,6 +36,11 @@ In `results/<ID>/`:
 
 1. `experiment.toml`: a copy of the experiment config, written on the first run, atomically: a temporary file in the same folder, then `os.replace`, so AI models run at the same time never read half a file. When a later run's config differs only in `[budget]`, `run` replaces the copy, so the report shows the budget in force.
 2. `raw/<model name>.jsonl`: one file per AI model. `run` only appends to it, one JSON line per attempt, flushed after each line.
+
+3. The branch `results/<ID>`, in `src/run/branch.py` (not an assessment file). Results always go to this branch. `run` needs a git work tree, found with `git rev-parse --show-toplevel` in the current folder, and exits with code 1 before any write or call if there is none. `--dry-run` and `--estimate` do no branch work. Otherwise:
+   1. After it writes `experiment.toml`, and after every appended record, `run` commits the config file and `results/<ID>/` to `refs/heads/results/<ID>`, with the message `Results: experiment <ID>, start` or `Results: experiment <ID>, <model> <input id> <setup> attempt <n>`. The parent is the local branch if it exists, else `origin/results/<ID>`, else `origin/main`, else `HEAD`. The tree is built in a temporary index file, so the work tree, the real index, and `HEAD` are never touched. A commit that changes nothing is skipped.
+   2. The commit runs under an exclusive `flock` on `<git common dir>/results-<ID>.lock`, so separate `--model` processes do not race on the ref.
+   3. At exit, on a normal end, a budget stop, an error, or Ctrl-C, `run` commits what is left and pushes the branch once with `git push origin refs/heads/results/<ID>:refs/heads/results/<ID>`. There is no push per attempt. A failed push, or no remote `origin`, prints `warning: push of results/<ID> failed: <reason>` to stderr, before any error message so a budget error stays the last stderr line, and does not change the exit code.
 
 Loop order: for each input, for each AI model, for each setup (`no_model`, `descriptive`, `prescriptive`), for attempt number 1 to `attempts`:
 
@@ -73,3 +79,9 @@ All tests use the `fake` provider and temporary folders.
 18. A model missing from `config/prices.toml` makes `run` exit with code 1 before any call.
 19. On a release with 2x2 and 3x3, `puzzles = ["2x2"]` writes records for 2x2 inputs only, and a config with no `puzzles` writes both.
 20. A `puzzles` name that the release doesn't hold makes `run` exit with code 1 before any call, naming the config path and `puzzles`.
+21. After a full run, `refs/heads/results/<ID>` holds every raw file with the same bytes as the work tree, and the work tree status, the index, and `HEAD` are unchanged.
+22. The branch has one commit per new attempt plus the start commit.
+23. With a temporary bare remote as `origin`, the branch is pushed at exit. Without one, `run` exits with code 0 and stderr carries the push warning.
+24. A budget stop still commits and pushes, and the last stderr line starts with `error: budget reached:`.
+25. `--no-commit`, `--dry-run`, and `--estimate` create no branch.
+26. Outside a git work tree, `run` exits with code 1 before any call.
