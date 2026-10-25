@@ -84,12 +84,13 @@ def _same(bundles: Bundles, existing: dict, new: dict, budget: bool) -> bool:
     return {k: v for k, v in existing.items() if k not in skip} == {k: v for k, v in new.items() if k not in skip}
 
 
-def resolve_status(bundles: Bundles, root: Path, experiment_id: str, text: str) -> str:
-    """`created`, `unchanged`, or `budget_updated` for a start; ApiError(409) when the branch cannot be resumed.
-    A branch with no `experiment.toml` is no experiment."""
+def resolve_status(bundles: Bundles, root: Path, experiment_id: str, text: str) -> tuple[str, str]:
+    """(status, stdin text): `created`, `unchanged`, or `budget_updated`; ApiError(409) when the branch cannot be
+    resumed. A resume sends the branch's own config with only its budget replaced, so `run`'s stored-copy check
+    accepts it whatever shape the branch config has. A branch with no `experiment.toml` is no experiment."""
     saved = bundles.branch_config(experiment_id)
     if saved is None:
-        return "created"
+        return "created", text
     try:
         existing = tomllib.loads(saved)
     except tomllib.TOMLDecodeError:
@@ -103,4 +104,4 @@ def resolve_status(bundles: Bundles, root: Path, experiment_id: str, text: str) 
         raise ApiError(409, f"experiment {experiment_id} exists with a different config; load it or pick a new id")
     if not (root / "results" / experiment_id / "experiment.toml").is_file():
         raise ApiError(409, f"the results of {experiment_id} are not in this checkout; check out its branch first")
-    return status
+    return status, dumps_config({**existing, "budget": new["budget"]})

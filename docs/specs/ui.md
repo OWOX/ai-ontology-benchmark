@@ -1,6 +1,6 @@
 # ui
 
-Files: `ui/server.py`, `ui/app.py`, `ui/gitdata.py`, `ui/bundle.py`, `ui/puzzleinfo.py`, `ui/catalogue.py`, `ui/experiments.py`, `ui/forms.py`, `ui/expdata.py`, `ui/pooling.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/router.js`, `ui/static/markdown.js`, `ui/static/cube.js`, `ui/static/pages/models.js`, `ui/static/pages/puzzles.js`, `ui/static/pages/inputs.js`, `ui/static/pages/experiments.js`, `ui/static/pages/experiment.js`, `ui/static/pages/new.js`, `ui/static/pages/about.js`, `ui/static/style.css`, `ui/start.sh`.
+Files: `ui/server.py`, `ui/app.py`, `ui/gitdata.py`, `ui/bundle.py`, `ui/puzzleinfo.py`, `ui/catalogue.py`, `ui/experiments.py`, `ui/forms.py`, `ui/branches.py`, `ui/expdata.py`, `ui/pooling.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/router.js`, `ui/static/markdown.js`, `ui/static/cube.js`, `ui/static/pages/models.js`, `ui/static/pages/puzzles.js`, `ui/static/pages/inputs.js`, `ui/static/pages/experiments.js`, `ui/static/pages/experiment.js`, `ui/static/pages/new.js`, `ui/static/pages/about.js`, `ui/static/style.css`, `ui/start.sh`.
 
 Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments, adding `--port 7991` unless they include `--port`. Before that it stops any process listening on that port: SIGTERM first, so a UI server stops its jobs, then SIGKILL for whatever still listens after 5 seconds. Later updates go through the Install button.
 
@@ -136,7 +136,7 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
 6. `POST /api/estimate {form}` and `POST /api/dry-run {form}` start `python -u -m src.run.run --experiment <id> --config - --estimate` and `... --dry-run`.
 7. `POST /api/run {form, "limit": null}` starts one run job per model, all at once: `python -u -m src.run.run --experiment <id> --config - --model <name>`, plus `--limit N` if `limit` is set. The processes can race to write `results/<id>/experiment.toml` because `run` writes it atomically ([run.md](run.md#outputs)).
 8. Items 6 and 7 build the experiment config from the form as TOML text with `ui/tomlw.py`, with `puzzles` always written, check it with `parse_experiment_config`, and pass it on each job's stdin. Nothing is written to disk. Before a job starts:
-   1. Checked first: a run job of the id alive gives 409, "a job of experiment <id> is running; stop it first", and so does a live evaluate job.
+   1. For Run, checked first: a run job of the id alive gives 409, "a job of experiment <id> is running; stop it first", and so does a live evaluate job. Estimate and dry-run only read, so they refuse just while the same job of the id runs (API 22).
    2. No branch for the id: the experiment is new. Status `created`.
    3. A branch holds a config equal to the new one: status `unchanged`, and the run resumes. A missing `puzzles` counts as every puzzle of its release.
    4. A branch holds a config that differs only in `[budget]`: status `budget_updated`, and `run` replaces its copy.

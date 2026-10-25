@@ -243,21 +243,28 @@ def test_run_from_form_writes_no_config_file(server):
 
 
 def test_statuses(server):
-    assert call(server, "POST", "/api/run", FORM)[1]["status"] == "created"
+    before = config_files(server.root)
+
+    def post(form):
+        found = call(server, "POST", "/api/run", form)
+        assert config_files(server.root) == before and not (server.root / "config" / "experiments").exists()
+        return found
+
+    assert post(FORM)[1]["status"] == "created"
     wait_job(server, "run:example-model")
-    assert call(server, "POST", "/api/run", FORM)[1]["status"] == "unchanged"
+    assert post(FORM)[1]["status"] == "unchanged"
     wait_job(server, "run:example-model")
     raised = dict(FORM, budget=dict(BUDGET, per_experiment_usd=20.0))
-    assert call(server, "POST", "/api/run", raised)[1]["status"] == "budget_updated"
+    assert post(raised)[1]["status"] == "budget_updated"
     wait_job(server, "run:example-model")
     assert tomllib.loads((server.root / "results" / "t1" / "experiment.toml").read_text())["budget"]["per_experiment_usd"] == 20.0
     log = call(server, "GET", "/api/log")[1]
-    status, data = call(server, "POST", "/api/run", dict(FORM, attempts=2))
+    status, data = post(dict(FORM, attempts=2))
     assert status == 409 and "exists with a different config" in data["error"]
     assert call(server, "GET", "/api/log")[1]["last"] == log["last"]  # no job started, nothing logged
     for bad in (dict(FORM, models=["cloud-model"]), dict(FORM, models=["unpriced"]), dict(FORM, models=["nope"]),
                 dict(FORM, release="9.9.9"), dict(FORM, puzzles=["3x3"]), dict(FORM, attempts=0)):
-        status, data = call(server, "POST", "/api/run", dict(bad, id="bad"))
+        status, data = post(dict(bad, id="bad"))
         assert status == 400 and "field" in data["error"]
     assert call(server, "GET", "/api/log")[1]["last"] == log["last"]
     assert not (server.root / "results" / "bad").exists()
@@ -277,13 +284,29 @@ def test_missing_puzzles_in_the_branch_config_means_every_puzzle(server):
     results = server.root / "results" / "t1"
     results.mkdir(parents=True)
     (results / "experiment.toml").write_text(cli, encoding="utf-8")
-    # (the estimate itself may fail: run compares its stored copy byte for byte; only the status is under test)
-    assert call(server, "POST", "/api/estimate", FORM)[1]["status"] == "unchanged"
-    wait_for(lambda: job_state(server, "estimate") not in (None, "running"))
+    # the resumed job gets the branch's own shape (no `puzzles`), so run's stored-copy check accepts it
+    assert call(server, "POST", "/api/run", FORM)[1]["status"] == "unchanged"
+    wait_job(server, "run:example-model")
     raised = dict(FORM, budget=dict(BUDGET, per_model_usd=9.0))
-    assert call(server, "POST", "/api/estimate", raised)[1]["status"] == "budget_updated"
-    wait_for(lambda: job_state(server, "estimate") not in (None, "running"))
-    assert call(server, "POST", "/api/estimate", dict(FORM, attempts=3))[0] == 409
+    assert call(server, "POST", "/api/run", raised)[1]["status"] == "budget_updated"
+    wait_job(server, "run:example-model")
+    assert call(server, "POST", "/api/run", dict(FORM, attempts=3))[0] == 409
+
+
+def test_config_route_without_puzzles_returns_every_puzzle_of_the_release(server):
+    cli = dumps_config(CONFIG).replace('puzzles = ["2x2"]\n', "")
+    put_branch(server.root, "t1", {"results/t1/experiment.toml": cli})
+    status, form = call(server, "GET", "/api/experiment/t1/config")
+    assert status == 200 and form["puzzles"] == ["2x2"]
+
+
+def test_estimate_and_dry_run_refuse_only_their_own_repeat(server, spawned):
+    jobs = server.app.jobs
+    (job,) = jobs.register("t1", ["run:example-model"])
+    assert call(server, "POST", "/api/estimate", FORM)[0] == 200
+    assert call(server, "POST", "/api/dry-run", FORM)[0] == 200
+    assert call(server, "POST", "/api/run", FORM)[0] == 409
+    jobs.finish(job, 0)
 
 
 def test_resume_without_local_results_is_refused(server):
@@ -534,7 +557,8 @@ def test_run_and_evaluate_exclude_each_other(server):
 def test_stop_and_stop_all(server):
     slow_fake(server, 0.5)
     call(server, "POST", "/api/run", FORM)
-    wait_for(lambda: call(server, "GET", "/api/state/t1")[1:] and call(server, "GET", "/api/state/t1")[1].get("records"))
+    snapshot_when_ready(server)
+    wait_for(lambda: call(server, "GET", "/api/state/t1")[1]["records"])
     status, data = call(server, "POST", "/api/stop", {"id": "t1"})
     assert status == 200 and data["stopped"] == ["run:example-model"]
     wait_job(server, "run:example-model", "stopped")

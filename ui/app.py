@@ -45,15 +45,16 @@ class App:
     def start_form(self, body: dict, name: str) -> dict:
         """estimate, dry-run, and run: the form (the body, or its `form` key) becomes the config on each job's stdin."""
         form = body["form"] if isinstance(body.get("form"), dict) else body
+        experiment_id = check_id(form.get("id"))
+        busy = any(state == "running" and (n.startswith("run:") or n == "evaluate")
+                   for n, state in self.jobs.states(experiment_id).items())
+        if name == "run" and busy:  # estimate and dry-run only read, so they refuse just their own repeat
+            raise ApiError(409, f"a job of experiment {experiment_id} is running; stop it first")
         limit = body.get("limit") if name == "run" else None
         if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit < 1):
             raise ApiError(400, "field 'limit' must be a whole number of at least 1, or null")
         text = forms.config_text(self.bundles, form, merged_env(self.root))
-        experiment_id = form["id"]
-        states = self.jobs.states(experiment_id)
-        if any(state == "running" and (n.startswith("run:") or n == "evaluate") for n, state in states.items()):
-            raise ApiError(409, f"a job of experiment {experiment_id} is running; stop it first")
-        status = forms.resolve_status(self.bundles, self.root, experiment_id, text)
+        status, text = forms.resolve_status(self.bundles, self.root, experiment_id, text)
         base = ["src.run.run", "--experiment", experiment_id, "--config", "-"]
         if name == "run":
             models = form["models"]
@@ -62,7 +63,7 @@ class App:
             items = [(n, [*base, "--model", m, *extra]) for n, m in zip(names, models)]
         else:
             names, items = [name], [(name, [*base, "--estimate" if name == "estimate" else "--dry-run"])]
-        self.jobs.start(experiment_id, items, blocked_by=("evaluate",), stdin=text)
+        self.jobs.start(experiment_id, items, blocked_by=("evaluate",) if name == "run" else (), stdin=text)
         return {"id": experiment_id, "status": status, "jobs": names}
 
     def project_job(self, name: str, args: list[str]) -> dict:
