@@ -5,7 +5,7 @@
 (function () {
   const h = UI.el;
   const NO_KEY = "no API key: add it under Models";
-  const NUMBERS = [["attempts", "Attempts per input and setup", "sends the same input N times"],
+  const NUMBERS = [["attempts", "Attempts per input and setup: sends the same input N times"],
     ["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
   // The form survives a redraw of the page (a bundle reload after a job) and resets with the release.
@@ -95,10 +95,10 @@
   }
 
   function numberFields() {
-    return h("div", { class: "grid" }, ...NUMBERS.map(([key, label, hint]) => {
+    return h("div", { class: "grid" }, ...NUMBERS.map(([key, label]) => {
       const input = h("input", { type: "text", inputmode: "decimal", "aria-label": label, value: String(S.vals[key]) });
       input.addEventListener("input", () => { S.vals[key] = input.value; });
-      return h("label", {}, label + (hint ? ` (${hint})` : ""), input);
+      return h("label", {}, label, input);
     }), (() => {
       const input = h("input", { type: "text", inputmode: "numeric", "aria-label": "Limit per model", value: S.limit });
       input.addEventListener("input", () => { S.limit = input.value; });
@@ -119,7 +119,7 @@
       progBox.append(progMount);
       el.append(h("div", { class: "newexp" }, formBox, progBox));
       const ref = {};
-      let ctl = null;
+      let ctl = null, dead = false;
 
       const msg = h("p", { class: "msg", role: "status" });
       const say = (text, kind) => { msg.className = "msg" + (kind ? " " + kind : ""); msg.textContent = text; };
@@ -152,7 +152,7 @@
         const q = new URLSearchParams({ models: models.join(","), puzzles: order(bundle.puzzles.map((p) => p.name), S.puzzles).join(",") });
         try {
           const r = await UI.api("/api/default-id?" + q);
-          if (mine_ !== idSeq || S.touched || S.branch || !el.isConnected) return;
+          if (mine_ !== idSeq || S.touched || S.branch || dead) return;
           S.id = r.id;
           if (ref.id) ref.id.value = S.id;
           if (ref.newOpt) ref.newOpt.textContent = newOption();
@@ -165,10 +165,12 @@
       async function pickBranch(value) {
         say("");
         S.branch = value;
-        if (!value) { S.touched = false; await refreshId(); paint(); return; }
+        if (!value) { S.touched = false; await refreshId(); if (!dead) paint(); return; }
         try {
           const cfg = await UI.api("/api/experiment/" + encodeURIComponent(value) + "/config");
-          Object.assign(S, { id: value, touched: true, release: cfg.release, puzzles: cfg.puzzles, models: cfg.models,
+          if (dead) return;
+          const enabled = new Set(bundle.providers.flatMap((p) => p.models).filter((m) => !m.disabled_reason).map((m) => m.name));
+          Object.assign(S, { id: value, touched: true, release: cfg.release, puzzles: cfg.puzzles, models: cfg.models.filter((n) => enabled.has(n)),
             vals: { attempts: cfg.attempts, retry_cap: cfg.retry_cap, max_output_tokens: cfg.max_output_tokens, ...cfg.budget }, progId: value });
           if (cfg.release !== bundle.release) { UI.go("#/new?release=" + encodeURIComponent(cfg.release)); return; }
           paint();
@@ -183,6 +185,7 @@
           const form = readForm(bundle);
           const body = path === "run" ? { form, limit: readLimit() } : { form };
           const r = await UI.api("/api/" + path, { method: "POST", body });
+          if (dead) return;
           say(`${label} started. Experiment ${r.status}. See the terminal.`, "ok");
           if (path === "run") startProgress(form.id);
         } catch (e) { say(e.message, "err"); }
@@ -224,11 +227,12 @@
         controls();
       }
 
-      const offJobs = UI.onJobs(() => { if (!el.isConnected) return; controls(); });
+      const offJobs = UI.onJobs(() => { if (!dead) controls(); });
       const onHash = () => { if (!location.hash.startsWith("#/new")) cleanup(); };
       window.addEventListener("hashchange", onHash);
       cleanup = () => {
         cleanup = null;
+        dead = true;
         offJobs(); window.removeEventListener("hashchange", onHash);
         if (ctl) ctl.destroy();
         page.classList.remove("newpage");
