@@ -297,14 +297,14 @@ def test_bundle_reads_refs_only(ui_repo, samples):
     (ui_repo / "results" / "x").mkdir(parents=True)
     (ui_repo / "results" / "x" / "experiment.toml").write_text(EXP_TOML, encoding="utf-8")
     bundles = make_bundles(ui_repo)
-    assert exp_ids(bundles.get(None, True, set(), {})) == []
+    assert exp_ids(bundles.get(None, True, set(), {}, set())) == []
     push_results(ui_repo, "e", files_for(records))
-    bundle = bundles.get(None, True, set(), {})
+    bundle = bundles.get(None, True, set(), {}, set())
     assert exp_ids(bundle) == ["e"] and bundle["schema"] == 1 and bundle["release"] == "1.0.0"
     assert [r["validity"] for r in bundle["experiments"]] == ["all", "valid", "invalid"]
     assert bundle["defaults"]["attempts"] == 3
     with pytest.raises(ApiError) as caught:
-        bundles.get("9.9.9", False, set(), {})
+        bundles.get("9.9.9", False, set(), {}, set())
     assert caught.value.status == 400 and "'release'" in caught.value.message
 
 
@@ -315,10 +315,10 @@ def test_bundle_cache_by_sha(ui_repo, samples, monkeypatch):
     real = expdata.load_experiment
     monkeypatch.setattr(expdata, "load_experiment", lambda *a, **k: calls.append(a[1]) or real(*a, **k))
     bundles = make_bundles(ui_repo)
-    first = bundles.get(None, True, set(), {})
-    assert bundles.get(None, False, set(), {}) == first and calls == ["e"]
+    first = bundles.get(None, True, set(), {}, set())
+    assert bundles.get(None, False, set(), {}, set()) == first and calls == ["e"]
     push_results(ui_repo, "f", files_as("f", files_for(records)))
-    second = bundles.get(None, True, set(), {})
+    second = bundles.get(None, True, set(), {}, set())
     assert exp_ids(second) == ["e", "f"] and calls.count("f") == 1
 
 
@@ -329,12 +329,12 @@ def test_key_status_not_cached(ui_repo):
         provider = next(p for p in bundle["providers"] if p["name"] == "anthropic")
         return provider["key"], next(m for m in provider["models"] if m["name"] == "cloud-model")
 
-    key, model = cloud(bundles.get(None, True, set(), {}))
+    key, model = cloud(bundles.get(None, True, set(), {}, set()))
     assert key["source"] == "missing" and model["disabled_reason"] == "no API key: add it under Models"
     key_store.save(ui_repo, "anthropic", "sk-test-1234")
-    key, model = cloud(bundles.get(None, False, set(), {}))
+    key, model = cloud(bundles.get(None, False, set(), {}, set()))
     assert key["source"] == "file" and key["tail"] == "1234" and model["disabled_reason"] is None
-    bundle = bundles.get(None, False, set(), {})
+    bundle = bundles.get(None, False, set(), {}, set())
     assert [p["name"] for p in bundle["providers"]] == ["anthropic", "openai", "google", "fake"]
     assert next(p for p in bundle["providers"] if p["name"] == "fake")["key"] is None
     unpriced = next(m for p in bundle["providers"] for m in p["models"] if m["name"] == "unpriced")
@@ -349,7 +349,7 @@ def test_model_matching(ui_repo, samples):
     same = {"results/e/experiment.toml": EXP_TOML + "params = { temperature = 1.0 }\n",
             "results/e/raw/example-model.jsonl": jsonl(records)}
     push_results(ui_repo, "g", files_as("g", same))
-    bundle = make_bundles(ui_repo).get(None, True, set(), {})
+    bundle = make_bundles(ui_repo).get(None, True, set(), {}, set())
     catalogue = next(m for p in bundle["providers"] for m in p["models"] if m["name"] == "example-model")
     assert catalogue["experiments"] == ["e", "g"]
     differs = {r["id"]: r["differs_from_catalogue"] for r in bundle["experiments"]}
@@ -360,7 +360,7 @@ def test_impossible_seen(ui_repo, samples):
     valid, _, _ = samples
     reply = '{"moves": ["u", "x", "u"], "mismatch": false}'
     push_results(ui_repo, "e", files_for([record(valid, "no_model", 1, reply)]))
-    puzzle = make_bundles(ui_repo).get(None, True, set(), {})["puzzles"][0]
+    puzzle = make_bundles(ui_repo).get(None, True, set(), {}, set())["puzzles"][0]
     assert [(m["move"], m["count"]) for m in puzzle["impossible_seen"]] == [("u", 2), ("x", 1)]
     assert puzzle["impossible_seen"][0]["models"] == ["example-model"]
     assert puzzle["impossible_seen"][0]["experiments"] == ["e"]
@@ -384,7 +384,7 @@ def test_links_pin_sha(ui_repo, samples, monkeypatch):
     push_results(ui_repo, "e", files_for(records))
     monkeypatch.setattr(GitData, "github", lambda self: "https://github.com/o/r")
     bundles = make_bundles(ui_repo)
-    bundle = bundles.get(None, True, set(), {})
+    bundle = bundles.get(None, True, set(), {}, set())
     found = list(sources(bundle["puzzles"])) + [bundle["about"]["source"]]
     assert len(found) >= 5
     assert all(s.startswith(f"https://github.com/o/r/blob/{bundle['main_sha']}/") for s in found)
@@ -397,10 +397,10 @@ def test_failed_fetch_keeps_old_refs(ui_repo, samples):
     _, _, records = samples
     push_results(ui_repo, "e", files_for(records))
     bundles = make_bundles(ui_repo)
-    good = bundles.get(None, True, set(), {})
+    good = bundles.get(None, True, set(), {}, set())
     assert good["fetch_error"] is None and good["fetched_at"]
     git(ui_repo, "remote", "set-url", "origin", str(ui_repo / "missing.git"))
-    bad = bundles.get(None, True, set(), {})
+    bad = bundles.get(None, True, set(), {}, set())
     assert exp_ids(bad) == ["e"] and bad["fetch_error"]
     assert bad["fetched_at"] == good["fetched_at"]
 
@@ -409,11 +409,11 @@ def test_live_and_pushed_flags(ui_repo, samples):
     _, _, records = samples
     push_results(ui_repo, "e", files_for(records))
     bundles = make_bundles(ui_repo)
-    assert {(r["pushed"], r["running"]) for r in bundles.get(None, True, set(), {})["experiments"]} == {(True, False)}
+    assert {(r["pushed"], r["running"]) for r in bundles.get(None, True, set(), {}, set())["experiments"]} == {(True, False)}
     tip = "refs/remotes/origin/results/e"
     ahead = git(ui_repo, "commit-tree", f"{tip}^{{tree}}", "-p", tip, "-m", "local record").strip()
     git(ui_repo, "update-ref", "refs/heads/results/e", ahead)
-    live = bundles.get(None, False, {"e"}, {})
+    live = bundles.get(None, False, {"e"}, {}, {"e"})
     assert {(r["pushed"], r["running"]) for r in live["experiments"]} == {(False, True)}
 
 
@@ -421,13 +421,13 @@ def test_detail_inputs_branches(ui_repo, samples):
     _, _, records = samples
     push_results(ui_repo, "e", files_for(records))
     bundles = make_bundles(ui_repo)
-    bundles.get(None, True, set(), {})
-    detail = bundles.experiment("e", set())
+    bundles.get(None, True, set(), {}, set())
+    detail = bundles.experiment("e", set(), set())
     assert detail["id"] == "e" and detail["release"] == "1.0.0" and detail["config"]["models"] == ["example-model"]
     assert detail["metrics_source"] == "computed" and detail["metric_rows"] and detail["report"] is None
     assert detail["served_models"] == {"example-model": ["served-1"]}
     with pytest.raises(ApiError) as caught:
-        bundles.experiment("nope", set())
+        bundles.experiment("nope", set(), set())
     assert caught.value.status == 404
     rows = bundles.inputs("1.0.0", "2x2")
     assert rows and set(rows[0]) == {"input_id", "scramble_depth", "validity", "state", "scramble",
@@ -444,7 +444,7 @@ def test_no_writes(ui_repo, samples):
     _, _, records = samples
     push_results(ui_repo, "e", files_for(records))
     bundles = make_bundles(ui_repo)
-    bundles.get(None, True, set(), {})
+    bundles.get(None, True, set(), {}, set())
 
     def snapshot():
         status = git(ui_repo, "status", "--porcelain", "--ignored")
@@ -453,8 +453,8 @@ def test_no_writes(ui_repo, samples):
         return status, times
 
     before = snapshot()
-    bundles.get(None, False, {"e"}, {})
-    bundles.experiment("e", set()); bundles.inputs("1.0.0", "2x2"); bundles.branches(); bundles.releases()
+    bundles.get(None, False, {"e"}, {}, {"e"})
+    bundles.experiment("e", set(), set()); bundles.inputs("1.0.0", "2x2"); bundles.branches(); bundles.releases()
     assert snapshot() == before
 
 
@@ -464,8 +464,8 @@ def test_refresh_respects_throttle(ui_repo):
     real = git_data._git
     git_data._git = lambda *a, **k: (fetches.append(a) if a[0] == "fetch" else None) or real(*a, **k)
     bundles = Bundles(ui_repo, git_data)
-    bundles.get(None, True, set(), {})
-    bundles.get(None, True, set(), {})   # inside the 30-second limit: no second fetch
+    bundles.get(None, True, set(), {}, set())
+    bundles.get(None, True, set(), {}, set())   # inside the 30-second limit: no second fetch
     assert len(fetches) == 1
 
 
