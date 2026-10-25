@@ -1,6 +1,6 @@
 # Spec: docs/specs/run.md
 """Commits the experiment's config and raw records to the local branch results/<ID> while `run`
-works, and pushes that branch once at exit. Reads the config file and results/<ID>/. Writes git
+works, and pushes that branch once at exit. Reads the config file (none when the config came from stdin) and results/<ID>/. Writes git
 objects, refs/heads/results/<ID>, and a lock file in the git common dir. Never touches the work
 tree, the real index, or HEAD: it builds each tree in a temporary index file.
 """
@@ -20,7 +20,7 @@ class BranchError(Exception):
 
 
 class ResultsBranch:
-    def __init__(self, config_path: Path, results_dir: Path, experiment_id: str):
+    def __init__(self, config_path: Path | None, results_dir: Path, experiment_id: str):
         self.branch = f"results/{experiment_id}"
         self.ref = f"refs/heads/{self.branch}"
         self.env = {k: v for k, v in os.environ.items() if k not in GIT_VARIABLES}
@@ -29,10 +29,10 @@ class ResultsBranch:
             raise BranchError("run needs a git work tree, because results always go to a branch "
                               f"(results/{experiment_id}); use --no-commit to skip it")
         self.root = Path(found.stdout.strip()).resolve()
-        self.paths = [self.relative(config_path), self.relative(results_dir)]
+        self.paths = ([self.relative(config_path)] if config_path else []) + [self.relative(results_dir)]
         common = self.git(["rev-parse", "--git-common-dir"]).stdout.strip()
         self.lock_path = (self.root / common) / f"results-{experiment_id}.lock"
-        self.exclude = f":(exclude){self.paths[1]}/.experiment.toml.*.tmp"  # a run's temporary copy
+        self.exclude = f":(exclude){self.paths[-1]}/.experiment.toml.*.tmp"  # a run's temporary copy
         self.sync()
 
     def relative(self, path: Path) -> str:

@@ -3,7 +3,9 @@
 test_release), then calls run's main() in-process from inside that repo with the fake provider.
 """
 
+import io
 import json
+import sys
 
 import pytest
 
@@ -597,3 +599,25 @@ def test_sigterm_unwinds_with_a_non_zero_exit_and_pushes(exp, tmp_path_factory, 
     assert stopped.value.code == 128 + signal.SIGTERM
     assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
     assert signal.getsignal(signal.SIGTERM) == before  # the handler is put back
+
+
+# Config on stdin. `--config -` reads the experiment config from stdin and needs no file.
+
+def stdin_run(exp, monkeypatch, text, *extra):
+    (exp / "config" / "experiments" / "exp.toml").unlink()
+    monkeypatch.setattr(sys, "stdin", io.StringIO(text))
+    return go("--config", "-", *extra)
+
+
+def test_config_from_stdin_writes_no_config_file(exp, monkeypatch):
+    assert stdin_run(exp, monkeypatch, EXPERIMENT) == 0
+    assert list((exp / "config" / "experiments").iterdir()) == []
+    assert (exp / "results/exp/experiment.toml").read_text(encoding="utf-8") == EXPERIMENT
+    assert len(records(exp, "A")) == len(records(exp, "B")) > 0
+    assert git(exp, "show", f"{BRANCH}:results/exp/experiment.toml") == EXPERIMENT.strip()
+
+
+def test_broken_stdin_config_refused_before_any_write(exp, monkeypatch, capsys):
+    assert stdin_run(exp, monkeypatch, 'release = "1.0.0"\n') == 1
+    assert "<stdin>" in capsys.readouterr().err
+    assert not (exp / "results").exists()

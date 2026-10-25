@@ -1,6 +1,6 @@
 # Spec: docs/specs/run.md
 """Sends every input of one release to the AI models of one experiment and appends one raw
-record per attempt. Reads config/experiments/<ID>.toml, config/prices.toml, releases/<release>/,
+record per attempt. Reads config/experiments/<ID>.toml (or stdin with --config -), config/prices.toml, releases/<release>/,
 the assessment files, and results/<ID>/raw/*.jsonl (to resume). Writes results/<ID>/experiment.toml
 and appends to results/<ID>/raw/<model name>.jsonl. Unless --no-commit, it also commits the config
 and results after every record to the local branch results/<ID>, and pushes that branch at exit.
@@ -19,7 +19,7 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.config import load_experiment_config, load_prices
+from src.config import load_experiment_config, load_prices, parse_experiment_config
 from src.release.release import assessment_sha256
 from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
@@ -68,11 +68,11 @@ def without_budget(data: bytes) -> dict:
     return config
 
 
-def check_experiment_copy(config_path: Path, results: Path) -> None:
+def check_experiment_copy(source: str, config_bytes: bytes, results: Path) -> None:
     """The stored copy must equal the config apart from [budget]."""
     copy = results / "experiment.toml"
-    if copy.exists() and without_budget(copy.read_bytes()) != without_budget(config_path.read_bytes()):
-        raise RunError(f"{config_path}: differs from {copy}; an experiment never changes once it starts, except its [budget]")
+    if copy.exists() and without_budget(copy.read_bytes()) != without_budget(config_bytes):
+        raise RunError(f"{source}: differs from {copy}; an experiment never changes once it starts, except its [budget]")
 
 
 def read_done(raw_path: Path) -> set[tuple]:
@@ -173,25 +173,33 @@ def make_progress(config: dict, prices: dict, raw_dir: Path, pending: list, only
 
 
 def run(args: argparse.Namespace) -> int:
-    config_path = args.configs / f"{args.experiment}.toml"
-    config = load_experiment_config(config_path)
+    if args.config == "-":
+        source, config_path = "<stdin>", None
+        text = sys.stdin.read()
+        config = parse_experiment_config(text, args.experiment, source)
+        config_bytes = text.encode("utf-8")
+    else:
+        config_path = args.configs / f"{args.experiment}.toml"
+        source = str(config_path)
+        config = load_experiment_config(config_path)
+        config_bytes = config_path.read_bytes()
     names = [m["name"] for m in config["models"]]
     if args.model and args.model not in names:
-        raise RunError(f"{config_path}: field 'models' has no model {args.model!r}")
+        raise RunError(f"{source}: field 'models' has no model {args.model!r}")
     folder = args.releases / config["release"]
     manifest, inputs = load_release(folder)
     for name in config.get("puzzles", []):
         if name not in manifest["release_config"]["puzzles"]:
-            raise RunError(f"{config_path}: field 'puzzles' names {name!r}, which release {config['release']} does not hold")
+            raise RunError(f"{source}: field 'puzzles' names {name!r}, which release {config['release']} does not hold")
     results = args.results / config["experiment_id"]
-    check_experiment_copy(config_path, results)
+    check_experiment_copy(source, config_bytes, results)
     prices = load_prices(args.prices)
     check_prices(config, prices, args.prices)
     pending = list(pending_attempts(config, inputs, results / "raw", args.model))
     if args.limit is not None:
         pending = pending[: args.limit]
     for row, model, setup, _ in pending:
-        check_request_budget(config_path, config, model, build_prompt(folder / "prompts", row, setup), prices)
+        check_request_budget(source, config, model, build_prompt(folder / "prompts", row, setup), prices)
     if args.estimate:
         print_estimate(config, pending, prices, folder / "prompts", results / "raw")
         return 0
@@ -202,9 +210,9 @@ def run(args: argparse.Namespace) -> int:
     if not args.dry_run:
         (results / "raw").mkdir(parents=True, exist_ok=True)
         copy = results / "experiment.toml"
-        if not copy.exists() or copy.read_bytes() != config_path.read_bytes():
+        if not copy.exists() or copy.read_bytes() != config_bytes:
             temp = copy.with_name(f".experiment.toml.{os.getpid()}.tmp")  # atomic: models started together
-            temp.write_bytes(config_path.read_bytes())  # never read half a file
+            temp.write_bytes(config_bytes)  # never read half a file
             os.replace(temp, copy)  # first run, or only [budget] changed
     outcomes: Counter = Counter()
     progress = None if args.dry_run else make_progress(config, prices, results / "raw", pending, args.model)
@@ -273,6 +281,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--estimate", action="store_true", help="print attempts and worst-case cost")
     parser.add_argument("--no-commit", action="store_true", help="do not commit to results/<id> (for tests)")
     parser.add_argument("--releases", default="releases", type=Path)
+    parser.add_argument("--config", choices=["-"], help="read the experiment config from stdin")
     parser.add_argument("--configs", default="config/experiments", type=Path)
     parser.add_argument("--prices", default="config/prices.toml", type=Path)
     parser.add_argument("--results", default="results", type=Path)
