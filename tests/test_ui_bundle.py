@@ -432,6 +432,9 @@ def test_detail_inputs_branches(ui_repo, samples):
     (ui_repo / "results" / "e").mkdir(parents=True)
     (ui_repo / "results" / "e" / "experiment.toml").write_text("x", encoding="utf-8")
     assert bundles.experiment("e", set(), set())["local_results"] is True
+    assert bundles.experiment("e", set(), set())["local_report"] is False
+    (ui_repo / "results" / "e" / "1.0.0.md").write_text("r", encoding="utf-8")
+    assert bundles.experiment("e", set(), set())["local_report"] is True
     with pytest.raises(ApiError) as caught:
         bundles.experiment("nope", set(), set())
     assert caught.value.status == 404

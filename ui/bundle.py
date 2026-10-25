@@ -180,6 +180,8 @@ class Bundles(BranchReaders):
                 "metrics_source": source, "report": report,
                 # The one work-tree read here (like API 12): Evaluate and Commit need the results on disk.
                 "local_results": (self.root / "results" / experiment_id / "experiment.toml").is_file(),
+                "local_report": any(RELEASE_PATTERN.fullmatch(f.stem) for f in
+                                    (self.root / "results" / experiment_id).glob("*.md")),
                 "metric_rows": metric_rows, "summary_rows": summary_rows, "served_models": served,
                 "error": exp["error"]}
 
