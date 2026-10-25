@@ -9,6 +9,8 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
 ## Inputs
 
 1. `--experiment ID`. Reads `config/experiments/<ID>.toml` with [config](config.md).
+
+   With `--config -`, `run` reads the experiment config as TOML from stdin instead, with `parse_experiment_config(text, ID, "<stdin>")`, and never opens `config/experiments/`. This is how the [UI](ui.md) starts an experiment, because the UI writes no files. The config's only copy is then `results/<ID>/experiment.toml`, which `run` writes and commits as below. `--config` takes only `-`.
 2. The release named in that config, `releases/<release>/`. Before the first call, `run` checks:
    1. Every file in the release matches its sha256 in `manifest.json`.
    2. The assessment files in the working tree hash to the release's `assessment_sha256`, so the validator that writes the raw records is the one the release pins.
@@ -28,7 +30,8 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
    3. `--dry-run` prints each prompt and writes nothing.
    4. `--estimate` prints, for each AI model, the number of attempts still to run, the input tokens estimated as prompt characters divided by 4, and the worst-case cost with every answer at `max_output_tokens`, using `config/prices.toml`, and the cost spent so far against each budget. It calls nothing and writes nothing.
    5. `--no-commit` skips the results branch described under Outputs. For tests.
-   6. `--releases DIR`, `--configs DIR`, `--prices PATH`, and `--results DIR`, for tests.
+   6. `--config -` reads the config from stdin, as in item 1.
+   7. `--releases DIR`, `--configs DIR`, `--prices PATH`, and `--results DIR`, for tests.
 
 ## Outputs
 
@@ -39,7 +42,7 @@ In `results/<ID>/`:
 
 3. The branch `results/<ID>`, in `src/run/branch.py` (not an assessment file). Results always go to this branch. `run` needs a git work tree, found with `git rev-parse --show-toplevel` in the current folder, and exits with code 1 before any write or call if there is none. The config file and the results folder must be inside that work tree, so `--configs` and `--results` outside it are refused unless `--no-commit` is given. `--dry-run` and `--estimate` do no branch work. Otherwise:
    1. Before any write or call, `run` runs `git fetch origin results/<ID>`, ignoring a failure (no `origin`, or no such branch yet). If the local branch is missing, it builds on `origin/results/<ID>` when that exists. If the local branch is an ancestor of the remote one, it is moved forward to it. If the remote branch is an ancestor of the local one, or missing, the local branch stays. If they have diverged, `run` exits with code 1 naming both refs.
-   2. After it writes `experiment.toml`, and after every appended record, `run` commits the config file and `results/<ID>/` to `refs/heads/results/<ID>`, with the message `Results: experiment <ID>, start` or `Results: experiment <ID>, <model> <input id> <setup> attempt <n>`. The parent is the local branch if it exists, else `origin/results/<ID>`, else `origin/main`, else `HEAD`. The tree is built in a temporary index file with `git add --ignore-removal`, so the work tree, the real index, and `HEAD` are never touched, and a file already on the branch is never dropped, even if it is gone from the work tree. The temporary copies `.experiment.toml.*.tmp` are never added. A commit that changes nothing is skipped.
+   2. After it writes `experiment.toml`, and after every appended record, `run` commits the config file (none with `--config -`) and `results/<ID>/` to `refs/heads/results/<ID>`, with the message `Results: experiment <ID>, start` or `Results: experiment <ID>, <model> <input id> <setup> attempt <n>`. The parent is the local branch if it exists, else `origin/results/<ID>`, else `origin/main`, else `HEAD`. The tree is built in a temporary index file with `git add --ignore-removal`, so the work tree, the real index, and `HEAD` are never touched, and a file already on the branch is never dropped, even if it is gone from the work tree. The temporary copies `.experiment.toml.*.tmp` are never added. A commit that changes nothing is skipped.
    3. A commit that fails prints `warning: commit of results/<ID> failed: <reason>` to stderr and the run goes on. It never aborts the run or replaces a budget stop.
    4. Each commit runs under an exclusive `flock` on `<git common dir>/results-<ID>.lock`, so separate `--model` processes do not race on the ref.
    5. At exit, on a normal end, a budget stop, an error, Ctrl-C, or SIGTERM, `run` commits what is left and pushes the branch once. The start commit is inside the same guard, so an interrupt there is covered. SIGTERM makes `run` unwind like Ctrl-C and exit with code 143. The push runs under the lock and sends the branch tip read under the lock, with `git push origin <tip>:refs/heads/results/<ID>`. Every network command (fetch and push) runs with `GIT_TERMINAL_PROMPT=0` and a 60-second timeout, so a credential prompt or a hung network cannot block the run. There is no push per attempt. A failed push, or no remote `origin`, prints `warning: push of results/<ID> failed: <reason>` to stderr, before any error message so a budget error stays the last stderr line, and does not change the exit code.
@@ -108,3 +111,4 @@ All tests use the `fake` provider and temporary folders.
 32. Rates leave out attempts with outcome `infrastructure_failure`, and show `n/a` for an empty denominator.
 33. `--dry-run` and `--estimate` print no progress line.
 34. A smoke test draws the `rich` display into a string with an injected console and checks that the AI model names appear.
+35. `--config -` with a config on stdin runs like the same config in a file, writes no file under `config/experiments/`, and commits `results/<ID>/experiment.toml` to the branch. A config on stdin that breaks a check exits with code 1 and an error naming `<stdin>`, before any write or call.

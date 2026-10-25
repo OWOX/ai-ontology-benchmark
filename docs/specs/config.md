@@ -53,7 +53,11 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
 
 ## Outputs
 
-`load_release_config(path)`, `load_experiment_config(path)`, and `load_prices(path)`. Each returns a dict after these checks, and raises `ValueError` naming the file and field on the first one that fails:
+`load_release_config(path)`, `load_experiment_config(path)`, and `load_prices(path)`. Each returns a dict after these checks, and raises `ValueError` naming the file and field on the first one that fails.
+
+`parse_experiment_config(text, experiment_id, source)` makes the same checks as `load_experiment_config` on TOML text that is not in a file, such as the config [run](run.md) reads from stdin. `source` stands in for the path in error messages, for example `<stdin>`. `load_experiment_config(path)` reads the file and calls it, with the file name as the experiment id.
+
+The checks:
 
 1. Every field shown is present and has the type shown.
 2. `seed`, `scramble_count`, `attempts`, `max_output_tokens`, and every scramble depth are at least 1. `retry_cap` is at least 0.
@@ -70,4 +74,5 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
 1. The example files above load without error.
 2. For each check above, a file that breaks it raises `ValueError`, and the message contains the field name.
 3. A config with no `[budget]` returns the three defaults. A config that sets only `per_experiment_usd = 25` returns 25 for it and the defaults for the other two.
-4. In an experiment config, `puzzles` accepts a valid list, and raises `ValueError` naming `puzzles` for an empty list, a repeated name, a value that isn't a list of strings, and an unknown name. With no `puzzles`, the returned dict has no `puzzles` key.
+4. `parse_experiment_config` on the text of a valid file returns the same dict as `load_experiment_config` on that file, and its errors name `source`.
+5. In an experiment config, `puzzles` accepts a valid list, and raises `ValueError` naming `puzzles` for an empty list, a repeated name, a value that isn't a list of strings, and an unknown name. With no `puzzles`, the returned dict has no `puzzles` key.
