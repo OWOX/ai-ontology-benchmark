@@ -43,6 +43,16 @@ class Jobs:
         with self.lock:
             return {j.name: j.state for j in self.jobs.values() if j.experiment_id == experiment_id}
 
+    def ids(self) -> set[str]:
+        """Experiment ids with any job registered in this server, alive or over."""
+        with self.lock:
+            return {j.experiment_id for j in self.jobs.values() if j.experiment_id}
+
+    def running_ids(self) -> set[str]:
+        """Experiment ids with a run job alive."""
+        with self.lock:
+            return {j.experiment_id for j in self.jobs.values() if j.state == "running" and j.name.startswith("run:")}
+
     def alive(self, experiment_id: str) -> bool:
         return "running" in self.states(experiment_id).values()
 
@@ -80,21 +90,28 @@ class Jobs:
         return made
 
     def start(self, experiment_id: str, items: list[tuple[str, list[str]]], blocked_by: tuple = (),
-              exclusive: bool = False) -> None:
-        """Start one subprocess job per (name, `python -m` arguments). All register together."""
+              exclusive: bool = False, stdin: str | None = None) -> None:
+        """Start one subprocess job per (name, `python -m` arguments). All register together.
+        `stdin` is written to each process and closed, so a config can go in without a file."""
         for job, (_, module_args) in zip(self.register(experiment_id, [n for n, _ in items], blocked_by, exclusive=exclusive), items):
-            self._spawn(job, [sys.executable, "-u", "-m", *module_args])
+            self._spawn(job, [sys.executable, "-u", "-m", *module_args], stdin)
 
-    def _spawn(self, job: Job, argv: list[str]) -> None:
+    def _spawn(self, job: Job, argv: list[str], stdin: str | None = None) -> None:
         self.say(job.name, "cmd", shlex.join(argv))
         try:
             job.proc = subprocess.Popen(argv, cwd=self.root, env=merged_env(self.root), text=True,
-                                        encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+                                        encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL if stdin is None else subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1)
         except OSError as error:
             self.say(job.name, "stderr", str(error))
             self.finish(job, 1)
             return
+        if stdin is not None:
+            try:
+                job.proc.stdin.write(stdin)
+                job.proc.stdin.close()
+            except OSError:
+                pass  # the process exited early; its own error and exit code say why
         if job.stopped:  # Stop arrived before the process existed
             self._signal(job, signal.SIGINT)
         readers = [threading.Thread(target=self._read, args=(job, s), daemon=True) for s in ("stdout", "stderr")]

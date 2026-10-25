@@ -1,6 +1,6 @@
 # Spec: docs/specs/ui.md
-"""Commit preview and commit with a pull request. Reads config/experiments/<id>.toml and
-results/<id>/. Writes git objects, the remote branch results/<id>, and, after a push succeeds,
+"""Commit preview and commit with a pull request. Reads results/<id>/ in the work tree (its
+experiment.toml is the config) and adds only that folder. Writes git objects, the remote branch results/<id>, and, after a push succeeds,
 refs/heads/results/<id>. Never touches the work tree, the real index, or HEAD: it builds the
 tree in a temporary index file.
 """
@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-from src.config import load_experiment_config
+from src.config import parse_experiment_config
 from ui.common import ApiError, merged_env
 
 Emit = Callable[[str, str], None]  # (stream, text)
@@ -32,16 +32,24 @@ def sh(root: Path, argv: list[str], emit: Emit, extra_env: dict | None = None, c
     return result
 
 
+def load_config(root: Path, experiment_id: str) -> dict:
+    """The config copy `run` keeps at results/<id>/experiment.toml. 404 when it is not in this checkout."""
+    path = root / "results" / experiment_id / "experiment.toml"
+    if not path.is_file():
+        raise ApiError(404, f"experiment {experiment_id} not found")
+    try:
+        return parse_experiment_config(path.read_text(encoding="utf-8"), experiment_id, str(path))
+    except ValueError as error:
+        raise ApiError(400, str(error)) from None
+
+
 def newest_mtime(folder: Path) -> float:
     return max((p.stat().st_mtime for p in folder.glob("*.jsonl")), default=0.0)
 
 
 def prepare(root: Path, experiment_id: str, emit: Emit) -> dict:
     """Build the tree and return {branch, base, files, diffstat, tree, pushed}. Raises 409."""
-    config_path = root / "config" / "experiments" / f"{experiment_id}.toml"
-    if not config_path.is_file():
-        raise ApiError(404, f"experiment {experiment_id} not found")
-    release = load_experiment_config(config_path)["release"]
+    release = load_config(root, experiment_id)["release"]
     report = root / "results" / experiment_id / f"{release}.md"
     if not report.is_file():
         raise ApiError(409, "no report yet; run evaluate first")
@@ -68,7 +76,7 @@ def prepare(root: Path, experiment_id: str, emit: Emit) -> dict:
     with tempfile.TemporaryDirectory() as folder:
         index = {"GIT_INDEX_FILE": os.path.join(folder, "index")}
         sh(root, ["git", "read-tree", parent], emit, index)
-        sh(root, ["git", "add", "--ignore-removal", "--", f"config/experiments/{experiment_id}.toml",
+        sh(root, ["git", "add", "--ignore-removal", "--",
                 f"results/{experiment_id}", f":(exclude)results/{experiment_id}/.experiment.toml.*.tmp"], emit, index)
         tree = sh(root, ["git", "write-tree"], emit, index).stdout.strip()
     files = sh(root, ["git", "diff", "--name-only", parent, tree], emit).stdout.splitlines()
@@ -120,7 +128,7 @@ def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
     if url and not info["files"] and not info["ahead"]:
         raise ApiError(409, "nothing to commit")
     if not url:  # a retry after a failed PR step finds the branch already pushed
-        config = load_experiment_config(root / "config" / "experiments" / f"{experiment_id}.toml")
+        config = load_config(root, experiment_id)
         gh = merged_env(root).get("UI_GH") or "gh"
         made = sh(root, [gh, "pr", "create", "--base", "main", "--head", branch, "--title",
                          f"Results: experiment {experiment_id}", "--body", pr_body(config, experiment_id)], emit)
