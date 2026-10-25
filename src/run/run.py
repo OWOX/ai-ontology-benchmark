@@ -4,6 +4,7 @@ record per attempt. Reads config/experiments/<ID>.toml, config/prices.toml, rele
 the assessment files, and results/<ID>/raw/*.jsonl (to resume). Writes results/<ID>/experiment.toml
 and appends to results/<ID>/raw/<model name>.jsonl. Unless --no-commit, it also commits the config
 and results after every record to the local branch results/<ID>, and pushes that branch at exit.
+It shows live progress through src/run/progress.py.
 """
 
 import argparse
@@ -13,6 +14,7 @@ import os
 import sys
 import tomllib
 from collections import Counter
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +24,7 @@ from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
                             print_estimate, worst_case_request_cost)
 from src.run.models import InfrastructureError, call_model
+from src.run.progress import Progress
 from src.run.prompts import SETUPS, build_prompt, prompt_versions
 from src.run.raw import read_raw
 from src.validator import validate
@@ -159,6 +162,15 @@ def append_record(raw_path: Path, record: dict) -> None:
         handle.flush()
 
 
+def make_progress(config: dict, prices: dict, raw_dir: Path, pending: list, only_model: str | None, console=None) -> Progress:
+    """Totals are the attempts already recorded plus those still to run, for the models of this process."""
+    names = [m["name"] for m in config["models"] if only_model in (None, m["name"])]
+    prior = [r for name in names for r in read_raw(raw_dir / f"{name}.jsonl")[0]]
+    totals = Counter((r["model"], r["puzzle"]) for r in prior)
+    totals.update((model["name"], row["puzzle"]) for row, model, _, _ in pending)
+    return Progress(config, prices, totals, prior, console)
+
+
 def run(args: argparse.Namespace) -> int:
     config_path = args.configs / f"{args.experiment}.toml"
     config = load_experiment_config(config_path)
@@ -196,8 +208,10 @@ def run(args: argparse.Namespace) -> int:
     outcomes: Counter = Counter()
     if branch:
         branch.commit(f"Results: experiment {config['experiment_id']}, start")
+    progress = None if args.dry_run else make_progress(config, prices, results / "raw", pending, args.model)
     try:
-        play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch)
+        with progress or nullcontext():
+            play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress)
     finally:
         if branch:
             finish(branch, config["experiment_id"])
@@ -217,7 +231,7 @@ def finish(branch: ResultsBranch, experiment_id: str) -> None:
         print(f"warning: push of results/{experiment_id} failed: {problem}", file=sys.stderr)
 
 
-def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch) -> None:
+def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress) -> None:
     for left, (row, model, setup, number) in zip(range(len(pending), 0, -1), pending):
         prompt = build_prompt(folder / "prompts", row, setup)
         if args.dry_run:
@@ -235,6 +249,7 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
                              reply, retry_in, retry_out)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
         outcomes[record["outcome"]] += 1
+        progress.update(record)
         if branch:
             branch.commit(f"Results: experiment {config['experiment_id']}, {model['name']} "
                           f"{row['input_id']} {setup} attempt {number}")

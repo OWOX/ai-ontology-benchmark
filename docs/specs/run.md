@@ -1,6 +1,6 @@
 # run
 
-Files: `src/run/run.py`, `src/run/branch.py`.
+Files: `src/run/run.py`, `src/run/branch.py`, `src/run/progress.py`.
 
 ## Purpose
 
@@ -55,6 +55,18 @@ Each record has every field in [invariant 13](../../AGENTS.md#invariants): `expe
 
 Within one process, attempts run one at a time. At the end, `run` prints a count of outcomes.
 
+## Progress
+
+`src/run/progress.py` shows how the run is going, after every appended record. It is display only: nothing it computes goes into a raw record ([invariant 12](../../AGENTS.md#invariants)). `--dry-run` and `--estimate` show none. It counts the records already in the raw files of the AI models this process runs, so a resumed run shows the whole experiment. The totals are the attempts already recorded plus the attempts still to run.
+
+1. On a terminal, it draws with `rich` (a dependency in `pyproject.toml`):
+   1. A global bar: attempts done of the total, elapsed time, and the estimated time left.
+   2. One bar per AI model and puzzle.
+   3. A table with one row per AI model and a total row: attempts, input tokens, output tokens (retry tokens included), cost in USD from [`attempt_cost`](evaluate.md) and the prices in config, success rate, hallucination rate, malformed output rate, mismatch detection rate (invalid inputs only), false mismatch rate (valid inputs only), and the infrastructure failure count. Rates leave out attempts with outcome `infrastructure_failure`, as the [metrics](../definitions.md#metrics) say, and show `n/a` when nothing is left to divide by.
+   4. The last attempt: AI model, puzzle, input id, setup, attempt number, and outcome.
+2. When stdout is not a terminal, as in the UI log, it imports nothing from `rich` and prints one line per attempt: `[12/90] A 2x2 i-0003 descriptive #1 success | in 1234 out 567 | $0.0123 | success 40% hallucination 10% malformed 0%`. The counters and rates cover all AI models of the process. `rich` is imported only on the terminal path, so an old venv without it still runs from the UI.
+3. The final `N new attempts: ...` line stays.
+
 ## How to test
 
 All tests use the `fake` provider and temporary folders.
@@ -85,3 +97,7 @@ All tests use the `fake` provider and temporary folders.
 24. A budget stop still commits and pushes, and the last stderr line starts with `error: budget reached:`.
 25. `--no-commit`, `--dry-run`, and `--estimate` create no branch.
 26. Outside a git work tree, `run` exits with code 1 before any call.
+27. With fake replies in a known order and no terminal, `run` prints one progress line per new attempt with the right counters and rates, and a resumed run counts the records already written.
+28. Rates leave out attempts with outcome `infrastructure_failure`, and show `n/a` for an empty denominator.
+29. `--dry-run` and `--estimate` print no progress line.
+30. A smoke test draws the `rich` display into a string with an injected console and checks that the AI model names appear.

@@ -439,3 +439,66 @@ def test_outside_a_git_work_tree_refused_before_any_call(exp, tmp_path_factory, 
     assert go() == 1
     assert len(models.FAKE_REPLIES) == 1 and not (plain / "results").exists()
     assert "needs a git work tree" in capsys.readouterr().err
+
+
+# Progress. Plain lines when stdout is not a terminal (capsys), a rich display on a terminal.
+
+def reply(moves="[]", mismatch="false", tokens=(10, 4)):
+    return Reply('{"moves": %s, "mismatch": %s}' % (moves, mismatch), "ok", "s", *tokens, 0.1)
+
+
+def progress_lines(out):
+    return [line for line in out.splitlines() if line.startswith("[")]
+
+
+def test_plain_progress_line_per_attempt(exp, capsys):
+    models.FAKE_REPLIES[:] = [reply(), reply('["X"]'), Reply("not json", "ok", "s", 10, 4, 0.1)]
+    assert go("--model", "A", "--limit", "3", "--no-commit") == 0
+    first, second, third = progress_lines(capsys.readouterr().out)
+    assert first.startswith("[1/3] A 2x2 ") and " no_model #1 failure | in 10 out 4 | $0.0000 | " in first
+    assert first.endswith("success 0% hallucination 0% malformed 0%")
+    assert " no_model #2 hallucination | in 20 out 8 | " in second
+    assert second.endswith("success 0% hallucination 50% malformed 0%")
+    assert " descriptive #1 malformed_output | in 30 out 12 | " in third and third.startswith("[3/3] A ")
+    assert third.endswith("success 0% hallucination 33% malformed 33%")
+
+
+def test_progress_counts_prior_records(exp, capsys):
+    go("--model", "A", "--limit", "2", "--no-commit")
+    capsys.readouterr()
+    go("--model", "A", "--limit", "1", "--no-commit")
+    (line,) = progress_lines(capsys.readouterr().out)
+    assert line.startswith("[3/3] A ")  # two prior records counted
+
+
+def test_progress_rates_leave_out_infrastructure_failures(exp, capsys):
+    models.FAKE_REPLIES[:] = [InfrastructureError("x", 0, 0) for _ in range(4)] + [reply()]
+    go("--model", "A", "--limit", "2", "--no-commit")
+    first, second = progress_lines(capsys.readouterr().out)
+    assert "infrastructure_failure" in first and first.endswith("success n/a hallucination n/a malformed n/a")
+    assert second.endswith("success 0% hallucination 0% malformed 0%")
+
+
+def test_no_progress_for_dry_run_and_estimate(exp, capsys):
+    go("--dry-run")
+    go("--estimate")
+    assert progress_lines(capsys.readouterr().out) == []
+
+
+def test_rich_progress_smoke(exp):
+    import io
+    from rich.console import Console
+    from src.config import load_experiment_config, load_prices
+    from src.run.progress import Progress
+    config = load_experiment_config(exp / "config/experiments/exp.toml")
+    prices = load_prices(exp / "config/prices.toml")
+    go("--model", "A", "--limit", "3", "--no-commit")
+    rows = records(exp, "A")
+    totals = {("A", rows[0]["puzzle"]): 5, ("B", rows[0]["puzzle"]): 5}
+    out = io.StringIO()
+    shown = Progress(config, prices, totals, rows[:1], console=Console(file=out, force_terminal=True, width=200))
+    with shown:
+        for row in rows[1:]:
+            shown.update(row)
+    text = out.getvalue()
+    assert "A 2x2" in text and "B 2x2" in text and "total" in text and "last attempt" in text
