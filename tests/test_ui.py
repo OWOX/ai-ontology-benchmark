@@ -525,6 +525,17 @@ def test_local_commits_not_on_the_remote_are_pushed_even_with_an_empty_diff(serv
     assert status == 409 and "nothing to commit" in data["error"]
 
 
+def test_a_stale_local_branch_is_fast_forwarded_to_the_remote(server, gh):
+    repo = server.root
+    evaluated(server)
+    tip = git(repo, "rev-parse", "refs/heads/results/t1")
+    git(repo, "push", "origin", "refs/heads/results/t1:refs/heads/results/t1")
+    git(repo, "update-ref", "refs/heads/results/t1", "refs/heads/results/t1~1")
+    status, preview = call(server, "GET", "/api/commit/t1")
+    assert status == 200 and preview["base"] == tip
+    assert git(repo, "rev-parse", "refs/heads/results/t1") == tip
+
+
 def test_only_an_open_pull_request_counts(server, gh):
     evaluated(server)
     (gh / "view.json").write_text('{"url": "https://example.test/pr/9", "state": "CLOSED"}')

@@ -56,6 +56,10 @@ def prepare(root: Path, experiment_id: str, emit: Emit) -> dict:
                 emit).stdout.strip()
     # `run` commits to the local branch as it goes: build on it when it holds the remote branch.
     local = sh(root, ["git", "rev-parse", "--verify", "-q", f"refs/heads/{branch}"], emit, check=False).stdout.strip()
+    if local and pushed and local != parent and sh(root, ["git", "merge-base", "--is-ancestor", local, parent],
+                                                    emit, check=False).returncode == 0:
+        sh(root, ["git", "update-ref", f"refs/heads/{branch}", parent, local], emit)  # fast-forward a stale local
+        local = parent
     if local and (not pushed or sh(root, ["git", "merge-base", "--is-ancestor", parent, local], emit,
                                    check=False).returncode == 0):
         parent = local
@@ -64,7 +68,8 @@ def prepare(root: Path, experiment_id: str, emit: Emit) -> dict:
     with tempfile.TemporaryDirectory() as folder:
         index = {"GIT_INDEX_FILE": os.path.join(folder, "index")}
         sh(root, ["git", "read-tree", parent], emit, index)
-        sh(root, ["git", "add", "--", f"config/experiments/{experiment_id}.toml", f"results/{experiment_id}"], emit, index)
+        sh(root, ["git", "add", "--ignore-removal", "--", f"config/experiments/{experiment_id}.toml",
+                f"results/{experiment_id}", f":(exclude)results/{experiment_id}/.experiment.toml.*.tmp"], emit, index)
         tree = sh(root, ["git", "write-tree"], emit, index).stdout.strip()
     files = sh(root, ["git", "diff", "--name-only", parent, tree], emit).stdout.splitlines()
     if not files and not pushed and not ahead:
