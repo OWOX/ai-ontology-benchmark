@@ -568,7 +568,9 @@ function renderSecrets(list) {
 }
 
 async function loadSecrets() {
-  renderSecrets(await api("GET", "/api/secrets"));
+  const list = await api("GET", "/api/secrets");
+  renderSecrets(list);
+  if (Object.values(list).every((s) => s.source !== "missing")) fold($("step-setup"), true);  // on load only
 }
 
 // Reload the catalogue, keeping the form: models enable, new releases appear.
@@ -878,10 +880,29 @@ async function pollLog() {
   S.logTimer = setTimeout(pollLog, S.anyAlive || anyAlive() ? LOG_POLL_MS.busy : LOG_POLL_MS.idle);
 }
 
+// ---- Folding ---------------------------------------------------------------
+// The number and title of each step become a button that folds the step's content away.
+function fold(step, folded) {
+  step.classList.toggle("folded", folded);
+  step.querySelector(".fold").setAttribute("aria-expanded", String(!folded));
+}
+
+function initFolding() {
+  for (const step of document.querySelectorAll(".step")) {
+    const h2 = step.querySelector("h2");
+    const num = h2.querySelector(".num");
+    const toggle = el("button", { type: "button", class: "fold", "aria-expanded": "true" });
+    h2.insertBefore(toggle, num);
+    while (toggle.nextSibling) toggle.append(toggle.nextSibling);
+    toggle.addEventListener("click", () => fold(step, !step.classList.contains("folded")));
+  }
+}
+
 // ---- Startup ---------------------------------------------------------------
 async function init() {
   const meta = document.querySelector('meta[name="ui-token"]');
   S.token = meta ? meta.content : "";
+  initFolding();
   renderLegend();
   cubeInit();
   $("btn-estimate").addEventListener("click", onEstimate);
