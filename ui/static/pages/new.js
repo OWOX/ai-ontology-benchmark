@@ -41,7 +41,7 @@
     return {
       id, release: bundle.release,
       puzzles: bundle.puzzles.map((p) => p.name).filter((n) => S.puzzles.includes(n)),
-      models: bundle.providers.flatMap((p) => p.models).map((m) => m.name).filter((n) => S.models.includes(n)),
+      models: bundle.providers.flatMap((p) => p.models).filter((m) => !m.disabled_reason).map((m) => m.name).filter((n) => S.models.includes(n)),
       attempts: whole(v.attempts, "attempts"), retry_cap: whole(v.retry_cap, "retry_cap"),
       max_output_tokens: whole(v.max_output_tokens, "max_output_tokens"),
       budget: { per_request_usd: amount(v.per_request_usd, "per_request_usd"), per_model_usd: amount(v.per_model_usd, "per_model_usd"),
@@ -169,13 +169,19 @@
         try {
           const cfg = await UI.api("/api/experiment/" + encodeURIComponent(value) + "/config");
           if (dead) return;
-          const enabled = new Set(bundle.providers.flatMap((p) => p.models).filter((m) => !m.disabled_reason).map((m) => m.name));
+          const all = bundle.providers.flatMap((p) => p.models);
+          const enabled = new Set(all.filter((m) => !m.disabled_reason).map((m) => m.name));
+          const dropped = cfg.models.filter((n) => !enabled.has(n)).map((n) => {
+            const m = all.find((x) => x.name === n);
+            return `${n} is disabled: ${m ? m.disabled_reason : "not in the catalogue"}; resuming needs it enabled`;
+          });
           Object.assign(S, { id: value, touched: true, release: cfg.release, puzzles: cfg.puzzles, models: cfg.models.filter((n) => enabled.has(n)),
             vals: { attempts: cfg.attempts, retry_cap: cfg.retry_cap, max_output_tokens: cfg.max_output_tokens, ...cfg.budget }, progId: value });
           if (cfg.release !== bundle.release) { UI.go("#/new?release=" + encodeURIComponent(cfg.release)); return; }
           paint();
           startProgress(value);
-          say(`Loaded ${value}.`, "ok");
+          if (dropped.length) say(`Loaded ${value}. ${dropped.join(". ")}.`, "err");
+          else say(`Loaded ${value}.`, "ok");
         } catch (e) { say(e.message, "err"); }
       }
 
