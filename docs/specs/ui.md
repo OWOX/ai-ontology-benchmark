@@ -146,11 +146,11 @@ Job names are `run:<model>`, `estimate`, `dry-run`, `evaluate`, and `commit`, pl
 
 The commit never touches the working tree, the index, or `HEAD`:
 
-1. `git fetch origin main`, then `git fetch origin results/<id>`. The parent is `origin/results/<id>` if that fetch succeeds, else `origin/main`.
+1. `git fetch origin main`, then `git fetch origin results/<id>`. The parent is `origin/results/<id>` if that fetch succeeds, else `origin/main`. [run](run.md#outputs) commits to the local branch `results/<id>` as it goes, so if that branch exists and the remote branch is missing or an ancestor of it, the parent is the local branch instead. The local branch is then "ahead" when the remote branch is missing or differs from it.
 2. With `GIT_INDEX_FILE` set to a temporary file: `git read-tree <parent>`, then `git add -- config/experiments/<id>.toml results/<id>`, then `git write-tree`. Only those two paths are ever added.
-3. Preview: the files are `git diff --name-only <parent> <tree>`, and the diffstat is `git diff --stat <parent> <tree>`. No files and no branch on the remote means 409 "nothing to commit".
-4. Commit, in this order, so a failure at any step can be run again: `git commit-tree <tree> -p <parent> -m "Results: experiment <id>"`, then `git push origin <commit>:refs/heads/results/<id>`, and only after the push succeeds `git update-ref refs/heads/results/<id> <commit>`. With no files but a branch already on the remote, there is no new commit and the step goes straight to the pull request.
-5. Pull request: if `gh pr view results/<id> --json url,state` finds one whose state is `OPEN`, return its URL. A closed or merged pull request doesn't count. With no files and an open pull request, 409 "nothing to commit". Else `gh pr create --base main --head results/<id> --title "Results: experiment <id>" --body "<body>"`. The body lists the release, puzzles, models, attempts, and a link to the report path. It carries no attribution line.
+3. Preview: the files are `git diff --name-only <parent> <tree>`, and the diffstat is `git diff --stat <parent> <tree>`. No files, no branch on the remote, and no local commits ahead means 409 "nothing to commit".
+4. Commit, in this order, so a failure at any step can be run again: `git commit-tree <tree> -p <parent> -m "Results: experiment <id>"`, then `git push origin <commit>:refs/heads/results/<id>`, and only after the push succeeds `git update-ref refs/heads/results/<id> <commit>`. With no files but a branch already on the remote, there is no new commit and the step goes straight to the pull request. With no files but local commits ahead, there is no new commit either: the step pushes the local branch, then goes to the pull request.
+5. Pull request: if `gh pr view results/<id> --json url,state` finds one whose state is `OPEN`, return its URL. A closed or merged pull request doesn't count. With no files, nothing ahead, and an open pull request, 409 "nothing to commit". Else `gh pr create --base main --head results/<id> --title "Results: experiment <id>" --body "<body>"`. The body lists the release, puzzles, models, attempts, and a link to the report path. It carries no attribution line.
 6. The `gh` binary is `$UI_GH` if set, else `gh`, so tests can stub it.
 
 Every git and gh command is echoed to the terminal as a `commit` job.
@@ -213,7 +213,7 @@ Banners: a job in state `failed` shows its last stderr line. The line comes from
 8. A full run through the API on a one-puzzle release: records appear while the run is alive, the snapshot has no `in_progress`, and the run job ends `done`.
 9. Run is refused while evaluate is alive, and evaluate while a run is.
 10. Stop, and stop on server shutdown: a server given SIGTERM leaves no run alive.
-11. Commit against a temporary bare remote, with `UI_GH` pointing at a stub script: the branch exists on the remote with only the two paths changed, the working tree and `HEAD` are unchanged, and a second commit with no changes gives 409.
+11. Commit against a temporary bare remote, with `UI_GH` pointing at a stub script: the branch exists on the remote with only the two paths changed, the working tree and `HEAD` are unchanged, and a second commit with no changes gives 409. Local commits ahead of the remote with an empty diff are still pushed.
 12. A failed push and a failed `gh pr create` can each be run again, and only an open pull request counts.
 13. Commit is refused when the report is older than a raw file.
 14. Project jobs: the argv of each job, the 409 on `main` and on a detached HEAD, the blank-note 400, mutating jobs refused while any job runs, the `/api/project` shape, and push against a temporary bare remote with a stub `gh`.

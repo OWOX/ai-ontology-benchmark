@@ -54,16 +54,23 @@ def prepare(root: Path, experiment_id: str, emit: Emit) -> dict:
         sh(root, ["git", "rev-parse", "--verify", "-q", remote], emit, check=False).returncode == 0
     parent = sh(root, ["git", "rev-parse", "--verify", remote if pushed else "refs/remotes/origin/main"],
                 emit).stdout.strip()
+    # `run` commits to the local branch as it goes: build on it when it holds the remote branch.
+    local = sh(root, ["git", "rev-parse", "--verify", "-q", f"refs/heads/{branch}"], emit, check=False).stdout.strip()
+    if local and (not pushed or sh(root, ["git", "merge-base", "--is-ancestor", parent, local], emit,
+                                   check=False).returncode == 0):
+        parent = local
+    ahead = bool(local) and parent == local and (not pushed or sh(
+        root, ["git", "rev-parse", remote], emit).stdout.strip() != local)  # commits still to push
     with tempfile.TemporaryDirectory() as folder:
         index = {"GIT_INDEX_FILE": os.path.join(folder, "index")}
         sh(root, ["git", "read-tree", parent], emit, index)
         sh(root, ["git", "add", "--", f"config/experiments/{experiment_id}.toml", f"results/{experiment_id}"], emit, index)
         tree = sh(root, ["git", "write-tree"], emit, index).stdout.strip()
     files = sh(root, ["git", "diff", "--name-only", parent, tree], emit).stdout.splitlines()
-    if not files and not pushed:
+    if not files and not pushed and not ahead:
         raise ApiError(409, "nothing to commit")
     diffstat = sh(root, ["git", "diff", "--stat", parent, tree], emit).stdout.rstrip()
-    return {"branch": branch, "base": parent, "files": files, "diffstat": diffstat, "tree": tree, "pushed": pushed}
+    return {"branch": branch, "base": parent, "files": files, "diffstat": diffstat, "tree": tree, "pushed": pushed, "ahead": ahead}
 
 
 def preview(root: Path, experiment_id: str, emit: Emit) -> dict:
@@ -102,8 +109,10 @@ def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
                  emit).stdout.strip()
         sh(root, ["git", "push", "origin", f"{sha}:refs/heads/{branch}"], emit)
         sh(root, ["git", "update-ref", f"refs/heads/{branch}", sha], emit)
+    elif info["ahead"]:  # the run's own commits are not on the remote yet
+        sh(root, ["git", "push", "origin", f"{sha}:refs/heads/{branch}"], emit)
     url = open_pr_url(root, branch, emit)
-    if url and not info["files"]:
+    if url and not info["files"] and not info["ahead"]:
         raise ApiError(409, "nothing to commit")
     if not url:  # a retry after a failed PR step finds the branch already pushed
         config = load_experiment_config(root / "config" / "experiments" / f"{experiment_id}.toml")

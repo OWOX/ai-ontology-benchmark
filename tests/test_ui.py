@@ -493,10 +493,11 @@ def test_failed_push_and_failed_pr_can_be_retried(server, gh):
     repo = server.root
     evaluated(server)
     good = git(repo, "remote", "get-url", "origin")
+    run_tip = git(repo, "rev-parse", "refs/heads/results/t1")  # the run's own commits
     git(repo, "remote", "set-url", "--push", "origin", good + ".missing")  # fetch works, push fails
     status, data = call(server, "POST", "/api/commit", {"id": "t1"})
     assert status == 409 and "git push failed" in data["error"]
-    assert git(repo, "branch", "--list", "results/t1") == ""  # the local ref moves only after the push
+    assert git(repo, "rev-parse", "refs/heads/results/t1") == run_tip  # the local ref moves only after the push
     git(repo, "remote", "set-url", "--push", "origin", good)
     (gh / "fail_create").write_text("")
     status, data = call(server, "POST", "/api/commit", {"id": "t1"})
@@ -506,6 +507,22 @@ def test_failed_push_and_failed_pr_can_be_retried(server, gh):
     status, result = call(server, "POST", "/api/commit", {"id": "t1"})
     assert status == 200 and result["pr_url"] == "https://example.test/pr/1"
     assert git(repo, "ls-remote", "origin", "refs/heads/results/t1").split()[0] == result["commit"]
+
+
+def test_local_commits_not_on_the_remote_are_pushed_even_with_an_empty_diff(server, gh):
+    repo = server.root
+    evaluated(server)
+    status, result = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 200
+    tree = git(repo, "rev-parse", "refs/heads/results/t1^{tree}")
+    ahead = git(repo, "commit-tree", tree, "-p", "refs/heads/results/t1", "-m", "Results: more")
+    git(repo, "update-ref", "refs/heads/results/t1", ahead)
+    (gh / "view.json").write_text('{"url": "https://example.test/pr/9", "state": "OPEN"}')
+    status, data = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 200 and data["commit"] == ahead
+    assert git(repo, "ls-remote", "origin", "refs/heads/results/t1").split()[0] == ahead
+    status, data = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 409 and "nothing to commit" in data["error"]
 
 
 def test_only_an_open_pull_request_counts(server, gh):
@@ -530,13 +547,15 @@ def test_commit_to_remote(server, gh):
     head, status_before = git(repo, "rev-parse", "HEAD"), git(repo, "status", "--porcelain")
     status, preview = call(server, "GET", "/api/commit/t1")
     assert status == 200 and preview["branch"] == "results/t1"
-    assert "config/experiments/t1.toml" in preview["files"] and "results/t1/1.0.0.md" in preview["files"]
+    assert "results/t1/1.0.0.md" in preview["files"]  # the run already committed config and raw records
+    assert preview["base"] == git(repo, "rev-parse", "refs/heads/results/t1")
     status, result = call(server, "POST", "/api/commit", {"id": "t1"})
     assert status == 200 and result["pr_url"] == "https://example.test/pr/1"
     remote = git(repo, "ls-remote", "origin", "refs/heads/results/t1").split()[0]
     assert remote == result["commit"]
     changed = git(repo, "diff", "--name-only", "refs/remotes/origin/main", result["commit"]).splitlines()
-    assert changed and all(p == "config/experiments/t1.toml" or p.startswith("results/t1/") for p in changed)
+    assert "config/experiments/t1.toml" in changed and "results/t1/raw/example-model.jsonl" in changed
+    assert all(p == "config/experiments/t1.toml" or p.startswith("results/t1/") for p in changed)
     assert git(repo, "rev-parse", "HEAD") == head
     assert git(repo, "status", "--porcelain") == status_before
     assert git(repo, "diff", "--cached", "--name-only") == ""
