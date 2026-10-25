@@ -5,12 +5,21 @@
   const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ESC[c]);
 
-  // The safe absolute URL for a link target, or null when the scheme is not allowed.
+  // The safe absolute URL for a link target, or null. The URL parser decides the scheme, so tabs,
+  // newlines, and other tricks cannot slip a script scheme past a check on the raw text.
   function target(href, base) {
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return /^https?:/i.test(href) ? href : null;
-    if (href.startsWith("//")) return null;
-    if (!base) return null;
-    try { return new URL(href, base).href; } catch (e) { return null; }
+    if (/[\x00-\x1f\x7f\\]/.test(href) || href.startsWith("//")) return null;
+    let rel = href;
+    if (href.startsWith("/")) {  // an absolute path stays inside the repo: resolve against .../blob/<sha>/
+      const m = /^(.*?\/blob\/[^/]+\/)/.exec(base || "");
+      if (!m) return null;
+      rel = href.slice(1);
+      base = m[1];
+    }
+    try {
+      const u = base ? new URL(rel, base) : new URL(rel);
+      return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+    } catch (e) { return null; }
   }
 
   function emphasis(s) {  // s is already escaped

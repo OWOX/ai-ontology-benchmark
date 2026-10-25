@@ -42,5 +42,15 @@ h = md("# T\n\nsome `<b>` and **bold** and *it*\n\n```\n<i>&\n```", BASE);
 check("blocks", has(h, "<h1>T</h1>") && has(h, "<code>&lt;b&gt;</code>") && has(h, "<strong>bold</strong>") &&
   has(h, "<em>it</em>") && has(h, "<pre><code>&lt;i&gt;&amp;</code></pre>"), h);
 
+const bad = ["java\tscript:alert(1)", "java\nscript:alert(1)", "\x01javascript:alert(1)", " javascript:alert(1)",
+  "JaVaScRiPt:alert(1)", "javascript&#58;alert(1)", "docs\\..\\a.md", "vbscript:x"];
+for (const href of bad) {
+  const out = md(`[x](${href.replace(/ /g, "%20") === href ? href : href})`, BASE);
+  const hrefs = [...out.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
+  check("unsafe href " + JSON.stringify(href), hrefs.every((u) => /^https?:\/\//.test(u)), out);
+}
+h = md("[r](/docs/a.md)", BASE);
+check("absolute path resolves in repo", has(h, 'href="https://github.com/o/r/blob/s/docs/a.md"'), h);
+
 if (failed) process.exit(1);
 console.log("markdown tests passed");
