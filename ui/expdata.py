@@ -181,9 +181,9 @@ def numbers(exp: dict, model: str, puzzle: str, scope: str, part: list[dict]) ->
 def detail_metrics(exp: dict, inputs: list[dict]) -> tuple[list[dict], list[dict], str]:
     """(metric_rows, summary_rows, metrics_source): the report CSV when there is one, else computed."""
     order = model_names(exp)
-    if exp["csv_rows"] is not None:
-        return exp["csv_rows"], pooled_summary(exp["csv_rows"], order), "report"
     rows = attempt_rows(exp, inputs)
+    if exp["csv_rows"] is not None:
+        return exp["csv_rows"], pooled_summary(exp["csv_rows"], order, rows), "report"
     groups, pooled = defaultdict(list), defaultdict(list)
     for r in rows:
         groups[tuple(r[k] for k in KEY)].append(r)

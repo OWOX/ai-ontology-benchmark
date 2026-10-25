@@ -41,8 +41,12 @@ def total(rows: list[dict], column: str) -> int:
     return sum(int(number(r.get(column)) or 0) for r in rows)
 
 
-def pooled_summary(csv_rows: list[dict], order: list[str]) -> list[dict]:
-    """One row per AI model, setup, and validity label, as `compute` gives them."""
+def pooled_summary(csv_rows: list[dict], order: list[str], attempts: list[dict]) -> list[dict]:
+    """One row per AI model, setup, and validity label, as `compute` gives them. Cost comes from the
+    attempt rows (raw records), since the CSV holds only per-group cost per success."""
+    costs: dict = defaultdict(float)
+    for a in attempts:
+        costs[(a["model"], a["setup"], a["validity"])] += a["cost"]
     groups = defaultdict(list)
     for row in csv_rows:
         groups[(row["model"], row["setup"], row["validity"])].append(row)
@@ -53,9 +57,7 @@ def pooled_summary(csv_rows: list[dict], order: list[str]) -> list[dict]:
         item["attempts"] = total(rows, "attempts")
         item["infrastructure_failure_count"] = total(rows, "infrastructure_failure_count")
         item.update(pooled_rates(rows))
-        wins = sum((number(r.get("cost_per_success")) or 0) * hits_and_n([r], "success_rate")[0]
-                   for r in rows)
         successes = hits_and_n(rows, "success_rate")[0]
-        item["cost_per_success"] = wins / successes if successes else NA
+        item["cost_per_success"] = costs[key] / successes if successes else NA
         out.append(item)
     return out

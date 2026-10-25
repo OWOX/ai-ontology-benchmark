@@ -1,9 +1,20 @@
 # Spec: docs/specs/ui.md
 """Tests for the UI's git reader, over a temporary repo with a bare origin."""
 
+import json
+import os
+import subprocess
+
+import pytest
+
+from src.evaluate import evaluate as evaluate_module
+from src.evaluate.metrics import compute
+from src.run.run import make_record
 from test_release import git, repo  # noqa: F401
 from test_ui import PRICES, ui_repo  # noqa: F401  (ui_repo is a fixture)
+from ui import expdata
 from ui.gitdata import GitData
+from ui.pooling import pooled_summary
 
 
 def test_show_reads_ref_not_work_tree(ui_repo):
@@ -52,20 +63,6 @@ def test_no_origin_reads_head(ui_repo):
 
 
 # --- expdata ---------------------------------------------------------------------------------
-
-import csv
-import io
-import json
-import os
-import subprocess
-
-import pytest
-
-from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import compute
-from src.run.run import make_record
-from src.validator import validate
-from ui import expdata
 
 EXP_TOML = ('release = "1.0.0"\nattempts = 1\nretry_cap = 1\nmax_output_tokens = 100\n'
             '[[models]]\nname = "example-model"\nprovider = "fake"\napi_model_id = "ex-1"\n')
@@ -261,3 +258,16 @@ def test_summary_from_csv_equals_compute(ui_repo, samples, tmp_path):
                 assert mine[key] == pytest.approx(value, abs=1e-4 if key == "cost_per_success" else 1e-9)
             else:
                 assert mine[key] == value
+
+
+def test_pooled_cost_counts_groups_without_successes():
+    group = {"model": "m", "setup": "no_model", "validity": "valid"}
+    csv_rows = [
+        {**group, "puzzle": "2x2", "attempts": 1, "infrastructure_failure_count": 0,
+         "success_rate": 0.0, "success_rate_n": 1, "cost_per_success": "n/a"},
+        {**group, "puzzle": "3x3", "attempts": 1, "infrastructure_failure_count": 0,
+         "success_rate": 1.0, "success_rate_n": 1, "cost_per_success": 0.1},
+    ]
+    costs = [{**group, "cost": 0.1}, {**group, "cost": 0.1}]
+    [row] = pooled_summary(csv_rows, ["m"], costs)
+    assert row["cost_per_success"] == pytest.approx(0.2)
