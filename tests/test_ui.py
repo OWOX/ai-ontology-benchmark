@@ -978,3 +978,17 @@ def test_failed_dry_run_logs_its_error_line(server):
     lines = call(server, "GET", "/api/log?after=0")[1]["lines"]
     errors = [l for l in lines if l["job"] == "dry-run" and l["stream"] == "stderr"]
     assert errors and errors[-1]["text"].startswith("error:")
+
+
+def test_same_ignores_order():
+    from ui.forms import _same
+
+    class B:
+        def release_puzzles(self, release):
+            return ["2x2", "3x3"]
+
+    m1, m2 = {"name": "a"}, {"name": "b"}
+    old = {"release": "1.0.0", "puzzles": ["3x3", "2x2"], "models": [m2, m1], "attempts": 1}
+    new = {"release": "1.0.0", "puzzles": ["2x2", "3x3"], "models": [m1, m2], "attempts": 1}
+    assert _same(B(), old, new, True)
+    assert not _same(B(), old, dict(new, puzzles=["2x2"]), True)

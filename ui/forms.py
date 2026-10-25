@@ -81,7 +81,14 @@ def _same(bundles: Bundles, existing: dict, new: dict, budget: bool) -> bool:
     """Equal configs; a missing `puzzles` counts as every puzzle of the release, and `budget` is compared only if asked."""
     existing = {**existing, "puzzles": existing.get("puzzles") or bundles.release_puzzles(existing["release"])}
     skip = () if budget else ("budget",)
-    return {k: v for k, v in existing.items() if k not in skip} == {k: v for k, v in new.items() if k not in skip}
+    def canon(config: dict) -> dict:
+        out = {k: v for k, v in config.items() if k not in skip}
+        if isinstance(out.get("puzzles"), list):
+            out["puzzles"] = sorted(out["puzzles"])
+        if isinstance(out.get("models"), list):
+            out["models"] = sorted(out["models"], key=lambda m: str(m.get("name")) if isinstance(m, dict) else str(m))
+        return out
+    return canon(existing) == canon(new)
 
 
 def resolve_status(bundles: Bundles, root: Path, experiment_id: str, text: str) -> tuple[str, str]:
