@@ -31,7 +31,7 @@ class GitData:
         env = {k: v for k, v in os.environ.items() if k not in GIT_VARIABLES}
         env["GIT_TERMINAL_PROMPT"] = "0"
         return subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True,
-                              stdin=subprocess.DEVNULL, env=env, timeout=timeout)
+                              encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, env=env, timeout=timeout)
 
     def fetch(self, force: bool = False) -> None:
         now = self.clock()
