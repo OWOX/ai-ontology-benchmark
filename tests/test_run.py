@@ -538,6 +538,19 @@ def test_a_work_tree_behind_the_branch_is_refused_before_any_write_or_call(exp, 
     assert go("--no-commit") == 0  # no branch work, no check
 
 
+def test_a_fresh_checkout_names_the_remote_branch(exp, tmp_path_factory, capsys):
+    with_remote(exp, tmp_path_factory)
+    assert go() == 0
+    git(exp, "update-ref", "-d", BRANCH)  # only origin/results/exp is left
+    raw = exp / "results/exp/raw/A.jsonl"
+    raw.write_bytes(raw.read_bytes().splitlines(keepends=True)[0])
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    assert go() == 1 and len(models.FAKE_REPLIES) == 1
+    err = capsys.readouterr().err
+    assert "results/exp/raw/A.jsonl on origin/results/exp holds records this checkout lacks" in err
+    assert "git restore --source=origin/results/exp --worktree -- results/exp" in err
+
+
 def test_a_work_tree_that_extends_the_branch_runs(exp):
     assert go() == 0
     raw = exp / "results/exp/raw/A.jsonl"

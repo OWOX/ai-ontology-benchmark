@@ -149,8 +149,9 @@ class Bundles(BranchReaders):
         names = list(manifest["release_config"]["puzzles"]) if manifest else []
         if names and release not in inputs_by_release:
             inputs_by_release[release] = expdata.read_inputs(self.git, main, release)
+        rows_cache: dict = {}  # attempt rows per (experiment, model file), shared by the puzzles of this build
         puzzles = [build_puzzle(self.git, main, link, release, manifest, name, inputs_by_release[release],
-                                experiments) for name in names]
+                                experiments, rows_cache) for name in names]
         return {"schema": 1, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
                 "repo": base, "main_sha": main_sha, "defaults": DEFAULTS,
                 "providers": build_providers(catalogue, self._prices(), experiments), "puzzles": puzzles, "experiments": rows,

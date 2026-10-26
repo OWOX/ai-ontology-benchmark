@@ -649,6 +649,18 @@ def test_commit_refused_when_the_branch_holds_more_records(server, gh):
         assert "git restore --source=results/t1 --worktree -- results/t1" in data["error"]
 
 
+def test_commit_stale_check_names_the_remote_branch_on_a_fresh_checkout(server, gh):
+    evaluated(server)
+    git(server.root, "update-ref", "-d", "refs/heads/results/t1")  # only origin/results/t1 is left
+    raw = server.root / "results" / "t1" / "raw" / "example-model.jsonl"
+    before = raw.stat().st_mtime
+    raw.write_text(raw.read_text(encoding="utf-8").splitlines(keepends=True)[0], encoding="utf-8")
+    os.utime(raw, (before, before))
+    status, data = call(server, "GET", "/api/commit/t1")
+    assert status == 409 and "example-model.jsonl on origin/results/t1 holds records" in data["error"]
+    assert "git restore --source=origin/results/t1 --worktree -- results/t1" in data["error"]
+
+
 def test_failed_push_and_failed_pr_can_be_retried(server, gh):
     repo = server.root
     evaluated(server)

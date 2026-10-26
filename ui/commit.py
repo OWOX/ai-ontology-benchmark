@@ -79,7 +79,7 @@ def prepare(root: Path, experiment_id: str, emit: Emit) -> dict:
     except BranchError as error:
         raise ApiError(409, str(error)) from None
     if stale:
-        raise ApiError(409, stale_message(stale, branch if parent == local else f"origin/{branch}"))
+        raise ApiError(409, stale_message(stale, branch if parent == local else f"origin/{branch}" if pushed else "origin/main"))
     with tempfile.TemporaryDirectory() as folder:
         index = {"GIT_INDEX_FILE": os.path.join(folder, "index")}
         sh(root, ["git", "read-tree", parent], emit, index)
