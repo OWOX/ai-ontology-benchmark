@@ -85,9 +85,9 @@ class App:
         project.check_branch(self.root)
         (job,) = self.jobs.register("", ["push"], inline=True, exclusive=True)
         try:
-            result = project.push(self.root, lambda s, t: self.jobs.say("push", s, t))
+            result = project.push(self.root, lambda s, t: self.jobs.say("", "push", s, t))
         except BaseException as error:
-            self.jobs.say("push", "stderr", getattr(error, "message", str(error)))
+            self.jobs.say("", "push", "stderr", getattr(error, "message", str(error)))
             self.jobs.finish(job, 1)
             raise
         self.jobs.finish(job, 0)
@@ -102,9 +102,9 @@ class App:
         self.guard_commit(experiment_id)
         (job,) = self.jobs.register(experiment_id, ["commit"], inline=True)
         try:
-            result = commit_module.commit(self.root, experiment_id, lambda s, t: self.jobs.say("commit", s, t))
+            result = commit_module.commit(self.root, experiment_id, lambda s, t: self.jobs.say(experiment_id, "commit", s, t))
         except BaseException as error:
-            self.jobs.say("commit", "stderr", getattr(error, "message", str(error)))
+            self.jobs.say(experiment_id, "commit", "stderr", getattr(error, "message", str(error)))
             self.jobs.finish(job, 1)
             raise
         self.jobs.finish(job, 0)
@@ -146,7 +146,7 @@ class App:
                 return replay.replay(self.bundles, experiment_id, live, query)
             if parts[1] == "commit":
                 self.guard_commit(experiment_id)
-                return commit_module.preview(self.root, experiment_id, lambda s, t: self.jobs.say("commit", s, t))
+                return commit_module.preview(self.root, experiment_id, lambda s, t: self.jobs.say(experiment_id, "commit", s, t))
         raise ApiError(404, "not found")
 
     def post(self, path: str, body: dict) -> dict:

@@ -63,10 +63,10 @@ class Jobs:
                              for j in self.jobs.values()]}
 
     # --- log
-    def say(self, name: str, stream: str, text: str) -> None:
+    def say(self, experiment_id: str, name: str, stream: str, text: str) -> None:
         with self.lock:
             self.seq += 1
-            self.log.append({"seq": self.seq, "job": name, "stream": stream, "text": text})
+            self.log.append({"seq": self.seq, "id": experiment_id, "job": name, "stream": stream, "text": text})
             del self.log[:-LOG_CAP]
 
     # --- start and finish
@@ -97,13 +97,13 @@ class Jobs:
             self._spawn(job, [sys.executable, "-u", "-m", *module_args], stdin)
 
     def _spawn(self, job: Job, argv: list[str], stdin: str | None = None) -> None:
-        self.say(job.name, "cmd", shlex.join(argv))
+        self.say(job.experiment_id, job.name, "cmd", shlex.join(argv))
         try:
             job.proc = subprocess.Popen(argv, cwd=self.root, env=merged_env(self.root), text=True,
                                         encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL if stdin is None else subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1)
         except OSError as error:
-            self.say(job.name, "stderr", str(error))
+            self.say(job.experiment_id, job.name, "stderr", str(error))
             self.finish(job, 1)
             return
         if stdin is not None:
@@ -125,7 +125,7 @@ class Jobs:
                 text = line.rstrip("\r\n")
                 if stream == "stderr" and text.startswith(BUDGET_PREFIX):
                     job.budget = True
-                self.say(job.name, stream, text)
+                self.say(job.experiment_id, job.name, stream, text)
         except (ValueError, OSError):
             pass  # the pipe closed under us; the waiter reports the exit
 

@@ -167,12 +167,12 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
 15. `GET /api/log?after=<seq>` returns the terminal lines newer than `seq` (default 0) and the job states:
 
     ```json
-    {"lines": [{"seq": 41, "job": "run:example-model", "stream": "stdout", "text": "..."}],
+    {"lines": [{"seq": 41, "id": "t1", "job": "run:example-model", "stream": "stdout", "text": "..."}],
      "last": 41,
      "jobs": [{"id": "t1", "job": "run:example-model", "state": "running", "code": null}]}
     ```
 
-    The server keeps one in-memory list of lines for all jobs, at most 5,000, dropping the oldest. `stream` is `cmd`, `stdout`, or `stderr`. The `cmd` line is the full command, logged before the process starts. `seq` counts up from 1 for the life of the server. `state` is `running`, `done`, `failed`, `budget`, or `stopped`. `budget` means the job exited 1 with a stderr line starting `error: budget reached:`. `stopped` means the UI stopped it.
+    The server keeps one in-memory list of lines for all jobs, at most 5,000, dropping the oldest. `id` is the experiment id of the job that wrote the line, `""` for a project job, so two experiments that both run `run:<model>` stay apart. The page keys a failure banner by `(id, job)` and the ended-job check by `(id, job)`. `stream` is `cmd`, `stdout`, or `stderr`. The `cmd` line is the full command, logged before the process starts. `seq` counts up from 1 for the life of the server. `state` is `running`, `done`, `failed`, `budget`, or `stopped`. `budget` means the job exited 1 with a stderr line starting `error: budget reached:`. `stopped` means the UI stopped it.
 16. `GET /api/secrets` returns `{"<provider>": {"variable": "ANTHROPIC_API_KEY", "configured": true, "tail": "ab12", "source": "env" | "file" | "missing", "location": "secrets/anthropic.json" | "env var ANTHROPIC_API_KEY" | null}}` for each provider. `POST /api/secrets {"provider", "action": "save" | "clear", "api_key"}` saves a stripped key or deletes the file, and returns the same listing. An empty key, or one with whitespace inside, gives 400 naming `api_key`. Both need the token.
 
 Project jobs belong to no experiment and use the id `""`. Their names are `install`, `tests`, `release`, and `push`. Each is echoed to the terminal like the others.

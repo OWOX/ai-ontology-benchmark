@@ -164,8 +164,9 @@
         for (const fn of st.lineListeners.slice()) { try { fn(ev); } catch (e) { console.error(e); } }
       }
       st.logAfter = data.last;
-      const running = new Set(data.jobs.filter((j) => j.state === "running").map((j) => j.job));
-      const ended = st.jobs.filter((j) => j.state === "running" && !running.has(j.job)).map((j) => j.job);
+      const key = (j) => j.id + "\u0000" + j.job;
+      const running = new Set(data.jobs.filter((j) => j.state === "running").map(key));
+      const ended = st.jobs.filter((j) => j.state === "running" && !running.has(key(j))).map((j) => j.job);
       st.jobs = data.jobs;
       for (const fn of st.listeners.slice()) { try { fn(st.jobs, ended); } catch (e) { console.error(e); } }
       if (ended.length) UI.reload(false);

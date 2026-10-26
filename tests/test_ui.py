@@ -497,12 +497,19 @@ def test_main_binds_all_interfaces(ui_repo, monkeypatch):
 def test_log_keeps_the_newest_lines_and_serves_after(server, monkeypatch):
     monkeypatch.setattr(jobs_module, "LOG_CAP", 3)
     for n in range(5):
-        server.app.jobs.say("j", "stdout", f"line {n}")
+        server.app.jobs.say("e1", "j", "stdout", f"line {n}")
     status, data = call(server, "GET", "/api/log?after=0")
     assert status == 200 and [l["text"] for l in data["lines"]] == ["line 2", "line 3", "line 4"]
-    assert data["last"] == 5 and data["lines"][0] == {"seq": 3, "job": "j", "stream": "stdout", "text": "line 2"}
+    assert data["last"] == 5 and data["lines"][0] == {"seq": 3, "id": "e1", "job": "j", "stream": "stdout", "text": "line 2"}
     assert [l["seq"] for l in call(server, "GET", "/api/log?after=4")[1]["lines"]] == [5]
     assert call(server, "GET", "/api/log?after=x")[0] == 400
+
+
+def test_log_lines_carry_the_experiment_id(server, spawned):
+    server.app.jobs.start("e1", [("run:m", ["src.run.run"])])
+    server.app.jobs.start("", [("tests", ["pytest"])], exclusive=False)
+    lines = call(server, "GET", "/api/log")[1]["lines"]
+    assert [(l["id"], l["job"]) for l in lines] == [("e1", "run:m"), ("", "tests")]
 
 
 def snapshot_when_ready(srv, experiment_id="t1"):
@@ -713,7 +720,7 @@ def test_commit_to_remote(server, gh):
     assert git(repo, "diff", "--cached", "--name-only") == ""
     args = log.read_text()
     assert "pr create --base main --head results/t1" in args and "Generated" not in args
-    assert any(l["job"] == "commit" for l in call(server, "GET", "/api/log")[1]["lines"])
+    assert any(l["job"] == "commit" and l["id"] == "t1" for l in call(server, "GET", "/api/log")[1]["lines"])
     assert job_state(server, "commit") == "done"
     status, data = call(server, "POST", "/api/commit", {"id": "t1"})
     assert status == 409 and "nothing to commit" in data["error"]
@@ -728,7 +735,7 @@ def spawned(monkeypatch):
     def fake(self, job, argv, stdin=None):
         seen.append(argv)
         self.stdins.append(stdin)
-        self.say(job.name, "cmd", " ".join(argv))
+        self.say(job.experiment_id, job.name, "cmd", " ".join(argv))
         self.finish(job, 0)
 
     monkeypatch.setattr(jobs_module.Jobs, "_spawn", fake)

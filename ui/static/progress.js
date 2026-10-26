@@ -147,7 +147,8 @@
       return null;
     }
 
-    const drawBanners = () => banners.replaceChildren(...ProgressView.banners(S.jobs, S.lastErr));
+    const drawBanners = () => banners.replaceChildren(...ProgressView.banners(S.jobs,
+      Object.fromEntries(Object.keys(S.jobs).map((j) => [j, S.lastErr[id + "\u0000" + j]]))));
 
     // A later snapshot only adds records, so open accordions stay open; a new shape rebuilds the tree.
     function apply(snap) {
@@ -199,8 +200,8 @@
       if (sig !== S.runSig) { S.runSig = sig; if (sig && !S.timer) load(); }
     });
     const offLines = UI.onLines((ev) => {  // each stderr line redraws the banners
-      if (S.dead || ev.stream !== "stderr") return;
-      S.lastErr[ev.job] = ev.text;
+      if (S.dead || ev.stream !== "stderr" || ev.id !== id) return;
+      S.lastErr[ev.id + "\u0000" + ev.job] = ev.text;
       drawBanners();
     });
 
