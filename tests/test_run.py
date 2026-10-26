@@ -80,6 +80,7 @@ def test_limit_then_resume_equals_full_run(exp):
     resumed = {n: stable(records(exp, n)) for n in "AB"}
     (exp / "results/exp/raw/A.jsonl").unlink()
     (exp / "results/exp/raw/B.jsonl").unlink()
+    git(exp, "update-ref", "-d", BRANCH)  # a branch holding the records would refuse the empty work tree
     go()
     assert {n: stable(records(exp, n)) for n in "AB"} == resumed
 
@@ -187,6 +188,7 @@ def test_torn_middle_line_ending_in_brace_resumes(exp):
     path = exp / "results/exp/raw/A.jsonl"
     first, second = path.read_text(encoding="utf-8").splitlines()
     path.write_text(first + '\n{"input_id": "x", "n": {"a": 1}\n' + second + "\n", encoding="utf-8")
+    git(exp, "update-ref", "-d", BRANCH)  # the hand edit is not an append, so drop the branch it would fail against
     assert go("--model", "A", "--limit", "1") == 0
     lines = path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 4 and lines[1].startswith('{"input_id": "x"')
@@ -515,6 +517,32 @@ def test_a_file_missing_from_the_work_tree_survives_the_commit(exp):
     assert go("--model", "B") == 0
     names = git(exp, "ls-tree", "-r", "--name-only", BRANCH).splitlines()
     assert "results/exp/raw/A.jsonl" in names and "results/exp/raw/B.jsonl" in names
+
+
+def test_a_work_tree_behind_the_branch_is_refused_before_any_write_or_call(exp, capsys):
+    assert go() == 0
+    raw = exp / "results/exp/raw/A.jsonl"
+    full = raw.read_bytes()
+    raw.write_bytes(full.splitlines(keepends=True)[0])
+    tip = git(exp, "rev-parse", BRANCH)
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    assert go() == 1
+    assert len(models.FAKE_REPLIES) == 1 and git(exp, "rev-parse", BRANCH) == tip
+    assert raw.read_bytes() == full.splitlines(keepends=True)[0]
+    err = capsys.readouterr().err
+    assert "results/exp/raw/A.jsonl on results/exp holds records this checkout lacks" in err
+    assert "git checkout results/exp -- results/exp" in err
+    raw.unlink()  # a missing file of a model in scope is just as stale
+    assert go() == 1 and not raw.exists()
+    assert go("--model", "B") == 0  # A is out of scope
+    assert go("--no-commit") == 0  # no branch work, no check
+
+
+def test_a_work_tree_that_extends_the_branch_runs(exp):
+    assert go() == 0
+    raw = exp / "results/exp/raw/A.jsonl"
+    raw.write_bytes(raw.read_bytes() + b"\n")
+    assert go() == 0
 
 
 def test_temporary_copies_are_never_committed(exp):

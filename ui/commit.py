@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from src.config import parse_experiment_config
+from src.run.branch import BranchError, stale_files, stale_message
 from ui.common import ApiError, merged_env
 
 Emit = Callable[[str, str], None]  # (stream, text)
@@ -73,6 +74,12 @@ def prepare(root: Path, experiment_id: str, emit: Emit) -> dict:
         parent = local
     ahead = bool(local) and parent == local and (not pushed or sh(
         root, ["git", "rev-parse", remote], emit).stdout.strip() != local)  # commits still to push
+    try:
+        stale = stale_files(root, parent, f"results/{experiment_id}")
+    except BranchError as error:
+        raise ApiError(409, str(error)) from None
+    if stale:
+        raise ApiError(409, stale_message(stale, branch))
     with tempfile.TemporaryDirectory() as folder:
         index = {"GIT_INDEX_FILE": os.path.join(folder, "index")}
         sh(root, ["git", "read-tree", parent], emit, index)

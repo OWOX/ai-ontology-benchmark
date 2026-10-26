@@ -207,6 +207,7 @@ def run(args: argparse.Namespace) -> int:
     branch = None
     if not (args.dry_run or args.no_commit):
         branch = ResultsBranch(config_path, results, config["experiment_id"])  # before any write or call
+        branch.check_results([args.model] if args.model else names)
     if not args.dry_run:
         (results / "raw").mkdir(parents=True, exist_ok=True)
         copy = results / "experiment.toml"

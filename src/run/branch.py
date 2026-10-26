@@ -6,6 +6,7 @@ tree, the real index, or HEAD: it builds each tree in a temporary index file.
 """
 
 import fcntl
+import hashlib
 import os
 import subprocess
 import tempfile
@@ -17,6 +18,47 @@ NETWORK_TIMEOUT_S = 60  # a credential prompt or a hung network must not block t
 
 class BranchError(Exception):
     """A checked error. The message says what git refused."""
+
+
+def blob_id(data: bytes, length: int) -> str:
+    """The git object id of `data` as a blob, for a repository whose ids are `length` hex characters."""
+    make = hashlib.sha1 if length == 40 else hashlib.sha256
+    return make(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def stale_files(root: Path, parent: str, results_dir: str, models: set[str] | None = None) -> list[str]:
+    """Raw files under `results_dir` on `parent` whose bytes the work tree does not start with: the branch
+    holds records this checkout lacks. A raw file gone from the work tree counts only for a model in
+    `models`, because only those files `run` is about to rewrite. Other files are not compared."""
+    env = {k: v for k, v in os.environ.items() if k not in GIT_VARIABLES}
+    listed = subprocess.run(["git", "ls-tree", "-r", parent, "--", results_dir], cwd=root, env=env,
+                            capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if listed.returncode != 0:
+        raise BranchError(f"git ls-tree failed: {listed.stderr.strip()}")
+    stale = []
+    for line in listed.stdout.splitlines():
+        head, _, path = line.partition("\t")
+        sha = head.split()[2]
+        relative = Path(path).relative_to(results_dir)
+        if relative.parent != Path("raw") or relative.suffix != ".jsonl":
+            continue
+        local = root / path
+        if not local.is_file():
+            if models is not None and relative.stem in models:
+                stale.append(path)
+            continue
+        size = int(subprocess.run(["git", "cat-file", "-s", sha], cwd=root, env=env, capture_output=True,
+                                  text=True, stdin=subprocess.DEVNULL).stdout)
+        with open(local, "rb") as handle:
+            if blob_id(handle.read(size), len(sha)) != sha or local.stat().st_size < size:
+                stale.append(path)
+    return stale
+
+
+def stale_message(files: list[str], ref: str) -> str:
+    results = files[0].split("/raw/")[0]
+    return (f"{', '.join(files)} on {ref} holds records this checkout lacks; bring the branch's results "
+            f"into the work tree first (for example: git checkout {ref} -- {results})")
 
 
 class ResultsBranch:
@@ -34,6 +76,15 @@ class ResultsBranch:
         self.lock_path = (self.root / common) / f"results-{experiment_id}.lock"
         self.exclude = f":(exclude){self.paths[-1]}/.experiment.toml.*.tmp"  # a run's temporary copy
         self.sync()
+
+    def check_results(self, models: list[str]) -> None:
+        """Refuse when the branch holds raw records the work tree lacks, before any write or call."""
+        parent = self.resolve(self.ref) or self.resolve(f"refs/remotes/origin/{self.branch}")
+        if parent is None:
+            return
+        stale = stale_files(self.root, parent, self.paths[-1], set(models))
+        if stale:
+            raise BranchError(stale_message(stale, self.branch))
 
     def relative(self, path: Path) -> str:
         try:
