@@ -646,7 +646,7 @@ def test_commit_refused_when_the_branch_holds_more_records(server, gh):
     os.utime(raw, (before, before))  # the report stays newer, so only the stale check can refuse
     for status, data in (call(server, "GET", "/api/commit/t1"), call(server, "POST", "/api/commit", {"id": "t1"})):
         assert status == 409 and "results/t1/raw/example-model.jsonl on results/t1 holds records" in data["error"]
-        assert "git checkout results/t1 -- results/t1" in data["error"]
+        assert "git restore --source=results/t1 --worktree -- results/t1" in data["error"]
 
 
 def test_failed_push_and_failed_pr_can_be_retried(server, gh):

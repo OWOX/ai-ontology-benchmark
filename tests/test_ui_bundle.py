@@ -331,7 +331,7 @@ def test_malformed_parsed_moves_do_not_break_bundle(ui_repo, samples):
     bundle = make_bundles(ui_repo).get(None, True, set(), {}, set())
     assert exp_ids(bundle) == ["b1", "b2", "b3", "e"]
     seen = next(p for p in bundle["puzzles"] if p["name"] == "2x2")["impossible_seen"]
-    assert [(s["move"], s["count"]) for s in seen] == [("u", 1)] and seen[0]["experiments"] == ["e"]
+    assert [(s["move"], s["count"]) for s in seen] == [("u", 4)] and seen[0]["experiments"] == ["b1", "b2", "b3", "e"]  # counted after re-validation
 
 
 def test_key_status_not_cached(ui_repo):

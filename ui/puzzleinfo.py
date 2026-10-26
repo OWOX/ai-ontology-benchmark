@@ -29,14 +29,19 @@ def first_paragraph(text: str) -> str | None:
     return " ".join(paragraph) or None
 
 
-def impossible_seen(puzzle: str, legal: list[str], experiments: list[dict]) -> list[dict]:
+def impossible_seen(puzzle: str, legal: list[str], experiments: list[dict], inputs: list[dict]) -> list[dict]:
+    """Impossible moves from the re-validated attempt rows, one model file at a time."""
     seen: dict[str, dict] = defaultdict(lambda: {"count": 0, "models": set(), "experiments": set()})
     for exp in experiments:
         if exp["error"]:
             continue
         try:
-            found = [(m, r.get("model")) for rs in exp["records"].values() for r in rs
-                     if r.get("puzzle") == puzzle for m in expdata.impossible_moves(r, legal)]
+            found = []
+            for name, records in exp["records"].items():
+                part = {**exp, "records": {name: records}}  # attempt_rows flags errors on its own copy
+                rows = expdata.attempt_rows(part, inputs)
+                found += [(m, name) for r in rows if r["puzzle"] == puzzle
+                          for m in expdata.impossible_moves(r, legal)]
         except Exception:
             continue  # one unreadable experiment never blocks the bundle
         for move, model in found:
@@ -71,5 +76,5 @@ def build_puzzle(git: GitData, main: str, link: Link, release: str, manifest: di
             "description": {"text": description, "source": link(f"docs/puzzles/{name}.md") if text is not None else None},
             "prompts": prompts, "legal_moves": legal,
             "legal_moves_source": link(type(engine).__module__.replace(".", "/") + ".py") if engine else None,
-            "impossible_seen": impossible_seen(name, legal, experiments) if legal is not None else [],
+            "impossible_seen": impossible_seen(name, legal, experiments, inputs) if legal is not None else [],
             "inputs_source": link(f"releases/{release}/inputs.jsonl")}

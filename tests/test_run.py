@@ -531,7 +531,7 @@ def test_a_work_tree_behind_the_branch_is_refused_before_any_write_or_call(exp, 
     assert raw.read_bytes() == full.splitlines(keepends=True)[0]
     err = capsys.readouterr().err
     assert "results/exp/raw/A.jsonl on results/exp holds records this checkout lacks" in err
-    assert "git checkout results/exp -- results/exp" in err
+    assert "git restore --source=results/exp --worktree -- results/exp" in err and "uncommitted" in err
     raw.unlink()  # a missing file of a model in scope is just as stale
     assert go() == 1 and not raw.exists()
     assert go("--model", "B") == 0  # A is out of scope

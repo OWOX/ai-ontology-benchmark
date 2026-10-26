@@ -31,14 +31,16 @@ def stale_files(root: Path, parent: str, results_dir: str, models: set[str] | No
     holds records this checkout lacks. A raw file gone from the work tree counts only for a model in
     `models`, because only those files `run` is about to rewrite. Other files are not compared."""
     env = {k: v for k, v in os.environ.items() if k not in GIT_VARIABLES}
-    listed = subprocess.run(["git", "ls-tree", "-r", parent, "--", results_dir], cwd=root, env=env,
+    listed = subprocess.run(["git", "ls-tree", "-r", "-l", "-z", parent, "--", results_dir], cwd=root, env=env,
                             capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if listed.returncode != 0:
-        raise BranchError(f"git ls-tree failed: {listed.stderr.strip()}")
+        raise BranchError(f"git ls-tree failed: {listed.stderr.strip() or listed.stdout.strip()}")
     stale = []
-    for line in listed.stdout.splitlines():
-        head, _, path = line.partition("\t")
-        sha = head.split()[2]
+    for entry in listed.stdout.split("\0"):
+        if not entry:
+            continue
+        head, _, path = entry.partition("\t")
+        _, _, sha, size = head.split()
         relative = Path(path).relative_to(results_dir)
         if relative.parent != Path("raw") or relative.suffix != ".jsonl":
             continue
@@ -47,8 +49,7 @@ def stale_files(root: Path, parent: str, results_dir: str, models: set[str] | No
             if models is not None and relative.stem in models:
                 stale.append(path)
             continue
-        size = int(subprocess.run(["git", "cat-file", "-s", sha], cwd=root, env=env, capture_output=True,
-                                  text=True, stdin=subprocess.DEVNULL).stdout)
+        size = int(size)
         with open(local, "rb") as handle:
             if blob_id(handle.read(size), len(sha)) != sha or local.stat().st_size < size:
                 stale.append(path)
@@ -56,9 +57,12 @@ def stale_files(root: Path, parent: str, results_dir: str, models: set[str] | No
 
 
 def stale_message(files: list[str], ref: str) -> str:
+    """`ref` is the ref the files were read from, as a name `git restore --source` accepts."""
     results = files[0].split("/raw/")[0]
-    return (f"{', '.join(files)} on {ref} holds records this checkout lacks; bring the branch's results "
-            f"into the work tree first (for example: git checkout {ref} -- {results})")
+    verb = "holds" if len(files) == 1 else "hold"
+    return (f"{', '.join(files)} on {ref} {verb} records this checkout lacks; bring the branch's results into "
+            f"the work tree first, after checking that no local records are uncommitted "
+            f"(for example: git restore --source={ref} --worktree -- {results})")
 
 
 class ResultsBranch:
@@ -79,12 +83,13 @@ class ResultsBranch:
 
     def check_results(self, models: list[str]) -> None:
         """Refuse when the branch holds raw records the work tree lacks, before any write or call."""
-        parent = self.resolve(self.ref) or self.resolve(f"refs/remotes/origin/{self.branch}")
-        if parent is None:
+        remote = f"origin/{self.branch}"
+        ref = self.branch if self.resolve(self.ref) else remote if self.resolve(f"refs/remotes/{remote}") else None
+        if ref is None:
             return
-        stale = stale_files(self.root, parent, self.paths[-1], set(models))
+        stale = stale_files(self.root, ref, self.paths[-1], set(models))
         if stale:
-            raise BranchError(stale_message(stale, self.branch))
+            raise BranchError(stale_message(stale, ref))
 
     def relative(self, path: Path) -> str:
         try:
