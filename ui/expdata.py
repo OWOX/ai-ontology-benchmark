@@ -217,4 +217,5 @@ def _detail_metrics(exp: dict, inputs: list[dict]) -> tuple[list[dict], list[dic
 
 def impossible_moves(row: dict, legal: list[str]) -> list[str]:
     """The parsed moves of one attempt row that are not legal moves, in order."""
-    return [m for m in row.get("parsed_moves") or [] if m not in legal]
+    moves = row.get("parsed_moves")
+    return [m for m in moves if isinstance(m, str) and m not in legal] if isinstance(moves, list) else []

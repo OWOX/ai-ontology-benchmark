@@ -34,15 +34,16 @@ def impossible_seen(puzzle: str, legal: list[str], experiments: list[dict]) -> l
     for exp in experiments:
         if exp["error"]:
             continue
-        for found in exp["records"].values():
-            for record in found:
-                if record.get("puzzle") != puzzle:
-                    continue
-                for move in expdata.impossible_moves(record, legal):
-                    entry = seen[move]
-                    entry["count"] += 1
-                    entry["models"].add(record.get("model"))
-                    entry["experiments"].add(exp["id"])
+        try:
+            found = [(m, r.get("model")) for rs in exp["records"].values() for r in rs
+                     if r.get("puzzle") == puzzle for m in expdata.impossible_moves(r, legal)]
+        except Exception:
+            continue  # one unreadable experiment never blocks the bundle
+        for move, model in found:
+            entry = seen[move]
+            entry["count"] += 1
+            entry["models"].add(model)
+            entry["experiments"].add(exp["id"])
     ranked = sorted(seen.items(), key=lambda item: (-item[1]["count"], item[0]))
     return [{"move": move, "count": e["count"], "models": sorted(m for m in e["models"] if m),
              "experiments": sorted(e["experiments"])} for move, e in ranked]

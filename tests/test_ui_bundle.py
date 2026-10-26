@@ -322,6 +322,18 @@ def test_bundle_cache_by_sha(ui_repo, samples, monkeypatch):
     assert exp_ids(second) == ["e", "f"] and calls.count("f") == 1
 
 
+def test_malformed_parsed_moves_do_not_break_bundle(ui_repo, samples):
+    valid, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    for name, bad in (("b1", [{}]), ("b2", "R"), ("b3", [None, ["R"]])):
+        broken = {**record(valid, "no_model", 1, HALLUCINATION), "parsed_moves": bad}
+        push_results(ui_repo, name, files_as(name, files_for([broken])))
+    bundle = make_bundles(ui_repo).get(None, True, set(), {}, set())
+    assert exp_ids(bundle) == ["b1", "b2", "b3", "e"]
+    seen = next(p for p in bundle["puzzles"] if p["name"] == "2x2")["impossible_seen"]
+    assert [(s["move"], s["count"]) for s in seen] == [("u", 1)] and seen[0]["experiments"] == ["e"]
+
+
 def test_key_status_not_cached(ui_repo):
     bundles = make_bundles(ui_repo)
 
