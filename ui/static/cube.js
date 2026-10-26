@@ -1,7 +1,7 @@
 "use strict";
 // Spec: docs/specs/ui.md
 // Cube drawing for the page: the sticker colours, the net, and the isometric view. Loaded before
-// app.js, which uses these names. Reads only the states it is given and writes only the SVG it returns.
+// the page scripts, which use these names. Reads only the states it is given and writes only the SVG it returns.
 
 const STICKERS = { U: "#ffffff", R: "#d62d20", F: "#1f9d55", D: "#f5d90a", L: "#f08a1c", B: "#2155c4" };
 const FACE_ORDER = "URFDLB";
@@ -50,6 +50,28 @@ function cubeNet(state, attrs) {
         width: cell - 2 * pad, height: cell - 2 * pad,
         fill: STICKERS[ch] || "#999", stroke: "#2a2f38", "stroke-width": 0.02,
       }));
+    }
+  });
+  return root;
+}
+
+// The solved net with each sticker named <face><index>, the index counted from 1 row by row, in the
+// order cubeNet draws and the state is read. Returns an <svg>; empty for a size that is not a cube.
+function cubeNetNamed(n, attrs) {
+  const ok = Number.isInteger(n) && n >= 1;
+  const root = cubeNet(ok ? solvedState(n) : "", attrs);
+  if (!ok) return root;
+  const cell = 1 / n;
+  [...FACE_ORDER].forEach((face) => {
+    const [fx, fy] = NET_POS[face];
+    for (let i = 0; i < n * n; i++) {
+      const t = svg("text", {
+        x: fx + ((i % n) + 0.5) * cell, y: fy + (Math.floor(i / n) + 0.5) * cell,
+        "text-anchor": "middle", "dominant-baseline": "central", "font-size": cell * 0.32,
+        fill: face === "U" || face === "D" ? "#111" : "#fff", "pointer-events": "none",
+      });
+      t.textContent = face + (i + 1);
+      root.append(t);
     }
   });
   return root;
@@ -107,5 +129,5 @@ function cubeIso(state, n, highlightFace, attrs) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { STICKERS, FACE_ORDER, NET_POS, ISO_FACES, svg, solvedState, cubeSize, cubeNet, cubeIso, isoStickers };
+  module.exports = { STICKERS, FACE_ORDER, NET_POS, ISO_FACES, svg, solvedState, cubeSize, cubeNet, cubeNetNamed, cubeIso, isoStickers };
 }

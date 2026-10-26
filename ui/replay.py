@@ -1,16 +1,12 @@
 # Spec: docs/specs/ui.md
-"""One attempt's moves played on its input, state by state, for the cube panel. Reads
-releases/<version>/inputs.jsonl and results/<id>/raw/<model>.jsonl. Writes nothing.
+"""One attempt's moves played on its input, state by state, for the cube panel. Reads the
+experiment's raw records from its branch and the release inputs from main, through Bundles. Writes nothing.
 """
-
-import json
-from pathlib import Path
 
 from src.puzzles.registry import get_engine
 from src.run.prompts import SETUPS
-from src.run.raw import read_raw
-from ui import experiments
-from ui.common import ApiError
+from ui import expdata
+from ui.common import ApiError, check_id
 
 
 def _field(query: dict, name: str) -> str:
@@ -45,18 +41,20 @@ def frames_for(puzzle: str, state: str, moves: list) -> tuple[list[str], int | N
     return frames, None, bool(moves) and engine.is_solved(frames[-1])
 
 
-def replay(root: Path, experiment_id: str, query: dict) -> dict:
+def replay(bundles, experiment_id: str, live_ids: set[str], query: dict) -> dict:
     model, input_id, setup, attempt = parse_query(query)
-    config = experiments.load_config(root, experiment_id)
+    exp = bundles.loaded(check_id(experiment_id), live_ids)
+    config = exp["config"]
+    if config is None:
+        raise ApiError(400, exp["error"])
     if model not in [m["name"] for m in config["models"]]:
         raise ApiError(404, f"model {model} is not in experiment {experiment_id}")
-    record = next((r for r in read_raw(root / "results" / experiment_id / "raw" / f"{model}.jsonl")[0]
-                   if r.get("input_id") == input_id and r.get("setup") == setup
-                   and r.get("attempt_number") == attempt), None)
+    record = next((r for r in exp["records"].get(model, []) if r.get("input_id") == input_id
+                   and r.get("setup") == setup and r.get("attempt_number") == attempt), None)
     if record is None:
         raise ApiError(404, "no such record")
-    lines = (root / "releases" / config["release"] / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
-    row = next((r for r in map(json.loads, (ln for ln in lines if ln.strip())) if r["input_id"] == input_id), None)
+    git = bundles.git
+    row = next((r for r in expdata.read_inputs(git, git.main_ref(), config["release"]) if r["input_id"] == input_id), None)
     if row is None:
         raise ApiError(404, f"input {input_id} is not in release {config['release']}")
     moves = list(record.get("parsed_moves") or [])

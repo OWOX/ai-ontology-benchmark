@@ -50,7 +50,7 @@ Every engine implements:
 8. `render(state)` returns the text form of the state for the prompt.
 9. `reference_length(state)` returns the reference length in the half-turn metric. It accepts valid states only and raises on invalid ones.
 
-Adding a puzzle means one new engine, one registry entry, and its tests. If anything else has to change, the interface is wrong. Stop and ask.
+Adding a puzzle means one new engine, one registry entry, one short description in `docs/puzzles/<puzzle>.md`, and its tests. If anything else has to change, the interface is wrong. Stop and ask.
 
 ## Reuse
 
@@ -71,6 +71,18 @@ Cube Bench (arXiv 2512.20595, code at github.com/dana-23/cube-bench) is the prio
 
 1. After changes reach the checkout that the running UI serves from, restart the UI server so it runs the new code. The page files in `ui/static/` are read on every request, but Python code is loaded once at start-up.
 2. Restart only when no job is running. Stop the server with SIGTERM, which stops its jobs, and start it again with `./ui/start.sh`. If a job is running, say so and leave the server as it is.
+
+### Architecture
+
+Decided by the project owner on 2026-10-25. The full design is in [docs/specs/ui.md](docs/specs/ui.md).
+
+1. Git is the only source of persistent data. The UI reads releases, prompts, inputs, docs, the README, and `config/models.toml` from `origin/main`, and experiments from `origin/results/*`, with `git fetch`, `git show`, and `git ls-tree`. It never lists the work tree. The one exception is an experiment with a live job in this server, which is read from its local `results/<experiment id>` branch and marked as not pushed.
+2. `ui/` holds code only. No data file, and no copy of data held elsewhere in the repo, lives there.
+3. The UI process writes only `./secrets/`. Experiment data reaches git through `run`, `evaluate`, and the commit step, which write to the branch `results/<experiment id>`. The UI never writes `config/experiments/<experiment id>.toml`. It passes the experiment config to `run` on stdin.
+4. One experiment is one branch, `results/<experiment id>`. The New Experiment screen names the id from the chosen AI models and puzzles by default, and picking an existing branch loads that experiment.
+5. The server builds one structured bundle per release, with everything the menu shows, and keeps it in memory only, keyed by the shas of the refs it read. The page caches each bundle in browser storage and renders from it at once. The refresh icon next to the release dropdown fetches from GitHub and replaces the bundle.
+6. The Experiments list has one row per experiment, AI model, and puzzle. Its metrics come from the committed report CSV when there is one. Otherwise they are computed from the raw records for display only, and marked with `*` and a note saying so.
+7. The Puzzles page lists as not allowed only the impossible moves AI models returned in pushed experiments. There is no hand-written list of impossible moves.
 
 ## Writing
 

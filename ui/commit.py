@@ -1,6 +1,6 @@
 # Spec: docs/specs/ui.md
-"""Commit preview and commit with a pull request. Reads config/experiments/<id>.toml and
-results/<id>/. Writes git objects, the remote branch results/<id>, and, after a push succeeds,
+"""Commit preview and commit with a pull request. Reads results/<id>/ in the work tree (its
+experiment.toml is the config) and adds only that folder. Writes git objects, the remote branch results/<id>, and, after a push succeeds,
 refs/heads/results/<id>. Never touches the work tree, the real index, or HEAD: it builds the
 tree in a temporary index file.
 """
@@ -12,7 +12,8 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-from src.config import load_experiment_config
+from src.config import parse_experiment_config
+from src.run.branch import BranchError, stale_files, stale_message
 from ui.common import ApiError, merged_env
 
 Emit = Callable[[str, str], None]  # (stream, text)
@@ -32,16 +33,24 @@ def sh(root: Path, argv: list[str], emit: Emit, extra_env: dict | None = None, c
     return result
 
 
+def load_config(root: Path, experiment_id: str) -> dict:
+    """The config copy `run` keeps at results/<id>/experiment.toml. 404 when it is not in this checkout."""
+    path = root / "results" / experiment_id / "experiment.toml"
+    if not path.is_file():
+        raise ApiError(404, f"experiment {experiment_id} not found")
+    try:
+        return parse_experiment_config(path.read_text(encoding="utf-8"), experiment_id, str(path))
+    except ValueError as error:
+        raise ApiError(400, str(error)) from None
+
+
 def newest_mtime(folder: Path) -> float:
     return max((p.stat().st_mtime for p in folder.glob("*.jsonl")), default=0.0)
 
 
 def prepare(root: Path, experiment_id: str, emit: Emit) -> dict:
     """Build the tree and return {branch, base, files, diffstat, tree, pushed}. Raises 409."""
-    config_path = root / "config" / "experiments" / f"{experiment_id}.toml"
-    if not config_path.is_file():
-        raise ApiError(404, f"experiment {experiment_id} not found")
-    release = load_experiment_config(config_path)["release"]
+    release = load_config(root, experiment_id)["release"]
     report = root / "results" / experiment_id / f"{release}.md"
     if not report.is_file():
         raise ApiError(409, "no report yet; run evaluate first")
@@ -54,16 +63,34 @@ def prepare(root: Path, experiment_id: str, emit: Emit) -> dict:
         sh(root, ["git", "rev-parse", "--verify", "-q", remote], emit, check=False).returncode == 0
     parent = sh(root, ["git", "rev-parse", "--verify", remote if pushed else "refs/remotes/origin/main"],
                 emit).stdout.strip()
+    # `run` commits to the local branch as it goes: build on it when it holds the remote branch.
+    local = sh(root, ["git", "rev-parse", "--verify", "-q", f"refs/heads/{branch}"], emit, check=False).stdout.strip()
+    if local and pushed and local != parent and sh(root, ["git", "merge-base", "--is-ancestor", local, parent],
+                                                    emit, check=False).returncode == 0:
+        sh(root, ["git", "update-ref", f"refs/heads/{branch}", parent, local], emit)  # fast-forward a stale local
+        local = parent
+    if local and (not pushed or sh(root, ["git", "merge-base", "--is-ancestor", parent, local], emit,
+                                   check=False).returncode == 0):
+        parent = local
+    ahead = bool(local) and parent == local and (not pushed or sh(
+        root, ["git", "rev-parse", remote], emit).stdout.strip() != local)  # commits still to push
+    try:
+        stale = stale_files(root, parent, f"results/{experiment_id}")
+    except BranchError as error:
+        raise ApiError(409, str(error)) from None
+    if stale:
+        raise ApiError(409, stale_message(stale, branch if parent == local else f"origin/{branch}" if pushed else "origin/main"))
     with tempfile.TemporaryDirectory() as folder:
         index = {"GIT_INDEX_FILE": os.path.join(folder, "index")}
         sh(root, ["git", "read-tree", parent], emit, index)
-        sh(root, ["git", "add", "--", f"config/experiments/{experiment_id}.toml", f"results/{experiment_id}"], emit, index)
+        sh(root, ["git", "add", "--ignore-removal", "--",
+                f"results/{experiment_id}", f":(exclude)results/{experiment_id}/.experiment.toml.*.tmp"], emit, index)
         tree = sh(root, ["git", "write-tree"], emit, index).stdout.strip()
     files = sh(root, ["git", "diff", "--name-only", parent, tree], emit).stdout.splitlines()
-    if not files and not pushed:
+    if not files and not pushed and not ahead:
         raise ApiError(409, "nothing to commit")
     diffstat = sh(root, ["git", "diff", "--stat", parent, tree], emit).stdout.rstrip()
-    return {"branch": branch, "base": parent, "files": files, "diffstat": diffstat, "tree": tree, "pushed": pushed}
+    return {"branch": branch, "base": parent, "files": files, "diffstat": diffstat, "tree": tree, "pushed": pushed, "ahead": ahead}
 
 
 def preview(root: Path, experiment_id: str, emit: Emit) -> dict:
@@ -102,11 +129,13 @@ def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
                  emit).stdout.strip()
         sh(root, ["git", "push", "origin", f"{sha}:refs/heads/{branch}"], emit)
         sh(root, ["git", "update-ref", f"refs/heads/{branch}", sha], emit)
+    elif info["ahead"]:  # the run's own commits are not on the remote yet
+        sh(root, ["git", "push", "origin", f"{sha}:refs/heads/{branch}"], emit)
     url = open_pr_url(root, branch, emit)
-    if url and not info["files"]:
+    if url and not info["files"] and not info["ahead"]:
         raise ApiError(409, "nothing to commit")
     if not url:  # a retry after a failed PR step finds the branch already pushed
-        config = load_experiment_config(root / "config" / "experiments" / f"{experiment_id}.toml")
+        config = load_config(root, experiment_id)
         gh = merged_env(root).get("UI_GH") or "gh"
         made = sh(root, [gh, "pr", "create", "--base", "main", "--head", branch, "--title",
                          f"Results: experiment {experiment_id}", "--body", pr_body(config, experiment_id)], emit)

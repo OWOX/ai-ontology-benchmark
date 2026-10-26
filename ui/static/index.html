@@ -8,139 +8,40 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="top">
-  <h1>AI Ontology Hallucination Research</h1>
-  <span id="conn" class="conn" title="Server">connecting</span>
-</header>
-<div class="layout">
-  <main class="left">
-    <section class="step" id="step-setup">
-      <h2><button type="button" class="help" aria-label="Help: Setup" aria-describedby="tip-setup">?</button><span class="tip" role="tooltip" id="tip-setup">Setup holds the API keys and the project status. Save a key for each provider; it goes into ./secrets/, one file per provider, which is .gitignored and never committed. A real environment variable wins over a saved key. Install dependencies and Run tests prepare and check the project.</span><span class="num">1</span>Setup</h2>
-      <div id="secrets"></div>
-      <p class="muted small">Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed.</p>
-      <p id="secrets-msg" class="msg" role="status"></p>
-      <p id="project" class="muted small"></p>
-      <div class="actions">
-        <button id="btn-install" type="button">Install dependencies</button>
-        <button id="btn-tests" type="button">Run tests</button>
-      </div>
-      <p id="setup-msg" class="msg" role="status"></p>
-    </section>
-
-    <section class="step" id="step-shapes">
-      <h2><button type="button" class="help" aria-label="Help: Shapes" aria-describedby="tip-shapes">?</button><span class="tip" role="tooltip" id="tip-shapes">Shapes picks the release and the puzzles to test. Every input of a chosen puzzle in that release goes to every chosen AI model under all three setups. The count on each card is the number of inputs for that puzzle in the release. Choose at least one puzzle.</span><span class="num">2</span>Shapes</h2>
-      <label class="inline">Release <select id="release"></select></label>
-      <span id="release-info" class="muted"></span>
-      <div id="puzzles" class="cards"></div>
-    </section>
-
-    <section class="step" id="step-models">
-      <h2><button type="button" class="help" aria-label="Help: Models" aria-describedby="tip-models">?</button><span class="tip" role="tooltip" id="tip-models">Models lists the AI models from the catalogue, grouped by provider. Tick the ones to test. A model is disabled, with the reason shown, when its provider has no API key or its token price is missing from config.</span><span class="num">3</span>Models</h2>
-      <div id="models"></div>
-    </section>
-
-    <section class="step" id="step-params">
-      <h2><button type="button" class="help" aria-label="Help: Parameters" aria-describedby="tip-params">?</button><span class="tip" role="tooltip" id="tip-params">Parameters sets the experiment. Attempts is how many times each input is sent to each AI model under each setup, and the retry cap limits retries of infrastructure failures. The three budgets stop a run that would cost too much. Estimate and Dry run show the cost and the plan, and Run starts the experiment.</span><span class="num">4</span>Parameters</h2>
-      <div class="grid">
-        <label class="wide">Experiment id
-          <span class="row">
-            <input id="exp-id" type="text" spellcheck="false" autocomplete="off">
-            <button id="btn-load" type="button">Load existing</button>
-          </span>
-        </label>
-        <label class="wide">Attempts per input and setup: sends the same input N times
-          <input id="attempts" type="number" min="1" step="1">
-        </label>
-        <label>Retry cap <input id="retry-cap" type="number" min="0" step="1"></label>
-        <label>Max output tokens <input id="max-tokens" type="number" min="1" step="1"></label>
-        <label>Budget per request (USD) <input id="b-request" type="number" min="0" step="any"></label>
-        <label>Budget per model (USD) <input id="b-model" type="number" min="0" step="any"></label>
-        <label>Budget per experiment (USD) <input id="b-experiment" type="number" min="0" step="any"></label>
-        <label>Limit per model (optional) <input id="limit" type="number" min="1" step="1" placeholder="all"></label>
-      </div>
-      <div class="actions">
-        <button id="btn-estimate" type="button">Estimate</button>
-        <button id="btn-dry" type="button">Dry run</button>
-        <button id="btn-run" type="button" class="primary">Run</button>
-        <button id="btn-stop" type="button" class="danger" disabled>Stop</button>
-      </div>
-      <p class="muted small">Stopping may leave a request in flight that is paid for and never recorded. For small runs, prefer a limit.</p>
-      <p id="form-msg" class="msg" role="status"></p>
-    </section>
-
-    <section class="step" id="step-progress">
-      <h2><button type="button" class="help" aria-label="Help: Progress" aria-describedby="tip-progress">?</button><span class="tip" role="tooltip" id="tip-progress">Progress shows every attempt as it lands, with its outcome: success, failure, hallucination, malformed output, or infrastructure failure. A hallucination means at least one impossible move. The Cube panel replays an attempt's moves state by state on the input's puzzle. Live follows the newest attempt of the model you choose.</span><span class="num">5</span>Progress</h2>
-      <div id="cube-panel" class="cube-panel">
-        <div class="cube-head">
-          <strong>Cube</strong>
-          <label><input type="checkbox" id="cube-live" checked> Live</label>
-          <select id="cube-model" aria-label="Model to follow" hidden></select>
-        </div>
-        <div id="cube-views" class="cube-views"></div>
-        <div id="cube-moves" class="cube-moves"></div>
-        <div id="cube-info" class="cube-info"></div>
-        <div class="cube-ctl">
-          <button type="button" id="cube-back" class="small" disabled>Step back</button>
-          <button type="button" id="cube-play" class="small" disabled>Play</button>
-          <button type="button" id="cube-fwd" class="small" disabled>Step forward</button>
-          <label>Speed <select id="cube-speed"><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option><option value="4">4x</option></select></label>
-        </div>
-      </div>
-      <div id="legend" class="legend"></div>
-      <div id="banners"></div>
-      <div id="progress" class="muted">Run or load an experiment to see progress.</div>
-    </section>
-
-    <section class="step" id="step-commit">
-      <h2><button type="button" class="help" aria-label="Help: Evaluate and commit" aria-describedby="tip-commit">?</button><span class="tip" role="tooltip" id="tip-commit">Evaluate re-validates every raw response of the experiment under a release and writes the report: the experiment report and its CSV of metrics. It never calls an AI model. Commit opens a preview of the branch and files, and on confirmation commits the results and opens a pull request. Commit needs a report that is newer than the raw records.</span><span class="num">6</span>Evaluate and commit</h2>
-      <div class="actions">
-        <label class="inline">Score under release <select id="eval-release"></select></label>
-        <button id="btn-evaluate" type="button" disabled>Evaluate</button>
-        <button id="btn-commit" type="button" disabled>Commit</button>
-      </div>
-      <p id="report" class="muted">No report yet.</p>
-      <p id="commit-result" class="msg" role="status"></p>
-    </section>
-
-    <section class="step" id="step-release">
-      <h2><button type="button" class="help" aria-label="Help: Release" aria-describedby="tip-release">?</button><span class="tip" role="tooltip" id="tip-release">Release freezes a new release from the current input set, prompt templates, and assessment. A major bump makes a new input set, a minor bump a prompt change, and a patch bump an assessment fix. Push and open PR sends the branch and its release tags and opens a pull request. Both are disabled on main, on a detached HEAD, and while a job runs.</span><span class="num">7</span>Release</h2>
-      <div class="actions">
-        <label class="inline">Bump
-          <select id="bump"><option>patch</option><option>minor</option><option>major</option></select>
-        </label>
-        <input id="note" type="text" placeholder="Note" autocomplete="off">
-        <button id="btn-release" type="button" class="primary">Release</button>
-      </div>
-      <p id="release-state" class="muted small"></p>
-      <div class="actions">
-        <button id="btn-push" type="button">Push and open PR</button>
-      </div>
-      <p id="release-msg" class="msg" role="status"></p>
-    </section>
-  </main>
-
-  <aside class="right">
-    <div class="term-bar">
-      <strong>Terminal</strong>
-      <button id="btn-clear" type="button" class="small">Clear</button>
+<div class="shell">
+  <nav class="menu" aria-label="Pages">
+    <h1>AI Ontology Hallucination Research</h1>
+    <div class="release-pick">
+      <select id="release" aria-label="Release"></select>
+      <button id="refresh" type="button" class="small" title="Fetch from GitHub again" aria-label="Refresh">&#x21bb;</button>
     </div>
-    <pre id="terminal" class="terminal" tabindex="0"></pre>
-  </aside>
+    <div id="links" class="links"></div>
+    <p id="fetch-status" class="muted small"></p>
+    <p id="fetch-error" class="msg err small" role="status"></p>
+    <span id="conn" class="conn" title="Server">connecting</span>
+  </nav>
+  <div class="page">
+    <main id="main"></main>
+    <details class="termbox" id="termbox">
+      <summary>Terminal</summary>
+      <div class="term-bar"><strong>Jobs</strong><button id="btn-clear" type="button" class="small">Clear</button></div>
+      <pre id="terminal" class="terminal" tabindex="0"></pre>
+    </details>
+  </div>
 </div>
-
-<dialog id="commit-dialog">
-  <form method="dialog" id="commit-form">
-    <h3>Commit results</h3>
-    <div id="commit-preview"></div>
-    <p id="commit-error" class="msg"></p>
-    <div class="actions">
-      <button value="cancel" type="submit">Cancel</button>
-      <button id="btn-confirm" type="button" class="primary">Confirm</button>
-    </div>
-  </form>
-</dialog>
-
 <script src="/static/cube.js"></script>
-<script src="/static/app.js"></script>
+<script src="/static/markdown.js"></script>
+<script src="/static/router.js"></script>
+<script src="/static/progressview.js"></script>
+<script src="/static/progress.js"></script>
+<script src="/static/cubepanel.js"></script>
+<script src="/static/expmetrics.js"></script>
+<script src="/static/pages/puzzles.js"></script>
+<script src="/static/pages/inputs.js"></script>
+<script src="/static/pages/experiments.js"></script>
+<script src="/static/pages/experiment.js"></script>
+<script src="/static/pages/new.js"></script>
+<script src="/static/pages/models.js"></script>
+<script src="/static/pages/about.js"></script>
 </body>
 </html>

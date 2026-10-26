@@ -49,11 +49,11 @@ src/
   release/         freezes inputs, prompts, and assessment into a release
   run/             plays a release against each AI model under the three setups
   evaluate/        computes the metrics and writes the experiment report
-ui/                local web page to run an experiment (ui/start.sh)
+ui/                local web page to browse, run, and commit experiments (ui/start.sh)
 prompts/           working templates: no_model, descriptive, prescriptive
 releases/          one read-only folder per release version
 results/           one folder per experiment: raw records and one report per release
-docs/              definitions, methodology, assumptions, related work
+docs/              definitions, methodology, specs, puzzles, assumptions, related work
 LICENSE            Apache 2.0 licence text
 LICENSE-CC-BY-4.0  CC BY 4.0 licence text
 NOTICE             copyright and attribution for reused code

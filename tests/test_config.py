@@ -3,7 +3,7 @@
 
 import pytest
 
-from src.config import load_experiment_config, load_prices, load_release_config
+from src.config import load_experiment_config, load_prices, load_release_config, parse_experiment_config
 
 RELEASE = """seed = 1
 puzzles = ["2x2"]
@@ -184,3 +184,15 @@ def test_experiment_puzzles_valid_list_is_kept(tmp_path):
 
 def test_experiment_without_puzzles_leaves_the_key_absent(tmp_path):
     assert "puzzles" not in load_experiment_config(write(tmp_path, EXPERIMENT, "e.toml"))
+
+
+def test_parse_experiment_config_matches_load(tmp_path):
+    path = write(tmp_path, EXPERIMENT, "exp.toml")
+    assert parse_experiment_config(EXPERIMENT, "exp", "<stdin>") == load_experiment_config(path)
+
+
+def test_parse_experiment_config_names_source():
+    with pytest.raises(ValueError, match="<stdin>"):
+        parse_experiment_config('release = "1.0.0"\n', "exp", "<stdin>")
+    with pytest.raises(ValueError, match="<stdin>: not valid TOML"):
+        parse_experiment_config("release = ", "exp", "<stdin>")

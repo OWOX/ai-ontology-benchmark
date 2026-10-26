@@ -3,14 +3,16 @@
 test_release), then calls run's main() in-process from inside that repo with the fake provider.
 """
 
+import io
 import json
+import sys
 
 import pytest
 
 from src.run import models, run as run_module
 from src.run.models import InfrastructureError, Reply
 from src.run.raw import read_raw
-from test_release import release_ok, repo  # noqa: F401  (repo is a fixture)
+from test_release import git, release_ok, repo  # noqa: F401  (repo is a fixture)
 
 EXPERIMENT = (
     'release = "1.0.0"\nattempts = 2\nretry_cap = 3\nmax_output_tokens = 100\n'
@@ -78,6 +80,7 @@ def test_limit_then_resume_equals_full_run(exp):
     resumed = {n: stable(records(exp, n)) for n in "AB"}
     (exp / "results/exp/raw/A.jsonl").unlink()
     (exp / "results/exp/raw/B.jsonl").unlink()
+    git(exp, "update-ref", "-d", BRANCH)  # a branch holding the records would refuse the empty work tree
     go()
     assert {n: stable(records(exp, n)) for n in "AB"} == resumed
 
@@ -185,6 +188,7 @@ def test_torn_middle_line_ending_in_brace_resumes(exp):
     path = exp / "results/exp/raw/A.jsonl"
     first, second = path.read_text(encoding="utf-8").splitlines()
     path.write_text(first + '\n{"input_id": "x", "n": {"a": 1}\n' + second + "\n", encoding="utf-8")
+    git(exp, "update-ref", "-d", BRANCH)  # the hand edit is not an append, so drop the branch it would fail against
     assert go("--model", "A", "--limit", "1") == 0
     lines = path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 4 and lines[1].startswith('{"input_id": "x"')
@@ -355,3 +359,306 @@ def test_puzzle_not_in_release_refused_before_any_call(exp, capsys):
     err = capsys.readouterr().err
     assert "exp.toml" in err and "puzzles" in err
     assert len(models.FAKE_REPLIES) == 1 and not (exp / "results/exp").exists()
+
+
+# Results branch. Every record is committed to refs/heads/results/exp without touching the work tree.
+
+BRANCH = "refs/heads/results/exp"
+
+
+def with_remote(repo, tmp_path_factory):
+    remote = tmp_path_factory.mktemp("remote")
+    git(remote, "init", "-q", "--bare")
+    git(repo, "remote", "add", "origin", str(remote))
+    return remote
+
+
+def test_records_are_committed_to_the_results_branch(exp, capsys):
+    head, status = git(exp, "rev-parse", "HEAD"), git(exp, "status", "--porcelain", "--untracked-files=no")
+    index = git(exp, "ls-files", "--stage")
+    assert go() == 0
+    for name in "AB":
+        shown = git(exp, "show", f"{BRANCH}:results/exp/raw/{name}.jsonl")
+        assert shown + "\n" == (exp / "results/exp/raw" / f"{name}.jsonl").read_text(encoding="utf-8")
+    assert git(exp, "show", f"{BRANCH}:config/experiments/exp.toml") == EXPERIMENT.strip()
+    assert git(exp, "rev-parse", "HEAD") == head
+    assert git(exp, "status", "--porcelain", "--untracked-files=no") == status
+    assert git(exp, "ls-files", "--stage") == index
+    assert "warning: push of results/exp failed: no remote origin" in capsys.readouterr().err
+
+
+def test_one_commit_per_attempt_plus_the_start(exp):
+    assert go() == 0
+    attempts = len(records(exp, "A")) + len(records(exp, "B"))
+    assert int(git(exp, "rev-list", "--count", f"HEAD..{BRANCH}")) == attempts + 1
+    assert git(exp, "log", "-1", "--format=%s", f"{BRANCH}~{attempts}") == "Results: experiment exp, start"
+
+
+def test_branch_is_pushed_at_exit(exp, tmp_path_factory):
+    remote = with_remote(exp, tmp_path_factory)
+    assert go() == 0
+    assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
+    assert go() == 0  # nothing new: the branch stays as it is
+    assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
+
+
+def test_run_without_a_remote_still_succeeds(exp, capsys):
+    assert go("--limit", "2") == 0
+    assert capsys.readouterr().err.strip() == "warning: push of results/exp failed: no remote origin"
+
+
+def test_budget_stop_commits_and_pushes(exp, capsys, tmp_path_factory):
+    remote = with_remote(exp, tmp_path_factory)
+    with_budget(exp, per_model_usd=0.035)
+    assert go() == 1
+    assert len(records(exp, "A")) == 3
+    assert git(exp, "show", f"{BRANCH}:results/exp/raw/A.jsonl") + "\n" == \
+        (exp / "results/exp/raw/A.jsonl").read_text(encoding="utf-8")
+    assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
+    assert capsys.readouterr().err.strip().splitlines()[-1].startswith("error: budget reached:")
+
+
+def test_budget_error_stays_the_last_line_when_the_push_fails(exp, capsys):
+    with_budget(exp, per_model_usd=0.035)
+    assert go() == 1
+    lines = capsys.readouterr().err.strip().splitlines()
+    assert lines[-2].startswith("warning: push of results/exp failed")
+    assert lines[-1].startswith("error: budget reached:")
+
+
+def test_no_commit_dry_run_and_estimate_make_no_branch(exp):
+    assert go("--no-commit", "--limit", "2") == 0
+    assert go("--dry-run") == 0
+    assert go("--estimate") == 0
+    assert git(exp, "branch", "--list", "results/exp") == ""
+
+
+def test_outside_a_git_work_tree_refused_before_any_call(exp, tmp_path_factory, monkeypatch, capsys):
+    import shutil
+    plain = tmp_path_factory.mktemp("plain")
+    for name in ("src", "prompts", "releases", "config"):
+        shutil.copytree(exp / name, plain / name)
+    monkeypatch.chdir(plain)
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    assert go() == 1
+    assert len(models.FAKE_REPLIES) == 1 and not (plain / "results").exists()
+    assert "needs a git work tree" in capsys.readouterr().err
+
+
+# Progress. Plain lines when stdout is not a terminal (capsys), a rich display on a terminal.
+
+def reply(moves="[]", mismatch="false", tokens=(10, 4)):
+    return Reply('{"moves": %s, "mismatch": %s}' % (moves, mismatch), "ok", "s", *tokens, 0.1)
+
+
+def progress_lines(out):
+    return [line for line in out.splitlines() if line.startswith("[")]
+
+
+def test_plain_progress_line_per_attempt(exp, capsys):
+    models.FAKE_REPLIES[:] = [reply(), reply('["X"]'), Reply("not json", "ok", "s", 10, 4, 0.1)]
+    assert go("--model", "A", "--limit", "3", "--no-commit") == 0
+    first, second, third = progress_lines(capsys.readouterr().out)
+    assert first.startswith("[1/3] A 2x2 ") and " no_model #1 failure | in 10 out 4 | $0.0000 | " in first
+    assert first.endswith("success 0% hallucination 0% malformed 0%")
+    assert " no_model #2 hallucination | in 20 out 8 | " in second
+    assert second.endswith("success 0% hallucination 50% malformed 0%")
+    assert " descriptive #1 malformed_output | in 30 out 12 | " in third and third.startswith("[3/3] A ")
+    assert third.endswith("success 0% hallucination 33% malformed 33%")
+
+
+def test_progress_counts_prior_records(exp, capsys):
+    go("--model", "A", "--limit", "2", "--no-commit")
+    capsys.readouterr()
+    go("--model", "A", "--limit", "1", "--no-commit")
+    (line,) = progress_lines(capsys.readouterr().out)
+    assert line.startswith("[3/3] A ")  # two prior records counted
+
+
+def test_progress_rates_leave_out_infrastructure_failures(exp, capsys):
+    models.FAKE_REPLIES[:] = [InfrastructureError("x", 0, 0) for _ in range(4)] + [reply()]
+    go("--model", "A", "--limit", "2", "--no-commit")
+    first, second = progress_lines(capsys.readouterr().out)
+    assert "infrastructure_failure" in first and first.endswith("success n/a hallucination n/a malformed n/a")
+    assert second.endswith("success 0% hallucination 0% malformed 0%")
+
+
+def test_no_progress_for_dry_run_and_estimate(exp, capsys):
+    go("--dry-run")
+    go("--estimate")
+    assert progress_lines(capsys.readouterr().out) == []
+
+
+def test_rich_progress_smoke(exp):
+    import io
+    from rich.console import Console
+    from src.config import load_experiment_config, load_prices
+    from src.run.progress import Progress
+    config = load_experiment_config(exp / "config/experiments/exp.toml")
+    prices = load_prices(exp / "config/prices.toml")
+    go("--model", "A", "--limit", "3", "--no-commit")
+    rows = records(exp, "A")
+    totals = {("A", rows[0]["puzzle"]): 5, ("B", rows[0]["puzzle"]): 5}
+    out = io.StringIO()
+    shown = Progress(config, prices, totals, rows[:1], console=Console(file=out, force_terminal=True, width=200))
+    with shown:
+        for row in rows[1:]:
+            shown.update(row)
+    text = out.getvalue()
+    assert "A 2x2" in text and "B 2x2" in text and "total" in text and "last attempt" in text
+
+
+# Fix round: sync with origin, removals, temporary files, commit failures, interrupts.
+
+def test_a_file_missing_from_the_work_tree_survives_the_commit(exp):
+    assert go() == 0
+    (exp / "results/exp/raw/A.jsonl").unlink()
+    (exp / "results/exp/.experiment.toml.99.tmp").write_text("x", encoding="utf-8")
+    assert go("--model", "B") == 0
+    names = git(exp, "ls-tree", "-r", "--name-only", BRANCH).splitlines()
+    assert "results/exp/raw/A.jsonl" in names and "results/exp/raw/B.jsonl" in names
+
+
+def test_a_work_tree_behind_the_branch_is_refused_before_any_write_or_call(exp, capsys):
+    assert go() == 0
+    raw = exp / "results/exp/raw/A.jsonl"
+    full = raw.read_bytes()
+    raw.write_bytes(full.splitlines(keepends=True)[0])
+    tip = git(exp, "rev-parse", BRANCH)
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    assert go() == 1
+    assert len(models.FAKE_REPLIES) == 1 and git(exp, "rev-parse", BRANCH) == tip
+    assert raw.read_bytes() == full.splitlines(keepends=True)[0]
+    err = capsys.readouterr().err
+    assert "results/exp/raw/A.jsonl on results/exp holds records this checkout lacks" in err
+    assert "git restore --source=results/exp --worktree -- results/exp" in err and "uncommitted" in err
+    raw.unlink()  # a missing file of a model in scope is just as stale
+    assert go() == 1 and not raw.exists()
+    assert go("--model", "B") == 0  # A is out of scope
+    assert go("--no-commit") == 0  # no branch work, no check
+
+
+def test_a_fresh_checkout_names_the_remote_branch(exp, tmp_path_factory, capsys):
+    with_remote(exp, tmp_path_factory)
+    assert go() == 0
+    git(exp, "update-ref", "-d", BRANCH)  # only origin/results/exp is left
+    raw = exp / "results/exp/raw/A.jsonl"
+    raw.write_bytes(raw.read_bytes().splitlines(keepends=True)[0])
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    assert go() == 1 and len(models.FAKE_REPLIES) == 1
+    err = capsys.readouterr().err
+    assert "results/exp/raw/A.jsonl on origin/results/exp holds records this checkout lacks" in err
+    assert "git restore --source=origin/results/exp --worktree -- results/exp" in err
+
+
+def test_a_work_tree_that_extends_the_branch_runs(exp):
+    assert go() == 0
+    raw = exp / "results/exp/raw/A.jsonl"
+    raw.write_bytes(raw.read_bytes() + b"\n")
+    assert go() == 0
+
+
+def test_temporary_copies_are_never_committed(exp):
+    (exp / "results/exp").mkdir(parents=True)
+    (exp / "results/exp/.experiment.toml.99.tmp").write_text("x", encoding="utf-8")
+    assert go("--limit", "1") == 0
+    assert not [n for n in git(exp, "ls-tree", "-r", "--name-only", BRANCH).splitlines() if n.endswith(".tmp")]
+
+
+def test_a_stale_local_branch_is_fast_forwarded_to_origin(exp, tmp_path_factory):
+    with_remote(exp, tmp_path_factory)
+    assert go() == 0
+    tip = git(exp, "rev-parse", BRANCH)
+    git(exp, "update-ref", BRANCH, f"{BRANCH}~3")
+    assert go() == 0
+    assert git(exp, "rev-parse", BRANCH) == tip
+
+
+def test_a_diverged_branch_is_refused_before_any_call(exp, tmp_path_factory, capsys):
+    with_remote(exp, tmp_path_factory)
+    assert go() == 0
+    tree = git(exp, "rev-parse", f"{BRANCH}^{{tree}}")
+    git(exp, "update-ref", BRANCH, git(exp, "commit-tree", tree, "-p", f"{BRANCH}~1", "-m", "local only"))
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    (exp / "results/exp/raw/A.jsonl").unlink()
+    assert go() == 1
+    assert len(models.FAKE_REPLIES) == 1
+    err = capsys.readouterr().err
+    assert "diverged" in err and BRANCH in err and "refs/remotes/origin/results/exp" in err
+
+
+def test_a_commit_failure_warns_and_the_budget_line_stays_last(exp, capsys, monkeypatch):
+    from src.run.branch import BranchError, ResultsBranch
+
+    def boom(self, message):
+        raise BranchError("boom")
+
+    monkeypatch.setattr(ResultsBranch, "commit", boom)
+    with_budget(exp, per_model_usd=0.035)
+    assert go() == 1
+    lines = capsys.readouterr().err.strip().splitlines()
+    assert any(l.startswith("warning: commit of results/exp failed: boom") for l in lines)
+    assert lines[-1].startswith("error: budget reached:")
+    assert len(records(exp, "A")) == 3
+
+
+def interrupt_on_third_record(monkeypatch, how):
+    real, calls = run_module.append_record, []
+
+    def append(path, record):
+        calls.append(1)
+        if len(calls) == 3:
+            how()
+        real(path, record)
+
+    monkeypatch.setattr(run_module, "append_record", append)
+
+
+def test_interrupt_commits_and_pushes_what_was_written(exp, tmp_path_factory, monkeypatch):
+    remote = with_remote(exp, tmp_path_factory)
+
+    def stop():
+        raise KeyboardInterrupt
+
+    interrupt_on_third_record(monkeypatch, stop)
+    with pytest.raises(KeyboardInterrupt):
+        go("--model", "A")
+    assert len(records(exp, "A")) == 2
+    assert git(exp, "show", f"{BRANCH}:results/exp/raw/A.jsonl") + "\n" == \
+        (exp / "results/exp/raw/A.jsonl").read_text(encoding="utf-8")
+    assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
+
+
+def test_sigterm_unwinds_with_a_non_zero_exit_and_pushes(exp, tmp_path_factory, monkeypatch):
+    import os
+    import signal
+    remote = with_remote(exp, tmp_path_factory)
+    before = signal.getsignal(signal.SIGTERM)
+    interrupt_on_third_record(monkeypatch, lambda: os.kill(os.getpid(), signal.SIGTERM))
+    with pytest.raises(SystemExit) as stopped:
+        go("--model", "A")
+    assert stopped.value.code == 128 + signal.SIGTERM
+    assert git(remote, "rev-parse", BRANCH) == git(exp, "rev-parse", BRANCH)
+    assert signal.getsignal(signal.SIGTERM) == before  # the handler is put back
+
+
+# Config on stdin. `--config -` reads the experiment config from stdin and needs no file.
+
+def stdin_run(exp, monkeypatch, text, *extra):
+    (exp / "config" / "experiments" / "exp.toml").unlink()
+    monkeypatch.setattr(sys, "stdin", io.StringIO(text))
+    return go("--config", "-", *extra)
+
+
+def test_config_from_stdin_writes_no_config_file(exp, monkeypatch):
+    assert stdin_run(exp, monkeypatch, EXPERIMENT) == 0
+    assert list((exp / "config" / "experiments").iterdir()) == []
+    assert (exp / "results/exp/experiment.toml").read_text(encoding="utf-8") == EXPERIMENT
+    assert len(records(exp, "A")) == len(records(exp, "B")) > 0
+    assert git(exp, "show", f"{BRANCH}:results/exp/experiment.toml") == EXPERIMENT.strip()
+
+
+def test_broken_stdin_config_refused_before_any_write(exp, monkeypatch, capsys):
+    assert stdin_run(exp, monkeypatch, 'release = "1.0.0"\n') == 1
+    assert "<stdin>" in capsys.readouterr().err
+    assert not (exp / "results").exists()
