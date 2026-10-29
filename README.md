@@ -2,16 +2,18 @@
 
 ## Goals
 
-1. Measure how an ontology model changes the hallucination rate without bias and so that anyone can reproduce the result:
+1. Measure how an ontology model affects the hallucination rate.
+2. Measure without bias and make the result easy to reproduce:
    1. No person and no AI model grades the answers. A deterministic validator does.
    2. Every AI model and every setup gets byte-identical, frozen inputs.
    3. Anyone can rerun the scoring from the stored raw responses without calling an AI model again.
-2. Make the cost of accuracy measurable. How many tokens and how many dollars does each AI model and setup spend for one success? Which AI model gives answers without hallucinations at the lowest [cost per success](docs/definitions.md#metrics)? An ontology model makes the prompt longer, so it pays off only if it saves more than it adds.
-3. Compare [system-1 and system-2 models](docs/definitions.md#setups). Does reasoning before the answer lower the hallucination rate, does an ontology model help one kind more than the other, and what does each kind pay per success?
+3. Make the cost of accuracy measurable. How many tokens and how many dollars does each AI model and setup spend for one success? Which AI model gives answers without hallucinations at the lowest [cost per success](docs/definitions.md#metrics)? An ontology model makes the prompt longer, so it pays off only if it saves more than it adds.
 
 ## Approach
 
-An AI model hallucinates when it returns a move that doesn't exist on the puzzle it's given. A deterministic validator checks every returned move against the puzzle's [move group](docs/definitions.md#puzzles) by exact string match and counts each one that isn't there. Some inputs show a colouring that no sequence of legal moves can produce, and the validator also records whether the AI model flags them.
+The study uses [twisty puzzles](docs/definitions.md#puzzles): 2x2, 3x3, and 5x5 cubes, an octahedral puzzle, and a tetrahedral puzzle. A move turns one part of the puzzle and is written in the puzzle's standard notation, which AI models already know from their training data, for example `R`, `U'`, or `F2` on the 3x3 cube. Each puzzle has a fixed list of legal moves. An AI model gets a scrambled puzzle and returns the moves it thinks solve it.
+
+The AI model hallucinates when it returns a move that isn't on the puzzle's list of legal moves. A deterministic validator checks every returned move against that list by exact string match and counts each one that isn't there. Some inputs show a colouring that no sequence of legal moves can produce, and the validator also records whether the AI model flags them.
 
 Studies of hallucination in AI models usually score answers against a reference that a person or another AI model judges to be correct. The measured rate then carries the judge's bias and can't be reproduced exactly. A common mitigation is to give the AI model an explicit [ontology model](docs/definitions.md#setups) of its domain. Whether this reduces hallucination, and at what cost in tokens, is still open.
 
