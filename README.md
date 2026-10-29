@@ -28,7 +28,7 @@ This study tests the question in closed systems where correctness isn't a matter
 
 1. An open benchmark: versioned, read-only [releases](docs/definitions.md#releases-and-experiments) of the inputs, prompts, and scoring code.
 2. For each AI model, setup, puzzle, and scramble depth, the hallucination rate, success rate, mismatch detection rate, and false mismatch rate, each with its denominator n and a 95% Wilson score interval.
-3. Tokens per attempt and cost per success for each AI model and setup, split into system-1 and system-2 models.
+3. Tokens per attempt and cost per success for each AI model and setup.
 4. Code under Apache 2.0, and data and results under CC BY 4.0.
 
 ## Side questions
@@ -36,6 +36,7 @@ This study tests the question in closed systems where correctness isn't a matter
 1. Does the success rate fall as scramble depth grows, and does an ontology model slow that fall?
 2. Do the effects hold as the cubes get bigger, from 2x2 to 5x5? The octahedral and tetrahedral puzzles have no size series, so this question covers the cubes only.
 3. How consistent is an AI model across repeated attempts on the same input, and does an ontology model change that?
+4. Do [system-1 and system-2 models](docs/definitions.md#setups) differ? Does an ontology model help one kind more than the other, and what does each kind pay per success?
 
 ## Challenges
 
