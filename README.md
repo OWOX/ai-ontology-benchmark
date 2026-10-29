@@ -28,14 +28,11 @@ The answers matter to anyone who builds on AI models. They show whether writing 
 2. For each AI model, setup, puzzle, and scramble depth, the hallucination rate, success rate, mismatch detection rate, and false mismatch rate, each with its denominator n and a 95% Wilson score interval.
 3. Tokens per attempt and cost per success for each AI model and setup, split into system-1 and system-2 models.
 4. Code under Apache 2.0, and data and results under CC BY 4.0.
-
-Hypotheses the design can confirm or reject:
-
-1. Listing the legal moves cuts impossible moves the most, because the AI model no longer has to recall the notation.
-2. Explaining the rules raises the success rate more than listing the moves does.
-3. The gain from an ontology model shrinks as scramble depth and cube size grow.
-4. Without an ontology model, AI models rarely notice a colouring the puzzle can't have.
-5. An ontology model helps system-1 models more than system-2 models, so a system-1 model with the rules can reach a lower cost per success than a system-2 model without them.
+5. Listing the legal moves cuts impossible moves the most, because the AI model no longer has to recall the notation.
+6. Explaining the rules raises the success rate more than listing the moves does.
+7. The gain from an ontology model shrinks as scramble depth and cube size grow.
+8. Without an ontology model, AI models rarely notice a colouring the puzzle can't have.
+9. An ontology model helps system-1 models more than system-2 models, so a system-1 model with the rules can reach a lower cost per success than a system-2 model without them.
 
 ## Side questions
 
