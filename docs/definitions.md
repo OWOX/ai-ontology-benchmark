@@ -58,13 +58,15 @@ Every term below means the same thing in code, configs, records, reports, and do
 ## Setups
 
 1. **AI model.** The language model being tested. Which ones are tested comes from config.
-2. **Ontology model.** The rules of the system the AI model works in. For a puzzle, that means its pieces, its legal moves, and what each move does.
-3. **Setup.** How the ontology model goes into the prompt. There are three setups, and every input goes through all three.
-4. **No model.** The setup where the prompt asks the AI model to solve the puzzle and gives no rules.
-5. **Descriptive model.** The setup where the prompt explains the rules: what the puzzle is, how its moves work, and what the notation means. The AI model chooses moves on its own.
-6. **Prescriptive model.** The setup where the prompt lists the puzzle's move group, exactly as `legal_moves()` returns it, and the AI model must pick every move from that list. Only the prompt states the list. The output schema doesn't enforce it, so a move off the list is still possible, and it is an impossible move.
-7. **Prompt.** The full text sent to the AI model for one attempt. It contains the rendered state and never the scramble, because reversing the scramble solves the puzzle. It is the same for every AI model under the same setup and input.
-8. **Prompt version.** The version of the prompt text for one setup and puzzle in a release: the first 12 hex characters of one sha256 over every prompt built for that setup and puzzle, in input order. A change to the template, to `render()`, or to `legal_moves()` gives a new version.
+2. **System-1 model.** An AI model that answers directly, without a separate reasoning step before the answer.
+3. **System-2 model.** An AI model trained to reason in tokens before it answers. It stays a system-2 model when an experiment runs it with reasoning switched off. Which kind an AI model is comes from the `kind` field of its entry in config.
+4. **Ontology model.** The rules of the system the AI model works in. For a puzzle, that means its pieces, its legal moves, and what each move does.
+5. **Setup.** How the ontology model goes into the prompt. There are three setups, and every input goes through all three.
+6. **No model.** The setup where the prompt asks the AI model to solve the puzzle and gives no rules.
+7. **Descriptive model.** The setup where the prompt explains the rules: what the puzzle is, how its moves work, and what the notation means. The AI model chooses moves on its own.
+8. **Prescriptive model.** The setup where the prompt lists the puzzle's move group, exactly as `legal_moves()` returns it, and the AI model must pick every move from that list. Only the prompt states the list. The output schema doesn't enforce it, so a move off the list is still possible, and it is an impossible move.
+9. **Prompt.** The full text sent to the AI model for one attempt. It contains the rendered state and never the scramble, because reversing the scramble solves the puzzle. It is the same for every AI model under the same setup and input.
+10. **Prompt version.** The version of the prompt text for one setup and puzzle in a release: the first 12 hex characters of one sha256 over every prompt built for that setup and puzzle, in input order. A change to the template, to `render()`, or to `legal_moves()` gives a new version.
 
 ## Attempts and outcomes
 

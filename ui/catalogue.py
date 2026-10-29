@@ -29,7 +29,8 @@ def build_providers(catalogue: dict[str, dict], prices: dict, experiments: list[
         for e in (e for e in catalogue.values() if e["provider"] == name):
             price = prices.get(e["name"])
             ok = isinstance(price, dict) and {"price_input_per_mtok", "price_output_per_mtok"} <= set(price)
-            models.append({"name": e["name"], "api_model_id": e["api_model_id"], "params": e.get("params", {}),
+            models.append({"name": e["name"], "api_model_id": e["api_model_id"], "kind": e.get("kind"),
+                           "params": e.get("params", {}),
                            "price": {"input_per_mtok": price["price_input_per_mtok"],
                                      "output_per_mtok": price["price_output_per_mtok"]} if ok else None,
                            "disabled_reason": None if ok else NO_PRICE,

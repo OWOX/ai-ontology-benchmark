@@ -21,7 +21,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
    3. The assessment hash.
    4. Links to `inputs.jsonl` and the `prompts/` folder in the release.
 3. **Experiment.** Linked to `experiment.toml`.
-   1. A table of AI models with name, provider, API model id, every served model id seen in the raw records, and `params`, or "provider defaults" when there are none.
+   1. A table of AI models with name, provider, API model id, kind (or "not set" when the config has none), every served model id seen in the raw records, and `params`, or "provider defaults" when there are none.
    2. When the config has `puzzles`, the line `Puzzles: 2x2, 3x3` with the names in config order. Without `puzzles`, the line is absent and the report is unchanged.
    3. Attempts, retry cap, and maximum output tokens.
    4. First and last `created_at` across raw records.
@@ -46,6 +46,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 5. No summary table mixes valid and invalid inputs.
 6. A changed outcome shows as `stored → current`.
 7. The `Puzzles:` line appears only when the config sets `puzzles`.
+8. The Kind column shows the config's `kind`, and "not set" for a model with none.
 
 ## Risk
 

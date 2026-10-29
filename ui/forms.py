@@ -54,6 +54,8 @@ def build_config(bundles: Bundles, form: dict, env: dict) -> dict:
         if entry["disabled_reason"]:
             raise ApiError(400, f"field 'models' has {name!r}, which is disabled: {entry['disabled_reason']}")
         model = {"name": name, "provider": entry["provider"], "api_model_id": entry["api_model_id"]}
+        if entry.get("kind"):
+            model["kind"] = entry["kind"]
         if entry["params"]:
             model["params"] = entry["params"]
         models.append(model)
@@ -78,15 +80,20 @@ def config_text(bundles: Bundles, form: dict, env: dict) -> str:
 
 
 def _same(bundles: Bundles, existing: dict, new: dict, budget: bool) -> bool:
-    """Equal configs; a missing `puzzles` counts as every puzzle of the release, and `budget` is compared only if asked."""
+    """Equal configs; a missing `puzzles` counts as every puzzle of the release, `budget` is compared only if asked,
+    and a model's `kind` is ignored when the saved entry has none (it predates the field)."""
     existing = {**existing, "puzzles": existing.get("puzzles") or bundles.release_puzzles(existing["release"])}
     skip = () if budget else ("budget",)
+    unkinded = {m.get("name") for m in existing.get("models", []) if isinstance(m, dict) and "kind" not in m}
     def canon(config: dict) -> dict:
         out = {k: v for k, v in config.items() if k not in skip}
         if isinstance(out.get("puzzles"), list):
             out["puzzles"] = sorted(out["puzzles"])
         if isinstance(out.get("models"), list):
             out["models"] = sorted(out["models"], key=lambda m: str(m.get("name")) if isinstance(m, dict) else str(m))
+        if isinstance(out.get("models"), list) and config is new:
+            out["models"] = [{k: v for k, v in m.items() if k != "kind"} if isinstance(m, dict) and m.get("name") in unkinded
+                             else m for m in out["models"]]
         return out
     return canon(existing) == canon(new)
 

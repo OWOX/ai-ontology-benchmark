@@ -34,6 +34,7 @@ from ui.tomlw import dumps_config
 
 MODELS = (
     '[[models]]\nname = "example-model"\nprovider = "fake"\napi_model_id = "ex-1"\n'
+    'kind = "system-2"\n'
     "params = { temperature = 1.0 }\n"
     '[[models]]\nname = "cloud-model"\nprovider = "anthropic"\napi_model_id = "cl-1"\n'
     '[[models]]\nname = "unpriced"\nprovider = "fake"\napi_model_id = "up-1"\n'
@@ -43,7 +44,7 @@ PRICES = ("[example-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 
 BUDGET = {"per_request_usd": 0.5, "per_model_usd": 5.0, "per_experiment_usd": 10.0}
 CONFIG = {"release": "1.0.0", "puzzles": ["2x2"], "attempts": 1, "retry_cap": 1, "max_output_tokens": 100,
           "models": [{"name": "example-model", "provider": "fake", "api_model_id": "ex-1",
-                      "params": {"temperature": 1.0}}], "budget": BUDGET}
+                      "kind": "system-2", "params": {"temperature": 1.0}}], "budget": BUDGET}
 FORM = {"id": "t1", "release": "1.0.0", "puzzles": ["2x2"], "models": ["example-model"],
         "attempts": 1, "retry_cap": 1, "max_output_tokens": 100, "budget": BUDGET}
 
@@ -1022,3 +1023,18 @@ def test_same_ignores_order():
     new = {"release": "1.0.0", "puzzles": ["2x2", "3x3"], "models": [m1, m2], "attempts": 1}
     assert _same(B(), old, new, True)
     assert not _same(B(), old, dict(new, puzzles=["2x2"]), True)
+
+
+def test_saved_config_without_kind_still_resumes_and_takes_a_new_budget(server):
+    old = dict(CONFIG, models=[{k: v for k, v in CONFIG["models"][0].items() if k != "kind"}])
+    saved = dumps_config(old)
+    assert "kind" not in saved
+    put_branch(server.root, "t1", {"results/t1/experiment.toml": saved})
+    results = server.root / "results" / "t1"
+    results.mkdir(parents=True)
+    (results / "experiment.toml").write_text(saved, encoding="utf-8")
+    assert call(server, "POST", "/api/run", FORM)[1]["status"] == "unchanged"
+    wait_job(server, "run:example-model")
+    raised = dict(FORM, budget=dict(BUDGET, per_model_usd=9.0))
+    assert call(server, "POST", "/api/run", raised)[1]["status"] == "budget_updated"
+    wait_job(server, "run:example-model")

@@ -11,6 +11,7 @@ from pathlib import Path
 from src.puzzles.registry import ENGINES
 
 PROVIDERS = ("anthropic", "openai", "google", "fake")
+KINDS = ("system-1", "system-2")
 # Settings that `models` and the run script set themselves.
 FORBIDDEN_PARAMS = {
     "model", "model_id", "api_model_id", "prompt", "messages", "system", "input",
@@ -102,6 +103,8 @@ def _check_model(path: object, model: object, index: int, seen: set[str]) -> Non
     if provider not in PROVIDERS:
         _fail(path, where + "provider", f"must be one of {', '.join(PROVIDERS)}")
     _get(path, model, "api_model_id", str, where)
+    if "kind" in model and _get(path, model, "kind", str, where) not in KINDS:
+        _fail(path, where + "kind", f"must be one of {', '.join(KINDS)}")
     if "params" in model:
         params = _get(path, model, "params", dict, where)
         for key in params:

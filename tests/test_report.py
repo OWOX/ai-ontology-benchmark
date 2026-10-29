@@ -21,7 +21,7 @@ PROMPT_MARKER = "SECRET-PROMPT-TEXT"
 CONFIG = {
     "release": "1.0.0", "attempts": 2, "retry_cap": 1, "max_output_tokens": 100,
     "budget": {"per_request_usd": 0.5, "per_model_usd": 5.0, "per_experiment_usd": 10.0},
-    "models": [{"name": "M", "provider": "fake", "api_model_id": "m-1", "params": {"temperature": 0.5}}],
+    "models": [{"name": "M", "provider": "fake", "api_model_id": "m-1", "kind": "system-2", "params": {"temperature": 0.5}}],
 }
 PRICES = {"M": {"price_input_per_mtok": 1000.0, "price_output_per_mtok": 2000.0}}
 
@@ -121,3 +121,15 @@ def test_puzzles_line_only_when_the_config_sets_it(tree, monkeypatch):
     assert "Puzzles:" not in build(tree)
     monkeypatch.setitem(CONFIG, "puzzles", ["2x2", "3x3"])
     assert "\nPuzzles: 2x2, 3x3\n" in build(tree)
+
+
+def test_kind_column_shows_the_config_value_or_not_set(tree):
+    assert "| M | fake | m-1 | system-2 | m-1 | temperature=0.5 |" in build(tree)
+    model = {k: v for k, v in CONFIG["models"][0].items() if k != "kind"}
+    root, _ = tree
+    release, path = root / "releases" / "1.0.0", root / "results" / "exp" / "1.0.0.md"
+    rows = compute(records(), release, PRICES, ["M"])
+    write_report(path, "exp", dict(CONFIG, models=[model]), release, PRICES, *rows, torn_lines=0)
+    text = path.read_text(encoding="utf-8")
+    assert "| AI model | Provider | API model id | Kind | Served model ids | Params |" in text
+    assert "| M | fake | m-1 | not set | m-1 | temperature=0.5 |" in text

@@ -12,9 +12,9 @@ Inputs: [inputs.jsonl](../../releases/1.0.0/inputs.jsonl). Prompts: [prompts/](.
 
 Config: [experiment.toml](experiment.toml)
 
-| AI model | Provider | API model id | Served model ids | Params |
-|---|---|---|---|---|
-| M | fake | m-1 | m-1 | temperature=0.5 |
+| AI model | Provider | API model id | Kind | Served model ids | Params |
+|---|---|---|---|---|---|
+| M | fake | m-1 | system-2 | m-1 | temperature=0.5 |
 
 Attempts per input, model and setup: 2. Retry cap: 1. Maximum output tokens: 100.
 

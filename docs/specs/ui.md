@@ -44,8 +44,11 @@ Every path below is read from a git ref, never from the work tree, except the AP
    name = "example-model"
    provider = "fake"
    api_model_id = "example-model-2026-01-01"
+   kind = "system-2"
    params = { temperature = 1.0 }
    ```
+
+   `kind` is `system-1` or `system-2` (see [definitions](../definitions.md#setups)). The UI copies it into the experiment config when the catalogue entry has one.
 
 4. Token prices, `config/prices.toml` on `main`. A catalogue model with no price there is shown disabled with the reason "no price in config/prices.toml".
 5. Puzzle descriptions, `docs/puzzles/<puzzle>.md` on `main`. The page shows the first paragraph after the title. A missing file shows "no description on main" and no link.
@@ -68,7 +71,7 @@ Every path below is read from a git ref, never from the work tree, except the AP
  "defaults": {"attempts": 3, "retry_cap": 3, "max_output_tokens": 4096,
               "budget": {"per_request_usd": 0.5, "per_model_usd": 5.0, "per_experiment_usd": 10.0}},
  "providers": [{"name": "anthropic", "variable": "ANTHROPIC_API_KEY", "key": {"source": "file", "tail": "ab12"},
-                "models": [{"name": "claude-opus-5-5", "api_model_id": "claude-opus-5-5", "params": {},
+                "models": [{"name": "claude-opus-5-5", "api_model_id": "claude-opus-5-5", "kind": "system-2", "params": {},
                             "price": {"input_per_mtok": 5.0, "output_per_mtok": 25.0}, "disabled_reason": null,
                             "experiments": ["<id>"]}]}],
  "puzzles": [{"name": "2x2", "n": 2, "input_count": 60, "depths": [1, 3, 5], "valid": 40, "invalid": 20,
@@ -92,7 +95,7 @@ Every path below is read from a git ref, never from the work tree, except the AP
 3. `experiments` has three rows per experiment, AI model, and puzzle, one for each `validity` scope: `all`, `valid`, and `invalid`, for the experiments whose release is the bundle's release or one of its mirrors. Rates leave out `infrastructure_failure` attempts, as [definitions.md](../definitions.md#metrics) says, and are `null` with an empty denominator. `total_tokens` is input, output, retry input, and retry output tokens summed. `cost_usd` uses the prices in `results/<id>/prices.toml` on the branch when there is one, else `config/prices.toml` on `main`.
    1. When the branch has `results/<id>/<version>.metrics.csv` for the newest such version, the row's rates are pooled from its rows for that AI model, puzzle, and scope (each rate's numerator over its `_n`), and `metrics_source` is `report`.
    2. Otherwise the server computes them from the raw records with `src.evaluate.metrics.compute` under the experiment's release, for display only, and `metrics_source` is `computed`. Nothing is stored.
-   3. `differs_from_catalogue` is true when the experiment's entry for the AI model differs from the catalogue entry with the same name in `api_model_id`, `provider`, or `params`, or the catalogue has no such name.
+   3. `differs_from_catalogue` is true when the experiment's entry for the AI model differs from the catalogue entry with the same name in `api_model_id`, `provider`, or `params`, or the catalogue has no such name. `kind` is not compared, because experiments committed before the field existed have none.
    4. A branch whose config does not parse, or whose raw file has a record that lacks a required field, gives one row with `error` set to the message and every metric `null`. The other rows still build. Torn lines are skipped and counted, as in `evaluate`.
 4. The server keeps built bundles in memory only, keyed by the release and the shas of `main` and of every `results/*` ref it read. The same shas return the same object. A moved ref rebuilds the bundle. Nothing is written to disk. The key status in `providers` and the disabled reasons that depend on it are not cached: they are filled in on every request, so saving a key shows at once.
 5. A build is synchronous: the request waits until it is done.
@@ -115,12 +118,12 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
 
    ```json
    {"id": "...", "release": "1.1.1", "config": {"...": "the form shape of item 5"},
-    "model_entries": [{"name": "...", "provider": "...", "api_model_id": "...", "params": {}}], "pushed": true, "running": false,
+    "model_entries": [{"name": "...", "provider": "...", "api_model_id": "...", "kind": "system-2", "params": {}}], "pushed": true, "running": false,
     "branch": "<url>", "metrics_source": "report", "local_results": true, "local_report": true, "report": {"version": "1.1.1", "markdown": "...", "source": "<url>"},
     "metric_rows": [], "summary_rows": [], "served_models": {"<model>": ["..."]}, "error": null}
    ```
 
-   `metric_rows` and `summary_rows` are the columns of [evaluate](evaluate.md#outputs): from the newest report CSV on the branch when there is one (`summary_rows` then pooled from it by AI model, setup, and validity), else from `src.evaluate.metrics.compute`, with `metrics_source` `computed`. `report` is `null` when the branch has none. `model_entries` are the config's AI models with the `api_model_id` and `params` the experiment used, which the form leaves out. `local_results` is true when `results/<id>/experiment.toml` is in the work tree, one of two work-tree reads here (like API 12). `local_report` is true when `results/<id>/<config release>.md` is in the work tree (the report Commit requires), where `evaluate` writes it before it is committed (like API 13's age check). An unknown id gives 404.
+   `metric_rows` and `summary_rows` are the columns of [evaluate](evaluate.md#outputs): from the newest report CSV on the branch when there is one (`summary_rows` then pooled from it by AI model, setup, and validity), else from `src.evaluate.metrics.compute`, with `metrics_source` `computed`. `report` is `null` when the branch has none. `model_entries` are the config's AI models with the `api_model_id`, `kind`, and `params` the experiment used (`kind` is `null` when the config has none), which the form leaves out. `local_results` is true when `results/<id>/experiment.toml` is in the work tree, one of two work-tree reads here (like API 12). `local_report` is true when `results/<id>/<config release>.md` is in the work tree (the report Commit requires), where `evaluate` writes it before it is committed (like API 13's age check). An unknown id gives 404.
 3. `GET /api/inputs?release=<version>&puzzle=<name>` returns the release's inputs of that puzzle, in release order: `[{"input_id", "scramble_depth", "validity", "state", "scramble", "source_input_id", "corruption"}]`. An unknown release or puzzle gives 400 naming the field.
 4. `GET /api/branches` returns every experiment branch, `[{"id", "release", "local": true, "remote": true}]`, sorted by id, for the New Experiment branch select. An id is listed when `results/<id>/experiment.toml` is on its local or remote branch.
 5. `GET /api/experiment/<id>/config` returns the config on the experiment's branch (the local one first, else the remote one) as the form below, or 404. A config without `puzzles` returns every puzzle of its release.
@@ -139,7 +142,7 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
 8. Items 6 and 7 build the experiment config from the form as TOML text with `ui/tomlw.py`, with `puzzles` always written, check it with `parse_experiment_config`, and pass it on each job's stdin. Nothing is written to disk. Before a job starts:
    1. For Run, checked first: a run job of the id alive gives 409, "a job of experiment <id> is running; stop it first", and so does a live evaluate job. Estimate and dry-run only read, so they refuse just while the same job of the id runs (API 22).
    2. No branch for the id: the experiment is new. Status `created`.
-   3. A branch holds a config equal to the new one: status `unchanged`, and the run resumes. A missing `puzzles` counts as every puzzle of its release.
+   3. A branch holds a config equal to the new one: status `unchanged`, and the run resumes. A model's `kind` is ignored when the saved entry for it has none, because experiments saved before the field existed have none. A missing `puzzles` counts as every puzzle of its release.
    4. A branch holds a config that differs only in `[budget]`: status `budget_updated`, and `run` replaces its copy.
    5. Any other difference: 409, "experiment <id> exists with a different config; load it or pick a new id".
    6. A branch exists but `results/<id>/experiment.toml` is missing from the work tree: 409, "the results of <id> are not in this checkout; check out its branch first". `run` appends to the raw files in the work tree, so resuming without them would run attempts the branch already holds. This check, like item 12's, reads the work tree.
@@ -242,7 +245,7 @@ One block per provider, in bundle order.
 
 1. The header is the provider name, with ⚠️ and "no API key" when the key is `missing` (never for `fake`).
 2. The key row: with no key, a password field and Save. With a key saved in a file, `Key …abcd from secrets/anthropic.json`, with Edit and Clear (after `confirm()`). Edit shows the password field, Save, and Cancel. With a key from an env var, `Set by env var ANTHROPIC_API_KEY`, with no controls. Save and Clear reload the bundle. The field is cleared after Save and Cancel, and a key is never shown. A note says "Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed."
-3. One row per model: the name, `api_model_id`, the prices per million tokens, the disabled reason if any, and "N experiments", which links to `#/experiments?model=<name>`. A model with no key shows ⚠️.
+3. One row per model: the name, `api_model_id`, its `kind` or "kind not set", the prices per million tokens, the disabled reason if any, and "N experiments", which links to `#/experiments?model=<name>`. A model with no key shows ⚠️.
 4. The block ends with a source link to `config/models.toml`.
 
 ### Puzzles
@@ -358,3 +361,4 @@ Cube 3D view: `cubeIso(state, n, highlightFace)` draws the U face on top, F fron
 24. Outcome colours and the in-progress inference are in the page scripts and are not tested here. The colour table is one object, in one file.
 25. The page scripts pass `node --check`. A node script, `tests/js/markdown.test.mjs`, run by a pytest test when `node` is found and skipped otherwise, checks that `markdown.js` escapes `<script>` and HTML attributes, drops `javascript:` links, and renders a table, a numbered list, and a link.
 26. The cube drawing is checked by hand with `node --check` on both scripts and a throwaway node script that loads `cube.js`, draws scrambled states from a release, and compares every sticker of `cubeIso` with `cubeNet`, and the edges where U, F, and R meet.
+27. `kind`: the catalogue and `model_entries` carry it (`null` when unset), the form copies it from the catalogue into the experiment config, and `differs_from_catalogue` ignores it.
