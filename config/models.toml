@@ -1,5 +1,6 @@
 # Model catalogue for the UI (python -m ui.server). Each entry has the same shape as a
 # [[models]] entry in an experiment config, and the UI copies it unchanged.
+# kind is system-1 or system-2, see docs/definitions.md#setups.
 # Every model needs a row in config/prices.toml, or the UI shows it disabled.
 # params is empty: since 2026-10-21 Anthropic rejects temperature, top_p, and top_k, and the
 # reasoning models of the other providers fix their own sampling.
@@ -8,58 +9,68 @@
 name = "example-model"
 provider = "fake"
 api_model_id = "example-model-2026-01-01"
+kind = "system-2"
 params = { temperature = 1.0 }
 
 [[models]]
 name = "claude-opus-5-5"
 provider = "anthropic"
 api_model_id = "claude-opus-5-5"
+kind = "system-2"
 params = {}
 
 [[models]]
 name = "claude-sonnet-5-5"
 provider = "anthropic"
 api_model_id = "claude-sonnet-5-5"
+kind = "system-2"
 params = {}
 
 [[models]]
 name = "claude-haiku-5-5"
 provider = "anthropic"
 api_model_id = "claude-haiku-5-5"
+kind = "system-2"
 params = {}
 
 [[models]]
 name = "gpt-6-astra"
 provider = "openai"
 api_model_id = "gpt-6-astra"
+kind = "system-2"
 params = {}
 
 [[models]]
 name = "gpt-6.1-sol"
 provider = "openai"
 api_model_id = "gpt-6.1-sol"
+kind = "system-2"
 params = {}
 
 [[models]]
 name = "gpt-6-luna"
 provider = "openai"
 api_model_id = "gpt-6-luna"
+kind = "system-2"
 params = {}
 
 [[models]]
 name = "gemini-4-argon"
 provider = "google"
 api_model_id = "gemini-4-argon"
+kind = "system-2"
 params = {}
 
 [[models]]
 name = "gemini-3.8-flash"
 provider = "google"
 api_model_id = "gemini-3.8-flash"
+kind = "system-2"
 params = {}
 
 [[models]]
 name = "gemini-3.5-flash-lite"
 provider = "google"
 api_model_id = "gemini-3.5-flash-lite"
+kind = "system-2"
 params = {}
