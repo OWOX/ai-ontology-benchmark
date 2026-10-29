@@ -41,6 +41,7 @@
     return h("div", { class: "model" + (m.disabled_reason ? " off" : "") },
       noKey ? h("span", { title: "no API key", text: "⚠️" }) : null,
       h("strong", { text: m.name }), h("code", { text: m.api_model_id }),
+      h("span", { class: "muted small", text: m.kind || "kind not set" }),
       h("span", { class: "muted small", text: price }),
       m.disabled_reason ? h("span", { class: "reason", text: m.disabled_reason }) : null, link);
   }

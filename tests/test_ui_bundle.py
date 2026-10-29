@@ -368,6 +368,24 @@ def test_model_matching(ui_repo, samples):
     assert differs == {"e": True, "g": False}
 
 
+def test_kind_shown_but_ignored_by_differs_from_catalogue(ui_repo, samples):
+    _, _, records = samples
+    # the catalogue says system-2; one experiment says system-1, another has no kind at all
+    other = {"results/k/experiment.toml": EXP_TOML + 'kind = "system-1"\nparams = { temperature = 1.0 }\n',
+             "results/k/raw/example-model.jsonl": jsonl(records)}
+    push_results(ui_repo, "k", other)
+    plain = {"results/p/experiment.toml": EXP_TOML + "params = { temperature = 1.0 }\n", "results/p/raw/example-model.jsonl": jsonl(records)}
+    push_results(ui_repo, "p", plain)
+    bundles = make_bundles(ui_repo)
+    bundle = bundles.get(None, True, set(), {}, set())
+    kinds = {m["name"]: m["kind"] for p in bundle["providers"] for m in p["models"]}
+    assert kinds == {"example-model": "system-2", "cloud-model": None, "unpriced": None}
+    differs = {r["id"]: r["differs_from_catalogue"] for r in bundle["experiments"]}
+    assert differs == {"k": False, "p": False}
+    assert bundles.experiment("k", set(), set())["model_entries"][0]["kind"] == "system-1"
+    assert bundles.experiment("p", set(), set())["model_entries"][0]["kind"] is None
+
+
 def test_impossible_seen(ui_repo, samples):
     valid, _, _ = samples
     reply = '{"moves": ["u", "x", "u"], "mismatch": false}'
@@ -440,7 +458,7 @@ def test_detail_inputs_branches(ui_repo, samples):
     assert detail["served_models"] == {"example-model": ["served-1"]}
     assert detail["local_results"] is False
     assert [m["name"] for m in detail["model_entries"]] == ["example-model"]
-    assert set(detail["model_entries"][0]) == {"name", "provider", "api_model_id", "params"}
+    assert set(detail["model_entries"][0]) == {"name", "provider", "api_model_id", "kind", "params"}
     (ui_repo / "results" / "e").mkdir(parents=True)
     (ui_repo / "results" / "e" / "experiment.toml").write_text("x", encoding="utf-8")
     assert bundles.experiment("e", set(), set())["local_results"] is True

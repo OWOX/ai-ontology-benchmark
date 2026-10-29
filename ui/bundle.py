@@ -174,7 +174,7 @@ class Bundles(BranchReaders):
                   for m, found in exp["records"].items()}
         return {"id": experiment_id, "release": config["release"] if config else None,
                 "config": config_form(config, puzzles) if config else None,
-                "model_entries": [{f: m.get(f) for f in ("name", "provider", "api_model_id", "params")}
+                "model_entries": [{f: m.get(f) for f in ("name", "provider", "api_model_id", "kind", "params")}
                                   for m in config["models"]] if config else [],
                 "pushed": self._pushed(experiment_id, exp["sha"]), "running": experiment_id in running,
                 "branch": f"{base}/tree/{exp['sha']}/results/{experiment_id}" if base and exp["sha"] else None,

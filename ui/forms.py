@@ -54,6 +54,8 @@ def build_config(bundles: Bundles, form: dict, env: dict) -> dict:
         if entry["disabled_reason"]:
             raise ApiError(400, f"field 'models' has {name!r}, which is disabled: {entry['disabled_reason']}")
         model = {"name": name, "provider": entry["provider"], "api_model_id": entry["api_model_id"]}
+        if entry.get("kind"):
+            model["kind"] = entry["kind"]
         if entry["params"]:
             model["params"] = entry["params"]
         models.append(model)

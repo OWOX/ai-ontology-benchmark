@@ -34,6 +34,7 @@ from ui.tomlw import dumps_config
 
 MODELS = (
     '[[models]]\nname = "example-model"\nprovider = "fake"\napi_model_id = "ex-1"\n'
+    'kind = "system-2"\n'
     "params = { temperature = 1.0 }\n"
     '[[models]]\nname = "cloud-model"\nprovider = "anthropic"\napi_model_id = "cl-1"\n'
     '[[models]]\nname = "unpriced"\nprovider = "fake"\napi_model_id = "up-1"\n'
@@ -43,7 +44,7 @@ PRICES = ("[example-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 
 BUDGET = {"per_request_usd": 0.5, "per_model_usd": 5.0, "per_experiment_usd": 10.0}
 CONFIG = {"release": "1.0.0", "puzzles": ["2x2"], "attempts": 1, "retry_cap": 1, "max_output_tokens": 100,
           "models": [{"name": "example-model", "provider": "fake", "api_model_id": "ex-1",
-                      "params": {"temperature": 1.0}}], "budget": BUDGET}
+                      "kind": "system-2", "params": {"temperature": 1.0}}], "budget": BUDGET}
 FORM = {"id": "t1", "release": "1.0.0", "puzzles": ["2x2"], "models": ["example-model"],
         "attempts": 1, "retry_cap": 1, "max_output_tokens": 100, "budget": BUDGET}
 
