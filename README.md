@@ -2,11 +2,11 @@
 
 ## Abstract
 
-This study measures how an [ontology model](docs/definitions.md#setups), meaning the rules of a system given in the prompt, changes how often AI models hallucinate. The systems are [twisty puzzles](docs/definitions.md#puzzles): 2x2, 3x3, and 5x5 cubes, an octahedral puzzle, and a tetrahedral puzzle. Every AI model gets the same frozen puzzle states under three [setups](docs/definitions.md#setups). The first gives no rules, the second explains the rules, and the third lists every legal move. A hallucination is one countable event, a move that doesn't exist on the puzzle. Some inputs show a colouring that the puzzle can't have, to test whether the AI model notices that the task is impossible.
+AI models make things up. They cite court cases that never happened and call library functions nobody wrote. A common remedy is to give the AI model the rules of the world it works in, an [ontology model](docs/definitions.md#setups). Does that remedy work, and what does it cost? Few studies can say, because judging a hallucination usually means a person or another AI model deciding what is true.
 
-The approach is close to physics-informed neural networks, which give a network known physical laws instead of leaving it to learn them from data. Here an AI model gets the rules of the puzzle in its prompt, and the same rules, run as code, judge its answer.
+This study measures it where the truth isn't in question. In a twisty puzzle, a move either exists or it doesn't, and a state can either be solved or it can't. A deterministic ontology model judges every answer, so a hallucination means a broken rule of the system. It never depends on what the authors, a human rater, or another AI model consider right or wrong, and anyone can rerun the scoring and get the same counts.
 
-What makes the study unique is that a deterministic ontology model judges every answer. Each puzzle's engine defines its legal moves and reachable states, and a script checks every answer against them. A hallucination means a broken rule of the system. It never depends on what the authors, a human rater, or another AI model consider right or wrong, so anyone can rerun the scoring and get the same counts.
+The answers matter to anyone who builds on AI models. They show whether writing the rules into the prompt is worth its tokens, and whether a cheaper AI model with the rules can beat a costlier one without them.
 
 1. Does an ontology model in the prompt lower the [hallucination rate](docs/definitions.md#metrics)?
 2. Does it raise the [success rate](docs/definitions.md#metrics)?
