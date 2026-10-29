@@ -59,7 +59,7 @@ Every term below means the same thing in code, configs, records, reports, and do
 
 1. **AI model.** The language model being tested. Which ones are tested comes from config.
 2. **System-1 model.** An AI model that answers directly, without a separate reasoning step before the answer.
-3. **System-2 model.** An AI model that reasons in tokens before it answers, such as a model with extended thinking. Which kind an AI model is comes from the `kind` field of its entry in config.
+3. **System-2 model.** An AI model trained to reason in tokens before it answers. It stays a system-2 model when an experiment runs it with reasoning switched off. Which kind an AI model is comes from the `kind` field of its entry in config.
 4. **Ontology model.** The rules of the system the AI model works in. For a puzzle, that means its pieces, its legal moves, and what each move does.
 5. **Setup.** How the ontology model goes into the prompt. There are three setups, and every input goes through all three.
 6. **No model.** The setup where the prompt asks the AI model to solve the puzzle and gives no rules.
