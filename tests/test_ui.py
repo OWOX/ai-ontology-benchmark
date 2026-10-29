@@ -1023,3 +1023,18 @@ def test_same_ignores_order():
     new = {"release": "1.0.0", "puzzles": ["2x2", "3x3"], "models": [m1, m2], "attempts": 1}
     assert _same(B(), old, new, True)
     assert not _same(B(), old, dict(new, puzzles=["2x2"]), True)
+
+
+def test_saved_config_without_kind_still_resumes_and_takes_a_new_budget(server):
+    old = dict(CONFIG, models=[{k: v for k, v in CONFIG["models"][0].items() if k != "kind"}])
+    saved = dumps_config(old)
+    assert "kind" not in saved
+    put_branch(server.root, "t1", {"results/t1/experiment.toml": saved})
+    results = server.root / "results" / "t1"
+    results.mkdir(parents=True)
+    (results / "experiment.toml").write_text(saved, encoding="utf-8")
+    assert call(server, "POST", "/api/run", FORM)[1]["status"] == "unchanged"
+    wait_job(server, "run:example-model")
+    raised = dict(FORM, budget=dict(BUDGET, per_model_usd=9.0))
+    assert call(server, "POST", "/api/run", raised)[1]["status"] == "budget_updated"
+    wait_job(server, "run:example-model")

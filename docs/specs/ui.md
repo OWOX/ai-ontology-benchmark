@@ -142,7 +142,7 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
 8. Items 6 and 7 build the experiment config from the form as TOML text with `ui/tomlw.py`, with `puzzles` always written, check it with `parse_experiment_config`, and pass it on each job's stdin. Nothing is written to disk. Before a job starts:
    1. For Run, checked first: a run job of the id alive gives 409, "a job of experiment <id> is running; stop it first", and so does a live evaluate job. Estimate and dry-run only read, so they refuse just while the same job of the id runs (API 22).
    2. No branch for the id: the experiment is new. Status `created`.
-   3. A branch holds a config equal to the new one: status `unchanged`, and the run resumes. A missing `puzzles` counts as every puzzle of its release.
+   3. A branch holds a config equal to the new one: status `unchanged`, and the run resumes. A model's `kind` is ignored when the saved entry for it has none, because experiments saved before the field existed have none. A missing `puzzles` counts as every puzzle of its release.
    4. A branch holds a config that differs only in `[budget]`: status `budget_updated`, and `run` replaces its copy.
    5. Any other difference: 409, "experiment <id> exists with a different config; load it or pick a new id".
    6. A branch exists but `results/<id>/experiment.toml` is missing from the work tree: 409, "the results of <id> are not in this checkout; check out its branch first". `run` appends to the raw files in the work tree, so resuming without them would run attempts the branch already holds. This check, like item 12's, reads the work tree.
