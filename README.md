@@ -2,11 +2,11 @@
 
 ## Abstract
 
-AI models make things up. They cite court cases that never happened and call library functions nobody wrote. A common remedy is to give the AI model the rules of the world it works in, an [ontology model](docs/definitions.md#setups). Does that remedy work, and what does it cost? Few studies can say, because judging a hallucination usually means a person or another AI model deciding what is true.
+Studies of hallucination in AI models usually score answers against a reference that a person or another AI model judges to be correct. The measured rate then carries the judge's bias and can't be reproduced exactly. A common mitigation is to give the AI model an explicit [ontology model](docs/definitions.md#setups) of its domain. Whether this reduces hallucination, and at what cost in tokens, is still open.
 
-This study measures it where the truth isn't in question. In a twisty puzzle, a move either exists or it doesn't, and a state can either be solved or it can't. A deterministic ontology model judges every answer, so a hallucination means a broken rule of the system. It never depends on what the authors, a human rater, or another AI model consider right or wrong, and anyone can rerun the scoring and get the same counts.
+This study tests the question in closed systems where correctness isn't a matter of judgement. In a twisty puzzle, a move either belongs to the move group or it doesn't, and a state is either reachable from the solved state or it isn't. A deterministic ontology model of each puzzle therefore defines hallucination as a broken rule of the system, independent of what the authors, a human rater, or another AI model consider right or wrong. Every count can be recomputed from the stored responses.
 
-The answers matter to anyone who builds on AI models. They show whether writing the rules into the prompt is worth its tokens, and whether a cheaper AI model with the rules can beat a costlier one without them.
+Twisty puzzles are close to the best case for this mitigation, because their rules are complete and every answer can be checked. If an ontology model in the prompt doesn't reduce hallucination here, there is little reason to expect it to do so in open domains, where neither condition holds. If it does, the size of the effect and its cost give a reference point for those domains.
 
 1. Does an ontology model in the prompt lower the [hallucination rate](docs/definitions.md#metrics)?
 2. Does it raise the [success rate](docs/definitions.md#metrics)?
