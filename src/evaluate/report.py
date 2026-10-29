@@ -95,12 +95,13 @@ def experiment_section(link, folder: Path, config: dict, prices: dict, rows: lis
     models = []
     for m in config["models"]:
         served_ids = ", ".join(sorted(served[m["name"]]))
-        models.append([m["name"], m["provider"], m["api_model_id"], served_ids, params_text(m)])
+        models.append([m["name"], m["provider"], m["api_model_id"], m.get("kind", "not set"), served_ids,
+                       params_text(m)])
     times = sorted(row["created_at"] for row in rows if row["created_at"])
     first, last = (times[0], times[-1]) if times else (NA, NA)
     config_link = link(folder / "experiment.toml")
     out = ["## Experiment", "", f"Config: [experiment.toml]({config_link})", ""]
-    out += table(["AI model", "Provider", "API model id", "Served model ids", "Params"], models)
+    out += table(["AI model", "Provider", "API model id", "Kind", "Served model ids", "Params"], models)
     if "puzzles" in config:
         out += [f"Puzzles: {', '.join(config['puzzles'])}", ""]
     out += [
