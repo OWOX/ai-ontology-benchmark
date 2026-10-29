@@ -31,6 +31,7 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
    name = "example-model"        # the AI model name written into raw records
    provider = "anthropic"        # anthropic | openai | google | fake
    api_model_id = "example-model-2026-01-01"
+   kind = "system-2"             # optional; system-1 | system-2
    params = { temperature = 1.0 } # optional, passed to the SDK call unchanged
 
    [budget]                       # optional, in USD; these values are the defaults
@@ -40,6 +41,8 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
    ```
 
    [Budgets](../definitions.md#baseline-and-prices) limit what the experiment can spend. `[budget]` and each of its fields are optional. A missing field takes the default shown. It is the only part of an experiment config that may change after the experiment starts, so a stopped run can resume with a higher budget.
+
+   `kind` says whether the AI model is a [system-1 or system-2 model](../definitions.md#setups). It is optional in an experiment config, because experiments committed before the field existed have none and must still evaluate.
 
    `params` pins every sampling setting the experiment uses, such as temperature or reasoning effort, in the provider's own parameter names. Anything left out takes the provider's default, and the report says so.
 
@@ -64,7 +67,7 @@ The checks:
 3. `valid_invalid_split` is between 0 and 1.
 4. Every puzzle is a name in the [registry](registry.md).
 5. `release` matches `MAJOR.MINOR.PATCH`.
-6. `models` has at least one entry, model names are unique, and `provider` is one of the four listed. `params` is a table, if present, and doesn't set any of these keys, which `models` and the run script set themselves: `model`, `model_id`, `api_model_id`, `prompt`, `messages`, `system`, `input`, `contents`, `max_tokens`, `max_output_tokens`, `max_completion_tokens`, `instructions`, `system_instruction`, `response_format`, `response_mime_type`, `response_schema`, `tools`, and `tool_choice`. That keeps the request the same shape for every AI model.
+6. `models` has at least one entry, model names are unique, and `provider` is one of the four listed. `params` is a table, if present, and doesn't set any of these keys, which `models` and the run script set themselves: `model`, `model_id`, `api_model_id`, `prompt`, `messages`, `system`, `input`, `contents`, `max_tokens`, `max_output_tokens`, `max_completion_tokens`, `instructions`, `system_instruction`, `response_format`, `response_mime_type`, `response_schema`, `tools`, and `tool_choice`. That keeps the request the same shape for every AI model. `kind`, if present, is a string and is `system-1` or `system-2`.
 7. Every budget is a number above 0. They aren't checked against each other, so setting only `per_experiment_usd = 2` is valid, and a model budget above the experiment budget never binds. `load_experiment_config` returns `budget` with every default filled in.
 8. `puzzles`, if present in an experiment config, is a non-empty list of unique strings, each a name in the [registry](registry.md). When it is absent, the experiment covers every puzzle in the release, and `load_experiment_config` leaves the key out of the dict it returns. [run](run.md) checks the names against the release.
 9. The experiment id contains only letters, digits, `-`, and `_`, because it becomes a folder name.
@@ -76,3 +79,4 @@ The checks:
 3. A config with no `[budget]` returns the three defaults. A config that sets only `per_experiment_usd = 25` returns 25 for it and the defaults for the other two.
 4. `parse_experiment_config` on the text of a valid file returns the same dict as `load_experiment_config` on that file, and its errors name `source`.
 5. In an experiment config, `puzzles` accepts a valid list, and raises `ValueError` naming `puzzles` for an empty list, a repeated name, a value that isn't a list of strings, and an unknown name. With no `puzzles`, the returned dict has no `puzzles` key.
+6. In an experiment config, a model with `kind` set to `system-1` or `system-2` loads, and a model with no `kind` loads. `kind` raises `ValueError` naming `kind` for any other string and for a value that isn't a string.

@@ -196,3 +196,19 @@ def test_parse_experiment_config_names_source():
         parse_experiment_config('release = "1.0.0"\n', "exp", "<stdin>")
     with pytest.raises(ValueError, match="<stdin>: not valid TOML"):
         parse_experiment_config("release = ", "exp", "<stdin>")
+
+
+@pytest.mark.parametrize("kind", ["system-1", "system-2"])
+def test_model_kind_is_kept(tmp_path, kind):
+    text = EXPERIMENT + f'kind = "{kind}"\n'
+    assert load_experiment_config(write(tmp_path, text, "e.toml"))["models"][0]["kind"] == kind
+
+
+def test_model_kind_is_optional(tmp_path):
+    assert "kind" not in load_experiment_config(write(tmp_path, EXPERIMENT, "e.toml"))["models"][0]
+
+
+@pytest.mark.parametrize("value", ['"system-3"', '"System-1"', '""', "1", "true"])
+def test_bad_model_kind(tmp_path, value):
+    with pytest.raises(ValueError, match="kind"):
+        load_experiment_config(write(tmp_path, EXPERIMENT + f"kind = {value}\n", "e.toml"))
