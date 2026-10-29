@@ -1,20 +1,42 @@
 # ai-ontology-hallucination-research
 
-## Key questions
+## Goals
 
-The study tests whether an [ontology model](docs/definitions.md#setups), meaning the rules of a twisty puzzle, given as input changes the [hallucination rate](docs/definitions.md#metrics) and [success rate](docs/definitions.md#metrics) of AI models. Puzzles are deterministic, so every answer can be checked by a script and nobody has to argue about it. The ontology model goes into the prompt under one of three [setups](docs/definitions.md#setups): no model, descriptive model, or prescriptive model.
+1. Measure how an ontology model affects the hallucination rate.
+2. Measure without bias and make the result easy to reproduce:
+   1. No person and no AI model grades the answers. A deterministic validator does.
+   2. Every AI model and every setup gets byte-identical, frozen inputs.
+   3. Anyone can rerun the scoring from the stored raw responses without calling an AI model again.
+3. Make the cost of accuracy measurable. How many tokens and how many dollars does each AI model and setup spend for one success? Which AI model gives answers without hallucinations at the lowest [cost per success](docs/definitions.md#metrics)? An ontology model makes the prompt longer, so it pays off only if it saves more than it adds.
 
-1. With an ontology model in the input, does an AI model solve the puzzle more often?
-2. Does it make up fewer moves that don't exist?
-3. Does a descriptive ontology model work differently from a prescriptive one?
-4. Does the AI model notice when the input describes a state that can't be reached by legal moves?
+## Approach
+
+The study uses [twisty puzzles](docs/definitions.md#puzzles): 2x2, 3x3, and 5x5 cubes, an octahedral puzzle, and a tetrahedral puzzle. A move turns one part of the puzzle and is written in the puzzle's standard notation, which AI models already know from their training data, for example `R`, `U'`, or `F2` on the 3x3 cube. Each puzzle has a fixed list of legal moves. An AI model gets a scrambled puzzle and returns the moves it thinks solve it.
+
+The AI model hallucinates when it returns a move that isn't on the puzzle's list of legal moves. A deterministic validator checks every returned move against that list by exact string match and counts each one that isn't there. Some inputs show a colouring that no sequence of legal moves can produce, and the validator also records whether the AI model flags them.
+
+Studies of hallucination in AI models usually score answers against a reference that a person or another AI model judges to be correct. The measured rate then carries the judge's bias and can't be reproduced exactly. One proposed remedy is to give the AI model an explicit [ontology model](docs/definitions.md#setups) of its domain, either in the prompt or through a knowledge graph ([related work](docs/related-work.md#ontologies-and-knowledge-graphs-against-hallucination)). Whether this reduces hallucination, and at what cost in tokens, is still open.
+
+This study tests the question in closed systems where correctness isn't a matter of judgement. A deterministic ontology model of each [twisty puzzle](docs/definitions.md#puzzles) defines hallucination as a broken rule of the system, independent of what the authors, a human rater, or another AI model consider right or wrong. Every count can be recomputed from the stored responses. Twisty puzzles are close to the best case for this remedy, because their rules are complete and every answer can be checked. If an ontology model in the prompt doesn't reduce hallucination here, there is little reason to expect it to do so in open domains, where neither condition holds. If it does, the size of the effect and its cost give a reference point for those domains.
+
+1. Does an ontology model in the prompt lower the [hallucination rate](docs/definitions.md#metrics)?
+2. Does it raise the [success rate](docs/definitions.md#metrics)?
+3. Does explaining the rules work differently from listing the legal moves?
+4. Does each AI model notice when the colouring it's given makes no sense, because it breaks the puzzle's rules and can't be solved, or does it try to solve it anyway?
+
+## Expected outcomes
+
+1. An open benchmark: versioned, read-only [releases](docs/definitions.md#releases-and-experiments) of the inputs, prompts, and scoring code.
+2. For each AI model, setup, puzzle, and scramble depth, the hallucination rate, success rate, mismatch detection rate, and false mismatch rate, each with its denominator n and a 95% Wilson score interval.
+3. Tokens per attempt and cost per success for each AI model and setup.
+4. Code under Apache 2.0, and data and results under CC BY 4.0.
 
 ## Side questions
 
-1. Token use and cost. How many input and output tokens, and how much latency, does each setup spend per attempt, and what does one success cost? An ontology model makes the prompt longer, so it pays off only if it saves more than it adds.
-2. Does the success rate fall as scramble depth grows, and does an ontology model slow that fall?
-3. Do the effects hold as the cubes get bigger, from 2x2 to 5x5? The octahedral and tetrahedral puzzles have no size series, so this question covers the cubes only.
-4. How consistent is an AI model across repeated attempts on the same input, and does an ontology model change that?
+1. Does the success rate fall as scramble depth grows, and does an ontology model slow that fall?
+2. Do the effects hold as the cubes get bigger, from 2x2 to 5x5? The octahedral and tetrahedral puzzles have no size series, so this question covers the cubes only.
+3. How consistent is an AI model across repeated attempts on the same input, and does an ontology model change that?
+4. Do [system-1 and system-2 models](docs/definitions.md#setups) differ? Does an ontology model help one kind more than the other, and what does each kind pay per success?
 
 ## Challenges
 
