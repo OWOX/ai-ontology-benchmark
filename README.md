@@ -3,7 +3,7 @@
 ## Goals
 
 1. Measure how an ontology model affects the hallucination rate.
-2. Measure without bias and make the result easy to reproduce.
+2. Make the measurement without bias and the result easily reproducible.
 3. Make the cost of accuracy measurable.
 
 ## Approach
