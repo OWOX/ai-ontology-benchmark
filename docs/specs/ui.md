@@ -249,7 +249,7 @@ One block per provider, in bundle order.
 
 1. The header is the provider name, with ⚠️ and "no API key" when the key is `missing` (never for `fake`).
 2. The key row: with no key, a password field and Save. With a key saved in a file, `Key …abcd from secrets/anthropic.json`, with Edit and Clear (after `confirm()`). Edit shows the password field, Save, and Cancel. With a key from an env var, `Set by env var ANTHROPIC_API_KEY`, with no controls. Save and Clear reload the bundle. The field is cleared after Save and Cancel, and a key is never shown. A note says "Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed."
-3. One row per model: the name, `api_model_id`, its `kind` or "kind not set", the prices per million tokens, the disabled reason if any, and "N experiments", which links to `#/experiments?model=<name>`. A model with no key shows ⚠️.
+3. One table per provider, with the same column widths in every table. The columns are Model (the name, with the disabled reason under it, left out when the key is missing because the header covers it), API model id, Kind ("not set" when empty), Input $/M tokens, Output $/M tokens ("n/a" without a price), and Experiments, the count as a link to `#/experiments?model=<name>`. A disabled model's row is muted.
 4. The block ends with a source link to `config/models.toml`.
 
 ### Puzzles

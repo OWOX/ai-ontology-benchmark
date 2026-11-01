@@ -145,6 +145,11 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
 .md code { font-family: var(--mono); font-size: 12px; }
 .source { font-size: 12px; margin-left: 6px; }
 .project h3 { margin: 0 0 6px; font-size: 14px; }
+.models-table { table-layout: fixed; width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
+.models-table th, .models-table td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.models-table th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.models-table .num { text-align: right; }
+.models-table tr.off { color: var(--muted); }
 .termbox { background: #12151b; border: 0; }
 .termbox > summary { color: #cfd6e0; background: #1b1f27; padding: 6px 10px; }
 .termbox .terminal { height: 240px; border-radius: 0; }
