@@ -123,6 +123,7 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
 .shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
 .menu { position: sticky; top: 0; height: 100vh; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
 .menu h1 { font-size: 14px; margin: 0; }
+.menu-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
 .release-pick { display: flex; gap: 6px; align-items: stretch; }
 .release-pick button { box-sizing: border-box; height: 30px; width: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .links { display: flex; flex-direction: column; gap: 2px; }

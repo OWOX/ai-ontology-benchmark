@@ -228,9 +228,9 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 
 ### Left menu
 
-1. A release select, newest first, defaulting to the newest, with a ↻ button beside it. Changing the release loads its bundle.
-2. A "New Experiment" button under the release select. It opens `#/new` for the chosen release.
-3. Models, Puzzles, Experiments, and About, with the current page highlighted. Models shows ⚠️ when any provider other than `fake` has no key.
+1. A "New Experiment" button under the menu title. It opens `#/new` for the chosen release.
+2. Models, Puzzles, Experiments, and About, with the current page highlighted. Models shows ⚠️ when any provider other than `fake` has no key.
+3. At the bottom of the menu, a release select, newest first, defaulting to the newest, with a ↻ button beside it. Changing the release loads its bundle.
 4. Beside the menu title, a status dot. Its colour shows the server: grey while connecting, green when the server answers, red when it doesn't, and amber when it answers but the last GitHub fetch failed. Its tooltip, which is also its accessible label, has two lines. The first is "Server: connecting", "Server: live", or "Server: not reachable, reconnecting". The second is "Fetched from GitHub <time>", "GitHub not reached, showing data from <time>: <error>", "GitHub not reached, no data yet: <error>", or "Not fetched yet". The log poll sets the server state and each bundle sets the fetch state.
 
 ### Cache and refresh
