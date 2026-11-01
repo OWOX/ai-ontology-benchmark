@@ -110,10 +110,19 @@
       if (name === current) a.className = "current";
       return a;
     }));
-    const when = b.fetched_at ? new Date(b.fetched_at).toLocaleString() : "never";
-    const status = $("fetch-status");
-    status.textContent = b.fetch_error ? `GitHub not reached, showing data from ${when}` : `fetched ${when}`;
-    status.title = b.fetch_error || "";
+    st.fetch = { at: b.fetched_at, error: b.fetch_error };
+    drawConn();
+  }
+
+  // One dot beside the title: server state by colour, last GitHub fetch in the tooltip.
+  function drawConn() {
+    const el = $("conn"), f = st.fetch || {};
+    const when = f.at ? new Date(f.at).toLocaleString() : "";
+    const fetched = f.error ? `GitHub not reached, showing data from ${when || "never"}: ${f.error}` : when ? `Fetched from GitHub ${when}` : "Not fetched yet";
+    const server = { live: "live", down: "not reachable, reconnecting" }[st.server] || "connecting";
+    const text = `Server: ${server}\n${fetched}`;
+    el.className = "conn" + (st.server === "down" ? " bad" : st.server === "live" ? (f.error ? " warn" : " ok") : "");
+    el.title = text; el.setAttribute("aria-label", text);
   }
 
   function draw(b, force) {
@@ -155,10 +164,9 @@
   }
 
   async function pollLog() {
-    const conn = $("conn");
     try {
       const data = await UI.api("/api/log?after=" + st.logAfter);
-      conn.textContent = "live"; conn.className = "conn ok";
+      st.server = "live"; drawConn();
       for (const ev of data.lines) {
         termLine(ev);
         for (const fn of st.lineListeners.slice()) { try { fn(ev); } catch (e) { console.error(e); } }
@@ -171,7 +179,7 @@
       for (const fn of st.listeners.slice()) { try { fn(st.jobs, ended); } catch (e) { console.error(e); } }
       if (ended.length) UI.reload(false);
     } catch (e) {
-      conn.textContent = "reconnecting"; conn.className = "conn bad";
+      st.server = "down"; drawConn();
     }
     setTimeout(pollLog, st.jobs.some((j) => j.state === "running") ? 1000 : 5000);
   }

@@ -230,7 +230,7 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 
 1. A release select, newest first, defaulting to the newest, with a ↻ button beside it. Changing the release loads its bundle.
 2. Models, Puzzles, Experiments, and About, with the current page highlighted. Models shows ⚠️ when any provider other than `fake` has no key.
-3. Under them, the fetch status: "fetched <time>" or, after a failed fetch, "GitHub not reached, showing data from <time>" with the error in its tooltip.
+3. Beside the page title, a status dot. Its colour shows the server: grey while connecting, green when the server answers, red when it doesn't, and amber when it answers but the last GitHub fetch failed. Its tooltip, which is also its accessible label, has two lines. The first is "Server: connecting", "Server: live", or "Server: not reachable, reconnecting". The second is "Fetched from GitHub <time>", "GitHub not reached, showing data from <time>: <error>", or "Not fetched yet". The log poll sets the server state and each bundle sets the fetch state.
 
 ### Cache and refresh
 
