@@ -12,7 +12,7 @@
 | `placeholders.sty` | TikZ macros for the placeholders: `\phpanel`, `\phsingle`, and the `phcanvas` environment. |
 | `refs.bib` | Bibliography (natbib, `unsrtnat`). 14 entries carry `[AUTHORS: TODO]`. |
 | `../prompts/<setup>/3x3.txt` | The approved 3x3 prompt templates, read from the repo for Appendix A. No copy lives in `paper/`. |
-| `main.pdf` | Rendered paper, 11 pages. |
+| `main.pdf` | Rendered paper, 13 pages. |
 | `ste_check.py` | Converts `main.tex` to `build/main.check.html` and runs `verify_ste100.py` on it. It also checks for 3–5 sentences per paragraph, forbidden terms, and hardcoded references. |
 | `make_previews.py` | Renders `previews/page-NN.png` and the contact sheet `preview.png` (first 8 pages). |
 | `build.sh` / `Makefile` | Builds the PDF, runs the check, and renders the previews. The box has no `make`, so use `./build.sh` there. |
@@ -32,6 +32,7 @@
 - Panels have large bold letters (A, B, C) in the top-left corner.
 - Below each placeholder is a real caption: short, but more detailed than the text inside.
 - Table placeholders (`tab-onto-N`) use the same format, with the caption above.
+- **Layout:** a `\clearpage` before the bibliography flushes every pending float, so Figures 7–12 print before the references (Figures 7–10 on page 8, Figures 11 and 12 on page 9). Figures 9–12 use `[!htbp]`. The paper is 13 pages, and the figure numbers follow reading order.
 
 ## Figures and table placeholders
 
@@ -54,13 +55,13 @@ Status legend: *data exists* means the source numbers are in the repo or this te
 | fig-onto-10 | Figure 10 | `fig:depth` | column | 8 | Accuracy vs scramble depth (5, 10, 20) for 2x2 (A) and 3x3 (B) | evaluate split by depth | Pending run (T-17 Fig 6) |
 | fig-onto-11 | Figure 11 | `fig:tokens` | column | 9 | Output tokens vs scramble depth per setup | raw record token fields | Pending run (new) |
 | fig-onto-12 | Figure 12 | `fig:pareto` | column | 9 | Cost per success vs success rate, with the Pareto front | evaluate; `config/prices.toml` | Pending run (T-17 Fig 7) |
-| fig-onto-13 | Figure 13 | `fig:taxonomy` | column (appendix) | 10 | Impossible moves by type (slice, wide, lowercase, rotation, prime sign, invented) | parsed moves not in `legal_moves()` | Pending run. Needs a post-hoc classifier (new code) |
-| fig-onto-14 | Figure 14 | `fig:per-puzzle` | column (appendix) | 10 | Per-puzzle breakdown: success (A) and hallucination (B), 2x2 vs 3x3 | evaluate split by puzzle | Pending run (new) |
-| fig-onto-15 | Figure 15 | `fig:consistency` | column (appendix) | 11 | Consistency heat map over K repeated attempts | `consistency()`, metrics.py L65–75 | Pending run (new) |
-| fig-onto-16 | Figure 16 | `fig:efficiency` | column (appendix) | 11 | Move count / reference length, 2x2 only | `efficiency()`, metrics.py L97–103 | Pending run. 3x3 is blocked by the missing solver |
+| fig-onto-13 | Figure 13 | `fig:taxonomy` | column (appendix) | 11 | Impossible moves by type (slice, wide, lowercase, rotation, prime sign, invented) | parsed moves not in `legal_moves()` | Pending run. Needs a post-hoc classifier (new code) |
+| fig-onto-14 | Figure 14 | `fig:per-puzzle` | column (appendix) | 11 | Per-puzzle breakdown: success (A) and hallucination (B), 2x2 vs 3x3 | evaluate split by puzzle | Pending run (new) |
+| fig-onto-15 | Figure 15 | `fig:consistency` | column (appendix) | 12 | Consistency heat map over K repeated attempts | `consistency()`, metrics.py L65–75 | Pending run (new) |
+| fig-onto-16 | Figure 16 | `fig:efficiency` | column (appendix) | 12 | Move count / reference length, 2x2 only | `efficiency()`, metrics.py L97–103 | Pending run. 3x3 is blocked by the missing solver |
 | tab-onto-5 | Table 5 | `tab:main` | full | 6 | Main results: 9 models × 3 setups × 5 rates with CIs | evaluate CSV | Pending run |
-| tab-onto-7 | Table 7 | `tab:full` | full (appendix) | 11 | Full results per model, setup, puzzle, and depth | evaluate CSV | Pending run |
-| tab-onto-8 | Table 8 | `tab:datasheet` | column (appendix) | 11 | Croissant and Responsible AI fields for NeurIPS E&D | Vlad's doc, venue table | To write |
+| tab-onto-7 | Table 7 | `tab:full` | full (appendix) | 13 | Full results per model, setup, puzzle, and depth | evaluate CSV | Pending run |
+| tab-onto-8 | Table 8 | `tab:datasheet` | column (appendix) | 13 | Croissant and Responsible AI fields for NeurIPS E&D | Vlad's doc, venue table | To write |
 <!-- IDMAP:END -->
 
 ### Why the figures beyond T-17 are there

@@ -415,7 +415,7 @@ The mismatch flag turns solvability into a binary decision that a script can sco
 % STATUS: new figure. Justification: the reply has a Boolean flag and no confidence, so
 % this plot replaces a calibration curve. A true calibration curve needs a confidence
 % field, which invariant 9 of AGENTS.md does not allow.
-\begin{figure}[t]
+\begin{figure}[!htbp]
 \phsingle{0.82}{Flag quality per model. Detection rate against false flag rate, one point per setup.}
 \caption{Quality of the mismatch flag. Each point is one AI model under one setup, with 95\% Wilson intervals on both axes. Lines join the three setups of one model. The diagonal marks a flag that carries no information about reachability.}
 \label{fig:flag-roc}
@@ -431,7 +431,7 @@ Scramble depth sets an upper bound on the distance to solved. \Cref{fig:depth} s
 % ---- placeholder fig:depth (ID stamped from the float counter) -----------------------
 % DATA: success rate per depth from evaluate (reports split by scramble depth).
 % STATUS: pending. [T17] Fig 6.
-\begin{figure}[t]
+\begin{figure}[!htbp]
 \begin{phcanvas}
   \phpanel{0}{0.43}{1}{0.42}{A}{2x2 cube. Success rate against scramble depth, one line per model and setup.}
   \phpanel{0}{0}{1}{0.42}{B}{3x3 cube. The same axes, to compare the fall of success between sizes.}
@@ -444,7 +444,7 @@ Scramble depth sets an upper bound on the distance to solved. \Cref{fig:depth} s
 % DATA: input_tokens, output_tokens per raw record (Gemini: candidates + thoughts).
 % STATUS: new figure. Justification: the ontology lengthens the prompt, so the cost
 % argument needs tokens per depth and setup.
-\begin{figure}[t]
+\begin{figure}[!htbp]
 \phsingle{0.62}{Output tokens against scramble depth. Shows whether rules in the prompt change reasoning length.}
 \caption{Mean output tokens per attempt against scramble depth, for each setup. Bands give the interquartile range over AI models. Output tokens include hidden reasoning tokens where the provider bills them.}
 \label{fig:tokens}
@@ -456,7 +456,7 @@ An ontology in the prompt costs input tokens on every attempt. It pays off only 
 % ---- placeholder fig:pareto (ID stamped from the float counter) ----------------------
 % DATA: cost per success = cost of all attempts / successes (definitions.md, Metrics);
 % prices from config/prices.toml. STATUS: pending. [T17] Fig 7.
-\begin{figure}[t]
+\begin{figure}[!htbp]
 \phsingle{0.75}{Cost against accuracy. Cost per success and success rate, with the Pareto front marked.}
 \caption{Cost per success in USD against success rate. Each point is one AI model under one setup. The line joins the points that no other point beats on both axes. The cost axis is logarithmic, and prices are those of \cref{tab:models}.}
 \label{fig:pareto}
@@ -523,6 +523,8 @@ We will publish the frozen inputs, prompts, and raw records on Hugging Face with
 \section*{Acknowledgements}
 \todo{Name the API credit programmes that fund the runs, if any award arrives.} The study applies to programmes from Anthropic, OpenAI, and Google. Each acknowledgement must match the terms of its award. We also thank \todo{endorser and readers}.
 
+% Flush every pending float (Figures 7-12) so none prints among the references.
+\clearpage
 \bibliographystyle{unsrtnat}
 \bibliography{refs}
 
