@@ -62,7 +62,7 @@
   }
 
   const COLS = ["24%", "26%", "12%", "13%", "13%", "12%"];
-  const HEADS = [["Model"], ["API model id"], ["Kind"], ["Input $/M tokens", "num"], ["Output $/M tokens", "num"], ["Experiments", "num"]];
+  const HEADS = [["Model"], ["API model id"], ["Kind"], ["Input $/M tokens", "amount"], ["Output $/M tokens", "amount"], ["Experiments", "amount"]];
 
   // One function builds the column group, so every provider's table has the same widths.
   const colgroup = () => h("colgroup", {}, ...COLS.map((w) => h("col", { style: "width:" + w })));
@@ -72,12 +72,12 @@
     const n = m.experiments.length;
     const name = h("td", {}, h("strong", { text: m.name }));
     if (m.disabled_reason && !noKey) name.append(h("div", { class: "reason", text: m.disabled_reason }));
-    const price = (v) => h("td", { class: "num" }, v == null ? h("span", { class: "muted", text: "n/a" }) : usd(v));
+    const price = (v) => h("td", { class: "amount" }, v == null ? h("span", { class: "muted", text: "n/a" }) : usd(v));
     return h("tr", { class: m.disabled_reason || noKey ? "off" : "" }, name,
       h("td", {}, h("code", { text: m.api_model_id })),
       h("td", {}, m.kind || h("span", { class: "muted", text: "not set" })),
       price(m.price && m.price.input_per_mtok), price(m.price && m.price.output_per_mtok),
-      h("td", { class: "num" }, h("a", { href: `#/experiments?model=${encodeURIComponent(m.name)}${q}`, text: String(n) })));
+      h("td", { class: "amount" }, h("a", { href: `#/experiments?model=${encodeURIComponent(m.name)}${q}`, text: String(n) })));
   }
 
   function modelTable(p, q) {
