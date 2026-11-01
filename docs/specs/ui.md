@@ -1,6 +1,6 @@
 # ui
 
-Files: `ui/server.py`, `ui/app.py`, `ui/gitdata.py`, `ui/bundle.py`, `ui/puzzleinfo.py`, `ui/catalogue.py`, `ui/experiments.py`, `ui/forms.py`, `ui/branches.py`, `ui/expdata.py`, `ui/pooling.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/router.js`, `ui/static/markdown.js`, `ui/static/cube.js`, `ui/static/progress.js`, `ui/static/progressview.js`, `ui/static/cubepanel.js`, `ui/static/expmetrics.js`, `ui/static/pages/models.js`, `ui/static/pages/puzzles.js`, `ui/static/pages/inputs.js`, `ui/static/pages/experiments.js`, `ui/static/pages/experiment.js`, `ui/static/pages/new.js`, `ui/static/pages/about.js`, `ui/static/style.css`, `ui/start.sh`.
+Files: `ui/server.py`, `ui/app.py`, `ui/gitdata.py`, `ui/bundle.py`, `ui/puzzleinfo.py`, `ui/catalogue.py`, `ui/experiments.py`, `ui/forms.py`, `ui/branches.py`, `ui/expdata.py`, `ui/pooling.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/theme.js`, `ui/static/router.js`, `ui/static/markdown.js`, `ui/static/cube.js`, `ui/static/progress.js`, `ui/static/progressview.js`, `ui/static/cubepanel.js`, `ui/static/expmetrics.js`, `ui/static/pages/models.js`, `ui/static/pages/puzzles.js`, `ui/static/pages/inputs.js`, `ui/static/pages/experiments.js`, `ui/static/pages/experiment.js`, `ui/static/pages/new.js`, `ui/static/pages/about.js`, `ui/static/style.css`, `ui/start.sh`.
 
 Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments, adding `--port 7991` unless they include `--port`. Before that it stops any process listening on that port: SIGTERM first, so a UI server stops its jobs, then SIGKILL for whatever still listens after 5 seconds. Later updates go through the Install button.
 
@@ -228,9 +228,11 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 
 ### Left menu
 
-1. A release select, newest first, defaulting to the newest, with a ↻ button beside it. Changing the release loads its bundle.
+1. A "New Experiment" button under the menu title. It opens `#/new` for the chosen release.
 2. Models, Puzzles, Experiments, and About, with the current page highlighted. Models shows ⚠️ when any provider other than `fake` has no key.
-3. Under them, the fetch status: "fetched <time>" or, after a failed fetch, "GitHub not reached, showing data from <time>" with the error in its tooltip.
+3. At the bottom of the menu, a release select, newest first, defaulting to the newest, with a ↻ button beside it. Changing the release loads its bundle.
+4. Under the release select, a theme switch: Light, Dark, and System, default System. System follows the browser's `prefers-color-scheme`. `theme.js` keeps the choice in `localStorage` under `theme`, inside try/catch, and loads in `<head>`, so the page never paints in the wrong theme.
+5. Beside the menu title, a status dot. Its colour shows the server: grey while connecting, green when the server answers, red when it doesn't, and amber when it answers but the last GitHub fetch failed. Its tooltip, which is also its accessible label, has two lines. The first is "Server: connecting", "Server: live", or "Server: not reachable, reconnecting". The second is "Fetched from GitHub <time>", "GitHub not reached, showing data from <time>: <error>", "GitHub not reached, no data yet: <error>", or "Not fetched yet". The log poll sets the server state and each bundle sets the fetch state.
 
 ### Cache and refresh
 
@@ -239,37 +241,40 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 3. ↻ requests the bundle with `refresh=1`, and spins until the answer. A failed request keeps the cached view and shows the error under the menu.
 4. When a job ends, the page requests the bundle again, so a pushed experiment appears.
 
+### Terminal
+
+A folded "Terminal" box with the job log from `GET /api/log` and a Clear button. It sits at the foot of the page, a sibling of `#main` and not inside the actions, and shows on the Experiment, New Experiment, and About pages. It is hidden on the others. It shows every job's log, for all experiments and project jobs. The UI keeps collecting log lines while the terminal is hidden, so the history is there when it is shown.
+
 ### Models
 
 One block per provider, in bundle order.
 
-1. The header is the provider name, with ⚠️ and "no API key" when the key is `missing` (never for `fake`).
-2. The key row: with no key, a password field and Save. With a key saved in a file, `Key …abcd from secrets/anthropic.json`, with Edit and Clear (after `confirm()`). Edit shows the password field, Save, and Cancel. With a key from an env var, `Set by env var ANTHROPIC_API_KEY`, with no controls. Save and Clear reload the bundle. The field is cleared after Save and Cancel, and a key is never shown. A note says "Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed."
-3. One row per model: the name, `api_model_id`, its `kind` or "kind not set", the prices per million tokens, the disabled reason if any, and "N experiments", which links to `#/experiments?model=<name>`. A model with no key shows ⚠️.
-4. The block ends with a source link to `config/models.toml`.
+1. The header is the provider name and a badge: green "configured" when the key is saved in a file or set by an env var, red "not configured" when it is `missing`, and none for `fake`. The key status is `Key …abcd from secrets/anthropic.json` or `Set by env var ANTHROPIC_API_KEY`. It shows as small muted text beside the badge, and as the badge's tooltip. A `missing` key has no status text, because the badge says it. At the right end of the header, icons show on hover or keyboard focus of the block, and always on devices without hover (they are transparent, never removed from the tab order, so the keyboard reaches them): Edit (a key in a file, or `missing`) and Source. A key from an env var has no Edit, because the env var wins over the file.
+2. Edit shows the key edit row under the header and focuses its password field. Edit does nothing when the row is already open. Cancel and a successful Save return the focus to the Edit icon. The row has a password field, then Save, Cancel, and Clear. With a key in a file, the field's placeholder is 12 dots and the key's last 4 characters, and Clear deletes the saved key after `confirm()`. With no key, the placeholder is the env var name, the edit row is open from the start, and it has no Cancel or Clear. Save and Clear reload the bundle. The field is cleared after Save and Cancel, errors show in one shared message line, and a key is never shown. A note says "Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed."
+3. One table per provider, with the same column widths in every table. The columns are Model (the name, with the disabled reason under it unless the key is missing, which the header already shows), API model id, Kind ("not set" when empty), Input and Output $/M tokens ("n/a" without a price), and Experiments, the count as a link to `#/experiments?model=<name>`. A disabled model's row is muted.
+4. The Source icon links to `config/models.toml` on GitHub, at the commit sha of `main`, and is left out with no GitHub base URL.
 
 ### Puzzles
 
-One card per puzzle of the release:
+One card per puzzle of the release. Under the title, two columns: on the left, items 1, 2, 3, and 4 in that order; on the right, item 5, aligned right, its top level with the top of the picture. Under 900px wide the columns stack. Items 6 and 7 follow at full width.
 
-1. A picture of the solved puzzle: `cubeIso` for an `NxN` cube, else the name in a box.
+1. A picture of the solved puzzle: `cube3d` for an `NxN` cube, else the name in a box. `cube3d` draws all six faces in 3D, starting with U on top, F front-left, and R front-right, and the viewer turns it by dragging with the mouse or a finger. The pitch stops at a quarter turn up or down, so the cube never flips. The `<svg>` has `role="img"` and the label "3D view of the cube; drag to turn".
 2. The description, from `docs/puzzles/<puzzle>.md`, with its source link.
-3. A 2D net of the solved puzzle with every sticker named by its face letter and its index in the face, row by row from 1, for example `U1` to `U9` on the 3x3, in the state's reading order ([cube.md](cube.md)), so a reader can match the net to a state string. Cubes only.
+3. "Allowed moves": the `legal_moves` list as chips, with a source link to the engine. "No engine" when it is `null`.
 4. The input count, the depths, and the valid and invalid counts. "Scrambled states" links to `#/puzzles/<puzzle>/inputs`. "Experiments" links to `#/experiments?puzzle=<puzzle>`.
-5. "What the AI model is told": one folded section per setup with the prompt template, its prompt version, and its source link.
-6. "Allowed moves": the `legal_moves` list as chips, with a source link to the engine. "No engine" when it is `null`.
+5. A 2D net of the solved puzzle with every sticker named by its face letter and its index in the face, row by row from 1, for example `U1` to `U9` on the 3x3, in the state's reading order ([cube.md](cube.md)), so a reader can match the net to a state string. Cubes only.
+6. "What the AI model is told": one folded section per setup with the prompt template, its prompt version, and its source link.
 7. "Not allowed moves seen": a table of `impossible_seen`, with the move in a code span, the count, and the AI models, each experiment id linking to its page. "None in pushed experiments yet" when it is empty.
 
 The inputs page lists every input of the puzzle: the input id, the depth, the validity, the net of its state, and, for an invalid input, its source input and corruption, filtered by depth and validity, with a source link to `inputs.jsonl`.
 
 ### Experiments
 
-1. A "New Experiment" button in the top-left corner opens `#/new`.
-2. Filters: AI model, puzzle, and validity (all inputs, valid only, or invalid only; default all). The release comes from the menu. Filters are kept in the hash. Mismatch detection rate is `n/a` under valid only, and false mismatch rate under invalid only, by definition.
-3. A table, one row per experiment, AI model, and puzzle in the chosen validity scope, with the columns: experiment id, AI model, puzzle, release, attempts, success rate, hallucination rate, mismatch detection rate, false mismatch rate, malformed output rate, infrastructure failures, total tokens, cost, and report. Rates show as percentages, and `n/a` when `null`. Clicking a column header sorts by it, and a second click reverses.
-4. A row with `metrics_source: computed` shows `*` after each metric and in the report column, and the table ends with the note "* computed from the raw records by the UI for display. No report is committed for this experiment, so these are not official numbers." A row with a report shows its version.
-5. A row with `differs_from_catalogue` shows ⚠️ after the AI model, with the tooltip "this experiment's settings for the AI model differ from config/models.toml". A row with `pushed: false` shows "running, not pushed". A row with `error` shows the message across the metric columns.
-6. Each row links to `#/experiments/<id>`.
+1. Filters: AI model, puzzle, and validity (all inputs, valid only, or invalid only; default all). The release comes from the menu. Filters are kept in the hash. Mismatch detection rate is `n/a` under valid only, and false mismatch rate under invalid only, by definition.
+2. A table, one row per experiment, AI model, and puzzle in the chosen validity scope, with the columns: experiment id, AI model, puzzle, release, attempts, success rate, hallucination rate, mismatch detection rate, false mismatch rate, malformed output rate, infrastructure failures, total tokens, cost, and report. Rates show as percentages, and `n/a` when `null`. Clicking a column header sorts by it, and a second click reverses.
+3. A row with `metrics_source: computed` shows `*` after each metric and in the report column, and the table ends with the note "* computed from the raw records by the UI for display. No report is committed for this experiment, so these are not official numbers." A row with a report shows its version.
+4. A row with `differs_from_catalogue` shows ⚠️ after the AI model, with the tooltip "this experiment's settings for the AI model differ from config/models.toml". A row with `pushed: false` shows "running, not pushed". A row with `error` shows the message across the metric columns.
+5. Each row links to `#/experiments/<id>`.
 
 ### Experiment
 
@@ -282,22 +287,23 @@ One experiment, from `GET /api/experiments/<id>`:
 5. The report, rendered, with its source link, when there is one.
 6. Progress: the Cube panel and the per-input rings described below, from `GET /api/state/<id>`.
 7. Actions while the experiment's results are in this checkout: Evaluate, with an optional "Score under release" select, and Commit, which opens a dialog with the preview's branch, files, and diffstat. Confirm calls `POST /api/commit` and shows the PR link. Commit is disabled while any job of this experiment is alive or before a report exists in this checkout.
+8. The terminal, at the foot of the page.
 
 ### New Experiment
 
-The terminal is on the right, sticky to the viewport height. The left column holds:
+The page holds:
 
 1. Branch: a select with "New: <default id>" first, then every branch from `GET /api/branches`. The new id is editable and follows the choices below until it is edited by hand. Picking an existing branch loads its config into the form from `GET /api/experiment/<id>/config`.
 2. Puzzles: one `<button aria-pressed>` card per puzzle in the menu's release, with the puzzle name, its input count, and, for an `NxN` name, a solved net. At least one is needed.
 3. AI models: grouped by provider. When a provider has no key, the header shows ⚠️ "no API key: add it under Models", linking there, and its models are disabled. Other disabled reasons show beside the model.
-4. Parameters: attempts ("Attempts per input and setup: sends the same input N times"), retry cap, max output tokens, the three budgets, and "Limit per model" (optional). Buttons: Estimate, Dry run, Run, Stop. Each sends the form.
+4. Parameters: attempts ("Attempts per input and setup: sends the same input N times"), retry cap, max output tokens, the three budgets, and "Limit per model" (optional). Buttons: Estimate, Dry run, Run, Stop. Each sends the form. After Run, Estimate, or Dry run starts, the message points to the terminal at the foot of the page, which shows the job's output. After Run only, it also links to the experiment's page. Estimate and Dry run give no link, because a new id has no page.
 5. Progress: the Cube panel, a legend, and the rings, as on the Experiment page.
 
 Banners: a job in state `failed` shows its last stderr line. The line comes from the log poll and the state from the snapshot poll, and either can arrive first, so each log poll that brings a stderr line redraws the banners. A job in state `budget` shows "Budget reached" and a plain note to raise the budget under Parameters and press Run, which the server accepts as `budget_updated`, and resumes. The banner notes that parallel AI models can each pass the experiment budget by one worst-case request, and that "attempts left" in the message counts one AI model's attempts.
 
 ### About
 
-The README from `main`, rendered, with its source link. Under it, a "Project" box: the project status from `/api/project` (branch, clean tree, packages, `gh`), Install dependencies and Run tests, and the release tools: a bump select, a note field, a Release button, and "Push and open PR". Release is disabled, with the reason beside it, on `main` ("on main"), on a detached HEAD ("detached HEAD"), and with a dirty tree ("working tree has changes: commit them first"). Push is disabled on `main` and on a detached HEAD. Both are also disabled while any job runs. The server enforces all of this. When an install, release, or push job ends, the page reloads the project status and the bundle.
+The README from `main`, rendered, with its source link. Under it, a "Project" box: the project status from `/api/project` (branch, clean tree, packages, `gh`), Install dependencies and Run tests, and the release tools: a bump select, a note field, a Release button, and "Push and open PR". Release is disabled, with the reason beside it, on `main` ("on main"), on a detached HEAD ("detached HEAD"), and with a dirty tree ("working tree has changes: commit them first"). Push is disabled on `main` and on a detached HEAD. Both are also disabled while any job runs. The server enforces all of this. The terminal at the foot of the page shows the output of the install, tests, and release jobs, which belong to no experiment. When an install, release, or push job ends, the page reloads the project status and the bundle.
 
 ### Progress
 

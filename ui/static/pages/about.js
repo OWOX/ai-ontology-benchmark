@@ -54,7 +54,7 @@
   function release() {
     const note = box.querySelector(".note").value.trim();
     if (!note) return say("note: enter a release note", "err");
-    return start("/api/release", { bump: box.querySelector(".bump").value, note }, "Release started; see the terminal.");
+    return start("/api/release", { bump: box.querySelector(".bump").value, note }, "Release started, see the terminal.");
   }
 
   function buildBox() {
@@ -63,8 +63,8 @@
     return h("section", { class: "step project" }, h("h3", { text: "Project" }),
       h("p", { class: "muted small status" }),
       h("div", { class: "actions" },
-        btn("install", "Install dependencies", () => start("/api/install", {}, "Install started; see the terminal.")),
-        btn("tests", "Run tests", () => start("/api/tests", {}, "Tests started; see the terminal."))),
+        btn("install", "Install dependencies", () => start("/api/install", {}, "Install started, see the terminal.")),
+        btn("tests", "Run tests", () => start("/api/tests", {}, "Tests started, see the terminal."))),
       h("div", { class: "actions" }, h("label", { class: "inline" }, "Bump ", bump),
         h("input", { type: "text", class: "note", placeholder: "Note", autocomplete: "off" }),
         btn("release", "Release", release, " primary")),

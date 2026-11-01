@@ -1,13 +1,14 @@
 // Spec: docs/specs/ui.md (Puzzles)
-// One card per puzzle of the release: picture, description, named net, input counts, prompt
-// templates, allowed moves, and the not-allowed moves seen. Reads the bundle only.
+// One card per puzzle of the release: a rotatable 3D picture, description, allowed moves, and input
+// counts on the left, the named net on the right, then the prompt templates and the not-allowed moves
+// seen. Reads the bundle only.
 (function () {
   const h = UI.el;
 
   function picture(p) {
     if (!p.n) return h("div", { class: "puzzle-name-box", text: p.name });
-    const wrap = h("div", { class: "puzzle-pic" });
-    wrap.append(cubeIso(solvedState(p.n), p.n, null, { width: 120, height: 120 }));
+    const wrap = h("div", { class: "puzzle-pic", title: "Drag to turn" });
+    wrap.append(cube3d(solvedState(p.n), p.n, { width: 160, height: 160 }));
     return wrap;
   }
 
@@ -69,9 +70,9 @@
       const q = params.release ? "release=" + encodeURIComponent(params.release) : "";
       el.append(h("h2", { text: "Puzzles" }));
       for (const p of bundle.puzzles) {
-        const card = h("section", { class: "step puzzle" }, h("h3", { text: p.name }), picture(p), description(p));
-        if (p.n) card.append(h("div", { class: "named-net" }, cubeNetNamed(p.n, { width: 480 })));
-        card.append(links(p, q), prompts(p), allowed(p), seen(p, q));
+        const top = h("div", { class: "puzzle-top" }, h("div", { class: "puzzle-main" }, picture(p), description(p), allowed(p), links(p, q)));
+        if (p.n) top.append(h("div", { class: "named-net" }, cubeNetNamed(p.n, { width: 480 })));
+        const card = h("section", { class: "step puzzle" }, h("h3", { text: p.name }), top, prompts(p), seen(p, q));
         el.append(card);
       }
     },

@@ -1,7 +1,7 @@
 // Spec: docs/specs/ui.md (New Experiment, Banners, HTTP API 4 to 11)
 // New Experiment: the form, Estimate, Dry run, Run, Stop, and Progress for the id. Reads the bundle,
 // GET /api/branches, /api/default-id, and /api/experiment/<id>/config; writes only through POST /api/estimate,
-// /api/dry-run, /api/run, and /api/stop. The terminal stays where it is: this page restyles it to the right.
+// /api/dry-run, /api/run, and /api/stop. After a job starts, the message links to the experiment's page, where the terminal is.
 (function () {
   const h = UI.el;
   const NO_KEY = "no API key: add it under Models";
@@ -110,10 +110,6 @@
     render(bundle, params, el) {
       if (cleanup) cleanup();
       if (S.release !== bundle.release) reset(bundle);
-      const page = el.parentNode, term = document.getElementById("termbox");
-      const wasOpen = term ? term.open : false;
-      page.classList.add("newpage");
-      if (term) term.open = true;
       const formBox = h("div"), progBox = h("section", {}, h("h3", { text: "Progress" }));
       const progMount = h("div");
       progBox.append(progMount);
@@ -192,7 +188,10 @@
           const body = path === "run" ? { form, limit: readLimit() } : { form };
           const r = await UI.api("/api/" + path, { method: "POST", body });
           if (dead) return;
-          say(`${label} started. Experiment ${r.status}. See the terminal.`, "ok");
+          const rel = bundle.release ? "?release=" + encodeURIComponent(bundle.release) : "";
+          msg.className = "msg ok";
+          msg.replaceChildren(`${label} started. Experiment ${r.status}. See the terminal. `);
+          if (path === "run") msg.append(h("a", { href: "#/experiments/" + encodeURIComponent(form.id) + rel, text: "Open its page" }));
           if (path === "run") startProgress(form.id);
         } catch (e) { say(e.message, "err"); }
       }
@@ -241,8 +240,6 @@
         dead = true;
         offJobs(); window.removeEventListener("hashchange", onHash);
         if (ctl) ctl.destroy();
-        page.classList.remove("newpage");
-        if (term) term.open = wasOpen;
       };
 
       paint();
