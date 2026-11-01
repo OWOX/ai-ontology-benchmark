@@ -36,7 +36,7 @@ body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -app
 .small { font-size: 12px; }
 .inline { display: inline-flex; gap: 6px; align-items: center; }
 select, input[type=text], input[type=number] { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: inherit; width: 100%; }
-select { -webkit-appearance: none; appearance: none; box-sizing: border-box; height: 30px; padding-right: 28px; background-color: #fff; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1 3l4 4 4-4' fill='none' stroke='%236a7482' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 9px center; background-size: 10px 10px; }
+select { -webkit-appearance: none; appearance: none; box-sizing: border-box; height: 30px; padding-right: 28px; background-color: #fff; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1 3l4 4 4-4' fill='none' stroke='%236a7482' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; background-size: 10px 10px; }
 .inline select { width: auto; }
 button { font: inherit; padding: 5px 12px; border: 1px solid var(--line); border-radius: 4px; background: #fff; cursor: pointer; color: inherit; }
 button:hover:not(:disabled) { background: #eef1f5; }
