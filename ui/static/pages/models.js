@@ -23,7 +23,8 @@
     try {
       await UI.api("/api/secrets", { method: "POST", body: { provider: p.name, action, api_key: key } });
       await UI.reload(false);
-    } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
+      return true;
+    } catch (e) { msg.textContent = e.message; msg.className = "msg err"; return false; }
   }
 
   // The key edit row: the password field, showing only the saved key's last 4 characters, then Save, Cancel,
@@ -33,7 +34,11 @@
     const field = h("input", { type: "password", autocomplete: "off", "aria-label": `${p.name} API key`,
       placeholder: saved ? "•".repeat(12) + p.key.tail : p.variable });
     const save = h("button", { type: "button", text: "Save" });
-    save.addEventListener("click", () => { const key = field.value; field.value = ""; secret(p, "save", msg, key); });
+    save.addEventListener("click", async () => {
+      const key = field.value; field.value = "";
+      // The reload redraws the page, so the new Edit icon takes the focus.
+      if (await secret(p, "save", msg, key)) { const e = document.querySelector(`.provider[data-provider="${p.name}"] [aria-label="Edit API key"]`); if (e) e.focus(); }
+    });
     const row = h("div", { class: "row key-row" }, field, save);
     if (onCancel) {
       const cancel = h("button", { type: "button", text: "Cancel" });
@@ -54,15 +59,22 @@
       : k.source === "env" ? `Set by env var ${p.variable}` : "No API key";
     const head = h("div", { class: "provider-head" }, h("span", { text: p.name }));
     if (k) head.append(h("span", { class: "badge " + (k.source === "missing" ? "bad" : "ok"), title: status, text: k.source === "missing" ? "not configured" : "configured" }));
+    if (k && k.source !== "missing") head.append(h("span", { class: "muted small", title: status, text: status }));
     const slot = h("div");
-    const close = () => slot.replaceChildren();
-    const open = () => { slot.replaceChildren(editRow(p, msg, k.source === "missing" ? null : close)); };
+    let edit = null;
+    const close = () => { slot.replaceChildren(); if (edit) edit.focus(); };
+    const open = () => {
+      if (slot.firstChild) return;
+      const row = editRow(p, msg, k.source === "missing" ? null : close);
+      slot.replaceChildren(row);
+      row.querySelector("input").focus();
+    };
     const icons = h("div", { class: "provider-icons" });
-    if (k && (k.source === "file" || k.source === "missing")) icons.append(icon("edit", "Edit API key", open));
+    if (k && (k.source === "file" || k.source === "missing")) icons.append(edit = icon("edit", "Edit API key", open));
     if (bundle.repo && bundle.main_sha) icons.append(icon("source", "Source: config/models.toml", null, `${bundle.repo}/blob/${bundle.main_sha}/config/models.toml`));
     head.append(icons);
     if (k && k.source === "missing") open();
-    return h("section", { class: "step provider" }, head, slot, modelTable(p, q));
+    return h("section", { class: "step provider", "data-provider": p.name }, head, slot, modelTable(p, q));
   }
 
   const COLS = ["24%", "26%", "12%", "13%", "13%", "12%"];

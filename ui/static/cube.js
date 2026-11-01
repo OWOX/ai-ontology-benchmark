@@ -176,7 +176,7 @@ function cube3dFaces(n, yaw, pitch) {
 // Returns an <svg> of a 6*n*n state that the viewer turns by dragging with the mouse or a finger.
 function cube3d(state, n, attrs) {
   const r = n * Math.sqrt(3) + 0.5;
-  const root = svg("svg", { viewBox: `${-r} ${-r} ${2 * r} ${2 * r}`, class: "cube3d", ...attrs });
+  const root = svg("svg", { viewBox: `${-r} ${-r} ${2 * r} ${2 * r}`, class: "cube3d", role: "img", "aria-label": "3D view of the cube; drag to turn", ...attrs });
   if (!cubeSize(state) || cubeSize(state) !== n) return root;
   let { yaw, pitch } = VIEW_3D;
   const draw = () => {
@@ -193,7 +193,7 @@ function cube3d(state, n, attrs) {
     if (!last) return;
     // One full turn per 400 screen pixels in either direction.
     yaw += ((e.clientX - last[0]) / 400) * 2 * Math.PI;
-    pitch += ((e.clientY - last[1]) / 400) * 2 * Math.PI;
+    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + ((e.clientY - last[1]) / 400) * 2 * Math.PI));
     last = [e.clientX, e.clientY];
     draw();
   });
