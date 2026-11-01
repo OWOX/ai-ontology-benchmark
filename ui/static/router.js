@@ -204,6 +204,7 @@
     UI.go("#/" + [p.top].concat(p.parts).join("/") + "?" + q);
   });
   $("refresh").addEventListener("click", () => UI.reload(true));
+  $("new-exp").addEventListener("click", () => UI.go(menuHref("new")));
   $("btn-clear").addEventListener("click", () => $("terminal").replaceChildren());
   window.addEventListener("hashchange", route);
   document.addEventListener("DOMContentLoaded", () => { route(); pollLog(); });

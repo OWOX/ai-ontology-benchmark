@@ -84,9 +84,7 @@
         return th;
       }));
       const body = sorted(rows, query.sort, query.dir).map((r) => line(r, rel));
-      const newBtn = h("button", { type: "button", class: "primary", text: "New Experiment" });
-      newBtn.addEventListener("click", () => UI.go("#/new" + rel));
-      el.append(h("div", { class: "actions" }, newBtn), h("h2", { text: "Experiments" }), filters);
+      el.append(h("h2", { text: "Experiments" }), filters);
       if (!body.length) el.append(h("p", { class: "muted", text: "No experiments for this release and filters." }));
       else el.append(h("div", { class: "table-wrap" }, h("table", { class: "exp-table" }, h("thead", {}, head), h("tbody", {}, ...body))));
       if (rows.some((r) => r.metrics_source === "computed" && !r.error)) el.append(h("p", { class: "muted small", text: NOTE }));

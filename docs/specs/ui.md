@@ -229,8 +229,9 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 ### Left menu
 
 1. A release select, newest first, defaulting to the newest, with a ↻ button beside it. Changing the release loads its bundle.
-2. Models, Puzzles, Experiments, and About, with the current page highlighted. Models shows ⚠️ when any provider other than `fake` has no key.
-3. Beside the menu title, a status dot. Its colour shows the server: grey while connecting, green when the server answers, red when it doesn't, and amber when it answers but the last GitHub fetch failed. Its tooltip, which is also its accessible label, has two lines. The first is "Server: connecting", "Server: live", or "Server: not reachable, reconnecting". The second is "Fetched from GitHub <time>", "GitHub not reached, showing data from <time>: <error>", "GitHub not reached, no data yet: <error>", or "Not fetched yet". The log poll sets the server state and each bundle sets the fetch state.
+2. A "New Experiment" button under the release select. It opens `#/new` for the chosen release.
+3. Models, Puzzles, Experiments, and About, with the current page highlighted. Models shows ⚠️ when any provider other than `fake` has no key.
+4. Beside the menu title, a status dot. Its colour shows the server: grey while connecting, green when the server answers, red when it doesn't, and amber when it answers but the last GitHub fetch failed. Its tooltip, which is also its accessible label, has two lines. The first is "Server: connecting", "Server: live", or "Server: not reachable, reconnecting". The second is "Fetched from GitHub <time>", "GitHub not reached, showing data from <time>: <error>", "GitHub not reached, no data yet: <error>", or "Not fetched yet". The log poll sets the server state and each bundle sets the fetch state.
 
 ### Cache and refresh
 
@@ -268,12 +269,11 @@ The inputs page lists every input of the puzzle: the input id, the depth, the va
 
 ### Experiments
 
-1. A "New Experiment" button in the top-left corner opens `#/new`.
-2. Filters: AI model, puzzle, and validity (all inputs, valid only, or invalid only; default all). The release comes from the menu. Filters are kept in the hash. Mismatch detection rate is `n/a` under valid only, and false mismatch rate under invalid only, by definition.
-3. A table, one row per experiment, AI model, and puzzle in the chosen validity scope, with the columns: experiment id, AI model, puzzle, release, attempts, success rate, hallucination rate, mismatch detection rate, false mismatch rate, malformed output rate, infrastructure failures, total tokens, cost, and report. Rates show as percentages, and `n/a` when `null`. Clicking a column header sorts by it, and a second click reverses.
-4. A row with `metrics_source: computed` shows `*` after each metric and in the report column, and the table ends with the note "* computed from the raw records by the UI for display. No report is committed for this experiment, so these are not official numbers." A row with a report shows its version.
-5. A row with `differs_from_catalogue` shows ⚠️ after the AI model, with the tooltip "this experiment's settings for the AI model differ from config/models.toml". A row with `pushed: false` shows "running, not pushed". A row with `error` shows the message across the metric columns.
-6. Each row links to `#/experiments/<id>`.
+1. Filters: AI model, puzzle, and validity (all inputs, valid only, or invalid only; default all). The release comes from the menu. Filters are kept in the hash. Mismatch detection rate is `n/a` under valid only, and false mismatch rate under invalid only, by definition.
+2. A table, one row per experiment, AI model, and puzzle in the chosen validity scope, with the columns: experiment id, AI model, puzzle, release, attempts, success rate, hallucination rate, mismatch detection rate, false mismatch rate, malformed output rate, infrastructure failures, total tokens, cost, and report. Rates show as percentages, and `n/a` when `null`. Clicking a column header sorts by it, and a second click reverses.
+3. A row with `metrics_source: computed` shows `*` after each metric and in the report column, and the table ends with the note "* computed from the raw records by the UI for display. No report is committed for this experiment, so these are not official numbers." A row with a report shows its version.
+4. A row with `differs_from_catalogue` shows ⚠️ after the AI model, with the tooltip "this experiment's settings for the AI model differ from config/models.toml". A row with `pushed: false` shows "running, not pushed". A row with `error` shows the message across the metric columns.
+5. Each row links to `#/experiments/<id>`.
 
 ### Experiment
 
