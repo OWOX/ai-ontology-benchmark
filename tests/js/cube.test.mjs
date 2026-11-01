@@ -14,7 +14,7 @@ class Node {
 const document = { createElementNS: (ns, tag) => new Node(tag) };
 const ctx = { document, module: { exports: {} } };
 vm.runInNewContext(fs.readFileSync(file, "utf8"), ctx);
-const { cubeNet, cubeNetNamed, solvedState } = ctx.module.exports;
+const { cubeNet, cubeNetNamed, solvedState, cube3dFaces, VIEW_3D } = ctx.module.exports;
 
 let failed = 0;
 function check(name, ok, got) {
@@ -38,6 +38,15 @@ for (const n of [2, 3]) {
   });
 }
 check("non-cube size draws nothing", cubeNetNamed(0).children.length === 0, "");
+
+const shown = (yaw, pitch) => cube3dFaces(3, yaw, pitch).map((f) => f.face).sort().join("");
+check("3D view starts on U, F, and R", shown(VIEW_3D.yaw, VIEW_3D.pitch) === "FRU", shown(VIEW_3D.yaw, VIEW_3D.pitch));
+check("3D view turned half a turn shows U, B, and L", shown(VIEW_3D.yaw + Math.PI, VIEW_3D.pitch) === "BLU", shown(VIEW_3D.yaw + Math.PI, VIEW_3D.pitch));
+check("3D view tipped over shows D", shown(VIEW_3D.yaw, -VIEW_3D.pitch).includes("D"), shown(VIEW_3D.yaw, -VIEW_3D.pitch));
+// U's first sticker (back-left corner) sits above and left of its last one in the start view.
+const u = cube3dFaces(3, VIEW_3D.yaw, VIEW_3D.pitch).find((f) => f.face === "U").stickers;
+const centre = (s) => s.points.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4], [0, 0]);
+check("U1 is behind U9", centre(u[0])[1] < centre(u[8])[1], JSON.stringify([centre(u[0]), centre(u[8])]));
 
 if (failed) process.exit(1);
 console.log("cube tests passed");
