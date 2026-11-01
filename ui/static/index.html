@@ -6,6 +6,7 @@
 <meta name="ui-token" content="{{UI_TOKEN}}">
 <title>AI Ontology Hallucination Research</title>
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -18,6 +19,11 @@
       <div class="release-pick">
         <select id="release" aria-label="Release"></select>
         <button id="refresh" type="button" class="small" title="Fetch from GitHub again" aria-label="Refresh">&#x21bb;</button>
+      </div>
+      <div id="theme" class="theme-pick" role="group" aria-label="Theme">
+        <button type="button" data-theme="light" aria-pressed="false">Light</button>
+        <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+        <button type="button" data-theme="system" aria-pressed="false">System</button>
       </div>
     </div>
   </nav>

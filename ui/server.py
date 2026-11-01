@@ -24,7 +24,7 @@ BIND_HOST = "0.0.0.0"
 LOOPBACK = ipaddress.ip_network("127.0.0.0/8")
 KINDS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 STATIC_FILES = (
-    "index.html", "router.js", "markdown.js", "cube.js", "progress.js", "progressview.js", "cubepanel.js",
+    "index.html", "theme.js", "router.js", "markdown.js", "cube.js", "progress.js", "progressview.js", "cubepanel.js",
     "expmetrics.js", "pages/models.js", "pages/puzzles.js", "pages/inputs.js", "pages/experiments.js",
     "pages/experiment.js", "pages/new.js", "pages/about.js", "style.css",
 )  # the ui/static files named in the spec's Files line, and nothing else
