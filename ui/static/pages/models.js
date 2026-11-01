@@ -7,7 +7,6 @@
 
   const SVG = {
     edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
-    clear: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/>',
     source: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>',
   };
 
@@ -27,9 +26,12 @@
     } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
   }
 
-  // The key edit row: password field, Save, and Cancel (left out when there is no key to fall back to).
+  // The key edit row: the password field, showing only the saved key's last 4 characters, then Save, Cancel,
+  // and Clear. Cancel is left out when there is no key to fall back to, and Clear when no key is saved in a file.
   function editRow(p, msg, onCancel) {
-    const field = h("input", { type: "password", autocomplete: "off", placeholder: p.variable, "aria-label": `${p.name} API key` });
+    const saved = p.key.source === "file";
+    const field = h("input", { type: "password", autocomplete: "off", "aria-label": `${p.name} API key`,
+      placeholder: saved ? "•".repeat(12) + p.key.tail : p.variable });
     const save = h("button", { type: "button", text: "Save" });
     save.addEventListener("click", () => { const key = field.value; field.value = ""; secret(p, "save", msg, key); });
     const row = h("div", { class: "row key-row" }, field, save);
@@ -37,6 +39,11 @@
       const cancel = h("button", { type: "button", text: "Cancel" });
       cancel.addEventListener("click", () => { field.value = ""; onCancel(); });
       row.append(cancel);
+    }
+    if (saved) {
+      const clear = h("button", { type: "button", class: "danger", text: "Clear" });
+      clear.addEventListener("click", () => { if (confirm(`Delete the saved ${p.name} API key?`)) secret(p, "clear", msg, ""); });
+      row.append(clear);
     }
     return row;
   }
@@ -52,9 +59,6 @@
     const open = () => { slot.replaceChildren(editRow(p, msg, k.source === "missing" ? null : close)); };
     const icons = h("div", { class: "provider-icons" });
     if (k && (k.source === "file" || k.source === "missing")) icons.append(icon("edit", "Edit API key", open));
-    if (k && k.source === "file") {
-      icons.append(icon("clear", "Clear API key", () => { if (confirm(`Delete the saved ${p.name} key?`)) secret(p, "clear", msg, ""); }));
-    }
     if (bundle.repo && bundle.main_sha) icons.append(icon("source", "Source: config/models.toml", null, `${bundle.repo}/blob/${bundle.main_sha}/config/models.toml`));
     head.append(icons);
     if (k && k.source === "missing") open();
