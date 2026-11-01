@@ -172,11 +172,5 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .exp-detail section { margin-bottom: 12px; }
 .exp-detail h3 { font-size: 14px; margin: 0 0 6px; }
 .exp-detail details > summary { font-weight: 600; }
-/* New Experiment: the form on the left, the terminal sticky on the right */
-.page.newpage { flex-direction: row; align-items: flex-start; }
-.page.newpage #main { flex: 1; min-width: 0; }
-.page.newpage .termbox { flex: 0 0 38%; position: sticky; top: 0; height: 100vh; }
-.page.newpage .termbox .terminal { height: calc(100vh - 80px); }
 .newexp section { margin-bottom: 14px; }
 .newexp .grid input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; }
-@media (max-width: 900px) { .page.newpage { flex-direction: column; } .page.newpage .termbox { position: static; flex-basis: auto; width: 100%; height: auto; } }

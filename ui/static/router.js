@@ -132,6 +132,7 @@
     st.drawn = sig;
     st.bundle = b;
     drawMenu();
+    $("termbox").hidden = st.params.name !== "experiment";
     const page = pages[st.params.name];
     const main = $("main");
     if (!page) { main.replaceChildren(); return; }

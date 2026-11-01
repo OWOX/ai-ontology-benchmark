@@ -239,6 +239,10 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 3. ↻ requests the bundle with `refresh=1`, and spins until the answer. A failed request keeps the cached view and shows the error under the menu.
 4. When a job ends, the page requests the bundle again, so a pushed experiment appears.
 
+### Terminal
+
+A folded "Terminal" box with the job log from `GET /api/log` and a Clear button. It shows only on the Experiment page and is hidden on every other page. The page keeps collecting log lines on every page, so the history is there when an experiment page opens.
+
 ### Models
 
 One block per provider, in bundle order.
@@ -282,15 +286,16 @@ One experiment, from `GET /api/experiments/<id>`:
 5. The report, rendered, with its source link, when there is one.
 6. Progress: the Cube panel and the per-input rings described below, from `GET /api/state/<id>`.
 7. Actions while the experiment's results are in this checkout: Evaluate, with an optional "Score under release" select, and Commit, which opens a dialog with the preview's branch, files, and diffstat. Confirm calls `POST /api/commit` and shows the PR link. Commit is disabled while any job of this experiment is alive or before a report exists in this checkout.
+8. The terminal, under the actions.
 
 ### New Experiment
 
-The terminal is on the right, sticky to the viewport height. The left column holds:
+The page holds:
 
 1. Branch: a select with "New: <default id>" first, then every branch from `GET /api/branches`. The new id is editable and follows the choices below until it is edited by hand. Picking an existing branch loads its config into the form from `GET /api/experiment/<id>/config`.
 2. Puzzles: one `<button aria-pressed>` card per puzzle in the menu's release, with the puzzle name, its input count, and, for an `NxN` name, a solved net. At least one is needed.
 3. AI models: grouped by provider. When a provider has no key, the header shows ⚠️ "no API key: add it under Models", linking there, and its models are disabled. Other disabled reasons show beside the model.
-4. Parameters: attempts ("Attempts per input and setup: sends the same input N times"), retry cap, max output tokens, the three budgets, and "Limit per model" (optional). Buttons: Estimate, Dry run, Run, Stop. Each sends the form.
+4. Parameters: attempts ("Attempts per input and setup: sends the same input N times"), retry cap, max output tokens, the three budgets, and "Limit per model" (optional). Buttons: Estimate, Dry run, Run, Stop. Each sends the form. After Run, Estimate, or Dry run starts, the message links to the experiment's page, where the terminal shows the job.
 5. Progress: the Cube panel, a legend, and the rings, as on the Experiment page.
 
 Banners: a job in state `failed` shows its last stderr line. The line comes from the log poll and the state from the snapshot poll, and either can arrive first, so each log poll that brings a stderr line redraws the banners. A job in state `budget` shows "Budget reached" and a plain note to raise the budget under Parameters and press Run, which the server accepts as `budget_updated`, and resumes. The banner notes that parallel AI models can each pass the experiment budget by one worst-case request, and that "attempts left" in the message counts one AI model's attempts.
