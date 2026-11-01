@@ -258,7 +258,7 @@ One block per provider, in bundle order.
 
 One card per puzzle of the release. Under the title, two columns: on the left, items 1, 2, 3, and 4 in that order; on the right, item 5, aligned right, its top level with the top of the picture. Under 900px wide the columns stack. Items 6 and 7 follow at full width.
 
-1. A picture of the solved puzzle: `cube3d` for an `NxN` cube, else the name in a box. `cube3d` draws all six faces in 3D, starting with U on top, F front-left, and R front-right, and the viewer turns it in any direction by dragging with the mouse or a finger.
+1. A picture of the solved puzzle: `cube3d` for an `NxN` cube, else the name in a box. `cube3d` draws all six faces in 3D, starting with U on top, F front-left, and R front-right, and the viewer turns it by dragging with the mouse or a finger. The pitch stops at a quarter turn up or down, so the cube never flips. The `<svg>` has `role="img"` and the label "3D view of the cube; drag to turn".
 2. The description, from `docs/puzzles/<puzzle>.md`, with its source link.
 3. "Allowed moves": the `legal_moves` list as chips, with a source link to the engine. "No engine" when it is `null`.
 4. The input count, the depths, and the valid and invalid counts. "Scrambled states" links to `#/puzzles/<puzzle>/inputs`. "Experiments" links to `#/experiments?puzzle=<puzzle>`.
