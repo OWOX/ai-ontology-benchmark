@@ -190,8 +190,8 @@
           if (dead) return;
           const rel = bundle.release ? "?release=" + encodeURIComponent(bundle.release) : "";
           msg.className = "msg ok";
-          msg.replaceChildren(`${label} started. Experiment ${r.status}. `,
-            h("a", { href: "#/experiments/" + encodeURIComponent(form.id) + rel, text: "Open its page" }));
+          msg.replaceChildren(`${label} started. Experiment ${r.status}. See the terminal. `);
+          if (path === "run") msg.append(h("a", { href: "#/experiments/" + encodeURIComponent(form.id) + rel, text: "Open its page" }));
           if (path === "run") startProgress(form.id);
         } catch (e) { say(e.message, "err"); }
       }

@@ -132,7 +132,7 @@
     st.drawn = sig;
     st.bundle = b;
     drawMenu();
-    $("termbox").hidden = st.params.name !== "experiment";
+    $("termbox").hidden = !["experiment", "new", "about"].includes(st.params.name);
     const page = pages[st.params.name];
     const main = $("main");
     if (!page) { main.replaceChildren(); return; }

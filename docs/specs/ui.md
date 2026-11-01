@@ -243,7 +243,7 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 
 ### Terminal
 
-A folded "Terminal" box with the job log from `GET /api/log` and a Clear button. It shows only on the Experiment page and is hidden on every other page. The page keeps collecting log lines on every page, so the history is there when an experiment page opens.
+A folded "Terminal" box with the job log from `GET /api/log` and a Clear button. It sits at the foot of the page, a sibling of `#main` and not inside the actions, and shows on the Experiment, New Experiment, and About pages. It is hidden on the others. It shows every job's log, for all experiments and project jobs. The UI keeps collecting log lines while the terminal is hidden, so the history is there when it is shown.
 
 ### Models
 
@@ -287,7 +287,7 @@ One experiment, from `GET /api/experiments/<id>`:
 5. The report, rendered, with its source link, when there is one.
 6. Progress: the Cube panel and the per-input rings described below, from `GET /api/state/<id>`.
 7. Actions while the experiment's results are in this checkout: Evaluate, with an optional "Score under release" select, and Commit, which opens a dialog with the preview's branch, files, and diffstat. Confirm calls `POST /api/commit` and shows the PR link. Commit is disabled while any job of this experiment is alive or before a report exists in this checkout.
-8. The terminal, under the actions.
+8. The terminal, at the foot of the page.
 
 ### New Experiment
 
@@ -296,14 +296,14 @@ The page holds:
 1. Branch: a select with "New: <default id>" first, then every branch from `GET /api/branches`. The new id is editable and follows the choices below until it is edited by hand. Picking an existing branch loads its config into the form from `GET /api/experiment/<id>/config`.
 2. Puzzles: one `<button aria-pressed>` card per puzzle in the menu's release, with the puzzle name, its input count, and, for an `NxN` name, a solved net. At least one is needed.
 3. AI models: grouped by provider. When a provider has no key, the header shows ⚠️ "no API key: add it under Models", linking there, and its models are disabled. Other disabled reasons show beside the model.
-4. Parameters: attempts ("Attempts per input and setup: sends the same input N times"), retry cap, max output tokens, the three budgets, and "Limit per model" (optional). Buttons: Estimate, Dry run, Run, Stop. Each sends the form. After Run, Estimate, or Dry run starts, the message links to the experiment's page, where the terminal shows the job.
+4. Parameters: attempts ("Attempts per input and setup: sends the same input N times"), retry cap, max output tokens, the three budgets, and "Limit per model" (optional). Buttons: Estimate, Dry run, Run, Stop. Each sends the form. After Run, Estimate, or Dry run starts, the message points to the terminal at the foot of the page, which shows the job's output. After Run only, it also links to the experiment's page. Estimate and Dry run give no link, because a new id has no page.
 5. Progress: the Cube panel, a legend, and the rings, as on the Experiment page.
 
 Banners: a job in state `failed` shows its last stderr line. The line comes from the log poll and the state from the snapshot poll, and either can arrive first, so each log poll that brings a stderr line redraws the banners. A job in state `budget` shows "Budget reached" and a plain note to raise the budget under Parameters and press Run, which the server accepts as `budget_updated`, and resumes. The banner notes that parallel AI models can each pass the experiment budget by one worst-case request, and that "attempts left" in the message counts one AI model's attempts.
 
 ### About
 
-The README from `main`, rendered, with its source link. Under it, a "Project" box: the project status from `/api/project` (branch, clean tree, packages, `gh`), Install dependencies and Run tests, and the release tools: a bump select, a note field, a Release button, and "Push and open PR". Release is disabled, with the reason beside it, on `main` ("on main"), on a detached HEAD ("detached HEAD"), and with a dirty tree ("working tree has changes: commit them first"). Push is disabled on `main` and on a detached HEAD. Both are also disabled while any job runs. The server enforces all of this. When an install, release, or push job ends, the page reloads the project status and the bundle.
+The README from `main`, rendered, with its source link. Under it, a "Project" box: the project status from `/api/project` (branch, clean tree, packages, `gh`), Install dependencies and Run tests, and the release tools: a bump select, a note field, a Release button, and "Push and open PR". Release is disabled, with the reason beside it, on `main` ("on main"), on a detached HEAD ("detached HEAD"), and with a dirty tree ("working tree has changes: commit them first"). Push is disabled on `main` and on a detached HEAD. Both are also disabled while any job runs. The server enforces all of this. The terminal at the foot of the page shows the output of the install, tests, and release jobs, which belong to no experiment. When an install, release, or push job ends, the page reloads the project status and the bundle.
 
 ### Progress
 
