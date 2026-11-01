@@ -247,21 +247,21 @@ A folded "Terminal" box with the job log from `GET /api/log` and a Clear button.
 
 One block per provider, in bundle order.
 
-1. The header is the provider name, with ⚠️ and "no API key" when the key is `missing` (never for `fake`).
-2. The key row: with no key, a password field and Save. With a key saved in a file, `Key …abcd from secrets/anthropic.json`, with Edit and Clear (after `confirm()`). Edit shows the password field, Save, and Cancel. With a key from an env var, `Set by env var ANTHROPIC_API_KEY`, with no controls. Save and Clear reload the bundle. The field is cleared after Save and Cancel, and a key is never shown. A note says "Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed."
+1. The header is the provider name and a badge: green "configured" when the key is saved in a file or set by an env var, red "not configured" when it is `missing`, and none for `fake`. The badge's tooltip is the key status: `Key …abcd from secrets/anthropic.json`, `Set by env var ANTHROPIC_API_KEY`, or "No API key". At the right end of the header, icons show on hover or keyboard focus of the block, and always on devices without hover: Edit (a key in a file, or `missing`), Clear (a key in a file), and Source. A key from an env var has no Edit or Clear, because the env var wins over the file.
+2. Edit shows the key edit row under the header: a password field, Save, and Cancel. With no key, the edit row is open from the start and has no Cancel. Clear asks `confirm()` first. Save and Clear reload the bundle. The field is cleared after Save and Cancel, errors show in one shared message line, and a key is never shown. A note says "Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed."
 3. One table per provider, with the same column widths in every table. The columns are Model (the name, with the disabled reason under it, left out when the key is missing because the header covers it), API model id, Kind ("not set" when empty), Input $/M tokens, Output $/M tokens ("n/a" without a price), and Experiments, the count as a link to `#/experiments?model=<name>`. A disabled model's row is muted.
-4. The block ends with a source link to `config/models.toml`.
+4. The Source icon links to `config/models.toml` on GitHub, at the commit sha of `main`, and is left out with no GitHub base URL.
 
 ### Puzzles
 
-One card per puzzle of the release:
+One card per puzzle of the release. Under the title, two columns: on the left, items 1, 2, 3, and 4 in that order; on the right, item 5, aligned to the right with its top level with the picture. Under 900px wide the columns stack. Items 6 and 7 follow at full width.
 
-1. A picture of the solved puzzle: `cubeIso` for an `NxN` cube, else the name in a box.
+1. A picture of the solved puzzle: `cube3d` for an `NxN` cube, else the name in a box. `cube3d` draws all six faces in 3D, starting with U on top, F front-left, and R front-right, and the viewer turns it in any direction by dragging with the mouse or a finger.
 2. The description, from `docs/puzzles/<puzzle>.md`, with its source link.
-3. A 2D net of the solved puzzle with every sticker named by its face letter and its index in the face, row by row from 1, for example `U1` to `U9` on the 3x3, in the state's reading order ([cube.md](cube.md)), so a reader can match the net to a state string. Cubes only.
+3. "Allowed moves": the `legal_moves` list as chips, with a source link to the engine. "No engine" when it is `null`.
 4. The input count, the depths, and the valid and invalid counts. "Scrambled states" links to `#/puzzles/<puzzle>/inputs`. "Experiments" links to `#/experiments?puzzle=<puzzle>`.
-5. "What the AI model is told": one folded section per setup with the prompt template, its prompt version, and its source link.
-6. "Allowed moves": the `legal_moves` list as chips, with a source link to the engine. "No engine" when it is `null`.
+5. A 2D net of the solved puzzle with every sticker named by its face letter and its index in the face, row by row from 1, for example `U1` to `U9` on the 3x3, in the state's reading order ([cube.md](cube.md)), so a reader can match the net to a state string. Cubes only.
+6. "What the AI model is told": one folded section per setup with the prompt template, its prompt version, and its source link.
 7. "Not allowed moves seen": a table of `impossible_seen`, with the move in a code span, the count, and the AI models, each experiment id linking to its page. "None in pushed experiments yet" when it is empty.
 
 The inputs page lists every input of the puzzle: the input id, the depth, the validity, the net of its state, and, for an invalid input, its source input and corruption, filtered by depth and validity, with a source link to `inputs.jsonl`.

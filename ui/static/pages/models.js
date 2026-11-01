@@ -1,36 +1,64 @@
 // Spec: docs/specs/ui.md (Models)
-// One block per provider: the API key controls (/api/secrets) and a table of the catalogue models. Reads the bundle only.
+// One block per provider: the key badge and icons (/api/secrets) and a table of the catalogue models. Reads the bundle only.
 (function () {
   const h = UI.el;
 
   const usd = (v) => "$" + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
-  function keyRow(p, msg) {
-    const row = h("div", { class: "row key-row" });
-    const k = p.key;
-    const btn = (text, fn) => { const b = h("button", { type: "button", text }); b.addEventListener("click", fn); return b; };
-    const draw = (editing) => {
-      const field = h("input", { type: "password", autocomplete: "off", placeholder: p.variable });
-      const act = async (action) => {
-        if (action === "clear" && !confirm(`Delete the saved ${p.name} key?`)) return;
-        const body = { provider: p.name, action, api_key: field.value };
-        field.value = "";
-        msg.textContent = ""; msg.className = "msg";
-        try {
-          await UI.api("/api/secrets", { method: "POST", body });
-          await UI.reload(false);
-        } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
-      };
-      const status = k.source === "file" ? `Key …${k.tail} from secrets/${p.name}.json`
-        : k.source === "env" ? `Set by env var ${p.variable}` : "No key";
-      const parts = [h("span", { class: "muted small", text: status })];
-      if (k.source === "missing" || editing) parts.push(field, btn("Save", () => act("save")));
-      if (editing) parts.push(btn("Cancel", () => { field.value = ""; draw(false); }));
-      else if (k.source === "file") parts.push(btn("Edit", () => draw(true)), btn("Clear", () => act("clear")));
-      row.replaceChildren(...parts);
-    };
-    draw(false);
+  const SVG = {
+    edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    clear: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/>',
+    source: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>',
+  };
+
+  // An icon-only button (or a link, with href) from the static markup above.
+  function icon(kind, label, fn, href) {
+    const a = h(href ? "a" : "button", { class: "icon-btn", title: label, "aria-label": label, ...(href ? { href, target: "_blank", rel: "noopener" } : { type: "button" }) });
+    a.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SVG[kind]}</svg>`;
+    if (fn) a.addEventListener("click", fn);
+    return a;
+  }
+
+  async function secret(p, action, msg, key) {
+    msg.textContent = ""; msg.className = "msg";
+    try {
+      await UI.api("/api/secrets", { method: "POST", body: { provider: p.name, action, api_key: key } });
+      await UI.reload(false);
+    } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
+  }
+
+  // The key edit row: password field, Save, and Cancel (left out when there is no key to fall back to).
+  function editRow(p, msg, onCancel) {
+    const field = h("input", { type: "password", autocomplete: "off", placeholder: p.variable, "aria-label": `${p.name} API key` });
+    const save = h("button", { type: "button", text: "Save" });
+    save.addEventListener("click", () => { const key = field.value; field.value = ""; secret(p, "save", msg, key); });
+    const row = h("div", { class: "row key-row" }, field, save);
+    if (onCancel) {
+      const cancel = h("button", { type: "button", text: "Cancel" });
+      cancel.addEventListener("click", () => { field.value = ""; onCancel(); });
+      row.append(cancel);
+    }
     return row;
+  }
+
+  function providerBlock(p, bundle, msg, q) {
+    const k = p.key;
+    const status = !k ? "" : k.source === "file" ? `Key …${k.tail} from secrets/${p.name}.json`
+      : k.source === "env" ? `Set by env var ${p.variable}` : "No API key";
+    const head = h("div", { class: "provider-head" }, h("span", { text: p.name }));
+    if (k) head.append(h("span", { class: "badge " + (k.source === "missing" ? "bad" : "ok"), title: status, text: k.source === "missing" ? "not configured" : "configured" }));
+    const slot = h("div");
+    const close = () => slot.replaceChildren();
+    const open = () => { slot.replaceChildren(editRow(p, msg, k.source === "missing" ? null : close)); };
+    const icons = h("div", { class: "provider-icons" });
+    if (k && (k.source === "file" || k.source === "missing")) icons.append(icon("edit", "Edit API key", open));
+    if (k && k.source === "file") {
+      icons.append(icon("clear", "Clear API key", () => { if (confirm(`Delete the saved ${p.name} key?`)) secret(p, "clear", msg, ""); }));
+    }
+    if (bundle.repo && bundle.main_sha) icons.append(icon("source", "Source: config/models.toml", null, `${bundle.repo}/blob/${bundle.main_sha}/config/models.toml`));
+    head.append(icons);
+    if (k && k.source === "missing") open();
+    return h("section", { class: "step provider" }, head, slot, modelTable(p, q));
   }
 
   const COLS = ["24%", "26%", "12%", "13%", "13%", "12%"];
@@ -63,17 +91,7 @@
       const q = params.release ? "&release=" + encodeURIComponent(params.release) : "";
       el.append(h("h2", { text: "Models" }));
       const msg = h("p", { class: "msg", role: "status" });
-      for (const p of bundle.providers) {
-        const missing = p.key && p.key.source === "missing";
-        const head = h("div", { class: "provider-head" }, h("span", { text: p.name }));
-        if (missing) head.append(h("span", { class: "reason", text: "⚠️ no API key" }));
-        const box = h("section", { class: "step provider" }, head);
-        if (p.key) box.append(keyRow(p, msg));
-        box.append(modelTable(p, q));
-        const src = bundle.repo && bundle.main_sha ? UI.sourceLink(`${bundle.repo}/blob/${bundle.main_sha}/config/models.toml`) : null;
-        if (src) box.append(h("p", { class: "small" }, src));
-        el.append(box);
-      }
+      for (const p of bundle.providers) el.append(providerBlock(p, bundle, msg, q));
       el.append(h("p", { class: "muted small", text: "Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed." }), msg);
     },
   });

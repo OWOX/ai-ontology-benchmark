@@ -50,7 +50,7 @@ button.small { padding: 2px 8px; font-size: 12px; }
 .card.sel { border-color: var(--accent); background: #eef3ff; }
 .card .name { font-weight: 600; }
 .provider { margin-bottom: 8px; }
-.provider-head { display: flex; align-items: baseline; gap: 8px; font-weight: 600; text-transform: capitalize; margin-bottom: 4px; }
+.provider-head { display: flex; align-items: center; gap: 8px; font-weight: 600; text-transform: capitalize; margin-bottom: 4px; }
 .model { display: flex; gap: 6px; align-items: baseline; padding: 2px 0 2px 28px; }
 .model.off { color: var(--muted); }
 .provider-head .reason { font-weight: 400; text-transform: none; }
@@ -145,6 +145,15 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
 .md code { font-family: var(--mono); font-size: 12px; }
 .source { font-size: 12px; margin-left: 6px; }
 .project h3 { margin: 0 0 6px; font-size: 14px; }
+.badge { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; text-transform: none; }
+.badge.ok { color: #1f7a45; background: #e6f4ec; }
+.badge.bad { color: var(--danger); background: #fdecea; }
+.provider-icons { margin-left: auto; display: flex; gap: 4px; visibility: hidden; }
+.provider:hover .provider-icons, .provider:focus-within .provider-icons { visibility: visible; }
+@media (hover: none) { .provider-icons { visibility: visible; } }
+.icon-btn { display: inline-flex; align-items: center; padding: 3px; border: 0; background: none; color: var(--muted); border-radius: 4px; }
+.icon-btn:hover:not(:disabled) { background: none; color: var(--text); }
+.provider .key-row { margin-bottom: 6px; }
 .models-table { table-layout: fixed; width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
 .models-table th, .models-table td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 .models-table th { color: var(--muted); font-weight: 600; font-size: 12px; }
@@ -157,7 +166,11 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
   .shell { grid-template-columns: 1fr; }
   .menu { position: static; height: auto; }
 }
-.puzzle-pic, .puzzle-name-box { float: right; margin: 0 0 8px 12px; }
+.puzzle-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 480px); gap: 16px; align-items: start; }
+.puzzle-pic, .puzzle-name-box { display: inline-block; margin: 0 0 8px; }
+.cube3d { display: block; cursor: grab; touch-action: none; user-select: none; }
+.cube3d:active { cursor: grabbing; }
+@media (max-width: 900px) { .puzzle-top { grid-template-columns: 1fr; } }
 .puzzle-name-box { border: 1px solid var(--line); border-radius: var(--radius); padding: 24px 32px; font-weight: 600; }
 .named-net svg { max-width: 100%; height: auto; display: block; background: #2a2f38; border-radius: 4px; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
