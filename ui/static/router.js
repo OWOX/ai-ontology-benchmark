@@ -118,7 +118,7 @@
   function drawConn() {
     const el = $("conn"), f = st.fetch || {};
     const when = f.at ? new Date(f.at).toLocaleString() : "";
-    const fetched = f.error ? `GitHub not reached, showing data from ${when || "never"}: ${f.error}` : when ? `Fetched from GitHub ${when}` : "Not fetched yet";
+    const fetched = f.error ? `GitHub not reached, ${when ? "showing data from " + when : "no data yet"}: ${f.error}` : when ? `Fetched from GitHub ${when}` : "Not fetched yet";
     const server = { live: "live", down: "not reachable, reconnecting" }[st.server] || "connecting";
     const text = `Server: ${server}\n${fetched}`;
     el.className = "conn" + (st.server === "down" ? " bad" : st.server === "live" ? (f.error ? " warn" : " ok") : "");
