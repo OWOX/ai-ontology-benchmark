@@ -1,0 +1,54 @@
+README.md
+  h_1911dffda4172c 79
+docs/specs/README.md
+  h_1911dffda4172c 59-67
+docs/specs/paper-ids.md
+  h_1911dffda4172c 1-27
+docs/specs/paper-previews.md
+  h_1911dffda4172c 1-25
+docs/specs/paper-ste-check.md
+  h_1911dffda4172c 1-25
+docs/specs/paper-verify-ste100.md
+  h_1911dffda4172c 1-28
+paper/.gitignore
+  h_1911dffda4172c 1-16
+paper/Makefile
+  h_1911dffda4172c 1-20
+paper/README.md
+  h_1911dffda4172c 1-151
+paper/build.sh
+  h_1911dffda4172c 1-17
+paper/ids.py
+  h_1911dffda4172c 1-93
+paper/main.tex
+  h_1911dffda4172c 1-604
+paper/make_previews.py
+  h_1911dffda4172c 1-29
+paper/placeholders.sty
+  h_1911dffda4172c 1-102
+paper/refs.bib
+  h_1911dffda4172c 1-153
+paper/ste_check.py
+  h_1911dffda4172c 1-180
+paper/verify_ste100.py
+  h_1911dffda4172c 1-238
+tests/test_paper_ids.py
+  h_1911dffda4172c 1-44
+tests/test_paper_previews.py
+  h_1911dffda4172c 1-27
+tests/test_paper_ste_check.py
+  h_1911dffda4172c 1-46
+tests/test_paper_verify_ste100.py
+  h_1911dffda4172c 1-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0beb7b4420c7141a0433cbf1ce9a9b681d38c88f",
+  "prompts": {},
+  "humans": {
+    "h_1911dffda4172c": {
+      "author": "Michael Flaks <misha.flaks@gmail.com>"
+    }
+  }
+}
