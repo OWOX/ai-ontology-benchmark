@@ -9,10 +9,10 @@ body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -app
 .top { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .top h1 { font-size: 16px; margin: 0; }
 .nowrap { white-space: nowrap; }
-.conn { display: inline-block; box-sizing: content-box; width: 9px; height: 9px; padding: 4px; margin-left: 0; border-radius: 50%; vertical-align: middle; background: #8a919c; background-clip: content-box; }
-.conn.ok { background: #2e9e5b; }
-.conn.warn { background: #f2b705; }
-.conn.bad { background: var(--danger); }
+.conn { display: inline-block; box-sizing: content-box; width: 9px; height: 9px; padding: 4px; margin-left: 0; border-radius: 50%; vertical-align: middle; background-color: #8a919c; background-clip: content-box; }
+.conn.ok { background-color: #2e9e5b; }
+.conn.warn { background-color: #f2b705; }
+.conn.bad { background-color: var(--danger); }
 .layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr); gap: 16px; padding: 16px; align-items: start; }
 .left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .right { position: sticky; top: 16px; height: calc(100vh - 32px - 40px); display: flex; flex-direction: column; min-height: 240px; }
