@@ -1,0 +1,102 @@
+% placeholders.sty -- vector figure and table placeholders for the ontology paper template.
+%
+% Each placeholder is a grey rectangle at its final layout size, with a corner-to-corner
+% cross. The purpose text runs along the rising diagonal: it is rotated by exactly
+% atan(h/w) of its box, its bottom edge sits a small gap above the diagonal, and it is
+% centred on the box centre. If the text block would leave the box, it is scaled down
+% until it fits. A large bold panel letter goes at the top left, and the stamped ID goes
+% at the bottom centre.
+%
+% The stamped ID is derived from the LaTeX float counter, so it always equals the
+% printed number: fig-onto-<n> in a figure, tab-onto-<n> in a table, with the panel
+% letter appended for panels (fig-onto-<n>A). The caption may come before or after the
+% placeholder: the macro compares the counter with its value at the start of the float.
+%
+% Units inside \begin{phcanvas} ... \end{phcanvas} are fractions of \linewidth, so a
+% placeholder in a figure* spans the full text width and one in a figure spans one column.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{placeholders}[2026/11/01 grey-box figure placeholders, counter-derived IDs]
+\RequirePackage{tikz}
+\usetikzlibrary{calc}
+\definecolor{phfill}{gray}{0.88}
+\definecolor{phline}{gray}{0.60}
+\definecolor{phborder}{gray}{0.42}
+\definecolor{phtext}{gray}{0.12}
+\newcommand{\phfont}{\sffamily\footnotesize}
+% Gap between the diagonal line and the bottom edge of the text block.
+\newlength{\phgap}\setlength{\phgap}{1.5pt}
+% Clearance kept between the text block and the box edges.
+\newlength{\phmargin}\setlength{\phmargin}{4pt}
+
+% ---- counter-derived IDs ------------------------------------------------------------
+\makeatletter
+\def\ph@start@figure{0}\def\ph@start@table{0}
+\AddToHook{env/figure/begin}{\xdef\ph@start@figure{\the\value{figure}}}
+\AddToHook{env/figure*/begin}{\xdef\ph@start@figure{\the\value{figure}}}
+\AddToHook{env/table/begin}{\xdef\ph@start@table{\the\value{table}}}
+\AddToHook{env/table*/begin}{\xdef\ph@start@table{\the\value{table}}}
+% \phnumber: number of the current float, whether or not its \caption has run yet.
+\newcommand{\phnumber}{%
+  \ifx\@captype\@undefined ?\else
+    \ifnum\value{\@captype}=\csname ph@start@\@captype\endcsname\space
+      \the\numexpr\value{\@captype}+1\relax
+    \else
+      \the\value{\@captype}%
+    \fi
+  \fi}
+% \phid{panel letter}: stamped ID such as fig-onto-7 or fig-onto-7A.
+\newcommand{\phid}[1]{%
+  \ifx\@captype\@undefined onto-?\else
+    \ifnum\pdfstrcmp{\@captype}{table}=0 tab\else fig\fi-onto-\phnumber#1%
+  \fi}
+\makeatother
+
+% ---- drawing ------------------------------------------------------------------------
+\newsavebox{\phbox}
+\newenvironment{phcanvas}{\noindent\begin{tikzpicture}[x={\dimexpr\linewidth-0.8pt\relax},y={\dimexpr\linewidth-0.8pt\relax},line cap=round]}{\end{tikzpicture}}
+% \phpanel{x}{y}{w}{h}{panel letter or empty}{purpose text}
+\newcommand{\phpanel}[6]{%
+  \pgfmathsetmacro{\phang}{atan2(#4,#3)}%
+  \pgfmathsetlengthmacro{\phW}{#3*(\linewidth-0.8pt)}%
+  \pgfmathsetlengthmacro{\phH}{#4*(\linewidth-0.8pt)}%
+  % Try several text widths and keep the one that needs the least shrinking, so flat
+  % boxes get long lines and squarer boxes get more lines.
+  \def\phscale{0}\def\phtw{0pt}%
+  \foreach \phfrac in {0.72,0.64,0.56,0.48,0.40}{%
+    \pgfmathsetlengthmacro{\phtry}{\phfrac*veclen(\phW,\phH)}%
+    \pgfinterruptpicture
+      \global\sbox{\phbox}{\parbox{\phtry}{\centering\phfont\hyphenpenalty=10000\exhyphenpenalty=10000\color{phtext}#6}}%
+    \endpgfinterruptpicture
+    % Rotated block about the box centre, bottom edge on the diagonal:
+    % max |x| = L/2 cos + t sin, max y = L/2 sin + t cos.
+    \pgfmathsetlengthmacro{\phL}{\phtry+2pt}%
+    \pgfmathsetlengthmacro{\phT}{\ht\phbox+\dp\phbox+2pt+\phgap}%
+    \pgfmathsetmacro{\phsx}{(\phW/2-\phmargin)/(\phL/2*cos(\phang)+\phT*sin(\phang))}%
+    \pgfmathsetmacro{\phsy}{(\phH/2-\phmargin)/(\phL/2*sin(\phang)+\phT*cos(\phang))}%
+    \pgfmathsetmacro{\phs}{min(1,\phsx,\phsy)}%
+    % Prefer the widest width that fits at full size; otherwise the largest scale.
+    \pgfmathtruncatemacro{\phbetter}{(\phs>\phscale+0.0001)?1:0}%
+    \ifnum\phbetter=1 \global\let\phscale\phs \global\let\phtw\phtry\fi
+  }%
+  \pgfinterruptpicture
+    \global\sbox{\phbox}{\parbox{\phtw}{\centering\phfont\hyphenpenalty=10000\exhyphenpenalty=10000\color{phtext}#6}}%
+  \endpgfinterruptpicture
+  \ifdim\phscale pt<0.999pt \typeout{placeholders: scaled text in \phid{#5} by \phscale}\fi
+  \fill[phfill] (#1,#2) rectangle ($(#1,#2)+(#3,#4)$);
+  \draw[phline, line width=0.6pt] (#1,#2) -- ($(#1,#2)+(#3,#4)$);
+  \draw[phline, line width=0.6pt] ($(#1,#2)+(0,#4)$) -- ($(#1,#2)+(#3,0)$);
+  \draw[phborder, line width=0.8pt] (#1,#2) rectangle ($(#1,#2)+(#3,#4)$);
+  % Rotate first, so yshift moves the block perpendicular to the diagonal (above it).
+  % The fill masks the falling diagonal where it crosses the text.
+  \node[fill=phfill, inner sep=1pt, anchor=south, rotate=\phang, scale=\phscale,
+        yshift=\phgap] at ($(#1,#2)+0.5*(#3,#4)$) {\usebox{\phbox}};
+  \if\relax\detokenize{#5}\relax\else
+    \node[anchor=north west, fill=phfill, inner sep=1.2pt, font=\sffamily\bfseries\LARGE,
+          text=black] at ($(#1,#2)+(0.010,#4)+(0,-0.010)$) {#5};
+  \fi
+  \node[anchor=south, fill=phfill, inner sep=1.2pt, font=\ttfamily\bfseries\scriptsize,
+        text=phtext] at ($(#1,#2)+(0.5*#3,0.006)$) {\phid{#5}};
+}
+% \phsingle{height/width}{purpose}: one-panel placeholder that fills \linewidth.
+\newcommand{\phsingle}[2]{\begin{phcanvas}\phpanel{0}{0}{1}{#1}{}{#2}\end{phcanvas}}
+\endinput
