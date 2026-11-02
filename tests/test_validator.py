@@ -70,3 +70,63 @@ def test_scramble_is_not_solved_in_one_move():
 def test_unknown_stop_reason_raises():
     with pytest.raises(ValueError, match="stop_reason"):
         validate(VALID, reply(SOLVE), "stop")
+
+
+# Decision path: the raw response is the array of a decision model's calls.
+ONE_STATE, ONE_SCRAMBLE = ENGINE.scramble(7, 1)
+ONE_SOLVE = ONE_SCRAMBLE[0][0] + INVERSE[ONE_SCRAMBLE[0][1:]]
+ONE_VALID = {"puzzle": "2x2", "state": ONE_STATE, "validity": "valid"}
+
+
+def calls(*steps):
+    """steps: (move or 'done' or a raw id, mismatch probability). Returns the raw response."""
+    legal = ENGINE.legal_moves()
+    out = []
+    for choice, p in steps:
+        cid = "done" if choice == "done" else (f"move_{legal.index(choice) + 1}" if choice in legal else choice)
+        out.append({"answers": {"next_move": {"type": "choice", "choice": cid},
+                                "mismatch": {"type": "noul", "noul": p}},
+                    "usage": {"input_tokens": 10, "output_tokens": 0}, "model": "m"})
+    return json.dumps(out)
+
+
+def test_decision_solves():
+    v = validate(ONE_VALID, calls((ONE_SOLVE, 0.1), ("done", 0.1)), "ok", decision=True)
+    assert v.outcome == "success" and v.move_count == 1 and v.parsed_moves == [ONE_SOLVE] and not v.hallucination
+
+
+def test_decision_done_first_is_failure():
+    v = validate(ONE_VALID, calls(("done", 0.1)), "ok", decision=True)
+    assert v.outcome == "failure" and v.parsed_moves == []
+
+
+def test_decision_mismatch_in_later_call():
+    v = validate(INVALID, calls(("R", 0.2), ("U", 0.7)), "ok", decision=True)
+    assert v.mismatch and v.outcome == "success" and v.parsed_moves == ["R", "U"]
+
+
+def test_decision_ignores_calls_after_done():
+    v = validate(ONE_VALID, calls((ONE_SOLVE, 0.1), ("done", 0.1), ("U", 0.9)), "ok", decision=True)
+    assert v.outcome == "success" and v.parsed_moves == [ONE_SOLVE] and not v.mismatch
+
+
+@pytest.mark.parametrize("raw", [
+    "not json", "{}", "[]", json.dumps([{"answers": {}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "move_99"}, "mismatch": {"noul": 0.1}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "move_0"}, "mismatch": {"noul": 0.1}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "R"}, "mismatch": {"noul": 0.1}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": "high"}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "move_\u00b2"}, "mismatch": {"noul": 0.1}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "move_03"}, "mismatch": {"noul": 0.1}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "move_\u0663"}, "mismatch": {"noul": 0.1}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": 1.5}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": -0.1}}}]),
+    '[{"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": NaN}}}]',
+])
+def test_decision_malformed(raw):
+    assert validate(ONE_VALID, raw, "ok", decision=True).outcome == "malformed_output"
+
+
+def test_decision_cap_reached_is_infrastructure():
+    v = validate(ONE_VALID, calls(("R", 0.1)), "infrastructure_failure", decision=True)
+    assert v.outcome == "infrastructure_failure"

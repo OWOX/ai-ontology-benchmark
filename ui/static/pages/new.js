@@ -6,6 +6,8 @@
 (function () {
   const h = UI.el;
   const NO_KEY = "no API key: add it under Models";
+  const NO_ACCOUNT = "no account id: add it under Models";
+  const keyProblem = (r) => r === NO_KEY || r === NO_ACCOUNT;
   const NUMBERS = [["attempts", "Attempts per input and setup: sends the same input N times"],
     ["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
@@ -92,8 +94,9 @@
       });
       const head = h("label", { class: "provider-head" }, all, h("span", { text: p.name }));
       const col = h("div", { class: "model-col" }, head);
-      if (p.models.some((m) => m.disabled_reason === NO_KEY)) {
-        col.append(h("div", { class: "reason small" }, "⚠️ ", h("a", { href: "#/models" + rel, text: NO_KEY })));
+      const problem = p.models.map((m) => m.disabled_reason).find(keyProblem);
+      if (problem) {
+        col.append(h("div", { class: "reason small" }, "⚠️ ", h("a", { href: "#/models" + rel, text: problem })));
       }
       for (const m of p.models) {
         const off = !!m.disabled_reason;
@@ -105,7 +108,7 @@
           sync(); onChange();
         });
         const label = h("label", { class: "model" + (off ? " off" : "") }, box, h("span", { text: m.name }));
-        if (off && m.disabled_reason !== NO_KEY) label.append(h("span", { class: "reason", text: m.disabled_reason }));
+        if (off && !keyProblem(m.disabled_reason)) label.append(h("span", { class: "reason", text: m.disabled_reason }));
         col.append(label);
       }
       sync();

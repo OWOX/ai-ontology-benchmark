@@ -19,15 +19,18 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.config import load_experiment_config, load_prices, parse_experiment_config
+from src.config import load_experiment_config, load_prices, max_moves, parse_experiment_config
 from src.release.release import assessment_sha256
 from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
-                            print_estimate, worst_case_request_cost)
-from src.run.models import InfrastructureError, call_model
+                            print_estimate, spent_by_model, worst_case_request_cost)
+from src.run.decision import DecisionResult, run_decision_attempt
+from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model
 from src.run.progress import Progress
-from src.run.prompts import SETUPS, build_prompt, prompt_versions
+from src.run.prompts import (SETUPS, both_prompt_versions, build_prompt, decision_questions, decision_state,
+                             load_questions, prompt_versions, worst_state)
 from src.run.raw import read_raw
+from src.puzzles.registry import get_engine
 from src.validator import validate
 
 
@@ -35,8 +38,10 @@ class RunError(Exception):
     """A checked error. The message names the file or field at fault."""
 
 
-def load_release(folder: Path) -> tuple[dict, list[dict]]:
-    """Check the release against its manifest and the working tree. Return (manifest, inputs)."""
+def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list[dict]]:
+    """Check the release against its manifest and the working tree. Return (manifest, inputs).
+    A release without decision_prompt_versions is checked as before, and is refused only when
+    needs_decision is true."""
     manifest_path = folder / "manifest.json"
     if not manifest_path.is_file():
         raise RunError(f"{manifest_path}: file not found")
@@ -47,6 +52,9 @@ def load_release(folder: Path) -> tuple[dict, list[dict]]:
     for field in ("files", "assessment_sha256", "prompt_versions", "input_set_id", "release_config"):
         if field not in manifest:
             raise RunError(f"{manifest_path}: field '{field}' is missing")
+    if needs_decision and "decision_prompt_versions" not in manifest:
+        raise RunError(f"{manifest_path}: field 'decision_prompt_versions' is missing; "
+                       "decision models need a release cut after they were added")
     if "seed" not in manifest["release_config"]:
         raise RunError(f"{manifest_path}: field 'release_config.seed' is missing")
     for name, digest in manifest["files"].items():
@@ -57,8 +65,15 @@ def load_release(folder: Path) -> tuple[dict, list[dict]]:
         raise RunError(f"{manifest_path}: field 'assessment_sha256' differs from the assessment files in the working tree")
     lines = (folder / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
     inputs = [json.loads(line) for line in lines]
-    if prompt_versions(folder / "prompts", inputs) != manifest["prompt_versions"]:
+    if "decision_prompt_versions" in manifest:
+        plain, decision = both_prompt_versions(folder / "prompts", inputs)
+    else:
+        plain, decision = prompt_versions(folder / "prompts", inputs), None
+    if plain != manifest["prompt_versions"]:
         raise RunError(f"{manifest_path}: field 'prompt_versions' differs from the prompts the working tree renders")
+    if decision is not None and decision != manifest["decision_prompt_versions"]:
+        raise RunError(
+            f"{manifest_path}: field 'decision_prompt_versions' differs from the prompts the working tree renders")
     return manifest, inputs
 
 
@@ -126,14 +141,21 @@ def call_with_retries(model: dict, prompt: str, config: dict, can_afford) -> tup
 
 
 def make_record(config, manifest, row, model, setup, number, prompt, versions,
-                reply, retry_in: int, retry_out: int) -> dict:
-    """Build the raw record of one attempt from the reply (None after an infrastructure failure)."""
-    if reply is None:
+                reply, retry_in: int, retry_out: int, decision: DecisionResult | None = None) -> dict:
+    """Build the raw record of one attempt from the reply (None after an infrastructure failure).
+    A decision model passes its DecisionResult instead, and the raw response is the array of its calls."""
+    if decision is not None:
+        text, stop, served = json.dumps(decision.calls), decision.stop_reason, decision.served_model
+        tokens_in, tokens_out, latency = decision.input_tokens, decision.output_tokens, decision.latency_s
+        retry_in, retry_out = decision.retry_input_tokens, decision.retry_output_tokens
+        if not decision.calls and stop == "infrastructure_failure":
+            text = ""
+    elif reply is None:
         text, stop, served, tokens_in, tokens_out, latency = "", "infrastructure_failure", "", 0, 0, None
     else:
         text, stop, served = reply.text, reply.stop_reason, reply.served_model
         tokens_in, tokens_out, latency = reply.input_tokens, reply.output_tokens, reply.latency_s
-    verdict = validate(row, text, stop)
+    verdict = validate(row, text, stop, decision=decision is not None)
     return {
         "experiment_id": config["experiment_id"], "release_version": config["release"],
         "input_id": row["input_id"], "input_set_id": manifest["input_set_id"],
@@ -187,7 +209,8 @@ def run(args: argparse.Namespace) -> int:
     if args.model and args.model not in names:
         raise RunError(f"{source}: field 'models' has no model {args.model!r}")
     folder = args.releases / config["release"]
-    manifest, inputs = load_release(folder)
+    needs_decision = any(m["provider"] in DECISION_PROVIDERS for m in config["models"])
+    manifest, inputs = load_release(folder, needs_decision)
     for name in config.get("puzzles", []):
         if name not in manifest["release_config"]["puzzles"]:
             raise RunError(f"{source}: field 'puzzles' names {name!r}, which release {config['release']} does not hold")
@@ -198,10 +221,14 @@ def run(args: argparse.Namespace) -> int:
     pending = list(pending_attempts(config, inputs, results / "raw", args.model))
     if args.limit is not None:
         pending = pending[: args.limit]
+    cap = max_moves(config, manifest["release_config"])
     for row, model, setup, _ in pending:
-        check_request_budget(source, config, model, build_prompt(folder / "prompts", row, setup), prices)
+        prompt = build_prompt(folder / "prompts", row, setup)
+        if model["provider"] in DECISION_PROVIDERS:  # the longest state any call of the attempt sends
+            prompt = worst_state(prompt, get_engine(row["puzzle"]).legal_moves(), cap)
+        check_request_budget(source, config, model, prompt, prices)
     if args.estimate:
-        print_estimate(config, pending, prices, folder / "prompts", results / "raw")
+        print_estimate(config, pending, prices, folder / "prompts", results / "raw", cap)
         return 0
     versions = manifest["prompt_versions"]
     branch = None
@@ -249,21 +276,44 @@ def finish(branch: ResultsBranch, experiment_id: str) -> None:
 
 
 def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress) -> None:
+    cap = max_moves(config, manifest["release_config"])
+    questions = load_questions(folder / "prompts") if any(
+        m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending) else None  # once per run
     for left, (row, model, setup, number) in zip(range(len(pending), 0, -1), pending):
         prompt = build_prompt(folder / "prompts", row, setup)
+        is_decision = model["provider"] in DECISION_PROVIDERS
+        legal = get_engine(row["puzzle"]).legal_moves() if is_decision else []
         if args.dry_run:
-            print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}\n{prompt}")
+            print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}")
+            if is_decision:
+                asked = decision_questions(questions, legal)
+                print(f"{decision_state(prompt, [])}\n--- questions\n{json.dumps(asked, indent=2)}")
+            else:
+                print(prompt)
             continue
-        worst = worst_case_request_cost(prompt, config["max_output_tokens"], prices[model["name"]])
         price = prices[model["name"]]
+        worst = worst_case_request_cost(worst_state(prompt, legal, cap) if is_decision else prompt,
+                                        config["max_output_tokens"], price)
+
+        snapshot: dict = {}  # a decision attempt reads the spent cost once, before its first call
 
         def can_afford(retry_in: int, retry_out: int) -> None:
             paid = (retry_in * price["price_input_per_mtok"] + retry_out * price["price_output_per_mtok"]) / 1e6
-            check_spend(config, prices, results / "raw", model["name"], worst + paid, left)
+            if is_decision and "spent" not in snapshot:
+                snapshot["spent"] = spent_by_model(config, prices, results / "raw")
+            check_spend(config, prices, results / "raw", model["name"], worst + paid, left,
+                        snapshot.get("spent"))
 
-        reply, retry_in, retry_out, stop = call_with_retries(model, prompt, config, can_afford)
-        record = make_record(config, manifest, row, model, setup, number, prompt, versions,
-                             reply, retry_in, retry_out)
+        result = None
+        if is_decision:
+            result = run_decision_attempt(model, prompt, legal, questions,
+                                          cap, config["retry_cap"], can_afford)
+            reply, retry_in, retry_out, stop = None, result.retry_input_tokens, result.retry_output_tokens, result.budget_stop
+        else:
+            reply, retry_in, retry_out, stop = call_with_retries(model, prompt, config, can_afford)
+        record = make_record(config, manifest, row, model, setup, number, prompt,
+                             manifest["decision_prompt_versions"] if is_decision else versions,
+                             reply, retry_in, retry_out, result)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
         outcomes[record["outcome"]] += 1
         progress.update(record)

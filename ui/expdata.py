@@ -16,6 +16,7 @@ from src.evaluate.evaluate import REQUIRED
 from src.evaluate.metrics import (KEY, NA, EvalError, group_metrics, make_attempt_rows,
                                   metric_sort_key, rates, sorted_keys, summary_sort_key)
 from src.puzzles.registry import ENGINES
+from src.run.models import DECISION_PROVIDERS
 from src.release.release import parse_version
 from ui.gitdata import GitData
 from ui.pooling import RATES, pooled_rates, pooled_summary, total
@@ -104,8 +105,10 @@ def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
         return []
     prices = {m: NO_PRICE for m in exp["records"]} | exp["prices"]
     records = [r for found in exp["records"].values() for r in found]
+    models = exp["config"]["models"] if exp["config"] else []
+    decision_models = {m["name"] for m in models if m["provider"] in DECISION_PROVIDERS}
     try:
-        return make_attempt_rows(records, inputs, prices, {})
+        return make_attempt_rows(records, inputs, prices, {}, decision_models)
     except (EvalError, KeyError) as error:
         exp["error"] = str(error.args[0]) if error.args else str(error)
         return []

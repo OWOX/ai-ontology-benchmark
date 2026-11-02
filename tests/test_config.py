@@ -1,6 +1,8 @@
 # Spec: docs/specs/config.md
 """Tests for the config loaders. They read the repo config and write temporary files only."""
 
+import tomllib
+
 import pytest
 
 from src.config import load_experiment_config, load_prices, load_release_config, parse_experiment_config
@@ -212,3 +214,43 @@ def test_model_kind_is_optional(tmp_path):
 def test_bad_model_kind(tmp_path, value):
     with pytest.raises(ValueError, match="kind"):
         load_experiment_config(write(tmp_path, EXPERIMENT + f"kind = {value}\n", "e.toml"))
+
+
+def test_decision_providers_are_known():
+    from src.config import PROVIDERS
+
+    assert {"typesafe", "cloudflare", "fake_decision"} <= set(PROVIDERS)
+
+
+def test_max_moves_default_and_override():
+    from src.config import max_moves
+
+    release = {"scramble_depths": [3, 7, 5]}
+    assert max_moves({}, release) == 14
+    assert max_moves({"max_moves": 9}, release) == 9
+
+
+def experiment_with_max_moves(literal):
+    return (
+        'release = "1.0.0"\nattempts = 1\nretry_cap = 0\nmax_output_tokens = 10\n'
+        f"max_moves = {literal}\n"
+        '[[models]]\nname = "m"\nprovider = "fake"\napi_model_id = "x"\n'
+    )
+
+
+@pytest.mark.parametrize("literal", ["0", "-1", '"5"', "true"])
+def test_max_moves_must_be_positive_int(literal):
+    with pytest.raises(ValueError, match="max_moves"):
+        parse_experiment_config(experiment_with_max_moves(literal), "e", "e.toml")
+
+
+def test_max_moves_valid_value_is_kept():
+    assert parse_experiment_config(experiment_with_max_moves("5"), "e", "e.toml")["max_moves"] == 5
+
+
+def test_every_catalogue_model_has_a_price():
+    with open("config/models.toml", "rb") as handle:
+        names = [entry["name"] for entry in tomllib.load(handle)["models"]]
+    prices = load_prices("config/prices.toml")
+    assert {"jev", "clef", "clef-flash"} <= set(names)
+    assert [name for name in names if name not in prices] == []

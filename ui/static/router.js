@@ -53,7 +53,7 @@
       // `bundle:last` remembers the newest release returned; it stands in when the hash names none.
       const key = "bundle:" + (release || store.get("bundle:last") || "");
       const cached = key === "bundle:" ? null : store.get(key);
-      if (cached && cached.schema !== 1) store.drop(key);
+      if (cached && cached.schema !== 2) store.drop(key);
       else if (cached && onCached) onCached(cached);
       const q = new URLSearchParams();
       if (release) q.set("release", release);
@@ -101,7 +101,7 @@
   function drawMenu() {
     const b = st.bundle;
     if (!b) return;
-    const warn = b.providers.some((p) => p.name !== "fake" && p.key && p.key.source === "missing");
+    const warn = b.providers.some((p) => p.key && !p.key.configured);
     const current = st.params.top;
     $("links").replaceChildren(...MENU.map(([name, label]) => {
       const a = Object.assign(document.createElement("a"), { href: menuHref(name), textContent: label + (name === "models" && warn ? " ⚠️" : "") });

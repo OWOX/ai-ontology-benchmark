@@ -120,6 +120,61 @@ def test_minor_after_template_edit(repo):
     assert "(../1.0.0/README.md)" in readme
 
 
+def test_manifest_and_readme_hold_decision_prompt_versions(repo):
+    release_ok(repo, "major")
+    manifest = manifest_of(repo, "1.0.0")
+    assert set(manifest["decision_prompt_versions"]) == {"no_model", "descriptive", "prescriptive"}
+    assert manifest["decision_prompt_versions"] != manifest["prompt_versions"]
+    assert "prompts/decision/questions.txt" in manifest["files"]
+    readme = (repo / "releases/1.0.0/README.md").read_text(encoding="utf-8")
+    assert "## Decision prompt versions" in readme
+
+
+def test_minor_after_questions_edit_only(repo):
+    release_ok(repo, "major")
+    edit(repo, "prompts/decision/questions.txt", "Pick done", "Choose done")
+    commit_all(repo, "questions")
+    release_ok(repo, "minor")
+    old, new = manifest_of(repo, "1.0.0"), manifest_of(repo, "1.1.0")
+    assert new["prompt_versions"] == old["prompt_versions"]
+    assert new["decision_prompt_versions"] != old["decision_prompt_versions"]
+
+
+def test_patch_after_questions_edit_fails(repo):
+    release_ok(repo, "major")
+    edit(repo, "prompts/decision/questions.txt", "Pick done", "Choose done")
+    edit_validator(repo)
+    result = run_release(repo, "patch")
+    assert result.returncode == 1
+    assert "prompt" in result.stderr
+    assert not (repo / "releases/1.0.1").exists()
+
+
+def strip_decision_field(repo, version):
+    path = repo / "releases" / version / "manifest.json"
+    path.chmod(0o644)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    del manifest["decision_prompt_versions"]
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    commit_all(repo, "old manifest")
+
+
+def test_patch_against_old_manifest_without_decision_versions(repo):
+    release_ok(repo, "major")
+    strip_decision_field(repo, "1.0.0")
+    edit_validator(repo)
+    release_ok(repo, "patch")
+    new = manifest_of(repo, "1.0.1")
+    assert new["prompt_versions"] == manifest_of(repo, "1.0.0")["prompt_versions"]
+    assert "decision_prompt_versions" in new
+
+
+def test_minor_against_old_manifest_without_decision_versions(repo):
+    release_ok(repo, "major")
+    strip_decision_field(repo, "1.0.0")
+    release_ok(repo, "minor")
+
+
 def test_minor_without_change_fails(repo):
     release_ok(repo, "major")
     result = run_release(repo, "minor")

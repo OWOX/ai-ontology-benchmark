@@ -124,3 +124,83 @@ def test_prescriptive_template_without_legal_moves_refused(templates):
         build_prompt(templates, INPUTS[0], "prescriptive")
     with pytest.raises(ValueError, match="legal_moves"):
         prompt_versions(templates, INPUTS)
+
+
+def test_decision_state():
+    from src.run.prompts import decision_state
+    assert decision_state("P", []) == "P\n\nMoves so far: none"
+    assert decision_state("P", ["R", "U'"]) == "P\n\nMoves so far: R U'"
+
+
+def test_decision_questions_ids():
+    from src.run.prompts import decision_questions
+    q = decision_questions({"next_move": "n", "done": "d", "mismatch": "m"}, ["R", "U'"])
+    assert q["next_move"] == {
+        "type": "choice", "instructions": "n",
+        "criteria": {"move_1": "R", "move_2": "U'", "done": "d"},
+    }
+    assert q["mismatch"] == {"type": "noul", "instructions": "m"}
+
+
+def test_load_questions_reads_the_repo_file(templates):
+    from src.run.prompts import load_questions
+    q = load_questions(templates)
+    assert set(q) == {"next_move", "done", "mismatch"}
+    assert q["done"] == "The moves so far solve the puzzle."
+
+
+def test_load_questions_missing_key(tmp_path):
+    from src.run.prompts import load_questions
+    (tmp_path / "decision").mkdir()
+    (tmp_path / "decision" / "questions.txt").write_text("next_move: n\ndone: d\n")
+    with pytest.raises(ValueError, match="mismatch"):
+        load_questions(tmp_path)
+
+
+def test_load_questions_missing_file(tmp_path):
+    from src.run.prompts import load_questions
+    with pytest.raises(ValueError, match="questions.txt"):
+        load_questions(tmp_path)
+
+
+def test_decision_versions_change_with_questions(templates):
+    from src.run.prompts import decision_prompt_versions
+    before = decision_prompt_versions(templates, INPUTS)
+    llm_before = prompt_versions(templates, INPUTS)
+    path = templates / "decision" / "questions.txt"
+    path.write_text(path.read_text().replace("Pick done", "Choose done", 1))
+    after = decision_prompt_versions(templates, INPUTS)
+    assert set(after) == set(SETUPS)
+    for setup in SETUPS:
+        for puzzle in ("2x2", "3x3"):
+            assert len(after[setup][puzzle]) == 12
+            assert before[setup][puzzle] != after[setup][puzzle]
+    assert prompt_versions(templates, INPUTS) == llm_before
+
+
+def test_decision_versions_change_with_a_template(templates):
+    from src.run.prompts import decision_prompt_versions
+    before = decision_prompt_versions(templates, INPUTS)
+    path = templates / "descriptive" / "3x3.txt"
+    path.write_text(path.read_text().replace("Here", "Hers", 1))
+    after = decision_prompt_versions(templates, INPUTS)
+    for setup in SETUPS:
+        for puzzle in ("2x2", "3x3"):
+            assert (before[setup][puzzle] == after[setup][puzzle]) == ((setup, puzzle) != ("descriptive", "3x3"))
+
+
+def test_decision_versions_follow_what_is_sent(templates, monkeypatch):
+    from src.run import prompts
+    before = prompts.decision_prompt_versions(templates, INPUTS)
+    llm_before = prompt_versions(templates, INPUTS)
+    original = prompts.decision_state
+    monkeypatch.setattr(prompts, "decision_state", lambda p, moves: original(p, moves).replace("Moves so far", "Moves"))
+    assert prompts.decision_prompt_versions(templates, INPUTS) != before
+    assert prompt_versions(templates, INPUTS) == llm_before
+    monkeypatch.setattr(prompts, "decision_state", original)
+    assert prompts.decision_prompt_versions(templates, INPUTS) == before
+    structure = prompts.decision_questions
+    monkeypatch.setattr(prompts, "decision_questions",
+                        lambda q, legal: {**structure(q, legal), "mismatch": {"type": "other"}})
+    assert prompts.decision_prompt_versions(templates, INPUTS) != before
+    assert prompt_versions(templates, INPUTS) == llm_before
