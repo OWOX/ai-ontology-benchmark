@@ -1,5 +1,5 @@
 // Spec: docs/specs/ui.md (Models)
-// One block per provider: the key badge and icons (/api/secrets) and a table of the catalogue models. Reads the bundle only.
+// The title with the catalogue's source icon, then one block per provider: the key badge and Edit icon (/api/secrets) and a table of the catalogue models. Reads the bundle only.
 (function () {
   const h = UI.el;
 
@@ -70,7 +70,6 @@
     };
     const icons = h("div", { class: "provider-icons" });
     if (k && (k.source === "file" || k.source === "missing")) icons.append(edit = icon("edit", "Edit API key", open));
-    if (bundle.repo && bundle.main_sha) icons.append(icon("source", "Source: config/models.toml", null, `${bundle.repo}/blob/${bundle.main_sha}/config/models.toml`));
     head.append(icons);
     if (k && k.source !== "missing") head.append(h("span", { class: "muted small", title: status, text: status }));
     if (k && k.source === "missing") open();
@@ -105,7 +104,10 @@
   UI.registerPage("models", {
     render(bundle, params, el) {
       const q = params.release ? "&release=" + encodeURIComponent(params.release) : "";
-      el.append(h("h2", { text: "Models" }));
+      const title = h("h2", { class: "with-icon" }, "Models");
+      // One catalogue serves every provider, so its source link sits by the page title.
+      if (bundle.repo && bundle.main_sha) title.append(icon("source", "Source: config/models.toml", null, `${bundle.repo}/blob/${bundle.main_sha}/config/models.toml`));
+      el.append(title);
       const msg = h("p", { class: "msg", role: "status" });
       for (const p of bundle.providers) el.append(providerBlock(p, bundle, msg, q));
       el.append(h("p", { class: "muted small", text: "Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed." }), msg);
