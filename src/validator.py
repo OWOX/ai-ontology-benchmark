@@ -101,11 +101,17 @@ def validate(input: dict, raw_response: str, stop_reason: str, decision: bool = 
         return _no_moves("infrastructure_failure")
     if stop_reason in ("truncated", "refused"):
         return _no_moves("malformed_output")
-    engine = get_engine(input["puzzle"])
-    legal = engine.legal_moves()
-    parsed = _parse_decision(raw_response, legal) if decision else _parse(raw_response)
+    if decision:  # the options come from the engine, so it is needed before parsing
+        engine = get_engine(input["puzzle"])
+        legal = engine.legal_moves()
+        parsed = _parse_decision(raw_response, legal)
+    else:
+        parsed = _parse(raw_response)
     if parsed is None:
         return _no_moves("malformed_output")
+    if not decision:
+        engine = get_engine(input["puzzle"])
+        legal = engine.legal_moves()
     moves, mismatch = parsed
 
     if any(move not in legal for move in moves):

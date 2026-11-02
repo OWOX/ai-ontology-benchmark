@@ -89,6 +89,18 @@ def calls(*choices):
     return json.dumps(out)
 
 
+UNKNOWN = {"puzzle": "no-such-puzzle", "state": "", "validity": "valid"}
+
+
+def test_malformed_llm_response_on_an_unknown_puzzle_is_malformed_output():
+    assert validate(UNKNOWN, "not json", "ok").outcome == "malformed_output"
+
+
+def test_decision_path_needs_the_engine():
+    with pytest.raises(KeyError):
+        validate(UNKNOWN, "[]", "ok", decision=True)
+
+
 def test_decision_solves():
     v = validate(ONE_VALID, calls(ONE_SOLVE, "done"), "ok", decision=True)
     assert v.outcome == "success" and v.move_count == 1 and v.parsed_moves == [ONE_SOLVE] and not v.hallucination
