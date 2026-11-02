@@ -1,6 +1,8 @@
 # Spec: docs/specs/config.md
 """Tests for the config loaders. They read the repo config and write temporary files only."""
 
+import tomllib
+
 import pytest
 
 from src.config import load_experiment_config, load_prices, load_release_config, parse_experiment_config
@@ -244,3 +246,11 @@ def test_max_moves_must_be_positive_int(literal):
 
 def test_max_moves_valid_value_is_kept():
     assert parse_experiment_config(experiment_with_max_moves("5"), "e", "e.toml")["max_moves"] == 5
+
+
+def test_every_catalogue_model_has_a_price():
+    with open("config/models.toml", "rb") as handle:
+        names = [entry["name"] for entry in tomllib.load(handle)["models"]]
+    prices = load_prices("config/prices.toml")
+    assert {"jev", "clef", "clef-flash"} <= set(names)
+    assert [name for name in names if name not in prices] == []

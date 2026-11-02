@@ -44,3 +44,18 @@ price_output_per_mtok = 3.75
 ["gemini-3.5-flash-lite"]
 price_input_per_mtok = 0.30
 price_output_per_mtok = 2.50
+
+# Decision models. Cloudflare model pages and Workers AI changelog, 2026-10-09 (clef, clef-flash).
+# OpenRouter and Requesty listings, checked 2026-09-19 (jev); TypeSafe's own pricing page was not found.
+# Output is priced at 0 because these models return a decision, not generated text.
+["clef"]
+price_input_per_mtok = 0.24
+price_output_per_mtok = 0
+
+["clef-flash"]
+price_input_per_mtok = 0.038
+price_output_per_mtok = 0
+
+["jev"]
+price_input_per_mtok = 0.042
+price_output_per_mtok = 0
