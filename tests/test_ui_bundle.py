@@ -347,8 +347,9 @@ def test_key_status_not_cached(ui_repo):
     key, model = cloud(bundles.get(None, False, set(), {}, set()))
     assert key["source"] == "file" and key["tail"] == "1234" and model["disabled_reason"] is None
     bundle = bundles.get(None, False, set(), {}, set())
-    assert [p["name"] for p in bundle["providers"]] == ["anthropic", "openai", "google", "fake"]
+    assert [p["name"] for p in bundle["providers"]] == ["anthropic", "fake"]
     assert next(p for p in bundle["providers"] if p["name"] == "fake")["key"] is None
+    assert all(p["models"] for p in bundle["providers"])
     unpriced = next(m for p in bundle["providers"] for m in p["models"] if m["name"] == "unpriced")
     assert unpriced["disabled_reason"] == "no price in config/prices.toml" and unpriced["price"] is None
 
@@ -546,3 +547,10 @@ def test_malformed_branch_isolated(ui_repo, samples, kind):
     assert good and all(r["error"] is None for r in good) and any(r["attempts"] for r in good)
     detail = bundles.experiment("e", set(), set())
     assert detail["error"] and "results/e" in detail["error"]
+
+
+def test_provider_without_catalogue_models_is_left_out():
+    from ui.catalogue import PROVIDER_ORDER, build_providers
+    catalogue = {"m": {"name": "m", "provider": "typesafe", "api_model_id": "x"}}
+    assert PROVIDER_ORDER[3:5] == ("typesafe", "cloudflare")
+    assert [p["name"] for p in build_providers(catalogue, {}, [])] == ["typesafe"]

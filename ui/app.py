@@ -153,7 +153,7 @@ class App:
         if path == "/api/secrets":
             provider = body.get("provider")
             if body.get("action") == "save":
-                key_store.save(self.root, provider, body.get("api_key"))
+                key_store.save(self.root, provider, body.get("api_key"), body.get("account_id"))
             elif body.get("action") == "clear":
                 key_store.clear(self.root, provider)
             else:

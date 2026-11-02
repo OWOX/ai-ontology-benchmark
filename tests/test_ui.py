@@ -181,6 +181,42 @@ def test_secret_files_and_env(tmp_path, monkeypatch):
         key_store.save(tmp_path, "nope", KEY)
 
 
+def test_cloudflare_token_and_account_id_share_one_file(tmp_path, monkeypatch):
+    for variable in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    path = tmp_path / "secrets" / "cloudflare.json"
+    key_store.save(tmp_path, "cloudflare", "cf-token-1234", None)
+    info = key_store.inspect(tmp_path)["cloudflare"]
+    assert info["account"]["source"] == "missing" and info["configured"] is False
+    key_store.save(tmp_path, "cloudflare", "", "acct-id-98765")
+    assert json.loads(path.read_text()) == {"api_key": "cf-token-1234", "account_id": "acct-id-98765"}
+    key_store.save(tmp_path, "cloudflare", "cf-token-5678")
+    assert json.loads(path.read_text()) == {"api_key": "cf-token-5678", "account_id": "acct-id-98765"}
+    info = key_store.inspect(tmp_path)["cloudflare"]
+    assert info["configured"] is True and info["account"]["source"] == "file"
+    assert "acct-id-98765" not in json.dumps(key_store.inspect(tmp_path))
+    assert merged_env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "acct-id-98765"
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "from-env")
+    assert merged_env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "from-env"
+    assert key_store.inspect(tmp_path)["cloudflare"]["account"]["source"] == "env"
+    key_store.clear(tmp_path, "cloudflare")
+    assert not path.exists()
+    with pytest.raises(key_store.ApiError, match="account_id"):
+        key_store.save(tmp_path, "anthropic", KEY, "acct")
+    with pytest.raises(key_store.ApiError, match="account_id"):
+        key_store.save(tmp_path, "cloudflare", KEY, "a b")
+
+
+def test_account_id_route(server, monkeypatch):
+    for variable in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    status, data = call(server, "POST", "/api/secrets", {"provider": "anthropic", "action": "save", "api_key": KEY, "account_id": "x"})
+    assert status == 400 and "account_id" in json.dumps(data)
+    call(server, "POST", "/api/secrets", {"provider": "cloudflare", "action": "save", "api_key": KEY, "account_id": "acct-id-98765"})
+    for path in ("/api/secrets", "/api/bundle"):
+        assert "acct-id-98765" not in json.dumps(call(server, "GET", path)[1])
+
+
 def test_empty_env_var_does_not_hide_a_saved_key(tmp_path, monkeypatch):
     key_store.save(tmp_path, "anthropic", KEY)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")

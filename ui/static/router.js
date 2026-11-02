@@ -103,7 +103,7 @@
     const keep = st.params.release || b.release;
     sel.replaceChildren(...b.releases.map((v) => Object.assign(document.createElement("option"), { value: v, textContent: v })));
     sel.value = keep;
-    const warn = b.providers.some((p) => p.name !== "fake" && p.key && p.key.source === "missing");
+    const warn = b.providers.some((p) => p.key && !p.key.configured);
     const current = st.params.top;
     $("links").replaceChildren(...MENU.map(([name, label]) => {
       const a = Object.assign(document.createElement("a"), { href: menuHref(name), textContent: label + (name === "models" && warn ? " ⚠️" : "") });
