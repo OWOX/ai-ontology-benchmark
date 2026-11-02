@@ -13,6 +13,7 @@ from src.run.run import make_record
 from test_release import git, repo  # noqa: F401
 from test_ui import PRICES, ui_repo  # noqa: F401  (ui_repo is a fixture)
 from ui import expdata
+from ui.catalogue import build_providers
 from ui import secrets as key_store
 from ui.bundle import Bundles, is_mirror
 from ui.common import ApiError
@@ -546,3 +547,8 @@ def test_malformed_branch_isolated(ui_repo, samples, kind):
     assert good and all(r["error"] is None for r in good) and any(r["attempts"] for r in good)
     detail = bundles.experiment("e", set(), set())
     assert detail["error"] and "results/e" in detail["error"]
+
+
+def test_fake_provider_left_out_without_models():
+    catalogue = {"m": {"name": "m", "provider": "anthropic", "api_model_id": "m-1"}}
+    assert [p["name"] for p in build_providers(catalogue, {}, [])] == ["anthropic", "openai", "google"]
