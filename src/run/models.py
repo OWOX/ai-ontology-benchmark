@@ -174,27 +174,40 @@ def _cloudflare_client(**options):
     return cloudflare.Cloudflare(**options)
 
 
+_RAW_MODEL = None
+
+
+def _raw_model():
+    """A fully permissive pydantic model of a System One reply, so that nothing the SDK's typed
+    answers would drop or change is lost, and a reply that misses the schema still returns."""
+    global _RAW_MODEL
+    if _RAW_MODEL is None:
+        from typing import Any
+
+        from pydantic import BaseModel, ConfigDict
+
+        class Raw(BaseModel):
+            model_config = ConfigDict(extra="allow")
+            model: Any = None
+            answers: Any = None
+            usage: Any = None
+
+        _RAW_MODEL = Raw
+    return _RAW_MODEL
+
+
 def _typesafe(model: dict, state: str, questions: dict, key: str) -> DecisionReply:
     import typesafe_sdk
-    from pydantic import BaseModel, ConfigDict
-
-    class Raw(BaseModel):
-        """The reply as sent, so that nothing the SDK's typed answers would drop or change is lost."""
-
-        model_config = ConfigDict(extra="allow")
-        model: str
-        answers: dict
-        usage: dict | None = None
 
     client = _typesafe_client(api_key=key, retry=typesafe_sdk.RetryPolicy(max_retries=0))
     start = time.perf_counter()
     try:
-        response = client.system_one(state, questions, model=model["api_model_id"], response_model=Raw)
+        response = client.system_one(state, questions, model=model["api_model_id"], response_model=_raw_model())
     except (typesafe_sdk.TypeSafeRateLimitError, typesafe_sdk.TypeSafeInternalServerError,
             typesafe_sdk.TypeSafeAPIConnectionError) as error:  # connection errors include timeouts
         raise InfrastructureError(f"typesafe: {error}") from error
     latency = time.perf_counter() - start
-    return _decision_reply(response.model_dump(), latency)
+    return _decision_reply(response.model_dump(exclude_unset=True), latency, model["api_model_id"])
 
 
 def _cloudflare(model: dict, state: str, questions: dict, key: str) -> DecisionReply:
@@ -217,15 +230,23 @@ def _cloudflare(model: dict, state: str, questions: dict, key: str) -> DecisionR
             raise InfrastructureError(f"cloudflare: {error}") from error
         raise
     latency = time.perf_counter() - start
-    if result is None:
-        raise InfrastructureError("cloudflare: the response had no result")
-    return _decision_reply(result.model_dump() if hasattr(result, "model_dump") else dict(result), latency)
+    if hasattr(result, "model_dump"):
+        result = result.model_dump()
+    # A result that is not an object leaves the call empty, and the validator rules it malformed.
+    return _decision_reply(result if isinstance(result, dict) else {}, latency, model["api_model_id"])
 
 
-def _decision_reply(data: dict, latency: float) -> DecisionReply:
-    usage = data.get("usage") or {}
-    return DecisionReply(data, usage.get("input_tokens") or 0, usage.get("output_tokens") or 0,
-                         data.get("model") or "", latency)
+def _decision_reply(data: dict, latency: float, requested_model: str) -> DecisionReply:
+    """Keep exactly the answers, usage, and model the API sent, and no other key."""
+    call = {k: data[k] for k in ("answers", "usage", "model") if k in data}
+    usage = call.get("usage") if isinstance(call.get("usage"), dict) else {}
+    served = call.get("model") if isinstance(call.get("model"), str) and call.get("model") else requested_model
+    return DecisionReply(call, _count(usage.get("input_tokens")), _count(usage.get("output_tokens")),
+                         served, latency)
+
+
+def _count(value) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def _fake_decision() -> DecisionReply:
@@ -243,6 +264,8 @@ def _fake_decision() -> DecisionReply:
 def call_decision(model: dict, state: str, questions: dict) -> DecisionReply:
     """Send the state and questions to the decision model's provider and return one reply."""
     provider = model["provider"]
+    if provider not in DECISION_PROVIDERS:
+        raise ValueError(f"provider {provider} is not a decision-model provider")
     if provider == "fake_decision":
         return _fake_decision()
     variable = KEY_VARIABLES[provider]
@@ -256,6 +279,8 @@ def call_decision(model: dict, state: str, questions: dict) -> DecisionReply:
 def call_model(model: dict, prompt: str, max_output_tokens: int) -> Reply:
     """Send the prompt to the model's provider and return the reply in the common shape."""
     provider = model["provider"]
+    if provider in DECISION_PROVIDERS:
+        raise ValueError(f"provider {provider} is a decision-model provider: use call_decision")
     if provider == "fake":
         return _fake()
     variable = KEY_VARIABLES[provider]

@@ -282,6 +282,7 @@ def test_cloudflare_call_shape(monkeypatch):
                     "body": {"model": "clef-flash", "state": "S", "questions": {"q": 1}}}
     assert reply.input_tokens == 40 and reply.output_tokens == 0 and reply.served_model == "served"
     assert reply.call == API_REPLY and reply.latency_s >= 0
+    assert set(reply.call) == {"answers", "usage", "model"}
 
 
 def test_typesafe_call_shape_keeps_the_reply_exactly(monkeypatch):
@@ -289,6 +290,7 @@ def test_typesafe_call_shape_keeps_the_reply_exactly(monkeypatch):
     reply = models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
     assert (sent["state"], sent["questions"], sent["model"]) == ("S", {"q": 1}, "jev-latest")
     assert reply.call == API_REPLY and reply.input_tokens == 40 and reply.served_model == "served"
+    assert set(reply.call) == {"answers", "usage", "model"}
 
 
 def test_typesafe_unreported_usage_counts_as_zero(monkeypatch):
@@ -382,3 +384,78 @@ def test_decision_providers_and_variables():
     assert models.KEY_VARIABLES["typesafe"] == "TYPESAFE_API_KEY"
     assert models.KEY_VARIABLES["cloudflare"] == "CLOUDFLARE_API_TOKEN"
     assert models.ACCOUNT_VARIABLES == {"cloudflare": "CLOUDFLARE_ACCOUNT_ID"}
+
+
+def test_extra_top_level_keys_are_not_kept(monkeypatch):
+    extra = {**API_REPLY, "future": "x"}
+    _cloudflare_stub(monkeypatch, lambda: dict(extra))
+    assert models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1}).call == API_REPLY
+    _typesafe_stub(monkeypatch, lambda m: m.model_validate(extra))
+    assert models.call_decision(TYPESAFE_MODEL, "S", {"q": 1}).call == API_REPLY
+
+
+@pytest.mark.parametrize("body", [{"answers": None}, {}, {"model": None, "answers": 3, "usage": "x"}])
+def test_typesafe_reply_missing_the_schema_returns_with_absent_keys(monkeypatch, body):
+    _typesafe_stub(monkeypatch, lambda m: m.model_validate(body))
+    reply = models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
+    assert reply.call == body and reply.served_model == "jev-latest"
+    assert reply.input_tokens == 0 and reply.output_tokens == 0
+
+
+@pytest.mark.parametrize("result", ["text", [1, 2], None, 7])
+def test_cloudflare_result_that_is_not_an_object_gives_an_empty_call(monkeypatch, result):
+    _cloudflare_stub(monkeypatch, lambda: result)
+    reply = models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+    assert reply.call == {} and reply.served_model == "@cf/cloudflare/clef-flash"
+
+
+def test_provider_routing_is_checked_both_ways():
+    with pytest.raises(ValueError, match="anthropic"):
+        models.call_decision({"provider": "anthropic"}, "S", {})
+    with pytest.raises(ValueError, match="cloudflare"):
+        call_model({"provider": "cloudflare"}, "p", 10)
+
+
+def test_cloudflare_through_the_real_sdk(monkeypatch):
+    import json
+
+    import cloudflare
+
+    seen = {}
+
+    def handler(request):
+        seen.update(url=str(request.url), body=json.loads(request.content))
+        return httpx.Response(200, json={"result": API_REPLY, "success": True, "errors": [], "messages": []})
+
+    monkeypatch.setattr(models, "_cloudflare_client", lambda **o: cloudflare.Cloudflare(
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)), **o))
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "t")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "a")
+    questions = {"q": {"type": "noul", "instructions": "x"}}
+    reply = models.call_decision(CLOUDFLARE_MODEL, "S", questions)
+    assert seen["url"].startswith("https://api.cloudflare.com/client/v4/accounts/a/ai/run/")
+    assert "clef-flash" in seen["url"]
+    assert seen["body"] == {"model": "clef-flash", "state": "S", "questions": questions}
+    assert reply.call == API_REPLY and reply.input_tokens == 40 and reply.served_model == "served"
+
+
+def test_typesafe_through_the_real_sdk(monkeypatch):
+    import json
+
+    import httpx2
+    import typesafe_sdk
+
+    seen = {}
+
+    def handler(request):
+        seen.update(url=str(request.url), body=json.loads(request.content))
+        return httpx2.Response(200, json={**API_REPLY, "future": 1})
+
+    monkeypatch.setattr(models, "_typesafe_client", lambda **o: typesafe_sdk.TypeSafeClient(
+        transport=httpx2.MockTransport(handler), **o))
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    questions = {"q": {"type": "noul", "instructions": "x"}}
+    reply = models.call_decision(TYPESAFE_MODEL, "S", questions)
+    assert seen["url"] == "https://api.typesafe.ai/v1/systemone"
+    assert seen["body"] == {"state": "S", "model": "jev-latest", "questions": questions}
+    assert reply.call == API_REPLY and reply.input_tokens == 40 and reply.served_model == "served"
