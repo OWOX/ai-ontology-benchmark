@@ -1,6 +1,6 @@
 // Spec: docs/specs/ui.md (Experiment)
-// One experiment: header, Summary, config, full metrics, report, Progress, and Evaluate and Commit.
-// Reads GET /api/experiments/<id> and the bundle; writes through POST /api/evaluate and POST /api/commit.
+// One experiment: header, Stop, the settings read-only, Summary, full metrics, report, Progress, and Evaluate and Commit.
+// Reads GET /api/experiments/<id> and the bundle; writes through POST /api/stop, /api/evaluate, and /api/commit.
 (function () {
   const h = UI.el;
   // Jobs of this experiment only: the log's job id is the experiment id.
@@ -19,19 +19,41 @@
     return box;
   }
 
-  function config(d) {
+  // The settings as the New Experiment form shows them, read-only: every puzzle and catalogue model, with the
+  // experiment's own picked, and its parameters in disabled fields.
+  const PARAMS = [["Attempts per input and setup", (c) => c.attempts], ["Retry cap", (c) => c.retry_cap],
+    ["Max output tokens", (c) => c.max_output_tokens], ["Request budget (USD)", (c) => c.budget.per_request_usd],
+    ["Model budget (USD)", (c) => c.budget.per_model_usd], ["Experiment budget (USD)", (c) => c.budget.per_experiment_usd]];
+
+  function settings(d, bundle) {
     const c = d.config;
-    if (!c) return h("p", { class: "muted", text: "No config on the branch." });
-    const entry = (n) => d.model_entries.find((m) => m.name === n) || { name: n };
-    const models = c.models.map((n) => {
-      const e = entry(n);
-      return h("li", {}, h("code", { text: n }), ` ${e.api_model_id || ""} `, h("code", { text: JSON.stringify(e.params || {}) }));
+    if (!c) return [h("p", { class: "muted", text: "No config on the branch." })];
+    const tick = (on, mixed) => { const b = h("input", { type: "checkbox", disabled: "" }); b.checked = on; b.indeterminate = !!mixed; return b; };
+    const names = [...new Set([...bundle.puzzles.map((p) => p.name), ...c.puzzles])];
+    const cards = names.map((name) => {
+      const p = bundle.puzzles.find((x) => x.name === name);
+      const on = c.puzzles.includes(name);
+      return h("div", { class: "card ro" + (on ? " sel" : " off") }, p && p.n ? cubeNet(solvedState(p.n), { width: 96, height: 72 }) : null,
+        h("div", { class: "name", text: name }), p ? h("div", { class: "muted small", text: `${p.input_count} inputs` }) : null);
     });
-    const b = c.budget;
-    return h("div", {},
-      h("p", { class: "small", text: `Puzzles: ${c.puzzles.join(", ")}` }), h("ul", {}, ...models),
-      h("p", { class: "small", text: `Attempts ${c.attempts}, retry cap ${c.retry_cap}, max output tokens ${c.max_output_tokens}. `
-        + `Budgets: request $${b.per_request_usd}, model $${b.per_model_usd}, experiment $${b.per_experiment_usd}.` }));
+    const entries = d.model_entries;
+    const providers = [...new Set([...bundle.providers.map((p) => p.name), ...entries.map((e) => e.provider)])];
+    const cols = providers.map((name) => {
+      const catalogue = (bundle.providers.find((p) => p.name === name) || { models: [] }).models.map((m) => m.name);
+      const models = [...new Set([...catalogue, ...entries.filter((e) => e.provider === name).map((e) => e.name)])];
+      const n = models.filter((m) => c.models.includes(m)).length;
+      return h("div", { class: "model-col" }, h("label", { class: "provider-head" }, tick(n > 0 && n === models.length, n > 0 && n < models.length), h("span", { text: name })),
+        ...models.map((m) => {
+          const e = entries.find((x) => x.name === m);
+          const label = h("label", { class: "model" + (c.models.includes(m) ? "" : " off") }, tick(c.models.includes(m)), h("span", { text: m }));
+          if (e) label.title = `${e.api_model_id || ""} ${JSON.stringify(e.params || {})}`.trim();
+          return label;
+        }));
+    });
+    const fields = PARAMS.map(([label, get]) => h("label", {}, label, h("input", { type: "text", disabled: "", value: String(get(c)) })));
+    return [h("section", { class: "step" }, h("h3", { text: "Puzzles" }), h("div", { class: "cards" }, ...cards)),
+      h("section", { class: "step" }, h("h3", { text: "AI models" }), h("div", { class: "model-cols" }, ...cols)),
+      h("section", { class: "step" }, h("h3", { text: "Parameters" }), h("div", { class: "grid" }, ...fields))];
   }
 
   function reportBox(d) {
@@ -86,6 +108,8 @@
       const evalRelease = h("select", { "aria-label": "Score under release" }, h("option", { value: "", text: "the experiment's release" }),
         ...bundle.releases.map((v) => h("option", { value: v, text: v })));
       const evaluate = h("button", { type: "button", text: "Evaluate" });
+      const stop = h("button", { type: "button", class: "danger", text: "Stop" });
+      const stopMsg = h("span", { class: "msg small", role: "status" });
       const commit = h("button", { type: "button", text: "Commit" });
 
       function controls() {
@@ -93,6 +117,7 @@
         const any = () => true, run = (j) => j.startsWith("run:"), evalJob = (j) => run(j) || j === "evaluate";
         const d = state.detail;
         evaluate.disabled = mine(id, evalJob) || snapRunning(snap, evalJob);
+        stop.disabled = !(mine(id, run) || snapRunning(snap, run));
         // The server's 409s stay the authority; this only keeps the button honest.
         commit.disabled = mine(id, any) || snapRunning(snap, any) || !(d && d.local_results && d.local_report);
       }
@@ -101,8 +126,8 @@
         try {
           const d = state.detail = await UI.api("/api/experiments/" + encodeURIComponent(id));
           if (!root.isConnected) return;
-          top.replaceChildren(header(d), section("Summary", ExpMetrics.summary(d, bundle.experiments)),
-            section("Config", config(d)), section("Full metrics", ExpMetrics.full(d), true),
+          top.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, stopMsg), ...settings(d, bundle),
+            section("Summary", ExpMetrics.summary(d, bundle.experiments)), section("Full metrics", ExpMetrics.full(d), true),
             section("Report", reportBox(d)));
           actions.replaceChildren(...(d.local_results ? [h("h3", { text: "Evaluate and commit" }),
             h("div", { class: "actions" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit), result] : []));
@@ -116,6 +141,14 @@
           await UI.api("/api/evaluate", { method: "POST", body: { id, release: evalRelease.value || null } });
           state.ctl.refresh();
         } catch (e) { result.className = "msg err"; result.textContent = e.message; }
+      });
+      stop.addEventListener("click", async () => {
+        stopMsg.className = "msg small"; stopMsg.textContent = "";
+        try {
+          await UI.api("/api/stop", { method: "POST", body: { id } });
+          stopMsg.className = "msg small ok";
+          stopMsg.textContent = "Stop requested. A request in flight may be paid for and never recorded, so prefer a limit for small runs.";
+        } catch (e) { stopMsg.className = "msg small err"; stopMsg.textContent = e.message; }
       });
       commit.addEventListener("click", () => openCommit(id, result, loadDetail).catch((e) => { result.className = "msg err"; result.textContent = e.message; }));
 

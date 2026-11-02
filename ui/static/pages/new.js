@@ -1,7 +1,8 @@
 // Spec: docs/specs/ui.md (New Experiment, Banners, HTTP API 4 to 11)
-// New Experiment: the form, Estimate, Dry run, Run, Stop, and Progress for the id. Reads the bundle,
+// New Experiment: the form, Estimate, Dry run, and Run. Reads the bundle,
 // GET /api/branches, /api/default-id, and /api/experiment/<id>/config; writes only through POST /api/estimate,
-// /api/dry-run, /api/run, and /api/stop. After a job starts, the message links to the experiment's page, where the terminal is.
+// /api/dry-run, and /api/run. Run answers once the branch exists, and the page then opens the experiment's page,
+// which shows the settings, Progress, Stop, and the terminal.
 (function () {
   const h = UI.el;
   const NO_KEY = "no API key: add it under Models";
@@ -9,7 +10,7 @@
     ["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
   // The form survives a redraw of the page (a bundle reload after a job) and resets with the release.
-  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", progId: "" };
+  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "" };
   let cleanup = null;
   let idSeq = 0;
 
@@ -17,7 +18,7 @@
 
   function reset(bundle) {
     const d = bundle.defaults;
-    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: [], models: [], limit: "", progId: "",
+    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: [], models: [], limit: "",
       vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, ...d.budget } });
   }
 
@@ -128,12 +129,10 @@
     render(bundle, params, el) {
       if (cleanup) cleanup();
       if (S.release !== bundle.release) reset(bundle);
-      const formBox = h("div"), progBox = h("section", {}, h("h3", { text: "Progress" }));
-      const progMount = h("div");
-      progBox.append(progMount);
-      el.append(h("div", { class: "newexp" }, formBox, progBox));
+      const formBox = h("div");
+      el.append(h("div", { class: "newexp" }, formBox));
       const ref = {};
-      let ctl = null, dead = false;
+      let dead = false;
 
       const msg = h("p", { class: "msg", role: "status" });
       const say = (text, kind) => { msg.className = "msg" + (kind ? " " + kind : ""); msg.textContent = text; };
@@ -145,15 +144,6 @@
         ref.run.disabled = mine(id, busy);
         ref.estimate.disabled = mine(id, (j) => j === "estimate");
         ref.dry.disabled = mine(id, (j) => j === "dry-run");
-        ref.stop.disabled = !mine(id, run);
-      }
-
-      function startProgress(id) {
-        S.progId = id;
-        if (ctl && ctl.id === id) { ctl.refresh(); return; }
-        if (ctl) ctl.destroy();
-        ctl = Progress.mount(progMount, id, { onSnapshot: controls });
-        ctl.id = id;
       }
 
       let branches = [], pickSeq = 0, loading = false;
@@ -197,12 +187,12 @@
             return `${n} is disabled: ${m ? m.disabled_reason : "not in the catalogue"}; resuming needs it enabled`;
           });
           Object.assign(S, { id: value, touched: true, release: cfg.release, puzzles: cfg.puzzles, models: cfg.models.filter((n) => enabled.has(n)),
-            vals: { attempts: cfg.attempts, retry_cap: cfg.retry_cap, max_output_tokens: cfg.max_output_tokens, ...cfg.budget }, progId: value });
+            vals: { attempts: cfg.attempts, retry_cap: cfg.retry_cap, max_output_tokens: cfg.max_output_tokens, ...cfg.budget } });
           if (cfg.release !== bundle.release) { UI.go("#/new?release=" + encodeURIComponent(cfg.release)); return; }
           paint();
-          startProgress(value);
-          if (dropped.length) say(`Loaded ${value}. ${dropped.join(". ")}.`, "err");
-          else say(`Loaded ${value}.`, "ok");
+          const page = h("a", { href: "#/experiments/" + encodeURIComponent(value) + "?release=" + encodeURIComponent(cfg.release), text: "Open its page" });
+          msg.className = "msg " + (dropped.length ? "err" : "ok");
+          msg.replaceChildren(`Loaded ${value}. ${dropped.length ? dropped.join(". ") + ". " : ""}`, page);
         } catch (e) {
           if (seq !== pickSeq) return;
           loading = false; S.branch = "";
@@ -216,21 +206,15 @@
         try {
           const form = readForm(bundle);
           const body = path === "run" ? { form, limit: readLimit() } : { form };
-          const r = await UI.api("/api/" + path, { method: "POST", body });
+          if (path === "run") { ref.run.disabled = true; say(`Starting the run and creating results/${form.id}…`); }
+          const r = await UI.api("/api/" + path, { method: "POST", body }).finally(() => { if (!dead) controls(); });
           if (dead) return;
-          const rel = bundle.release ? "?release=" + encodeURIComponent(bundle.release) : "";
-          msg.className = "msg ok";
-          msg.replaceChildren(`${label} started. Experiment ${r.status}. See the terminal. `);
-          if (path === "run") msg.append(h("a", { href: "#/experiments/" + encodeURIComponent(form.id) + rel, text: "Open its page" }));
-          if (path === "run") startProgress(form.id);
-        } catch (e) { say(e.message, "err"); }
-      }
-
-      async function stop() {
-        say("");
-        try {
-          await UI.api("/api/stop", { method: "POST", body: { id: S.id.trim() } });
-          say("Stop requested. A request in flight may be paid for and never recorded, so prefer a limit for small runs.", "ok");
+          if (path === "run") {
+            // The branch exists by now, so the experiment's page can be opened and reloaded safely.
+            UI.go("#/experiments/" + encodeURIComponent(form.id) + (bundle.release ? "?release=" + encodeURIComponent(bundle.release) : ""));
+            return;
+          }
+          say(`${label} started. Experiment ${r.status}. See the terminal.`, "ok");
         } catch (e) { say(e.message, "err"); }
       }
 
@@ -250,9 +234,7 @@
           if (loading) { S.branch = ""; loading = false; }
           pickSeq++;
           if (ref.id.value === "") {
-            Object.assign(S, { id: "", touched: false, branch: "", progId: "" });
-            if (ctl) { ctl.destroy(); ctl = null; }
-            progMount.replaceChildren();
+            Object.assign(S, { id: "", touched: false, branch: "" });
             refreshId();
           } else {
             S.id = ref.id.value.trim(); S.touched = true;
@@ -272,8 +254,8 @@
 
       function paint() {
         for (const [key, text, fn] of [["estimate", "Estimate", () => send("estimate", "Estimate")],
-          ["dry", "Dry run", () => send("dry-run", "Dry run")], ["run", "Run", () => send("run", "Run")], ["stop", "Stop", stop]]) {
-          ref[key] = h("button", { type: "button", text, class: key === "run" ? "primary" : key === "stop" ? "danger" : "" });
+          ["dry", "Dry run", () => send("dry-run", "Dry run")], ["run", "Run", () => send("run", "Run")]]) {
+          ref[key] = h("button", { type: "button", text, class: key === "run" ? "primary" : "" });
           ref[key].addEventListener("click", fn);
         }
         formBox.replaceChildren(
@@ -281,7 +263,7 @@
           h("section", { class: "step" }, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
           h("section", { class: "step" }, h("h3", { text: "AI models" }), modelList(bundle, choose)),
           h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(),
-            h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run, ref.stop), msg));
+            h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run), msg));
         controls();
       }
 
@@ -292,12 +274,10 @@
         cleanup = null;
         dead = true;
         offJobs(); window.removeEventListener("hashchange", onHash);
-        if (ctl) ctl.destroy();
       };
 
       paint();
       refreshId();
-      if (S.progId) startProgress(S.progId);
     },
   });
 })();

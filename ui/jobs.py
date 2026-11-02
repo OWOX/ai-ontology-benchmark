@@ -56,6 +56,12 @@ class Jobs:
     def alive(self, experiment_id: str) -> bool:
         return "running" in self.states(experiment_id).values()
 
+    def last_stderr(self, experiment_id: str, name: str) -> str | None:
+        """The last stderr line a job of the experiment wrote, while it is still in the log."""
+        with self.lock:
+            return next((line["text"] for line in reversed(self.log) if line["id"] == experiment_id
+                         and line["job"] == name and line["stream"] == "stderr"), None)
+
     def log_since(self, after: int) -> dict:
         with self.lock:
             return {"lines": [line for line in self.log if line["seq"] > after], "last": self.seq,
