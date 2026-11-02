@@ -71,7 +71,6 @@
     const icons = h("div", { class: "provider-icons" });
     if (k && (k.source === "file" || k.source === "missing")) icons.append(edit = icon("edit", "Edit API key", open));
     head.append(icons);
-    if (k && k.source !== "missing") head.append(h("span", { class: "muted small", title: status, text: status }));
     if (k && k.source === "missing") open();
     return h("section", { class: "step provider", "data-provider": p.name }, head, slot, modelTable(p, q));
   }
