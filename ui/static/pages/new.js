@@ -20,7 +20,7 @@
 
   function reset(bundle) {
     const d = bundle.defaults;
-    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: [], models: [], limit: "",
+    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "",
       vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, ...d.budget } });
   }
 
@@ -93,11 +93,11 @@
         sync(); onChange();
       });
       const head = h("label", { class: "provider-head" }, all, h("span", { text: p.name }));
-      const col = h("div", { class: "model-col" }, head);
+      // A missing key shows as a warning sign after the provider name, linking to Models; the reason is its tooltip.
       const problem = p.models.map((m) => m.disabled_reason).find(keyProblem);
-      if (problem) {
-        col.append(h("div", { class: "reason small" }, "⚠️ ", h("a", { href: "#/models" + rel, text: problem })));
-      }
+      const warn = problem ? h("a", { class: "key-warn", href: "#/models" + rel, title: problem[0].toUpperCase() + problem.slice(1),
+        "aria-label": `${p.name}: ${problem}`, text: "⚠️" }) : null;
+      const col = h("div", { class: "model-col" }, h("div", { class: "provider-row" }, head, warn));
       for (const m of p.models) {
         const off = !!m.disabled_reason;
         const box = h("input", { type: "checkbox" });
@@ -217,7 +217,10 @@
             UI.go("#/experiments/" + encodeURIComponent(form.id) + (bundle.release ? "?release=" + encodeURIComponent(bundle.release) : ""));
             return;
           }
-          say(`${label} started. Experiment ${r.status}. See the terminal.`, "ok");
+          say(`${label} started. Experiment ${r.status}. See the terminal below.`, "ok");
+          const term = document.getElementById("termbox");
+          term.open = true;
+          term.scrollIntoView({ behavior: "smooth", block: "nearest" });
         } catch (e) { say(e.message, "err"); }
       }
 
