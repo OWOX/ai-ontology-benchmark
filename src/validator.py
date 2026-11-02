@@ -22,12 +22,14 @@ MISMATCH_THRESHOLD = 0.5
 @dataclass(frozen=True)
 class Verdict:
     # Moves read from the AI model's JSON output, in order. Empty when there is no usable output.
+    # For a decision model they are its calls' next_move choices, in order.
     parsed_moves: list[str]
     # True when at least one parsed move is an impossible move, i.e. not in legal_moves().
     hallucination: bool
     # Whether the AI model picked up the wrong state: its own claim that the input can't be
     # reached from the solved state. Read from its output, not computed. False when there is
-    # no usable output.
+    # no usable output. For a decision model it is true when any call, up to and including the
+    # first done, has a mismatch probability at or above MISMATCH_THRESHOLD.
     mismatch: bool
     # Number of parsed moves in the half-turn metric. None for infrastructure_failure and malformed_output.
     move_count: int | None
