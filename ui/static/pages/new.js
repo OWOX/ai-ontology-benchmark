@@ -71,26 +71,44 @@
     }));
   }
 
+  // One column per provider. The header's checkbox selects or clears every enabled model of the provider.
   function modelList(bundle, onChange) {
     const rel = bundle.release ? "?release=" + encodeURIComponent(bundle.release) : "";
-    return h("div", {}, ...bundle.providers.map((p) => {
-      const head = h("div", { class: "provider-head" }, h("span", { text: p.name }));
+    return h("div", { class: "model-cols" }, ...bundle.providers.map((p) => {
+      const enabled = p.models.filter((m) => !m.disabled_reason).map((m) => m.name);
+      const all = h("input", { type: "checkbox", "aria-label": `All ${p.name} models` });
+      all.disabled = !enabled.length;
+      const boxes = [];
+      const sync = () => {
+        const n = enabled.filter((name) => S.models.includes(name)).length;
+        all.checked = n > 0 && n === enabled.length;
+        all.indeterminate = n > 0 && n < enabled.length;
+        for (const [name, box] of boxes) box.checked = S.models.includes(name);
+      };
+      all.addEventListener("change", () => {
+        S.models = all.checked ? [...S.models.filter((n) => !enabled.includes(n)), ...enabled] : S.models.filter((n) => !enabled.includes(n));
+        sync(); onChange();
+      });
+      const head = h("label", { class: "provider-head" }, all, h("span", { text: p.name }));
+      const col = h("div", { class: "model-col" }, head);
       if (p.models.some((m) => m.disabled_reason === NO_KEY)) {
-        head.append(h("span", { class: "reason" }, "⚠️ ", h("a", { href: "#/models" + rel, text: NO_KEY })));
+        col.append(h("div", { class: "reason small" }, "⚠️ ", h("a", { href: "#/models" + rel, text: NO_KEY })));
       }
-      return h("div", { class: "provider" }, head, ...p.models.map((m) => {
+      for (const m of p.models) {
         const off = !!m.disabled_reason;
         const box = h("input", { type: "checkbox" });
         box.disabled = off;
-        box.checked = !off && S.models.includes(m.name);
+        if (!off) boxes.push([m.name, box]);
         box.addEventListener("change", () => {
           S.models = box.checked ? [...S.models, m.name] : S.models.filter((n) => n !== m.name);
-          onChange();
+          sync(); onChange();
         });
         const label = h("label", { class: "model" + (off ? " off" : "") }, box, h("span", { text: m.name }));
         if (off && m.disabled_reason !== NO_KEY) label.append(h("span", { class: "reason", text: m.disabled_reason }));
-        return label;
-      }));
+        col.append(label);
+      }
+      sync();
+      return col;
     }));
   }
 
@@ -138,7 +156,10 @@
         ctl.id = id;
       }
 
-      function newOption() { return `New: ${S.id || "(choose puzzles and AI models)"}`; }
+      let branches = [];
+      const branchNote = () => S.branch ? "Existing branch: its config is loaded, and Run resumes it."
+        : S.touched ? "Edited by hand. Clear the field to get the suggestion back."
+          : "Suggested from the chosen puzzles and AI models. Edit it, or pick an existing branch to load it.";
 
       async function refreshId() {
         if (S.touched || S.branch) return;
@@ -151,7 +172,7 @@
           if (mine_ !== idSeq || S.touched || S.branch || dead) return;
           S.id = r.id;
           if (ref.id) ref.id.value = S.id;
-          if (ref.newOpt) ref.newOpt.textContent = newOption();
+          if (ref.note) ref.note.textContent = branchNote();
           controls();
         } catch (e) { say(e.message, "err"); }
       }
@@ -204,30 +225,40 @@
         } catch (e) { say(e.message, "err"); }
       }
 
-      function paint() {
-        const branch = h("select", { "aria-label": "Branch" });
-        ref.newOpt = h("option", { value: "", text: newOption() });
-        branch.append(ref.newOpt);
-        branch.value = S.branch;
-        UI.api("/api/branches").then((list) => {
-          if (!branch.isConnected) return;
-          branch.append(...list.map((b) => h("option", { value: b.id, text: b.id })));
-          branch.value = S.branch;
+      // The branch field: the suggested id until edited by hand, with every existing branch offered. An id
+      // that names an existing branch loads it; clearing the field brings the suggestion back.
+      function branchField() {
+        const list = h("datalist", { id: "branch-list" });
+        UI.api("/api/branches").then((rows) => {
+          branches = rows.map((b) => b.id);
+          list.replaceChildren(...branches.map((id) => h("option", { value: id })));
         }).catch((e) => say(e.message, "err"));
-        branch.addEventListener("change", () => pickBranch(branch.value));
-        ref.id = h("input", { type: "text", "aria-label": "Experiment id", value: S.id });
-        ref.id.addEventListener("input", () => { S.id = ref.id.value; S.touched = true; ref.newOpt.textContent = newOption(); controls(); });
+        ref.id = h("input", { type: "text", list: "branch-list", "aria-label": "Branch", value: S.id, spellcheck: "false" });
+        ref.id.addEventListener("input", () => {
+          const value = ref.id.value.trim();
+          if (!value) { S.id = ""; S.touched = false; S.branch = ""; refreshId(); controls(); return; }
+          if (branches.includes(value) && value !== S.branch) { pickBranch(value); return; }
+          S.id = value; S.touched = true;
+          if (S.branch && value !== S.branch) S.branch = "";
+          ref.note.textContent = branchNote();
+          controls();
+        });
+        ref.note = h("p", { class: "muted small", text: branchNote() });
+        return h("div", { class: "branch-field" }, h("label", { class: "small" }, "Branch",
+          h("span", { class: "branch-input" }, h("span", { class: "prefix", text: "results/" }), ref.id)), list, ref.note);
+      }
+
+      function paint() {
         for (const [key, text, fn] of [["estimate", "Estimate", () => send("estimate", "Estimate")],
           ["dry", "Dry run", () => send("dry-run", "Dry run")], ["run", "Run", () => send("run", "Run")], ["stop", "Stop", stop]]) {
           ref[key] = h("button", { type: "button", text, class: key === "run" ? "primary" : key === "stop" ? "danger" : "" });
           ref[key].addEventListener("click", fn);
         }
         formBox.replaceChildren(
-          h("section", {}, h("h2", { text: "New Experiment" }), h("label", { class: "small" }, "Branch ", branch),
-            h("label", { class: "small" }, " Experiment id ", ref.id)),
-          h("section", {}, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
-          h("section", {}, h("h3", { text: "AI models" }), modelList(bundle, choose)),
-          h("section", {}, h("h3", { text: "Parameters" }), numberFields(),
+          h("section", {}, h("h2", { text: "New Experiment" }), branchField()),
+          h("section", { class: "step" }, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
+          h("section", { class: "step" }, h("h3", { text: "AI models" }), modelList(bundle, choose)),
+          h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(),
             h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run, ref.stop), msg));
         controls();
       }

@@ -220,4 +220,14 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .exp-detail h3 { font-size: 14px; margin: 0 0 6px; }
 .exp-detail details > summary { font-weight: 600; }
 .newexp section { margin-bottom: 14px; }
+.newexp .step > h3 { font-size: 14px; margin: 0 0 10px; }
+.newexp .step .cards { margin-top: 0; }
+.branch-field label { display: flex; flex-direction: column; gap: 3px; color: var(--muted); }
+.branch-input { display: flex; max-width: 520px; }
+.branch-input .prefix { display: inline-flex; align-items: center; padding: 0 8px; border: 1px solid var(--line); border-right: 0; border-radius: 4px 0 0 4px; background: var(--code); color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.branch-input input { border-radius: 0 4px 4px 0; font-family: var(--mono); font-size: 12px; }
+.branch-field .muted { margin: 4px 0 0; }
+.model-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; align-items: start; }
+.model-col .provider-head { cursor: pointer; }
+.model-col .reason { font-weight: 400; margin-bottom: 4px; }
 .newexp .grid input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--field); color: inherit; }

@@ -291,11 +291,11 @@ One experiment, from `GET /api/experiments/<id>`:
 
 ### New Experiment
 
-The page holds:
+The page holds, under the title, the branch field, then Puzzles, AI models, and Parameters, each in a block like those of the Models and Puzzles pages:
 
-1. Branch: a select with "New: <default id>" first, then every branch from `GET /api/branches`. The new id is editable and follows the choices below until it is edited by hand. Picking an existing branch loads its config into the form from `GET /api/experiment/<id>/config`.
+1. Branch: one text field, shown after a fixed `results/` prefix, that holds the experiment id. It starts with the default id from `GET /api/default-id` and follows the choices below until it is edited by hand. Clearing it brings the default id back. It offers every branch from `GET /api/branches` as a suggestion, and an id that names an existing branch loads its config into the form from `GET /api/experiment/<id>/config`. Editing a loaded id makes it a new experiment that keeps the loaded values. A note under the field says which of the three it is: suggested, edited by hand, or an existing branch.
 2. Puzzles: one `<button aria-pressed>` card per puzzle in the menu's release, with the puzzle name, its input count, and, for an `NxN` name, a solved net. At least one is needed.
-3. AI models: grouped by provider. When a provider has no key, the header shows ⚠️ "no API key: add it under Models", linking there, and its models are disabled. Other disabled reasons show beside the model.
+3. AI models: one column per provider, in bundle order. The column header is a checkbox and the provider name. The checkbox selects or clears every enabled model of the provider, shows checked when all are selected and mixed when some are, and is disabled when the provider has no enabled model. When a provider has no key, ⚠️ "no API key: add it under Models", linking there, shows under the header, and its models are disabled. Other disabled reasons show beside the model.
 4. Parameters: attempts ("Attempts per input and setup: sends the same input N times"), retry cap, max output tokens, the three budgets, and "Limit per model" (optional). Buttons: Estimate, Dry run, Run, Stop. Each sends the form. After Run, Estimate, or Dry run starts, the message points to the terminal at the foot of the page, which shows the job's output. After Run only, it also links to the experiment's page. Estimate and Dry run give no link, because a new id has no page.
 5. Progress: the Cube panel, a legend, and the rings, as on the Experiment page.
 
