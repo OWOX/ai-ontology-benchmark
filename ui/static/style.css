@@ -249,5 +249,6 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .provider-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .provider-row .provider-head { margin-bottom: 0; }
 .key-warn { text-decoration: none; }
+.provider > .provider-head { font-size: 18px; }
 .model-col .reason { font-weight: 400; margin-bottom: 4px; }
 .newexp .grid input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--field); color: inherit; }

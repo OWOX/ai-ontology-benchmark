@@ -96,7 +96,7 @@
       // A missing key shows as a warning sign after the provider name, linking to Models; the reason is its tooltip.
       const problem = p.models.map((m) => m.disabled_reason).find(keyProblem);
       const warn = problem ? h("a", { class: "key-warn", href: "#/models" + rel, title: problem[0].toUpperCase() + problem.slice(1),
-        "aria-label": problem, text: "⚠️" }) : null;
+        "aria-label": `${p.name}: ${problem}`, text: "⚠️" }) : null;
       const col = h("div", { class: "model-col" }, h("div", { class: "provider-row" }, head, warn));
       for (const m of p.models) {
         const off = !!m.disabled_reason;

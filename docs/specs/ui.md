@@ -225,7 +225,7 @@ Two parts: a left menu, fixed to the viewport height, and the page on the right.
 
 The page title and every block heading, such as a puzzle card's name or the New Experiment page's Puzzles, AI models, and Parameters, are 18px.
 
-Every text taken from a file ends with a small "source" link to that file on GitHub, except on the Puzzles page, where sources are footnotes, at the commit sha of the ref it was read from, as `https://github.com/<owner>/<repo>/blob/<sha>/<path>`. With no GitHub base URL, there is no link.
+Every text taken from a file ends with a small "source" link to that file on GitHub, at the commit sha of the ref it was read from, as `https://github.com/<owner>/<repo>/blob/<sha>/<path>`. With no GitHub base URL, there is no link. On the Puzzles page the sources are footnote markers instead.
 
 Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs, numbered and bulleted lists, links, inline code, code blocks, emphasis, and tables. It escapes all HTML in the source first and allows only `http`, `https`, and relative links, so a file can never inject markup. A relative link points at the same file on GitHub.
 
