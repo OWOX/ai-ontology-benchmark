@@ -1,5 +1,6 @@
 # Agent-local files
 .claude/
+.worktrees/
 CLAUDE.local.md
 
 # Secrets: API keys saved from the UI, one JSON file per provider. Never committed.
