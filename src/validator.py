@@ -20,8 +20,9 @@ class Verdict:
     parsed_moves: list[str]
     # True when at least one parsed move is an impossible move, i.e. not in legal_moves().
     hallucination: bool
-    # The AI model's own claim that the input can't be reached from the solved state.
-    # Read from its output, not computed. False when there is no usable output.
+    # Whether the AI model picked up the wrong state: its own claim that the input can't be
+    # reached from the solved state. Read from its output, not computed. False when there is
+    # no usable output.
     mismatch: bool
     # Number of parsed moves in the half-turn metric. None for infrastructure_failure and malformed_output.
     move_count: int | None
