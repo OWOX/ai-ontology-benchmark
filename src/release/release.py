@@ -17,7 +17,7 @@ from pathlib import Path
 
 from src.config import load_release_config
 from src.generate.generate import build_inputs
-from src.run.prompts import decision_prompt_versions, prompt_versions
+from src.run.prompts import both_prompt_versions
 
 VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 # Globs for the assessment. src/evaluate/report.py is left out on purpose.
@@ -92,16 +92,18 @@ def parse_inputs(text: str) -> list[dict]:
 
 
 def check_bump_rules(bump: str, old: dict, new_versions: dict, old_assessment: str, new_assessment: str,
-                     new_decision_versions: dict | None = None) -> None:
+                     new_decision_versions: dict) -> None:
     """Raise ReleaseError if the changes since the latest release don't fit a minor or patch bump.
-    A change in either prompt_versions or decision_prompt_versions is a prompt change. A release
-    without decision_prompt_versions counts as different."""
-    prompts_same = (new_versions == old["prompt_versions"]
-                    and new_decision_versions == old.get("decision_prompt_versions"))
+    A change in either prompt_versions or decision_prompt_versions is a prompt change for a minor
+    bump, and an old release without decision_prompt_versions counts as different there. A patch
+    bump against such a release compares prompt_versions only, so an assessment fix stays possible."""
+    llm_same = new_versions == old["prompt_versions"]
+    prompts_same = llm_same and new_decision_versions == old.get("decision_prompt_versions")
     if bump == "minor" and prompts_same:
         raise ReleaseError("prompts: a minor bump needs at least one prompt version to differ")
     if bump == "patch":
-        if not prompts_same:
+        patch_same = llm_same if "decision_prompt_versions" not in old else prompts_same
+        if not patch_same:
             raise ReleaseError("prompts: a patch bump needs every prompt version to equal the latest release")
         if new_assessment == old_assessment:
             raise ReleaseError("assessment: a patch bump needs the assessment to differ from the latest release")
@@ -176,8 +178,7 @@ def release(bump: str, note: str, releases: Path) -> str:
         release_config = old["release_config"]
         inputs_text = read_text(releases / latest / "inputs.jsonl")
     inputs = parse_inputs(inputs_text)
-    versions = prompt_versions(PROMPTS_DIR, inputs)
-    decision_versions = decision_prompt_versions(PROMPTS_DIR, inputs)
+    versions, decision_versions = both_prompt_versions(PROMPTS_DIR, inputs)
     assessment = assessment_sha256()
     if old:
         check_bump_rules(bump, old, versions, old["assessment_sha256"], assessment, decision_versions)

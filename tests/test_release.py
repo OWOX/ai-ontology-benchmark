@@ -150,6 +150,31 @@ def test_patch_after_questions_edit_fails(repo):
     assert not (repo / "releases/1.0.1").exists()
 
 
+def strip_decision_field(repo, version):
+    path = repo / "releases" / version / "manifest.json"
+    path.chmod(0o644)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    del manifest["decision_prompt_versions"]
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    commit_all(repo, "old manifest")
+
+
+def test_patch_against_old_manifest_without_decision_versions(repo):
+    release_ok(repo, "major")
+    strip_decision_field(repo, "1.0.0")
+    edit_validator(repo)
+    release_ok(repo, "patch")
+    new = manifest_of(repo, "1.0.1")
+    assert new["prompt_versions"] == manifest_of(repo, "1.0.0")["prompt_versions"]
+    assert "decision_prompt_versions" in new
+
+
+def test_minor_against_old_manifest_without_decision_versions(repo):
+    release_ok(repo, "major")
+    strip_decision_field(repo, "1.0.0")
+    release_ok(repo, "minor")
+
+
 def test_minor_without_change_fails(repo):
     release_ok(repo, "major")
     result = run_release(repo, "minor")

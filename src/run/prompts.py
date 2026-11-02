@@ -44,21 +44,36 @@ def build_prompt(templates_dir: Path, input: dict, setup: str) -> str:
     return text
 
 
-def prompt_versions(templates_dir: Path, inputs: list[dict]) -> dict[str, dict[str, str]]:
-    """Return {setup: {puzzle: version}} for every setup and every puzzle in inputs."""
+def _versions(templates_dir: Path, inputs: list[dict], questions_bytes: bytes | None) -> tuple[dict, dict | None]:
+    """Build each prompt once and feed two digests: a plain one and, when questions_bytes is given,
+    one seeded with those bytes. Return (plain, decision), decision being None without questions_bytes."""
     puzzles = list(dict.fromkeys(row["puzzle"] for row in inputs))
-    versions: dict[str, dict[str, str]] = {}
+    plain: dict[str, dict[str, str]] = {}
+    decision: dict[str, dict[str, str]] | None = {} if questions_bytes is not None else None
     for setup in SETUPS:
-        versions[setup] = {}
+        plain[setup] = {}
+        if decision is not None:
+            decision[setup] = {}
         for puzzle in puzzles:
             digest = hashlib.sha256()
+            decision_digest = hashlib.sha256(questions_bytes) if questions_bytes is not None else None
             # Check the template even when no input uses it.
             _read_template(templates_dir, setup, puzzle)
             for row in inputs:
                 if row["puzzle"] == puzzle:
-                    digest.update((build_prompt(templates_dir, row, setup) + "\n").encode())
-            versions[setup][puzzle] = digest.hexdigest()[:12]
-    return versions
+                    data = (build_prompt(templates_dir, row, setup) + "\n").encode()
+                    digest.update(data)
+                    if decision_digest is not None:
+                        decision_digest.update(data)
+            plain[setup][puzzle] = digest.hexdigest()[:12]
+            if decision is not None:
+                decision[setup][puzzle] = decision_digest.hexdigest()[:12]
+    return plain, decision
+
+
+def prompt_versions(templates_dir: Path, inputs: list[dict]) -> dict[str, dict[str, str]]:
+    """Return {setup: {puzzle: version}} for every setup and every puzzle in inputs."""
+    return _versions(templates_dir, inputs, None)[0]
 
 
 QUESTION_KEYS = ("next_move", "done", "mismatch")
@@ -103,21 +118,14 @@ def decision_questions(questions: dict, legal: list[str]) -> dict:
     }
 
 
+def both_prompt_versions(templates_dir: Path, inputs: list[dict]) -> tuple[dict, dict]:
+    """Return (prompt_versions, decision_prompt_versions), rendering every prompt once."""
+    load_questions(templates_dir)  # validate the file
+    plain, decision = _versions(templates_dir, inputs, _questions_path(templates_dir).read_bytes())
+    return plain, decision
+
+
 def decision_prompt_versions(templates_dir: Path, inputs: list[dict]) -> dict[str, dict[str, str]]:
     """Return {setup: {puzzle: version}} for decision models: sha256 over the questions file's
     bytes, then every prompt for that setup and puzzle in input order, each followed by a newline."""
-    path = _questions_path(templates_dir)
-    load_questions(templates_dir)  # validate the file
-    questions_bytes = path.read_bytes()
-    puzzles = list(dict.fromkeys(row["puzzle"] for row in inputs))
-    versions: dict[str, dict[str, str]] = {}
-    for setup in SETUPS:
-        versions[setup] = {}
-        for puzzle in puzzles:
-            digest = hashlib.sha256(questions_bytes)
-            _read_template(templates_dir, setup, puzzle)
-            for row in inputs:
-                if row["puzzle"] == puzzle:
-                    digest.update((build_prompt(templates_dir, row, setup) + "\n").encode())
-            versions[setup][puzzle] = digest.hexdigest()[:12]
-    return versions
+    return both_prompt_versions(templates_dir, inputs)[1]

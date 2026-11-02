@@ -26,7 +26,7 @@ from src.run.budget import (BudgetError, check_prices, check_request_budget, che
                             print_estimate, worst_case_request_cost)
 from src.run.models import InfrastructureError, call_model
 from src.run.progress import Progress
-from src.run.prompts import SETUPS, build_prompt, decision_prompt_versions, prompt_versions
+from src.run.prompts import SETUPS, both_prompt_versions, build_prompt, prompt_versions
 from src.run.raw import read_raw
 from src.validator import validate
 
@@ -66,10 +66,13 @@ def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list
         raise RunError(f"{manifest_path}: field 'assessment_sha256' differs from the assessment files in the working tree")
     lines = (folder / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
     inputs = [json.loads(line) for line in lines]
-    if prompt_versions(folder / "prompts", inputs) != manifest["prompt_versions"]:
+    if "decision_prompt_versions" in manifest:
+        plain, decision = both_prompt_versions(folder / "prompts", inputs)
+    else:
+        plain, decision = prompt_versions(folder / "prompts", inputs), None
+    if plain != manifest["prompt_versions"]:
         raise RunError(f"{manifest_path}: field 'prompt_versions' differs from the prompts the working tree renders")
-    if "decision_prompt_versions" in manifest and (
-            decision_prompt_versions(folder / "prompts", inputs) != manifest["decision_prompt_versions"]):
+    if decision is not None and decision != manifest["decision_prompt_versions"]:
         raise RunError(
             f"{manifest_path}: field 'decision_prompt_versions' differs from the prompts the working tree renders")
     return manifest, inputs

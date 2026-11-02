@@ -33,7 +33,7 @@ Bump rules, compared with the latest release. `release` exits with code 1 and wr
 | minor | copied | at least one, in either table, differs | any |
 | patch | copied | all equal in both tables | differs |
 
-An old release without `decision_prompt_versions` counts as different, so the next minor bump is accepted on that field alone.
+Against an old release without `decision_prompt_versions`, a missing field counts as different for a minor bump, so it is accepted on that field alone. A patch bump compares only `prompt_versions` there, so an assessment fix can still be released as a patch.
 
 It also refuses when the git working tree has uncommitted changes, because the manifest's commit must describe the code exactly.
 
@@ -51,3 +51,4 @@ All tests use a temporary releases folder inside a temporary git repo.
 8. Files in the new release can't be opened for writing.
 9. The manifest and README hold `decision_prompt_versions`, and `prompts/decision/questions.txt` is in `files`.
 10. A minor bump after editing only `questions.txt` is accepted. A patch bump after the same edit exits with code 1.
+11. A patch bump against an old manifest without `decision_prompt_versions`, with unchanged LLM prompts and a changed assessment, is accepted.

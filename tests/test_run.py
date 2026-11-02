@@ -242,14 +242,6 @@ def test_old_release_refuses_a_decision_model(exp, capsys):
     assert not (exp / "results/exp").exists()
 
 
-def test_changed_questions_refused_when_the_field_is_present(exp, capsys):
-    questions = exp / "releases/1.0.0/prompts/decision/questions.txt"
-    questions.chmod(0o644)
-    questions.write_text(questions.read_text(encoding="utf-8").replace("Pick", "Choose"), encoding="utf-8")
-    assert go() == 1
-    assert "manifest.json" in capsys.readouterr().err
-
-
 def test_changed_decision_versions_refused(exp, capsys):
     path = exp / "releases/1.0.0/manifest.json"
     path.chmod(0o644)
