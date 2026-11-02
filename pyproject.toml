@@ -13,6 +13,7 @@ dependencies = [
     "google-genai",
     "typesafe-sdk>=0.7.5",
     "cloudflare>=5.9.0",
+    "pydantic",
     "rich",
 ]
 
