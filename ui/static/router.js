@@ -116,9 +116,10 @@
   function drawConn() {
     const el = $("conn"), tip = $("conn-tip"), f = st.fetch || {};
     const when = f.at ? new Date(f.at).toLocaleString() : "";
+    const err = String(f.error || "").replace(/\.$/, "");
     const server = { live: "The server is live.", down: "The server is not reachable. Reconnecting." }[st.server] || "Connecting to the server.";
     const fetched = f.error
-      ? (when ? `GitHub was not reached, so this shows data from ${when}. Error: ${f.error}.` : `GitHub was not reached and there is no data yet. Error: ${f.error}.`)
+      ? (when ? `GitHub was not reached, so this shows data from ${when}. Error: ${err}.` : `GitHub was not reached and there is no data yet. Error: ${err}.`)
       : when ? `Data was fetched from GitHub on ${when}.` : "Nothing has been fetched yet.";
     const b = st.bundle, newest = b && b.releases && b.releases[0];
     const release = !b ? "" : !newest || newest === b.release ? `Release ${b.release}, the newest.` : `Release ${b.release}. The newest is ${newest}.`;
@@ -128,6 +129,15 @@
     if (el.className !== cls) el.className = cls;
     if (tip.textContent !== text) tip.textContent = text;
   }
+
+  // The panel is fixed so the menu's overflow cannot clip it. It is placed at each open, because the menu can scroll.
+  function placeConn() {
+    const r = $("conn").getBoundingClientRect(), tip = $("conn-tip");
+    const left = Math.max(12, Math.min(r.left - 6, window.innerWidth - 12 - tip.offsetWidth));
+    tip.style.left = left + "px";
+    tip.style.top = (r.bottom + 6) + "px";
+  }
+  for (const ev of ["mouseenter", "focus"]) $("conn").addEventListener(ev, placeConn);
 
   function draw(b, force) {
     // A reload that brings nothing new keeps the page, so typed fields survive.
