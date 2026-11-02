@@ -6,6 +6,7 @@ nothing here writes a config file. Key routes go to ui.secrets. Writes only thro
 
 import re
 import secrets
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from ui.gitdata import GitData
 from ui.jobs import Jobs
 
 VERSION = re.compile(r"\d+\.\d+\.\d+")
+BRANCH_WAIT_S = 30  # how long POST /api/run waits for `run` to create results/<id>
 
 
 class App:
@@ -54,6 +56,11 @@ class App:
         if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit < 1):
             raise ApiError(400, "field 'limit' must be a whole number of at least 1, or null")
         text = forms.config_text(self.bundles, form, merged_env(self.root))
+        # The menu offers releases from main, but `run` reads the release from this checkout.
+        release = form.get("release")
+        if not (self.root / "releases" / str(release) / "manifest.json").is_file():
+            raise ApiError(409, f"release {release} is on main but not in this checkout (releases/{release}/): "
+                                "merge main into the checked-out branch, then restart the UI")
         status, text = forms.resolve_status(self.bundles, self.root, experiment_id, text)
         base = ["src.run.run", "--experiment", experiment_id, "--config", "-"]
         if name == "run":
@@ -64,7 +71,27 @@ class App:
         else:
             names, items = [name], [(name, [*base, "--estimate" if name == "estimate" else "--dry-run"])]
         self.jobs.start(experiment_id, items, blocked_by=("evaluate",) if name == "run" else (), stdin=text)
+        if name == "run":
+            self.wait_for_branch(experiment_id, names)
         return {"id": experiment_id, "status": status, "jobs": names}
+
+    def wait_for_branch(self, experiment_id: str, names: list[str]) -> None:
+        """Return once results/<id> exists, so the page it opens next can read it: a new experiment's comes from
+        `run`'s first commit, and a resumed one may exist only on origin until `run` commits a record. When every
+        run job ends first without any branch, the run failed before its first commit: report its last stderr line."""
+        git = self.bundles.git
+        exists = lambda: experiment_id in git.local_ids() or experiment_id in git.remote_ids()
+        deadline = time.monotonic() + BRANCH_WAIT_S
+        while time.monotonic() < deadline:
+            if exists():
+                return
+            states = self.jobs.states(experiment_id)
+            if not any(states.get(n) == "running" for n in names):
+                if exists():
+                    return
+                line = next((t for t in (self.jobs.last_stderr(experiment_id, n) for n in names) if t), "no output")
+                raise ApiError(409, f"run stopped before creating results/{experiment_id}: {line}")
+            time.sleep(0.2)
 
     def project_job(self, name: str, args: list[str]) -> dict:
         """A job of no experiment. install, release, and push also refuse while any job is alive."""

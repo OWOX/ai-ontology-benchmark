@@ -1,0 +1,17 @@
+This is a 3x3 cube, written in Singmaster notation.
+
+The puzzle: a cube with six faces, Up (U), Down (D), Right (R), Left (L), Front (F), and Back (B). Each face is a 3x3 grid of stickers. It has 8 corner pieces with three stickers each, 12 edge pieces with two stickers each, and 6 centres that never move relative to each other.
+
+The state is written as one block per face, headed by the face's letter. Each sticker is written as the letter of the face whose colour it has when the cube is solved. Rows are read top to bottom and stickers left to right, with each face seen from outside the cube: U with B at the top, D with F at the top, and R, F, L, and B with U at the top.
+
+Moves: a face letter alone, for example R, turns that face a quarter turn clockwise as seen looking at that face. A letter followed by an apostrophe, for example R', turns it a quarter turn anticlockwise. A letter followed by 2, for example R2, turns it a half turn. A turn moves the stickers of that face and the outer row of stickers on each of the four faces next to it.
+
+The goal: a sequence of moves after which every face shows a single colour. The orientation of the whole cube does not matter.
+
+Solve the cube. Here is its current state:
+
+{state}
+
+If the state cannot be reached from the solved state by legal moves, set mismatch to true.
+Reply with exactly this JSON object and nothing else: {"moves": [...], "mismatch": true|false}
+List the moves in the order they are applied, one move per string.

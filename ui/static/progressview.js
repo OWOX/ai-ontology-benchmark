@@ -34,7 +34,7 @@
       } else if (state === "budget") {
         out.push(h("div", { class: "banner budget" }, h("strong", { text: `Budget reached (${job})` }),
           h("div", { class: "small", text: lastErr[job] || "" }),
-          h("div", { class: "small", text: "To resume, raise the budget under Parameters and press Run." }),
+          h("div", { class: "small", text: "To resume, open New Experiment, pick this branch, raise the budget under Parameters, and press Run." }),
           h("div", { class: "small muted", text: "Parallel AI models can each pass the experiment budget by one worst-case request. \"Attempts left\" in the message counts one AI model's attempts." })));
       }
     }

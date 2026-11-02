@@ -26,6 +26,7 @@ from src.puzzles.registry import get_engine
 from test_release import commit_all, git, run_release, repo  # noqa: F401  (repo is a fixture)
 from ui import secrets as key_store
 from ui.common import merged_env
+from ui import app as app_module
 from ui import jobs as jobs_module
 from ui import server as server_module
 from ui.experiments import default_id
@@ -291,6 +292,36 @@ def test_run_from_form_writes_no_config_file(server):
     assert (server.root / "results" / "t1" / "experiment.toml").read_text() == saved + "\n"
     # the form may also come under a `form` key, with the limit beside it
     assert call(server, "POST", "/api/estimate", {"form": FORM})[1]["status"] == "unchanged"
+
+
+def test_run_answers_once_the_branch_exists(server):
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    assert git(server.root, "rev-parse", "--verify", "-q", "refs/heads/results/t1").strip()
+    wait_job(server, "run:example-model")
+
+
+def test_resume_of_a_branch_only_on_origin_answers(server):
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    wait_job(server, "run:example-model")
+    git(server.root, "fetch", "-q", "origin", "+refs/heads/results/*:refs/remotes/origin/results/*")
+    git(server.root, "branch", "-D", "results/t1")
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    wait_job(server, "run:example-model")
+
+
+def test_run_that_stops_before_its_branch_reports_why(server):
+    (server.root / "config" / "prices.toml").rename(server.root / "config" / "prices.toml.away")
+    status, data = call(server, "POST", "/api/run", FORM)
+    assert status == 409 and data["error"].startswith("run stopped before creating results/t1: ")
+    assert "prices.toml" in data["error"]
+
+
+def test_form_refused_when_the_release_is_not_in_this_checkout(server):
+    folder = server.root / "releases" / "1.0.0"
+    folder.rename(folder.with_name("away"))
+    for path in ("/api/run", "/api/estimate", "/api/dry-run"):
+        status, data = call(server, "POST", path, FORM)
+        assert status == 409 and "release 1.0.0 is on main but not in this checkout" in data["error"]
 
 
 def test_statuses(server):
@@ -813,6 +844,7 @@ def spawned(monkeypatch):
         self.finish(job, 0)
 
     monkeypatch.setattr(jobs_module.Jobs, "_spawn", fake)
+    monkeypatch.setattr(app_module.App, "wait_for_branch", lambda self, experiment_id, names: None)  # no process, no branch
     return seen
 
 
