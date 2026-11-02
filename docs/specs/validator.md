@@ -22,7 +22,7 @@ Steps, in order:
 1. If `stop_reason` is not one of the four values above, raise `ValueError`.
 2. If `stop_reason` is `infrastructure_failure`, return outcome `infrastructure_failure`.
 3. If `stop_reason` is `truncated` or `refused`, return `malformed_output`.
-4. With `decision` false, strip one surrounding Markdown code fence, if there is one, and parse JSON. The result must be an object `{"moves": [string, ...], "mismatch": true|false}` with no other keys, as [invariant 9](../../AGENTS.md#invariants) says. Anything else is `malformed_output`. With `decision` true, see [the decision path](#decision-path) instead.
+4. With `decision` false, strip one surrounding Markdown code fence, if there is one, and parse JSON. The result must be an object `{"moves": [string, ...], "mismatch": true|false}` with no other keys, as [invariant 9](../../AGENTS.md#invariants) says. Anything else is `malformed_output`, even for a puzzle with no engine, because the parse comes before the engine is looked up. With `decision` true, see [the decision path](#decision-path) instead, which needs the engine first for the move options.
 5. Mark each move as legal only if it exactly equals a string in `legal_moves()`. If any move isn't, `hallucination` is true and the outcome is `hallucination`. The first impossible move is enough: the attempt fails whatever follows it or whether the final state would be solved, `run` stores the reply whole, and the attempt is never re-asked ([run](run.md#outputs) retries only infrastructure failures).
 6. Otherwise, apply every move to the input's state with `apply_move()`.
 7. Return `success` if the expected result is reached and `failure` if not. For a valid input, the expected result is solved with mismatch off. For an invalid input, it is mismatch on.
@@ -31,14 +31,14 @@ Steps, in order:
 
 ## Decision path
 
-With `decision` true, `raw_response` is a JSON array, one element per completed call, each shaped `{"answers": {"next_move": {"type": "choice", "choice": "move_3"}, "mismatch": {"type": "noul", "noul": 0.12}}, ...}`. Steps 1 to 3 above are unchanged, and the parse in step 4 is replaced by these rules:
+With `decision` true, `raw_response` is a JSON array, one element per completed call, each shaped `{"answers": {"next_move": {"type": "choice", "choice": "move_3"}}, ...}`. Steps 1 to 3 above are unchanged, and the parse in step 4 is replaced by these rules:
 
-1. The array must parse and hold at least one call. Each call needs a `next_move` choice and a finite `mismatch` probability from 0 to 1. Anything else is `malformed_output`.
-2. A choice is `done` or `move_<n>`, where `n` is the 1-based position in `legal_moves()`, written exactly as offered (no leading zeros, no other digits). Any other choice, including a move written out as `R`, is `malformed_output`.
-3. The parsed moves are the moves behind the `move_<n>` choices before the first `done`. Calls after `done` are ignored.
-4. The mismatch flag is on if any call up to and including the first `done` has a `mismatch` probability of `MISMATCH_THRESHOLD` (0.5) or more.
-5. Each call is read by `read_decision_call(call, legal) -> (move or "done", probability) | None`, which returns `None` for a malformed call. [run](run.md) uses the same function to stop its loop.
-6. Steps 5 to 7 are unchanged. The options are exactly the legal moves and `done`, so a decision model's hallucination rate is 0 by construction.
+1. The array must parse and hold at least one call. Each call needs a `next_move` choice. Anything else is `malformed_output`. Any other answer in a call, such as an old `mismatch` probability, is ignored.
+2. A choice is `done`, `mismatch`, or `move_<n>`, where `n` is the 1-based position in `legal_moves()`, written exactly as offered (no leading zeros, no other digits). Any other choice, including a move written out as `R`, is `malformed_output`.
+3. The parsed moves are the moves behind the `move_<n>` choices before the first `done` or `mismatch`. Calls after it are ignored.
+4. The mismatch flag is on if the first `done` or `mismatch` is `mismatch`.
+5. Each call is read by `read_decision_call(call, legal) -> str | None`, the move, `"done"`, or `"mismatch"`, which returns `None` for a malformed call. [run](run.md) uses the same function to stop its loop.
+6. Steps 5 to 7 are unchanged. The options are exactly the legal moves, `done`, and `mismatch`, so a decision model's hallucination rate is 0 by construction.
 
 ## How to test
 
@@ -61,6 +61,6 @@ One table-driven test, one row per case, each on a fixed 2x2 input:
 | any | empty, `stop_reason="infrastructure_failure"` | `infrastructure_failure` |
 | any | any response, `stop_reason="other"` | `ValueError` |
 
-Decision rows, each on a 2x2 input one move from solved: a solving move then `done` (`success`), `done` first (`failure`), a mismatch probability of 0.7 in a later call (flag on), calls after `done` ignored, malformed arrays (bad JSON, `{}`, `[]`, a missing question, an unknown or out-of-range id, a raw move name, a non-numeric probability), and `infrastructure_failure` with completed calls.
+Decision rows, each on a 2x2 input one move from solved: a solving move then `done` (`success`), `done` first (`failure`), `mismatch` in a later call (flag on), calls after `done` or `mismatch` ignored, an old probability field ignored, malformed arrays (bad JSON, `{}`, `[]`, a missing question, an unknown or out-of-range id, a raw move name), and `infrastructure_failure` with completed calls.
 
 Every row also checks `move_count`, `hallucination`, and `mismatch`.

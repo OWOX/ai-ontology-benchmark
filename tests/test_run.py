@@ -14,7 +14,8 @@ from src.evaluate import evaluate as evaluate_module
 from src.puzzles.registry import get_engine
 from src.run import budget as budget_module, models, run as run_module
 from src.run.models import InfrastructureError, Reply
-from src.run.prompts import build_prompt, worst_state
+from src.run.budget import worst_request, worst_state
+from src.run.prompts import build_prompt, load_questions
 from src.run.raw import read_raw
 from test_release import git, release_ok, repo  # noqa: F401  (repo is a fixture)
 
@@ -30,7 +31,7 @@ FIELDS = {
     "validity", "setup", "prompt_version", "model", "seed", "input_seed", "attempt_number",
     "raw_response", "parsed_moves", "outcome", "hallucination", "mismatch", "move_count",
     "input_tokens", "output_tokens", "retry_input_tokens", "retry_output_tokens", "latency_s",
-    "stop_reason", "served_model", "created_at",
+    "stop_reason", "served_model", "decision", "requested_model", "created_at",
 }
 
 
@@ -102,6 +103,7 @@ def test_infrastructure_failure_after_cap(exp):
     assert row["stop_reason"] == "infrastructure_failure" and row["latency_s"] is None
     assert row["retry_input_tokens"] == 28 and row["retry_output_tokens"] == 8
     assert (row["input_tokens"], row["output_tokens"], row["served_model"]) == (0, 0, "")
+    assert row["decision"] is False and row["requested_model"] == "a-1"
     assert len(models.FAKE_REPLIES) == 1  # 4 calls made
 
 
@@ -160,6 +162,7 @@ def test_record_fields(exp):
     go("--limit", "3")
     for row in records(exp, "A"):
         assert set(row) == FIELDS
+        assert row["decision"] is False and row["requested_model"] == "a-1"
     assert row["release_version"] == "1.0.0" and row["seed"] == 7 and row["input_set_id"] == "1"
 
 
@@ -719,9 +722,8 @@ def decision_exp(repo, monkeypatch, config=DECISION_EXPERIMENT, prices="[D]\npri
     return models.FAKE_DECISION_REPLIES
 
 
-def d_reply(choice, p=0.0, tokens=(10, 0), model="d-served", latency=0.25):
-    call = {"answers": {"next_move": {"type": "choice", "choice": choice},
-                        "mismatch": {"type": "noul", "noul": p}},
+def d_reply(choice, tokens=(10, 0), model="d-served", latency=0.25):
+    call = {"answers": {"next_move": {"type": "choice", "choice": choice}},
             "usage": {"input_tokens": tokens[0], "output_tokens": tokens[1]}, "model": model}
     return models.DecisionReply(call, tokens[0], tokens[1], model, latency)
 
@@ -753,6 +755,8 @@ def test_decision_model_end_to_end(exp, monkeypatch):
     assert (failed_row["retry_input_tokens"], failed_row["retry_output_tokens"]) == (20, 4)
     assert failed_row["latency_s"] is None and failed_row["served_model"] == "" and failed_row["input_tokens"] == 0
     assert set(solved_row) == FIELDS
+    for decision_row in (solved_row, malformed_row, failed_row):
+        assert decision_row["decision"] is True and decision_row["requested_model"] == "d-1"
     assert evaluate_module.main(["--experiment", "exp"]) == 0
     with open(exp / "results/exp/1.0.0.metrics.csv", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
@@ -761,6 +765,22 @@ def test_decision_model_end_to_end(exp, monkeypatch):
     assert by_setup["descriptive"]["malformed_output_rate"] == "1.0000"
     assert by_setup["prescriptive"]["infrastructure_failure_count"] == "1"
     assert by_setup["prescriptive"]["success_rate_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
+
+
+def test_decision_reply_without_a_model_keeps_served_empty_and_requests_the_entry_id(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    fake[:] = [d_reply("done", model="")]
+    assert go("--limit", "1") == 0
+    (row,) = records(exp, "D")
+    assert row["served_model"] == "" and row["requested_model"] == "d-1" and row["decision"] is True
+
+
+def test_decision_mismatch_choice_ends_the_attempt_and_sets_the_flag(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    fake[:] = [d_reply("move_1"), d_reply("mismatch"), d_reply("done")]
+    assert go("--limit", "1") == 0
+    (row,) = records(exp, "D")
+    assert row["mismatch"] is True and len(json.loads(row["raw_response"])) == 2 and len(fake) == 1
 
 
 def test_decision_infrastructure_failure_keeps_the_completed_calls(exp, monkeypatch):
@@ -815,10 +835,23 @@ def test_decision_estimate_is_cap_calls_of_the_longest_state(exp, monkeypatch, c
         expected = 0.0
         for row in rows:
             for setup in run_module.SETUPS:
-                state = worst_state(build_prompt(exp / "releases/1.0.0/prompts", row, setup),
-                                    get_engine(row["puzzle"]).legal_moves(), cap)
+                state = worst_request(build_prompt(exp / "releases/1.0.0/prompts", row, setup),
+                                      get_engine(row["puzzle"]).legal_moves(), cap,
+                                      load_questions(exp / "releases/1.0.0/prompts"))
                 expected += cap * (-(-len(state) // 4) * 1.0 + 100 * 2.0) / 1e6
         assert f"worst case ${expected:.4f}" in line
+
+
+def test_decision_request_budget_counts_the_questions(exp, monkeypatch, capsys):
+    folder = exp / "releases/1.0.0/prompts"
+    rows = [json.loads(line) for line in (exp / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    states = [-(-len(worst_state(build_prompt(folder, r, s), get_engine(r["puzzle"]).legal_moves(), 6)) // 4)
+              for r in rows for s in run_module.SETUPS]
+    # Input tokens cost 1 USD each and output tokens nothing: the limit fits every state, not state plus questions.
+    decision_exp(exp, monkeypatch, DECISION_EXPERIMENT + f"[budget]\nper_request_usd = {max(states)}\n",
+                 "[D]\nprice_input_per_mtok = 1000000.0\nprice_output_per_mtok = 0.0\n")
+    assert go() == 1
+    assert "per_request_usd" in capsys.readouterr().err
 
 
 def test_decision_attempt_reads_spent_cost_once(exp, monkeypatch):

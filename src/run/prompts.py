@@ -113,20 +113,13 @@ def decision_state(prompt: str, moves: list[str]) -> str:
     return prompt + "\n\nMoves so far: " + (" ".join(moves) or "none")
 
 
-def worst_state(prompt: str, legal: list[str], cap: int) -> str:
-    """The longest state any call of an attempt can send: the prompt with `cap` of the longest move."""
-    return decision_state(prompt, [max(legal, key=len)] * cap)
-
-
 def decision_questions(questions: dict, legal: list[str]) -> dict:
     """Return the request's questions object. A move's option id is move_<n>, its position in
     legal from 1, because a move string may hold characters an id may not."""
     criteria = {f"move_{n}": move for n, move in enumerate(legal, start=1)}
     criteria["done"] = questions["done"]
-    return {
-        "next_move": {"type": "choice", "instructions": questions["next_move"], "criteria": criteria},
-        "mismatch": {"type": "noul", "instructions": questions["mismatch"]},
-    }
+    criteria["mismatch"] = questions["mismatch"]
+    return {"next_move": {"type": "choice", "instructions": questions["next_move"], "criteria": criteria}}
 
 
 def both_prompt_versions(templates_dir: Path, inputs: list[dict]) -> tuple[dict, dict]:

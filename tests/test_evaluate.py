@@ -304,10 +304,25 @@ def test_decision_model_records_are_parsed_as_arrays(release_dir):
     state, scramble = get_engine("2x2").scramble(1, 1)
     inverse = {"": "'", "'": "", "2": "2"}
     solve = scramble[0][0] + inverse[scramble[0][1:]]
-    calls = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}, "mismatch": {"noul": 0.1}}},
-             {"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": 0.1}}}]
+    calls = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}}},
+             {"answers": {"next_move": {"choice": "done"}}}]
     record = raw("2x2-d1-001", 1, json.dumps(calls), "success", model="M")
     attempts, _, _ = compute([record], release_dir, PRICES, decision_models={"M"})
     assert attempts[0]["outcome"] == "success"
     attempts, _, _ = compute([record], release_dir, PRICES)
+    assert attempts[0]["outcome"] == "malformed_output"
+
+
+def test_scoring_uses_the_records_decision_flag_over_the_config_rule(release_dir):
+    legal = get_engine("2x2").legal_moves()
+    state, scramble = get_engine("2x2").scramble(1, 1)
+    inverse = {"": "'", "'": "", "2": "2"}
+    solve = scramble[0][0] + inverse[scramble[0][1:]]
+    calls = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}}},
+             {"answers": {"next_move": {"choice": "done"}}}]
+    flagged = raw("2x2-d1-001", 1, json.dumps(calls), "success", model="M", decision=True)
+    attempts, _, _ = compute([flagged], release_dir, PRICES, decision_models=set())
+    assert attempts[0]["outcome"] == "success"
+    unflagged = raw("2x2-d1-001", 1, json.dumps(calls), "success", model="M", decision=False)
+    attempts, _, _ = compute([unflagged], release_dir, PRICES, decision_models={"M"})
     assert attempts[0]["outcome"] == "malformed_output"

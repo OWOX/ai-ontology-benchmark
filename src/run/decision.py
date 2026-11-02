@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from src.run.budget import BudgetError
 from src.run.models import InfrastructureError, RefusedError, call_decision
 from src.run.prompts import decision_questions, decision_state
-from src.validator import MISMATCH_THRESHOLD, read_decision_call
+from src.validator import read_decision_call
 
 @dataclass(frozen=True)
 class DecisionResult:
@@ -64,15 +64,14 @@ def run_decision_attempt(model: dict, prompt: str, legal: list[str], questions: 
         tokens_in += reply.input_tokens
         tokens_out += reply.output_tokens
         latency += reply.latency_s
-        if reply.served_model not in served:
+        if reply.served_model and reply.served_model not in served:
             served.append(reply.served_model)
         read = read_decision_call(reply.call, legal)
         if read is None:
             break  # a call the validator rejects ends the attempt; it rules malformed_output
-        move, probability = read
-        if move == "done" or probability >= MISMATCH_THRESHOLD:
+        if read in ("done", "mismatch"):
             break
-        moves.append(move)
+        moves.append(read)
         if len(moves) >= cap:
             break
     return DecisionResult(calls, stop, tokens_in, tokens_out, retry_in, retry_out,

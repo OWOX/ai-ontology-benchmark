@@ -23,7 +23,7 @@ VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 # Globs for the assessment. src/evaluate/report.py is left out on purpose.
 ASSESSMENT_PATTERNS = [
     "src/validator.py", "src/puzzles/*.py", "src/run/raw.py", "src/evaluate/evaluate.py",
-    "src/evaluate/metrics.py",
+    "src/evaluate/metrics.py", "src/run/decision.py", "src/run/prompts.py",
 ]
 PROMPTS_DIR = Path("prompts")
 RELEASE_CONFIG = Path("config/release.toml")

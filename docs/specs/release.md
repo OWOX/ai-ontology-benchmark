@@ -12,7 +12,7 @@ The [`release`](../definitions.md#workflows) workflow. Freeze the current input 
 2. `--note TEXT`: one line saying why this release exists. Required.
 3. `config/release.toml`, loaded with [config](config.md). Read only for a major bump.
 4. `prompts/`: the working prompt templates.
-5. The assessment files: `src/validator.py`, `src/puzzles/*.py`, `src/run/raw.py`, `src/evaluate/evaluate.py`, and `src/evaluate/metrics.py`. `src/evaluate/report.py` is left out, so a change to report formatting never needs a release.
+5. The assessment files: `src/validator.py`, `src/puzzles/*.py`, `src/run/raw.py`, `src/evaluate/evaluate.py`, `src/evaluate/metrics.py`, `src/run/decision.py` (the decision loop), and `src/run/prompts.py` (the code that builds its states). `src/evaluate/report.py` is left out, so a change to report formatting never needs a release.
 6. The latest folder in `releases/`, if there is one.
 7. `--releases DIR`, default `releases/`. Tests point it at a temporary folder.
 

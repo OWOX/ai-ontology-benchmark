@@ -8,6 +8,14 @@ import json
 from pathlib import Path
 
 
+def is_decision_record(record: dict, decision_models) -> bool:
+    """Whether a raw record is scored as a decision-model record. Its `decision` field decides.
+    A record written before that field existed falls back to the config rule: its AI model is in
+    `decision_models`, the names of the models whose provider is a decision provider."""
+    flag = record.get("decision")
+    return flag if isinstance(flag, bool) else record["model"] in decision_models
+
+
 def read_raw(path: Path) -> tuple[list[dict], int]:
     """Return (records, skipped line count) for one raw file.
 
