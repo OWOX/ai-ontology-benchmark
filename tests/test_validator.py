@@ -96,6 +96,11 @@ def test_malformed_llm_response_on_an_unknown_puzzle_is_malformed_output():
     assert validate(UNKNOWN, "not json", "ok").outcome == "malformed_output"
 
 
+def test_well_formed_llm_response_on_an_unknown_puzzle_raises():
+    with pytest.raises(KeyError):
+        validate(UNKNOWN, json.dumps({"moves": [], "mismatch": False}), "ok")
+
+
 def test_decision_path_needs_the_engine():
     with pytest.raises(KeyError):
         validate(UNKNOWN, "[]", "ok", decision=True)
