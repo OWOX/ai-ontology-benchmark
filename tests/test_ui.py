@@ -250,6 +250,15 @@ def test_run_answers_once_the_branch_exists(server):
     wait_job(server, "run:example-model")
 
 
+def test_resume_of_a_branch_only_on_origin_answers(server):
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    wait_job(server, "run:example-model")
+    git(server.root, "fetch", "-q", "origin", "+refs/heads/results/*:refs/remotes/origin/results/*")
+    git(server.root, "branch", "-D", "results/t1")
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    wait_job(server, "run:example-model")
+
+
 def test_run_that_stops_before_its_branch_reports_why(server):
     (server.root / "config" / "prices.toml").rename(server.root / "config" / "prices.toml.away")
     status, data = call(server, "POST", "/api/run", FORM)

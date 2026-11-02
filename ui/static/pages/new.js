@@ -132,7 +132,7 @@
       const formBox = h("div");
       el.append(h("div", { class: "newexp" }, formBox));
       const ref = {};
-      let dead = false;
+      let dead = false, starting = false;
 
       const msg = h("p", { class: "msg", role: "status" });
       const say = (text, kind) => { msg.className = "msg" + (kind ? " " + kind : ""); msg.textContent = text; };
@@ -141,7 +141,7 @@
         if (!ref.run) return;
         const id = S.id.trim();
         const run = (j) => j.startsWith("run:"), busy = (j) => run(j) || j === "evaluate";
-        ref.run.disabled = mine(id, busy);
+        ref.run.disabled = starting || mine(id, busy);
         ref.estimate.disabled = mine(id, (j) => j === "estimate");
         ref.dry.disabled = mine(id, (j) => j === "dry-run");
       }
@@ -206,8 +206,8 @@
         try {
           const form = readForm(bundle);
           const body = path === "run" ? { form, limit: readLimit() } : { form };
-          if (path === "run") { ref.run.disabled = true; say(`Starting the run and creating results/${form.id}…`); }
-          const r = await UI.api("/api/" + path, { method: "POST", body }).finally(() => { if (!dead) controls(); });
+          if (path === "run") { starting = true; controls(); say(`Starting the run and creating results/${form.id}…`); }
+          const r = await UI.api("/api/" + path, { method: "POST", body }).finally(() => { starting = false; if (!dead) controls(); });
           if (dead) return;
           if (path === "run") {
             // The branch exists by now, so the experiment's page can be opened and reloaded safely.

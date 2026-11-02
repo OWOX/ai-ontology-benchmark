@@ -76,15 +76,18 @@ class App:
         return {"id": experiment_id, "status": status, "jobs": names}
 
     def wait_for_branch(self, experiment_id: str, names: list[str]) -> None:
-        """Return once `run` has committed results/<id>, so the page it opens next can read it. When every run job
-        ends first without the branch, the run failed before its first commit: report its last stderr line."""
+        """Return once results/<id> exists, so the page it opens next can read it: a new experiment's comes from
+        `run`'s first commit, and a resumed one may exist only on origin until `run` commits a record. When every
+        run job ends first without any branch, the run failed before its first commit: report its last stderr line."""
+        git = self.bundles.git
+        exists = lambda: experiment_id in git.local_ids() or experiment_id in git.remote_ids()
         deadline = time.monotonic() + BRANCH_WAIT_S
         while time.monotonic() < deadline:
-            if experiment_id in self.bundles.git.local_ids():
+            if exists():
                 return
             states = self.jobs.states(experiment_id)
             if not any(states.get(n) == "running" for n in names):
-                if experiment_id in self.bundles.git.local_ids():
+                if exists():
                     return
                 line = next((t for t in (self.jobs.last_stderr(experiment_id, n) for n in names) if t), "no output")
                 raise ApiError(409, f"run stopped before creating results/{experiment_id}: {line}")

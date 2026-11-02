@@ -126,13 +126,24 @@
         try {
           const d = state.detail = await UI.api("/api/experiments/" + encodeURIComponent(id));
           if (!root.isConnected) return;
+          // The settings and inputs come from the bundle, so it must be the experiment's own release.
+          if (d.release && d.release !== bundle.release) { UI.go(`#/experiments/${encodeURIComponent(id)}?release=${encodeURIComponent(d.release)}`); return; }
           top.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, stopMsg), ...settings(d, bundle),
             section("Summary", ExpMetrics.summary(d, bundle.experiments)), section("Full metrics", ExpMetrics.full(d), true),
             section("Report", reportBox(d)));
           actions.replaceChildren(...(d.local_results ? [h("h3", { text: "Evaluate and commit" }),
             h("div", { class: "actions" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit), result] : []));
           controls();
-        } catch (e) { top.replaceChildren(h("h2", { text: id }), h("p", { class: "msg err", text: e.message })); }
+        } catch (e) {
+          if (!root.isConnected) return;
+          // A run that has started but not yet committed its branch: wait for it rather than show "not found".
+          if (UI.jobs.some((j) => j.id === id && j.state === "running")) {
+            top.replaceChildren(h("h2", { text: id }), h("p", { class: "muted", text: `Waiting for the run to create results/${id}…` }));
+            setTimeout(loadDetail, 2000);
+            return;
+          }
+          top.replaceChildren(h("h2", { text: id }), h("p", { class: "msg err", text: e.message }));
+        }
       }
 
       evaluate.addEventListener("click", async () => {
