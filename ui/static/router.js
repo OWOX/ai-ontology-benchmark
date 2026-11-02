@@ -121,8 +121,10 @@
     const fetched = f.error ? `GitHub not reached, ${when ? "showing data from " + when : "no data yet"}: ${f.error}` : when ? `Fetched from GitHub ${when}` : "Not fetched yet";
     const server = { live: "live", down: "not reachable, reconnecting" }[st.server] || "connecting";
     const text = `Server: ${server}\n${fetched}`;
-    el.className = "conn" + (st.server === "down" ? " bad" : st.server === "live" ? (f.error ? " warn" : " ok") : "");
-    el.title = text; el.setAttribute("aria-label", text);
+    const cls = "conn" + (st.server === "down" ? " bad" : st.server === "live" ? (f.error ? " warn" : " ok") : "");
+    // The log poll calls this every few seconds. Rewriting an unchanged title hides the open tooltip.
+    if (el.className !== cls) el.className = cls;
+    if (el.title !== text) { el.title = text; el.setAttribute("aria-label", text); }
   }
 
   function draw(b, force) {
