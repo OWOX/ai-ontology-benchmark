@@ -112,17 +112,21 @@
     drawConn();
   }
 
-  // One dot beside the title: server state by colour, last GitHub fetch in the tooltip.
+  // One dot beside the title: server state by colour, and a tooltip panel in plain sentences.
   function drawConn() {
-    const el = $("conn"), f = st.fetch || {};
+    const el = $("conn"), tip = $("conn-tip"), f = st.fetch || {};
     const when = f.at ? new Date(f.at).toLocaleString() : "";
-    const fetched = f.error ? `GitHub not reached, ${when ? "showing data from " + when : "no data yet"}: ${f.error}` : when ? `Fetched from GitHub ${when}` : "Not fetched yet";
-    const server = { live: "live", down: "not reachable, reconnecting" }[st.server] || "connecting";
-    const text = `Server: ${server}\n${fetched}`;
+    const server = { live: "The server is live.", down: "The server is not reachable. Reconnecting." }[st.server] || "Connecting to the server.";
+    const fetched = f.error
+      ? (when ? `GitHub was not reached, so this shows data from ${when}. Error: ${f.error}.` : `GitHub was not reached and there is no data yet. Error: ${f.error}.`)
+      : when ? `Data was fetched from GitHub on ${when}.` : "Nothing has been fetched yet.";
+    const b = st.bundle, newest = b && b.releases && b.releases[0];
+    const release = !b ? "" : !newest || newest === b.release ? `Release ${b.release}, the newest.` : `Release ${b.release}. The newest is ${newest}.`;
+    const text = [server, fetched, release].filter(Boolean).join(" ");
     const cls = "conn" + (st.server === "down" ? " bad" : st.server === "live" ? (f.error ? " warn" : " ok") : "");
-    // The log poll calls this every few seconds. Rewriting an unchanged title hides the open tooltip.
+    // The log poll calls this every few seconds. Writing only on change keeps an open panel steady.
     if (el.className !== cls) el.className = cls;
-    if (el.title !== text) { el.title = text; el.setAttribute("aria-label", text); }
+    if (tip.textContent !== text) tip.textContent = text;
   }
 
   function draw(b, force) {
