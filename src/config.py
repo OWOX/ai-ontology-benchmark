@@ -10,7 +10,7 @@ from pathlib import Path
 
 from src.puzzles.registry import ENGINES
 
-PROVIDERS = ("anthropic", "openai", "google", "fake")
+PROVIDERS = ("anthropic", "openai", "google", "typesafe", "cloudflare", "fake", "fake_decision")
 KINDS = ("system-1", "system-2")
 # Settings that `models` and the run script set themselves.
 FORBIDDEN_PARAMS = {
@@ -165,6 +165,8 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
     _check_min(path, "retry_cap", retry_cap, 0)
     max_tokens = _get(path, config, "max_output_tokens", int)
     _check_min(path, "max_output_tokens", max_tokens, 1)
+    if "max_moves" in config:
+        _check_min(path, "max_moves", _get(path, config, "max_moves", int), 1)
     if "puzzles" in config:
         _check_puzzles(path, config)
     models = _get(path, config, "models", list)
@@ -176,6 +178,11 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
     config["budget"] = _check_budget(path, config)
     config["experiment_id"] = experiment_id
     return config
+
+
+def max_moves(config: dict, release_config: dict) -> int:
+    """The move cap of a decision-model attempt: the config value, or twice the largest scramble depth."""
+    return config.get("max_moves", 2 * max(release_config["scramble_depths"]))
 
 
 def load_experiment_config(path: Path) -> dict:
