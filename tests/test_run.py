@@ -12,7 +12,7 @@ import pytest
 
 from src.evaluate import evaluate as evaluate_module
 from src.puzzles.registry import get_engine
-from src.run import models, run as run_module
+from src.run import budget as budget_module, models, run as run_module
 from src.run.models import InfrastructureError, Reply
 from src.run.prompts import build_prompt, worst_state
 from src.run.raw import read_raw
@@ -819,3 +819,16 @@ def test_decision_estimate_is_cap_calls_of_the_longest_state(exp, monkeypatch, c
                                     get_engine(row["puzzle"]).legal_moves(), cap)
                 expected += cap * (-(-len(state) // 4) * 1.0 + 100 * 2.0) / 1e6
         assert f"worst case ${expected:.4f}" in line
+
+
+def test_decision_attempt_reads_spent_cost_once(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    solved = solving_replies(exp)
+    fake[:] = list(solved)
+    reads = []
+    real = run_module.spent_by_model
+    monkeypatch.setattr(run_module, "spent_by_model", lambda *a: reads.append(1) or real(*a))
+    monkeypatch.setattr(budget_module, "spent_by_model", lambda *a: reads.append(1) or real(*a))
+    assert go("--limit", "1") == 0
+    assert len(json.loads(records(exp, "D")[0]["raw_response"])) == len(solved) > 1
+    assert len(reads) == 1

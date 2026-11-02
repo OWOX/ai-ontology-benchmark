@@ -23,7 +23,7 @@ from src.config import load_experiment_config, load_prices, max_moves, parse_exp
 from src.release.release import assessment_sha256
 from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
-                            print_estimate, worst_case_request_cost)
+                            print_estimate, spent_by_model, worst_case_request_cost)
 from src.run.decision import DecisionResult, run_decision_attempt
 from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model
 from src.run.progress import Progress
@@ -295,9 +295,14 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
         worst = worst_case_request_cost(worst_state(prompt, legal, cap) if is_decision else prompt,
                                         config["max_output_tokens"], price)
 
+        snapshot: dict = {}  # a decision attempt reads the spent cost once, before its first call
+
         def can_afford(retry_in: int, retry_out: int) -> None:
             paid = (retry_in * price["price_input_per_mtok"] + retry_out * price["price_output_per_mtok"]) / 1e6
-            check_spend(config, prices, results / "raw", model["name"], worst + paid, left)
+            if is_decision and "spent" not in snapshot:
+                snapshot["spent"] = spent_by_model(config, prices, results / "raw")
+            check_spend(config, prices, results / "raw", model["name"], worst + paid, left,
+                        snapshot.get("spent"))
 
         result = None
         if is_decision:
