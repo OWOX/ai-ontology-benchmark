@@ -804,7 +804,7 @@ def test_decision_dry_run_prints_the_first_state_and_questions(exp, monkeypatch,
     assert len(fake) == 1 and not (exp / "results").exists()
 
 
-def test_decision_estimate_is_cap_plus_one_calls_of_the_longest_state(exp, monkeypatch, capsys):
+def test_decision_estimate_is_cap_calls_of_the_longest_state(exp, monkeypatch, capsys):
     decision_exp(exp, monkeypatch)
     rows = [json.loads(line) for line in (exp / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
     for cap, text in ((6, DECISION_EXPERIMENT),  # default: twice the largest scramble depth, 3
@@ -817,5 +817,5 @@ def test_decision_estimate_is_cap_plus_one_calls_of_the_longest_state(exp, monke
             for setup in run_module.SETUPS:
                 state = worst_state(build_prompt(exp / "releases/1.0.0/prompts", row, setup),
                                     get_engine(row["puzzle"]).legal_moves(), cap)
-                expected += (cap + 1) * (-(-len(state) // 4) * 1.0 + 100 * 2.0) / 1e6
+                expected += cap * (-(-len(state) // 4) * 1.0 + 100 * 2.0) / 1e6
         assert f"worst case ${expected:.4f}" in line

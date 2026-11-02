@@ -29,7 +29,7 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
    1. `--model NAME` runs one AI model from the experiment. Separate processes can run different AI models at the same time, because each writes its own file.
    2. `--limit N` stops after N new attempts. For smoke tests.
    3. `--dry-run` prints each prompt and writes nothing. For a decision model it prints the first call's state (the prompt, then `Moves so far: none`) and the questions object.
-   4. `--estimate` prints, for each AI model, the number of attempts still to run, the input tokens estimated as prompt characters divided by 4, and the worst-case cost with every answer at `max_output_tokens`, using `config/prices.toml`, and the cost spent so far against each budget. For a decision model, the worst case is per attempt: `max_moves + 1` calls, each with the longest state (`worst_state`). It calls nothing and writes nothing.
+   4. `--estimate` prints, for each AI model, the number of attempts still to run, the input tokens estimated as prompt characters divided by 4, and the worst-case cost with every answer at `max_output_tokens`, using `config/prices.toml`, and the cost spent so far against each budget. For a decision model, the worst case is per attempt: `max_moves` calls, each with the longest state (`worst_state`). It calls nothing and writes nothing.
    5. `--no-commit` skips the results branch described under Outputs. For tests.
    6. `--config -` reads the config from stdin, as in item 1.
    7. `--releases DIR`, `--configs DIR`, `--prices PATH`, and `--results DIR`, for tests.
