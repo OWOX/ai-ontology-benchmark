@@ -175,7 +175,12 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
 .md pre { background: var(--code); padding: 8px; overflow: auto; border-radius: 4px; }
 .md code { font-family: var(--mono); font-size: 12px; }
 .source { font-size: 12px; margin-left: 6px; }
-.project h3 { margin: 0 0 6px; font-size: 14px; }
+.md.plain { background: none; border: 0; padding: 0; }
+.md.plain > :first-child { margin-top: 0; }
+.footnote { font-size: 11px; margin-left: 2px; font-weight: 400; }
+.footnote a { text-decoration: none; }
+.footnote-line { margin: 4px 0 0; }
+.project h3 { margin: 0 0 6px; font-size: 18px; }
 .badge { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; text-transform: none; }
 .badge.ok { color: var(--ok); background: var(--ok-bg); }
 .badge.bad { color: var(--danger); background: var(--bad-bg); }
@@ -198,17 +203,21 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
   .shell { grid-template-columns: 1fr; }
   .menu { position: static; height: auto; }
 }
-.puzzle-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 480px); gap: 16px; align-items: start; }
+.puzzle-top { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(50%); gap: 16px; align-items: start; }
 .puzzle-pic, .puzzle-name-box { display: inline-block; margin: 0 0 8px; }
 .cube3d { display: block; cursor: grab; touch-action: none; user-select: none; }
 .cube3d:active { cursor: grabbing; }
 @media (max-width: 900px) { .puzzle-top { grid-template-columns: 1fr; } }
 .puzzle-name-box { border: 1px solid var(--line); border-radius: var(--radius); padding: 24px 32px; font-weight: 600; }
-.named-net svg { max-width: 100%; height: auto; display: block; }
+.named-net { overflow-x: auto; }
+.named-net svg { display: block; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip { border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; font-family: var(--mono); font-size: 12px; }
 .puzzle > h3 { font-size: 18px; margin: 0 0 12px; }
 .puzzle h4 { font-size: 13px; margin: 12px 0 4px; }
+.setup-toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+.setup-toggles button[aria-pressed="true"] { background: var(--sel); color: var(--accent); font-weight: 600; }
+.prompt-panel { margin-top: 6px; }
 .prompt-text { white-space: pre-wrap; background: var(--code); padding: 8px; border-radius: 4px; font-size: 12px; max-height: 320px; overflow: auto; }
 .puzzle table, .inputs table { border-collapse: collapse; }
 .puzzle th, .puzzle td, .inputs th, .inputs td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; vertical-align: top; }
@@ -220,10 +229,10 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
 .exp-table td.msg { white-space: normal; margin: 0; }
 button.linklike { border: 0; background: none; padding: 0; font-weight: 600; font-size: 12px; text-align: left; }
 .exp-detail section { margin-bottom: 12px; }
-.exp-detail h3 { font-size: 14px; margin: 0 0 6px; }
+.exp-detail h3 { font-size: 18px; margin: 0 0 6px; }
 .exp-detail details > summary { font-weight: 600; }
 .newexp section { margin-bottom: 14px; }
-.newexp .step > h3, .exp-detail .step > h3 { font-size: 14px; margin: 0 0 10px; }
+.newexp .step > h3, .exp-detail .step > h3 { font-size: 18px; margin: 0 0 10px; }
 .exp-detail > div > .step { margin-bottom: 10px; }
 .card.ro { cursor: default; }
 .exp-stop { margin: 0 0 10px; }
@@ -237,5 +246,9 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .branch-field .muted { margin: 4px 0 0; }
 .model-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; align-items: start; }
 .model-col .provider-head { cursor: pointer; }
+.provider-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.provider-row .provider-head { margin-bottom: 0; }
+.key-warn { text-decoration: none; }
+.provider > .provider-head { font-size: 18px; }
 .model-col .reason { font-weight: 400; margin-bottom: 4px; }
 .newexp .grid input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--field); color: inherit; }
