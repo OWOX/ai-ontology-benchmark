@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src.puzzles.registry import ENGINES, get_engine
 from src.run.prompts import SETUPS
+from src.run.raw import is_decision_record
 from src.validator import validate
 
 NA = "n/a"
@@ -146,7 +147,7 @@ def make_attempt_rows(raw_records, inputs, prices, cache, decision_models=frozen
             raise EvalError(f"prices: no prices for model {raw['model']!r}")
         line, source = by_id[raw["input_id"]]
         verdict = validate(source, raw["raw_response"], raw["stop_reason"],
-                           decision=raw["model"] in decision_models)
+                           decision=is_decision_record(raw, decision_models))
         cost = attempt_cost(raw, prices[raw["model"]])
         reference = None
         if verdict.outcome == "success" and source["validity"] == "valid":

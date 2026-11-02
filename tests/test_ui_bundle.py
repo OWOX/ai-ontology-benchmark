@@ -86,7 +86,7 @@ class Reply:
 def record(input_row, setup, attempt, reply, model="example-model"):
     """A raw record as `run` writes it; `reply` is text, or None for an infrastructure failure."""
     config = {"experiment_id": "x", "release": "1.0.0"}
-    made = make_record(config, MANIFEST, input_row, {"name": model}, setup, attempt, "", VERSIONS,
+    made = make_record(config, MANIFEST, input_row, {"name": model, "api_model_id": "ex-1"}, setup, attempt, "", VERSIONS,
                        None if reply is None else Reply(reply), 3, 2)
     made["created_at"] = "2026-10-25T00:00:00Z"
     return made
@@ -577,8 +577,15 @@ def test_decision_model_attempts_are_scored_not_malformed(ui_repo, samples):
     _, invalid, _ = samples
     calls = json.dumps([{"answers": {"next_move": {"choice": "mismatch"}}}])
     toml = EXP_TOML.replace('provider = "fake"', 'provider = "fake_decision"')
-    files = {"results/e/experiment.toml": toml,
-             "results/e/raw/example-model.jsonl": jsonl([record(invalid, "no_model", 1, calls)])}
+    old = record(invalid, "no_model", 1, calls)
+    del old["decision"], old["requested_model"]  # a record written before the fields existed
+    files = {"results/e/experiment.toml": toml, "results/e/raw/example-model.jsonl": jsonl([old])}
     exp, inputs = open_experiment(ui_repo, "e", files)
     rows = expdata.attempt_rows(exp, inputs)
     assert [r["outcome"] for r in rows] == ["success"]
+
+    flagged = record(invalid, "no_model", 1, calls) | {"decision": True}
+    # The config says this model is not a decision model, and the record's own flag wins.
+    files = {"results/e2/experiment.toml": EXP_TOML, "results/e2/raw/example-model.jsonl": jsonl([flagged])}
+    exp, inputs = open_experiment(ui_repo, "e2", files)
+    assert [r["outcome"] for r in expdata.attempt_rows(exp, inputs)] == ["success"]

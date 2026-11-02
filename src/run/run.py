@@ -168,6 +168,7 @@ def make_record(config, manifest, row, model, setup, number, prompt, versions,
         "input_tokens": tokens_in, "output_tokens": tokens_out,
         "retry_input_tokens": retry_in, "retry_output_tokens": retry_out,
         "latency_s": latency, "stop_reason": stop, "served_model": served,
+        "decision": decision is not None, "requested_model": model["api_model_id"],
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 

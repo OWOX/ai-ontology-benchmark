@@ -30,7 +30,7 @@ FIELDS = {
     "validity", "setup", "prompt_version", "model", "seed", "input_seed", "attempt_number",
     "raw_response", "parsed_moves", "outcome", "hallucination", "mismatch", "move_count",
     "input_tokens", "output_tokens", "retry_input_tokens", "retry_output_tokens", "latency_s",
-    "stop_reason", "served_model", "created_at",
+    "stop_reason", "served_model", "decision", "requested_model", "created_at",
 }
 
 
@@ -102,6 +102,7 @@ def test_infrastructure_failure_after_cap(exp):
     assert row["stop_reason"] == "infrastructure_failure" and row["latency_s"] is None
     assert row["retry_input_tokens"] == 28 and row["retry_output_tokens"] == 8
     assert (row["input_tokens"], row["output_tokens"], row["served_model"]) == (0, 0, "")
+    assert row["decision"] is False and row["requested_model"] == "a-1"
     assert len(models.FAKE_REPLIES) == 1  # 4 calls made
 
 
@@ -160,6 +161,7 @@ def test_record_fields(exp):
     go("--limit", "3")
     for row in records(exp, "A"):
         assert set(row) == FIELDS
+        assert row["decision"] is False and row["requested_model"] == "a-1"
     assert row["release_version"] == "1.0.0" and row["seed"] == 7 and row["input_set_id"] == "1"
 
 
@@ -752,6 +754,8 @@ def test_decision_model_end_to_end(exp, monkeypatch):
     assert (failed_row["retry_input_tokens"], failed_row["retry_output_tokens"]) == (20, 4)
     assert failed_row["latency_s"] is None and failed_row["served_model"] == "" and failed_row["input_tokens"] == 0
     assert set(solved_row) == FIELDS
+    for decision_row in (solved_row, malformed_row, failed_row):
+        assert decision_row["decision"] is True and decision_row["requested_model"] == "d-1"
     assert evaluate_module.main(["--experiment", "exp"]) == 0
     with open(exp / "results/exp/1.0.0.metrics.csv", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
@@ -760,6 +764,14 @@ def test_decision_model_end_to_end(exp, monkeypatch):
     assert by_setup["descriptive"]["malformed_output_rate"] == "1.0000"
     assert by_setup["prescriptive"]["infrastructure_failure_count"] == "1"
     assert by_setup["prescriptive"]["success_rate_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
+
+
+def test_decision_reply_without_a_model_keeps_served_empty_and_requests_the_entry_id(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    fake[:] = [d_reply("done", model="")]
+    assert go("--limit", "1") == 0
+    (row,) = records(exp, "D")
+    assert row["served_model"] == "" and row["requested_model"] == "d-1" and row["decision"] is True
 
 
 def test_decision_mismatch_choice_ends_the_attempt_and_sets_the_flag(exp, monkeypatch):
