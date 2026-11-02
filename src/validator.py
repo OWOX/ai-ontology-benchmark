@@ -17,7 +17,7 @@ FENCE = re.compile(r"^\s*```[A-Za-z]*\s*\n(.*?)\n?\s*```\s*$", re.DOTALL)
 
 @dataclass(frozen=True)
 class Verdict:
-    # Moves read from the AI model's JSON output, in order. Empty when there is no usable output.
+    # Moves read from the AI model's output, in order. Empty when there is no usable output.
     # For a decision model they are its calls' next_move choices, in order.
     parsed_moves: list[str]
     # True when at least one parsed move is an impossible move, i.e. not in legal_moves().
@@ -38,23 +38,23 @@ def _no_moves(outcome: str) -> Verdict:
 
 
 def _parse(raw_response: str) -> tuple[list[str], bool] | None:
-    """Return (moves, mismatch) if the response is the required JSON object, else None."""
+    """Return (moves, mismatch) from an LLM's lines, else None when no line is left.
+
+    One surrounding code fence is stripped. Each line loses one trailing \r. Empty and
+    whitespace-only lines are dropped, and no other line is stripped. The single line MISMATCH
+    means no moves and the mismatch flag on. Otherwise every line is a move.
+    """
     text = raw_response
     fenced = FENCE.match(text)
     if fenced:
         text = fenced.group(1)
-    try:
-        data = json.loads(text)
-    except ValueError:
+    lines = [line.removesuffix("\r") for line in text.split("\n")]
+    lines = [line for line in lines if line.strip()]
+    if not lines:
         return None
-    if not isinstance(data, dict) or set(data) != {"moves", "mismatch"}:
-        return None
-    moves, mismatch = data["moves"], data["mismatch"]
-    if not isinstance(mismatch, bool) or not isinstance(moves, list):
-        return None
-    if not all(isinstance(move, str) for move in moves):
-        return None
-    return moves, mismatch
+    if lines == ["MISMATCH"]:
+        return [], True
+    return lines, False
 
 
 def read_decision_call(call: object, legal: list[str]) -> str | None:
