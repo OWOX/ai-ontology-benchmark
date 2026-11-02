@@ -300,7 +300,7 @@ def test_bundle_reads_refs_only(ui_repo, samples):
     assert exp_ids(bundles.get(None, True, set(), {}, set())) == []
     push_results(ui_repo, "e", files_for(records))
     bundle = bundles.get(None, True, set(), {}, set())
-    assert exp_ids(bundle) == ["e"] and bundle["schema"] == 1 and bundle["release"] == "1.0.0"
+    assert exp_ids(bundle) == ["e"] and bundle["schema"] == 2 and bundle["release"] == "1.0.0"
     assert [r["validity"] for r in bundle["experiments"]] == ["all", "valid", "invalid"]
     assert bundle["defaults"]["attempts"] == 3
     with pytest.raises(ApiError) as caught:
@@ -347,7 +347,7 @@ def test_key_status_not_cached(ui_repo):
     key, model = cloud(bundles.get(None, False, set(), {}, set()))
     assert key["source"] == "file" and key["tail"] == "1234" and model["disabled_reason"] is None
     bundle = bundles.get(None, False, set(), {}, set())
-    assert [p["name"] for p in bundle["providers"]] == ["anthropic", "fake"]
+    assert [p["name"] for p in bundle["providers"]] == ["anthropic", "cloudflare", "fake"]
     assert next(p for p in bundle["providers"] if p["name"] == "fake")["key"] is None
     assert all(p["models"] for p in bundle["providers"])
     unpriced = next(m for p in bundle["providers"] for m in p["models"] if m["name"] == "unpriced")
@@ -380,7 +380,7 @@ def test_kind_shown_but_ignored_by_differs_from_catalogue(ui_repo, samples):
     bundles = make_bundles(ui_repo)
     bundle = bundles.get(None, True, set(), {}, set())
     kinds = {m["name"]: m["kind"] for p in bundle["providers"] for m in p["models"]}
-    assert kinds == {"example-model": "system-2", "cloud-model": None, "unpriced": None}
+    assert kinds == {"example-model": "system-2", "cloud-model": None, "unpriced": None, "edge-model": None}
     differs = {r["id"]: r["differs_from_catalogue"] for r in bundle["experiments"]}
     assert differs == {"k": False, "p": False}
     assert bundles.experiment("k", set(), set())["model_entries"][0]["kind"] == "system-1"

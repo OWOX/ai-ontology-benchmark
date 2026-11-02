@@ -78,7 +78,7 @@
       row.querySelector("input").focus();
     };
     const icons = h("div", { class: "provider-icons" });
-    if (k && (k.source === "file" || missing)) icons.append(edit = icon("edit", "Edit API key", open));
+    if (k && (k.source === "file" || missing || (acc && acc.source === "file"))) icons.append(edit = icon("edit", "Edit API key", open));
     if (bundle.repo && bundle.main_sha) icons.append(icon("source", "Source: config/models.toml", null, `${bundle.repo}/blob/${bundle.main_sha}/config/models.toml`));
     head.append(icons);
     if (missing) open();

@@ -154,7 +154,7 @@ class Bundles(BranchReaders):
         rows_cache: dict = {}  # attempt rows per (experiment, model file), shared by the puzzles of this build
         puzzles = [build_puzzle(self.git, main, link, release, manifest, name, inputs_by_release[release],
                                 experiments, rows_cache) for name in names]
-        return {"schema": 1, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
+        return {"schema": 2, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
                 "repo": base, "main_sha": main_sha, "defaults": DEFAULTS,
                 "providers": build_providers(catalogue, self._prices(), experiments), "puzzles": puzzles, "experiments": rows,
                 "about": {"markdown": self.git.show(main, "README.md"), "source": link("README.md")}}

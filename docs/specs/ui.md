@@ -65,7 +65,7 @@ Every path below is read from a git ref, never from the work tree, except the AP
 `ui/bundle.py` builds one JSON object per release with everything the menu pages show, so a page changes without another request:
 
 ```json
-{"schema": 1, "release": "1.1.1", "releases": ["1.1.1", "1.1.0", "1.0.0"],
+{"schema": 2, "release": "1.1.1", "releases": ["1.1.1", "1.1.0", "1.0.0"],
  "fetched_at": "2026-10-25T10:12:00Z", "fetch_error": null, "repo": "https://github.com/<owner>/<repo>",
  "main_sha": "<sha>",
  "defaults": {"attempts": 3, "retry_cap": 3, "max_output_tokens": 4096,

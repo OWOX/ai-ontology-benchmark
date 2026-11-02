@@ -37,6 +37,7 @@ MODELS = (
     'kind = "system-2"\n'
     "params = { temperature = 1.0 }\n"
     '[[models]]\nname = "cloud-model"\nprovider = "anthropic"\napi_model_id = "cl-1"\n'
+    '[[models]]\nname = "edge-model"\nprovider = "cloudflare"\napi_model_id = "ed-1"\n'
     '[[models]]\nname = "unpriced"\nprovider = "fake"\napi_model_id = "up-1"\n'
 )
 PRICES = ("[example-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n"
@@ -207,14 +208,26 @@ def test_cloudflare_token_and_account_id_share_one_file(tmp_path, monkeypatch):
         key_store.save(tmp_path, "cloudflare", KEY, "a b")
 
 
+def test_empty_account_env_var_does_not_hide_a_saved_id(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    key_store.save(tmp_path, "cloudflare", KEY, "acct-id-98765")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "")
+    assert key_store.env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "acct-id-98765"
+    assert merged_env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "acct-id-98765"
+    assert key_store.inspect(tmp_path)["cloudflare"]["account"]["source"] == "file"
+
+
 def test_account_id_route(server, monkeypatch):
     for variable in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
         monkeypatch.delenv(variable, raising=False)
     status, data = call(server, "POST", "/api/secrets", {"provider": "anthropic", "action": "save", "api_key": KEY, "account_id": "x"})
     assert status == 400 and "account_id" in json.dumps(data)
-    call(server, "POST", "/api/secrets", {"provider": "cloudflare", "action": "save", "api_key": KEY, "account_id": "acct-id-98765"})
+    status, _ = call(server, "POST", "/api/secrets", {"provider": "cloudflare", "action": "save", "api_key": KEY, "account_id": "acct-id-98765"})
+    assert status == 200
     for path in ("/api/secrets", "/api/bundle"):
         assert "acct-id-98765" not in json.dumps(call(server, "GET", path)[1])
+    _, bundle = call(server, "GET", "/api/bundle")
+    assert next(p for p in bundle["providers"] if p["name"] == "cloudflare")["key"]["account"]["source"] == "file"
 
 
 def test_empty_env_var_does_not_hide_a_saved_key(tmp_path, monkeypatch):
@@ -253,7 +266,8 @@ def test_bundle_disabled_reasons_and_defaults(server):
     assert status == 200
     reasons = {m["name"]: m["disabled_reason"] for p in data["providers"] for m in p["models"]}
     assert reasons == {"example-model": None, "cloud-model": "no API key: add it under Models",
-                       "unpriced": "no price in config/prices.toml"}
+                       "unpriced": "no price in config/prices.toml",
+                       "edge-model": "no price in config/prices.toml"}
     assert data["release"] == "1.0.0" and data["releases"] == ["1.0.0"]
     assert data["defaults"]["budget"] == BUDGET and data["defaults"]["attempts"] == 3
 

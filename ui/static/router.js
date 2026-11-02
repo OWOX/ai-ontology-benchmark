@@ -53,7 +53,7 @@
       // `bundle:last` remembers the newest release returned; it stands in when the hash names none.
       const key = "bundle:" + (release || store.get("bundle:last") || "");
       const cached = key === "bundle:" ? null : store.get(key);
-      if (cached && cached.schema !== 1) store.drop(key);
+      if (cached && cached.schema !== 2) store.drop(key);
       else if (cached && onCached) onCached(cached);
       const q = new URLSearchParams();
       if (release) q.set("release", release);
