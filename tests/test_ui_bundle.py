@@ -575,7 +575,7 @@ def test_provider_without_catalogue_models_is_left_out():
 
 def test_decision_model_attempts_are_scored_not_malformed(ui_repo, samples):
     _, invalid, _ = samples
-    calls = json.dumps([{"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": 0.9}}}])
+    calls = json.dumps([{"answers": {"next_move": {"choice": "mismatch"}}}])
     toml = EXP_TOML.replace('provider = "fake"', 'provider = "fake_decision"')
     files = {"results/e/experiment.toml": toml,
              "results/e/raw/example-model.jsonl": jsonl([record(invalid, "no_model", 1, calls)])}

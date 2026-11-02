@@ -376,7 +376,7 @@ def test_fake_decision_pops_in_order_and_defaults_to_done(monkeypatch):
         models.call_decision(fake, "S", {})
     default = models.call_decision(fake, "S", {})
     assert default.call["answers"]["next_move"]["choice"] == "done"
-    assert default.call["answers"]["mismatch"]["noul"] == 0.0
+    assert "mismatch" not in default.call["answers"]
 
 
 def test_decision_providers_and_variables():

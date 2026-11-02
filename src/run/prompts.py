@@ -123,10 +123,8 @@ def decision_questions(questions: dict, legal: list[str]) -> dict:
     legal from 1, because a move string may hold characters an id may not."""
     criteria = {f"move_{n}": move for n, move in enumerate(legal, start=1)}
     criteria["done"] = questions["done"]
-    return {
-        "next_move": {"type": "choice", "instructions": questions["next_move"], "criteria": criteria},
-        "mismatch": {"type": "noul", "instructions": questions["mismatch"]},
-    }
+    criteria["mismatch"] = questions["mismatch"]
+    return {"next_move": {"type": "choice", "instructions": questions["next_move"], "criteria": criteria}}
 
 
 def both_prompt_versions(templates_dir: Path, inputs: list[dict]) -> tuple[dict, dict]:

@@ -4,7 +4,6 @@ stop reason. Writes nothing and makes no network calls.
 """
 
 import json
-import math
 import re
 from dataclasses import dataclass
 
@@ -14,9 +13,6 @@ STOP_REASONS = ("ok", "truncated", "refused", "infrastructure_failure")
 # One Markdown code fence around the whole response, with an optional language tag.
 FENCE = re.compile(r"^\s*```[A-Za-z]*\s*\n(.*?)\n?\s*```\s*$", re.DOTALL)
 
-
-# A decision model's mismatch probability at or above this turns the mismatch flag on.
-MISMATCH_THRESHOLD = 0.5
 
 
 @dataclass(frozen=True)
@@ -28,8 +24,8 @@ class Verdict:
     hallucination: bool
     # Whether the AI model picked up the wrong state: its own claim that the input can't be
     # reached from the solved state. Read from its output, not computed. False when there is
-    # no usable output. For a decision model it is true when any call, up to and including the
-    # first done, has a mismatch probability at or above MISMATCH_THRESHOLD.
+    # no usable output. For a decision model it is true when the call that ended the attempt
+    # chose mismatch.
     mismatch: bool
     # Number of parsed moves in the half-turn metric. None for infrastructure_failure and malformed_output.
     move_count: int | None
@@ -61,46 +57,40 @@ def _parse(raw_response: str) -> tuple[list[str], bool] | None:
     return moves, mismatch
 
 
-def read_decision_call(call: object, legal: list[str]) -> tuple[str, float] | None:
-    """Read one call of a decision model: return (move or "done", mismatch probability), or None
-    when the call is malformed. The id must match exactly (move_1, never move_01) and the
-    probability must be a finite number from 0 to 1. The run loop shares this reader."""
+def read_decision_call(call: object, legal: list[str]) -> str | None:
+    """Read one call of a decision model: return "done", "mismatch", or the legal move behind the
+    chosen move_<n>, or None when the call is malformed. The id must match exactly (move_1, never
+    move_01). Any other answer in the call is ignored. The run loop shares this reader."""
     try:
         choice = call["answers"]["next_move"]["choice"]
-        probability = call["answers"]["mismatch"]["noul"]
     except (KeyError, TypeError):
         return None
-    if not isinstance(probability, (int, float)) or isinstance(probability, bool):
-        return None
-    if not math.isfinite(probability) or not 0 <= probability <= 1:
-        return None
-    if choice == "done":
-        return "done", probability
+    if choice in ("done", "mismatch"):
+        return choice
     ids = {f"move_{i}": m for i, m in enumerate(legal, 1)}
     if not isinstance(choice, str) or choice not in ids:
         return None
-    return ids[choice], probability
+    return ids[choice]
 
 
 def _parse_decision(raw_response: str, legal: list[str]) -> tuple[list[str], bool] | None:
-    """Return (moves, mismatch) from a decision model's array of calls, else None."""
+    """Return (moves before the first done or mismatch, whether that stop was mismatch) from a
+    decision model's array of calls, else None."""
     try:
         data = json.loads(raw_response)
     except ValueError:
         return None
     if not isinstance(data, list) or not data:
         return None
-    moves, mismatch = [], False
+    moves = []
     for call in data:
         read = read_decision_call(call, legal)
         if read is None:
             return None
-        move, probability = read
-        mismatch = mismatch or probability >= MISMATCH_THRESHOLD
-        if move == "done":
-            break
-        moves.append(move)
-    return moves, mismatch
+        if read in ("done", "mismatch"):
+            return moves, read == "mismatch"
+        moves.append(read)
+    return moves, False
 
 
 def validate(input: dict, raw_response: str, stop_reason: str, decision: bool = False) -> Verdict:

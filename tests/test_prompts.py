@@ -137,9 +137,9 @@ def test_decision_questions_ids():
     q = decision_questions({"next_move": "n", "done": "d", "mismatch": "m"}, ["R", "U'"])
     assert q["next_move"] == {
         "type": "choice", "instructions": "n",
-        "criteria": {"move_1": "R", "move_2": "U'", "done": "d"},
+        "criteria": {"move_1": "R", "move_2": "U'", "done": "d", "mismatch": "m"},
     }
-    assert q["mismatch"] == {"type": "noul", "instructions": "m"}
+    assert list(q) == ["next_move"]
 
 
 def test_load_questions_reads_the_repo_file(templates):

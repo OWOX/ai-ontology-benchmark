@@ -254,8 +254,7 @@ def _count(value) -> int:
 
 def _fake_decision() -> DecisionReply:
     if not FAKE_DECISION_REPLIES:
-        call = {"answers": {"next_move": {"type": "choice", "choice": "done"},
-                            "mismatch": {"type": "noul", "noul": 0.0}},
+        call = {"answers": {"next_move": {"type": "choice", "choice": "done"}},
                 "usage": {"input_tokens": 0, "output_tokens": 0}, "model": "fake"}
         return DecisionReply(call, 0, 0, "fake", 0.0)
     item = FAKE_DECISION_REPLIES.pop(0)

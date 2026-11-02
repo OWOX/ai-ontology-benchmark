@@ -719,9 +719,8 @@ def decision_exp(repo, monkeypatch, config=DECISION_EXPERIMENT, prices="[D]\npri
     return models.FAKE_DECISION_REPLIES
 
 
-def d_reply(choice, p=0.0, tokens=(10, 0), model="d-served", latency=0.25):
-    call = {"answers": {"next_move": {"type": "choice", "choice": choice},
-                        "mismatch": {"type": "noul", "noul": p}},
+def d_reply(choice, tokens=(10, 0), model="d-served", latency=0.25):
+    call = {"answers": {"next_move": {"type": "choice", "choice": choice}},
             "usage": {"input_tokens": tokens[0], "output_tokens": tokens[1]}, "model": model}
     return models.DecisionReply(call, tokens[0], tokens[1], model, latency)
 
@@ -761,6 +760,14 @@ def test_decision_model_end_to_end(exp, monkeypatch):
     assert by_setup["descriptive"]["malformed_output_rate"] == "1.0000"
     assert by_setup["prescriptive"]["infrastructure_failure_count"] == "1"
     assert by_setup["prescriptive"]["success_rate_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
+
+
+def test_decision_mismatch_choice_ends_the_attempt_and_sets_the_flag(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    fake[:] = [d_reply("move_1"), d_reply("mismatch"), d_reply("done")]
+    assert go("--limit", "1") == 0
+    (row,) = records(exp, "D")
+    assert row["mismatch"] is True and len(json.loads(row["raw_response"])) == 2 and len(fake) == 1
 
 
 def test_decision_infrastructure_failure_keeps_the_completed_calls(exp, monkeypatch):

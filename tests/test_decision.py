@@ -13,9 +13,8 @@ QUESTIONS = {"next_move": "q", "done": "d", "mismatch": "m"}
 MODEL = {"name": "D", "provider": "fake_decision", "api_model_id": "x"}
 
 
-def reply(choice_id, p=0.0, tokens=10, model="m", latency=0.5):
-    call = {"answers": {"next_move": {"type": "choice", "choice": choice_id},
-                        "mismatch": {"type": "noul", "noul": p}},
+def reply(choice_id, tokens=10, model="m", latency=0.5):
+    call = {"answers": {"next_move": {"type": "choice", "choice": choice_id}},
             "usage": {"input_tokens": tokens, "output_tokens": 0}, "model": model}
     return DecisionReply(call, tokens, 0, model, latency)
 
@@ -38,13 +37,21 @@ def test_stops_on_done_after_two_moves(fake):
 
 
 def test_stops_on_mismatch_in_the_first_call(fake):
-    fake[:] = [reply("move_1", 0.5), reply("move_2")]
-    assert len(attempt().calls) == 1 and len(fake) == 1
+    fake[:] = [reply("mismatch"), reply("move_2")]
+    result = attempt()
+    assert len(result.calls) == 1 and len(fake) == 1 and result.stop_reason == "ok"
 
 
 def test_stops_on_mismatch_in_the_second_call(fake):
-    fake[:] = [reply("move_1", 0.4), reply("move_2", 0.9), reply("done")]
+    fake[:] = [reply("move_1"), reply("mismatch"), reply("done")]
     assert len(attempt().calls) == 2 and len(fake) == 1
+
+
+def test_an_old_probability_field_is_ignored(fake):
+    call = reply("move_1").call
+    call["answers"]["mismatch"] = {"type": "noul", "noul": 0.9}
+    fake[:] = [DecisionReply(call, 1, 0, "m", 0.1), reply("done")]
+    assert len(attempt().calls) == 2 and fake == []
 
 
 def test_stops_at_the_cap_without_done(fake):
@@ -147,11 +154,9 @@ def bad_call(answers):
 
 
 @pytest.mark.parametrize("answers", [
-    {"next_move": {"choice": "move_1"}},
-    {"next_move": {"choice": "move_1"}, "mismatch": {"noul": float("nan")}},
-    {"next_move": {"choice": "move_1"}, "mismatch": {"noul": -0.1}},
-    {"next_move": {"choice": "move_1"}, "mismatch": {"noul": "0.1"}},
-    {"next_move": {"choice": "move_01"}, "mismatch": {"noul": 0.0}},
+    {"mismatch": {"noul": 0.9}},
+    {"next_move": {"choice": "move_01"}},
+    {"next_move": {"choice": "Mismatch"}},
 ])
 def test_a_call_the_validator_rejects_stops_the_loop_with_ok(fake, answers):
     fake[:] = [reply("move_1"), bad_call(answers), reply("done")]
