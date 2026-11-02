@@ -28,7 +28,7 @@ from src.run.decision import DecisionResult, run_decision_attempt
 from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model
 from src.run.progress import Progress
 from src.run.prompts import (SETUPS, both_prompt_versions, build_prompt, decision_questions, decision_state,
-                             load_questions, prompt_versions, worst_state)
+                             load_questions, prompt_versions, worst_request)
 from src.run.raw import read_raw
 from src.puzzles.registry import get_engine
 from src.validator import validate
@@ -223,10 +223,12 @@ def run(args: argparse.Namespace) -> int:
     if args.limit is not None:
         pending = pending[: args.limit]
     cap = max_moves(config, manifest["release_config"])
+    questions = load_questions(folder / "prompts") if any(
+        m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending) else None
     for row, model, setup, _ in pending:
         prompt = build_prompt(folder / "prompts", row, setup)
-        if model["provider"] in DECISION_PROVIDERS:  # the longest state any call of the attempt sends
-            prompt = worst_state(prompt, get_engine(row["puzzle"]).legal_moves(), cap)
+        if model["provider"] in DECISION_PROVIDERS:  # the longest request any call of the attempt sends
+            prompt = worst_request(prompt, get_engine(row["puzzle"]).legal_moves(), cap, questions)
         check_request_budget(source, config, model, prompt, prices)
     if args.estimate:
         print_estimate(config, pending, prices, folder / "prompts", results / "raw", cap)
@@ -293,7 +295,7 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
                 print(prompt)
             continue
         price = prices[model["name"]]
-        worst = worst_case_request_cost(worst_state(prompt, legal, cap) if is_decision else prompt,
+        worst = worst_case_request_cost(worst_request(prompt, legal, cap, questions) if is_decision else prompt,
                                         config["max_output_tokens"], price)
 
         snapshot: dict = {}  # a decision attempt reads the spent cost once, before its first call

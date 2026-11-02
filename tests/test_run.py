@@ -14,7 +14,7 @@ from src.evaluate import evaluate as evaluate_module
 from src.puzzles.registry import get_engine
 from src.run import budget as budget_module, models, run as run_module
 from src.run.models import InfrastructureError, Reply
-from src.run.prompts import build_prompt, worst_state
+from src.run.prompts import build_prompt, load_questions, worst_request, worst_state
 from src.run.raw import read_raw
 from test_release import git, release_ok, repo  # noqa: F401  (repo is a fixture)
 
@@ -834,10 +834,23 @@ def test_decision_estimate_is_cap_calls_of_the_longest_state(exp, monkeypatch, c
         expected = 0.0
         for row in rows:
             for setup in run_module.SETUPS:
-                state = worst_state(build_prompt(exp / "releases/1.0.0/prompts", row, setup),
-                                    get_engine(row["puzzle"]).legal_moves(), cap)
+                state = worst_request(build_prompt(exp / "releases/1.0.0/prompts", row, setup),
+                                      get_engine(row["puzzle"]).legal_moves(), cap,
+                                      load_questions(exp / "releases/1.0.0/prompts"))
                 expected += cap * (-(-len(state) // 4) * 1.0 + 100 * 2.0) / 1e6
         assert f"worst case ${expected:.4f}" in line
+
+
+def test_decision_request_budget_counts_the_questions(exp, monkeypatch, capsys):
+    folder = exp / "releases/1.0.0/prompts"
+    rows = [json.loads(line) for line in (exp / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    states = [-(-len(worst_state(build_prompt(folder, r, s), get_engine(r["puzzle"]).legal_moves(), 6)) // 4)
+              for r in rows for s in run_module.SETUPS]
+    # Input tokens cost 1 USD each and output tokens nothing: the limit fits every state, not state plus questions.
+    decision_exp(exp, monkeypatch, DECISION_EXPERIMENT + f"[budget]\nper_request_usd = {max(states)}\n",
+                 "[D]\nprice_input_per_mtok = 1000000.0\nprice_output_per_mtok = 0.0\n")
+    assert go() == 1
+    assert "per_request_usd" in capsys.readouterr().err
 
 
 def test_decision_attempt_reads_spent_cost_once(exp, monkeypatch):

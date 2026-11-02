@@ -118,6 +118,12 @@ def worst_state(prompt: str, legal: list[str], cap: int) -> str:
     return decision_state(prompt, [max(legal, key=len)] * cap)
 
 
+def worst_request(prompt: str, legal: list[str], cap: int, questions: dict) -> str:
+    """The text of the longest request a decision attempt can send: its longest state, then the
+    questions object as sent. Budget checks count its characters."""
+    return worst_state(prompt, legal, cap) + json.dumps(decision_questions(questions, legal), sort_keys=True)
+
+
 def decision_questions(questions: dict, legal: list[str]) -> dict:
     """Return the request's questions object. A move's option id is move_<n>, its position in
     legal from 1, because a move string may hold characters an id may not."""
