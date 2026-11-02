@@ -14,19 +14,21 @@
     return wrap;
   }
 
-  // The source as a numbered footnote marker, or null without a source.
-  function footnote(source) {
-    return source ? h("sup", { class: "footnote" },
-      h("a", { href: source, target: "_blank", rel: "noopener", title: "Source", "aria-label": "Source", text: "[1]" })) : null;
+  // Footnote numbers for one card: each distinct source gets the next number, in the order the card shows them.
+  function notes() {
+    const seen = new Map();
+    return (source) => {
+      if (!source) return null;
+      if (!seen.has(source)) seen.set(source, seen.size + 1);
+      const n = seen.get(source);
+      return h("sup", { class: "footnote" },
+        h("a", { href: source, target: "_blank", rel: "noopener", title: "Source", "aria-label": `Source ${n}`, text: `[${n}]` }));
+    };
   }
 
-  function heading(text, source) {
-    return h("h4", { text }, footnote(source));
-  }
-
-  function description(p) {
+  function description(p, footnote) {
     const d = p.description || {};
-    const box = h("div", {}, heading("Description", d.source));
+    const box = h("div", {}, h("h4", { text: "Description" }, footnote(d.source)));
     if (!d.text) { box.append(h("p", { class: "muted", text: "no description on main" })); return box; }
     const body = h("div", { class: "md plain" });
     body.innerHTML = window.renderMarkdown(d.text, d.source ? d.source.replace(/[^/]*$/, "") : "");
@@ -43,12 +45,14 @@
   }
 
   // One toggle per setup. A click shows that setup's prompt template below, and a second click hides it.
-  function prompts(p) {
+  function prompts(p, footnote) {
     const box = h("div", {}, h("h4", { text: "Prompts" }));
     const setups = Object.entries(p.prompts || {});
     if (!setups.length) { box.append(h("p", { class: "muted small", text: "No prompt templates in this release." })); return box; }
     const panel = h("div", { class: "prompt-panel", hidden: true });
-    const buttons = setups.map(([setup, t]) => {
+    // Numbered up front, in setup order, so a number never depends on which prompt is opened first.
+    const marks = setups.map(([, t]) => footnote(t.source));
+    const buttons = setups.map(([setup, t], i) => {
       const b = h("button", { type: "button", class: "small", "aria-pressed": "false", text: setup.replace(/_/g, " ") });
       b.addEventListener("click", () => {
         const open = b.getAttribute("aria-pressed") !== "true";
@@ -57,7 +61,7 @@
         panel.hidden = !open;
         if (!open) return;
         panel.append(h("pre", { class: "prompt-text", text: t.text }));
-        if (t.source) panel.append(h("p", { class: "small footnote-line" }, footnote(t.source), " ",
+        if (t.source) panel.append(h("p", { class: "small footnote-line" }, marks[i], " ",
           h("a", { href: t.source, target: "_blank", rel: "noopener", text: t.source.replace(/^.*\/blob\/[^/]+\//, "") })));
       });
       return b;
@@ -66,8 +70,8 @@
     return box;
   }
 
-  function allowed(p) {
-    const box = h("div", {}, heading("Allowed moves", p.legal_moves === null ? null : p.legal_moves_source));
+  function allowed(p, footnote) {
+    const box = h("div", {}, h("h4", { text: "Allowed moves" }, footnote(p.legal_moves === null ? null : p.legal_moves_source)));
     if (p.legal_moves === null) { box.append(h("p", { class: "muted small", text: "No engine" })); return box; }
     box.append(h("div", { class: "chips" }, ...p.legal_moves.map((m) => h("code", { class: "chip", text: m }))));
     return box;
@@ -90,9 +94,10 @@
       const q = params.release ? "release=" + encodeURIComponent(params.release) : "";
       el.append(h("h2", { text: "Puzzles" }));
       for (const p of bundle.puzzles) {
-        const top = h("div", { class: "puzzle-top" }, h("div", { class: "puzzle-main" }, picture(p), description(p), allowed(p), links(p, q)));
+        const footnote = notes();
+        const top = h("div", { class: "puzzle-top" }, h("div", { class: "puzzle-main" }, picture(p), description(p, footnote), allowed(p, footnote), links(p, q)));
         if (p.n) top.append(h("div", { class: "named-net" }, cubeNetNamed(p.n, { width: 4 * p.n * NET_CELL, height: 3 * p.n * NET_CELL })));
-        const card = h("section", { class: "step puzzle" }, h("h3", { text: p.name }), top, prompts(p), seen(p, q));
+        const card = h("section", { class: "step puzzle" }, h("h3", { text: p.name }), top, prompts(p, footnote), seen(p, q));
         el.append(card);
       }
     },
