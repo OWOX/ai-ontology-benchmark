@@ -17,8 +17,10 @@ from src.config import load_experiment_config, load_prices
 from src.evaluate.metrics import EvalError, compute
 from src.evaluate.report import write_report
 from src.release.release import parse_version
+from src.run.models import DECISION_PROVIDERS
 from src.run.raw import read_raw
 from src.run.run import RunError, load_release
+
 
 REQUIRED = (
     "input_id", "setup", "model", "attempt_number", "raw_response", "stop_reason", "outcome",
@@ -65,6 +67,11 @@ def check_release(releases: Path, base: str, target: str) -> None:
         raise EvalError(
             f"{releases / target / 'manifest.json'}: "
             f"field 'prompt_versions' differs from release {base}")
+    if "decision_prompt_versions" in old and "decision_prompt_versions" in manifest:
+        if old["decision_prompt_versions"] != manifest["decision_prompt_versions"]:
+            raise EvalError(
+                f"{releases / target / 'manifest.json'}: "
+                f"field 'decision_prompt_versions' differs from release {base}")
 
 
 def show_float(value: object) -> object:
@@ -100,7 +107,8 @@ def evaluate(args: argparse.Namespace) -> None:
     prices = load_prices(prices_path)
     check_prices(prices, prices_path, config)
     names = [m["name"] for m in config["models"]]
-    attempt_rows, metric_rows, summary_rows = compute(records, release_dir, prices, names)
+    decision_models = {m["name"] for m in config["models"] if m["provider"] in DECISION_PROVIDERS}
+    attempt_rows, metric_rows, summary_rows = compute(records, release_dir, prices, names, decision_models)
     if not metric_rows:
         raise EvalError(f"{results / 'raw'}: no raw records")
     csv_content = csv_text(metric_rows)

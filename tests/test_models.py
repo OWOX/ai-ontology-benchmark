@@ -206,3 +206,269 @@ def test_missing_key_names_the_variable(monkeypatch, provider):
     with pytest.raises(ValueError, match=KEYS[provider]):
         call_model(entry(provider), "prompt", 50)
     create.assert_not_called()
+
+
+# Decision models.
+
+ANSWERS = {"next_move": {"type": "choice", "choice": "done", "confidence": 1.0, "probabilities": {"done": 1.0}},
+           "mismatch": {"type": "noul", "noul": 0.1}}
+API_REPLY = {"model": "served", "answers": ANSWERS, "usage": {"input_tokens": 40, "output_tokens": 0}}
+CLOUDFLARE_MODEL = {"provider": "cloudflare", "api_model_id": "@cf/cloudflare/clef-flash", "name": "clef-flash"}
+TYPESAFE_MODEL = {"provider": "typesafe", "api_model_id": "jev-latest", "name": "jev"}
+
+
+def _cloudflare_stub(monkeypatch, behaviour):
+    sent = {}
+
+    class FakeAI:
+        def run(self, name, account_id, extra_body):
+            sent.update(name=name, account_id=account_id, body=extra_body)
+            return behaviour()
+
+    class FakeClient:
+        def __init__(self, api_token, max_retries):
+            assert api_token == "t" and max_retries == 0
+            self.ai = FakeAI()
+
+    monkeypatch.setattr(models, "_cloudflare_client", FakeClient)
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "t")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "a")
+    return sent
+
+
+def _typesafe_stub(monkeypatch, behaviour):
+    sent = {}
+
+    class FakeClient:
+        def __init__(self, api_key, retry):
+            assert api_key == "k" and retry.max_retries == 0
+            sent["constructed"] = True
+
+        def system_one(self, state, questions, model, response_model):
+            sent.update(state=state, questions=questions, model=model)
+            return behaviour(response_model)
+
+    monkeypatch.setattr(models, "_typesafe_client", FakeClient)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    return sent
+
+
+def _typesafe_ok(response_model):
+    return response_model.model_validate(API_REPLY)
+
+
+def _status_error(cls, status):
+    request = httpx.Request("POST", "https://api.cloudflare.com/x")
+    return cls("boom", response=httpx.Response(status, request=request), body=None)
+
+
+def _typesafe_error(status):
+    import httpx2
+    from typesafe_sdk._core.errors import api_error
+
+    return api_error(status, {"error": "boom"}, httpx2.Headers())
+
+
+def _raiser(error):
+    def behaviour(*_):
+        raise error
+    return behaviour
+
+
+def test_cloudflare_call_shape(monkeypatch):
+    sent = _cloudflare_stub(monkeypatch, lambda: dict(API_REPLY))
+    reply = models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+    assert sent == {"name": "@cf/cloudflare/clef-flash", "account_id": "a",
+                    "body": {"model": "clef-flash", "state": "S", "questions": {"q": 1}}}
+    assert reply.input_tokens == 40 and reply.output_tokens == 0 and reply.served_model == "served"
+    assert reply.call == API_REPLY and reply.latency_s >= 0
+    assert set(reply.call) == {"answers", "usage", "model"}
+
+
+def test_typesafe_call_shape_keeps_the_reply_exactly(monkeypatch):
+    sent = _typesafe_stub(monkeypatch, _typesafe_ok)
+    reply = models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
+    assert (sent["state"], sent["questions"], sent["model"]) == ("S", {"q": 1}, "jev-latest")
+    assert reply.call == API_REPLY and reply.input_tokens == 40 and reply.served_model == "served"
+    assert set(reply.call) == {"answers", "usage", "model"}
+
+
+def test_typesafe_unreported_usage_counts_as_zero(monkeypatch):
+    _typesafe_stub(monkeypatch, lambda m: m.model_validate({"model": "j", "answers": ANSWERS}))
+    reply = models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
+    assert reply.input_tokens == 0 and reply.output_tokens == 0
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_cloudflare_429_and_5xx_are_infrastructure_errors(monkeypatch, status):
+    import cloudflare
+
+    cls = cloudflare.RateLimitError if status == 429 else cloudflare.InternalServerError
+    _cloudflare_stub(monkeypatch, _raiser(_status_error(cls, status)))
+    with pytest.raises(InfrastructureError):
+        models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+
+
+def test_cloudflare_timeout_is_an_infrastructure_error(monkeypatch):
+    import cloudflare
+
+    _cloudflare_stub(monkeypatch, _raiser(cloudflare.APITimeoutError(httpx.Request("POST", "https://x"))))
+    with pytest.raises(InfrastructureError):
+        models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+
+
+def test_cloudflare_400_propagates(monkeypatch):
+    import cloudflare
+
+    _cloudflare_stub(monkeypatch, _raiser(_status_error(cloudflare.BadRequestError, 400)))
+    with pytest.raises(cloudflare.BadRequestError):
+        models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_typesafe_429_and_5xx_are_infrastructure_errors(monkeypatch, status):
+    _typesafe_stub(monkeypatch, _raiser(_typesafe_error(status)))
+    with pytest.raises(InfrastructureError):
+        models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
+
+
+def test_typesafe_connection_error_and_timeout_are_infrastructure_errors(monkeypatch):
+    import typesafe_sdk
+
+    for error in (typesafe_sdk.TypeSafeAPIConnectionError("down"), typesafe_sdk.TypeSafeAPITimeoutError(5.0)):
+        _typesafe_stub(monkeypatch, _raiser(error))
+        with pytest.raises(InfrastructureError):
+            models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
+
+
+def test_typesafe_400_propagates(monkeypatch):
+    import typesafe_sdk
+
+    _typesafe_stub(monkeypatch, _raiser(_typesafe_error(400)))
+    with pytest.raises(typesafe_sdk.TypeSafeBadRequestError):
+        models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
+
+
+def test_missing_cloudflare_account_id_names_the_variable(monkeypatch):
+    _cloudflare_stub(monkeypatch, lambda: dict(API_REPLY))
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID")
+    with pytest.raises(ValueError, match="CLOUDFLARE_ACCOUNT_ID"):
+        models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+
+
+@pytest.mark.parametrize("model", [CLOUDFLARE_MODEL, TYPESAFE_MODEL])
+def test_missing_decision_key_names_the_variable(monkeypatch, model):
+    variable = models.KEY_VARIABLES[model["provider"]]
+    monkeypatch.delenv(variable, raising=False)
+    with pytest.raises(ValueError, match=variable):
+        models.call_decision(model, "S", {"q": 1})
+
+
+def test_fake_decision_pops_in_order_and_defaults_to_done(monkeypatch):
+    first = models.DecisionReply({"answers": {}, "usage": {}, "model": "fake"}, 1, 2, "fake", 0.5)
+    monkeypatch.setattr(models, "FAKE_DECISION_REPLIES",
+                        [first, InfrastructureError("x"), models.RefusedError("y")])
+    fake = {"provider": "fake_decision", "name": "f"}
+    assert models.call_decision(fake, "S", {}) is first
+    with pytest.raises(InfrastructureError):
+        models.call_decision(fake, "S", {})
+    with pytest.raises(models.RefusedError):
+        models.call_decision(fake, "S", {})
+    default = models.call_decision(fake, "S", {})
+    assert default.call["answers"]["next_move"]["choice"] == "done"
+    assert default.call["answers"]["mismatch"]["noul"] == 0.0
+
+
+def test_decision_providers_and_variables():
+    assert models.DECISION_PROVIDERS == ("typesafe", "cloudflare", "fake_decision")
+    assert models.KEY_VARIABLES["typesafe"] == "TYPESAFE_API_KEY"
+    assert models.KEY_VARIABLES["cloudflare"] == "CLOUDFLARE_API_TOKEN"
+    assert models.ACCOUNT_VARIABLES == {"cloudflare": "CLOUDFLARE_ACCOUNT_ID"}
+
+
+def test_extra_top_level_keys_are_not_kept(monkeypatch):
+    extra = {**API_REPLY, "future": "x"}
+    _cloudflare_stub(monkeypatch, lambda: dict(extra))
+    assert models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1}).call == API_REPLY
+    _typesafe_stub(monkeypatch, lambda m: m.model_validate(extra))
+    assert models.call_decision(TYPESAFE_MODEL, "S", {"q": 1}).call == API_REPLY
+
+
+@pytest.mark.parametrize("body", [{"answers": None}, {}, {"model": None, "answers": 3, "usage": "x"}])
+def test_typesafe_reply_missing_the_schema_returns_with_absent_keys(monkeypatch, body):
+    _typesafe_stub(monkeypatch, lambda m: m.model_validate(body))
+    reply = models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
+    assert reply.call == body and reply.served_model == "jev-latest"
+    assert reply.input_tokens == 0 and reply.output_tokens == 0
+
+
+@pytest.mark.parametrize("result", ["text", [1, 2], None, 7])
+def test_cloudflare_result_that_is_not_an_object_gives_an_empty_call(monkeypatch, result):
+    _cloudflare_stub(monkeypatch, lambda: result)
+    reply = models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+    assert reply.call == {} and reply.served_model == "@cf/cloudflare/clef-flash"
+
+
+def test_provider_routing_is_checked_both_ways():
+    with pytest.raises(ValueError, match="anthropic"):
+        models.call_decision({"provider": "anthropic"}, "S", {})
+    with pytest.raises(ValueError, match="cloudflare"):
+        call_model({"provider": "cloudflare"}, "p", 10)
+
+
+def test_cloudflare_through_the_real_sdk(monkeypatch):
+    import json
+
+    import cloudflare
+
+    seen = {}
+
+    def handler(request):
+        seen.update(url=str(request.url), body=json.loads(request.content))
+        return httpx.Response(200, json={"result": API_REPLY, "success": True, "errors": [], "messages": []})
+
+    monkeypatch.setattr(models, "_cloudflare_client", lambda **o: cloudflare.Cloudflare(
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)), **o))
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "t")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "a")
+    questions = {"q": {"type": "noul", "instructions": "x"}}
+    reply = models.call_decision(CLOUDFLARE_MODEL, "S", questions)
+    assert seen["url"].startswith("https://api.cloudflare.com/client/v4/accounts/a/ai/run/")
+    assert "clef-flash" in seen["url"]
+    assert seen["body"] == {"model": "clef-flash", "state": "S", "questions": questions}
+    assert reply.call == API_REPLY and reply.input_tokens == 40 and reply.served_model == "served"
+
+
+def test_typesafe_through_the_real_sdk(monkeypatch):
+    import json
+
+    import httpx2
+    import typesafe_sdk
+
+    seen = {}
+
+    def handler(request):
+        seen.update(url=str(request.url), body=json.loads(request.content))
+        return httpx2.Response(200, json={**API_REPLY, "future": 1})
+
+    monkeypatch.setattr(models, "_typesafe_client", lambda **o: typesafe_sdk.TypeSafeClient(
+        transport=httpx2.MockTransport(handler), **o))
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    questions = {"q": {"type": "noul", "instructions": "x"}}
+    reply = models.call_decision(TYPESAFE_MODEL, "S", questions)
+    assert seen["url"] == "https://api.typesafe.ai/v1/systemone"
+    assert seen["body"] == {"state": "S", "model": "jev-latest", "questions": questions}
+    assert reply.call == API_REPLY and reply.input_tokens == 40 and reply.served_model == "served"
+
+
+@pytest.mark.parametrize("content", [b"[1]", b"not json", b""])
+def test_typesafe_body_that_is_not_a_json_object_gives_an_empty_call(monkeypatch, content):
+    import httpx2
+    import typesafe_sdk
+
+    monkeypatch.setattr(models, "_typesafe_client", lambda **o: typesafe_sdk.TypeSafeClient(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(200, content=content)), **o))
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    reply = models.call_decision(TYPESAFE_MODEL, "S", {"q": {"type": "noul", "instructions": "x"}})
+    assert reply.call == {} and reply.served_model == "jev-latest"
+    assert reply.input_tokens == 0 and reply.output_tokens == 0 and reply.latency_s >= 0

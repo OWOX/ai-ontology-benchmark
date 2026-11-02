@@ -1,15 +1,18 @@
 // Spec: docs/specs/ui.md (New Experiment, Banners, HTTP API 4 to 11)
-// New Experiment: the form, Estimate, Dry run, Run, Stop, and Progress for the id. Reads the bundle,
+// New Experiment: the form, Estimate, Dry run, and Run. Reads the bundle,
 // GET /api/branches, /api/default-id, and /api/experiment/<id>/config; writes only through POST /api/estimate,
-// /api/dry-run, /api/run, and /api/stop. After a job starts, the message links to the experiment's page, where the terminal is.
+// /api/dry-run, and /api/run. Run answers once the branch exists, and the page then opens the experiment's page,
+// which shows the settings, Progress, Stop, and the terminal.
 (function () {
   const h = UI.el;
   const NO_KEY = "no API key: add it under Models";
+  const NO_ACCOUNT = "no account id: add it under Models";
+  const keyProblem = (r) => r === NO_KEY || r === NO_ACCOUNT;
   const NUMBERS = [["attempts", "Attempts per input and setup: sends the same input N times"],
     ["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
   // The form survives a redraw of the page (a bundle reload after a job) and resets with the release.
-  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", progId: "" };
+  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "" };
   let cleanup = null;
   let idSeq = 0;
 
@@ -17,7 +20,7 @@
 
   function reset(bundle) {
     const d = bundle.defaults;
-    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: [], models: [], limit: "", progId: "",
+    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: [], models: [], limit: "",
       vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, ...d.budget } });
   }
 
@@ -71,26 +74,45 @@
     }));
   }
 
+  // One column per provider. The header's checkbox selects or clears every enabled model of the provider.
   function modelList(bundle, onChange) {
     const rel = bundle.release ? "?release=" + encodeURIComponent(bundle.release) : "";
-    return h("div", {}, ...bundle.providers.map((p) => {
-      const head = h("div", { class: "provider-head" }, h("span", { text: p.name }));
-      if (p.models.some((m) => m.disabled_reason === NO_KEY)) {
-        head.append(h("span", { class: "reason" }, "⚠️ ", h("a", { href: "#/models" + rel, text: NO_KEY })));
+    return h("div", { class: "model-cols" }, ...bundle.providers.map((p) => {
+      const enabled = p.models.filter((m) => !m.disabled_reason).map((m) => m.name);
+      const all = h("input", { type: "checkbox", "aria-label": `All ${p.name} models` });
+      all.disabled = !enabled.length;
+      const boxes = [];
+      const sync = () => {
+        const n = enabled.filter((name) => S.models.includes(name)).length;
+        all.checked = n > 0 && n === enabled.length;
+        all.indeterminate = n > 0 && n < enabled.length;
+        for (const [name, box] of boxes) box.checked = S.models.includes(name);
+      };
+      all.addEventListener("change", () => {
+        S.models = all.checked ? [...S.models.filter((n) => !enabled.includes(n)), ...enabled] : S.models.filter((n) => !enabled.includes(n));
+        sync(); onChange();
+      });
+      const head = h("label", { class: "provider-head" }, all, h("span", { text: p.name }));
+      const col = h("div", { class: "model-col" }, head);
+      const problem = p.models.map((m) => m.disabled_reason).find(keyProblem);
+      if (problem) {
+        col.append(h("div", { class: "reason small" }, "⚠️ ", h("a", { href: "#/models" + rel, text: problem })));
       }
-      return h("div", { class: "provider" }, head, ...p.models.map((m) => {
+      for (const m of p.models) {
         const off = !!m.disabled_reason;
         const box = h("input", { type: "checkbox" });
         box.disabled = off;
-        box.checked = !off && S.models.includes(m.name);
+        if (!off) boxes.push([m.name, box]);
         box.addEventListener("change", () => {
           S.models = box.checked ? [...S.models, m.name] : S.models.filter((n) => n !== m.name);
-          onChange();
+          sync(); onChange();
         });
         const label = h("label", { class: "model" + (off ? " off" : "") }, box, h("span", { text: m.name }));
-        if (off && m.disabled_reason !== NO_KEY) label.append(h("span", { class: "reason", text: m.disabled_reason }));
-        return label;
-      }));
+        if (off && !keyProblem(m.disabled_reason)) label.append(h("span", { class: "reason", text: m.disabled_reason }));
+        col.append(label);
+      }
+      sync();
+      return col;
     }));
   }
 
@@ -110,12 +132,10 @@
     render(bundle, params, el) {
       if (cleanup) cleanup();
       if (S.release !== bundle.release) reset(bundle);
-      const formBox = h("div"), progBox = h("section", {}, h("h3", { text: "Progress" }));
-      const progMount = h("div");
-      progBox.append(progMount);
-      el.append(h("div", { class: "newexp" }, formBox, progBox));
+      const formBox = h("div");
+      el.append(h("div", { class: "newexp" }, formBox));
       const ref = {};
-      let ctl = null, dead = false;
+      let dead = false, starting = false;
 
       const msg = h("p", { class: "msg", role: "status" });
       const say = (text, kind) => { msg.className = "msg" + (kind ? " " + kind : ""); msg.textContent = text; };
@@ -124,21 +144,16 @@
         if (!ref.run) return;
         const id = S.id.trim();
         const run = (j) => j.startsWith("run:"), busy = (j) => run(j) || j === "evaluate";
-        ref.run.disabled = mine(id, busy);
+        ref.run.disabled = starting || mine(id, busy);
         ref.estimate.disabled = mine(id, (j) => j === "estimate");
         ref.dry.disabled = mine(id, (j) => j === "dry-run");
-        ref.stop.disabled = !mine(id, run);
       }
 
-      function startProgress(id) {
-        S.progId = id;
-        if (ctl && ctl.id === id) { ctl.refresh(); return; }
-        if (ctl) ctl.destroy();
-        ctl = Progress.mount(progMount, id, { onSnapshot: controls });
-        ctl.id = id;
-      }
-
-      function newOption() { return `New: ${S.id || "(choose puzzles and AI models)"}`; }
+      let branches = [], pickSeq = 0, loading = false;
+      const branchNote = () => S.branch ? "Existing branch: its config is loaded, and Run resumes it."
+        : S.touched && branches.includes(S.id) ? "This branch exists. Press Enter or leave the field to load it."
+        : S.touched ? "Edited by hand. Clear the field to get the suggestion back."
+          : "Suggested from the chosen puzzles and AI models. Edit it, or pick an existing branch to load it.";
 
       async function refreshId() {
         if (S.touched || S.branch) return;
@@ -151,7 +166,7 @@
           if (mine_ !== idSeq || S.touched || S.branch || dead) return;
           S.id = r.id;
           if (ref.id) ref.id.value = S.id;
-          if (ref.newOpt) ref.newOpt.textContent = newOption();
+          if (ref.note) ref.note.textContent = branchNote();
           controls();
         } catch (e) { say(e.message, "err"); }
       }
@@ -160,11 +175,14 @@
 
       async function pickBranch(value) {
         say("");
+        // A later pick or a keystroke in the branch field supersedes a load still in flight.
+        const seq = ++pickSeq;
         S.branch = value;
-        if (!value) { S.touched = false; await refreshId(); if (!dead) paint(); return; }
+        loading = true;
         try {
           const cfg = await UI.api("/api/experiment/" + encodeURIComponent(value) + "/config");
-          if (dead) return;
+          if (dead || seq !== pickSeq) return;
+          loading = false;
           const all = bundle.providers.flatMap((p) => p.models);
           const enabled = new Set(all.filter((m) => !m.disabled_reason).map((m) => m.name));
           const dropped = cfg.models.filter((n) => !enabled.has(n)).map((n) => {
@@ -172,13 +190,18 @@
             return `${n} is disabled: ${m ? m.disabled_reason : "not in the catalogue"}; resuming needs it enabled`;
           });
           Object.assign(S, { id: value, touched: true, release: cfg.release, puzzles: cfg.puzzles, models: cfg.models.filter((n) => enabled.has(n)),
-            vals: { attempts: cfg.attempts, retry_cap: cfg.retry_cap, max_output_tokens: cfg.max_output_tokens, ...cfg.budget }, progId: value });
+            vals: { attempts: cfg.attempts, retry_cap: cfg.retry_cap, max_output_tokens: cfg.max_output_tokens, ...cfg.budget } });
           if (cfg.release !== bundle.release) { UI.go("#/new?release=" + encodeURIComponent(cfg.release)); return; }
           paint();
-          startProgress(value);
-          if (dropped.length) say(`Loaded ${value}. ${dropped.join(". ")}.`, "err");
-          else say(`Loaded ${value}.`, "ok");
-        } catch (e) { say(e.message, "err"); }
+          const page = h("a", { href: "#/experiments/" + encodeURIComponent(value) + "?release=" + encodeURIComponent(cfg.release), text: "Open its page" });
+          msg.className = "msg " + (dropped.length ? "err" : "ok");
+          msg.replaceChildren(`Loaded ${value}. ${dropped.length ? dropped.join(". ") + ". " : ""}`, page);
+        } catch (e) {
+          if (seq !== pickSeq) return;
+          loading = false; S.branch = "";
+          if (ref.note) ref.note.textContent = branchNote();
+          say(e.message, "err");
+        }
       }
 
       async function send(path, label) {
@@ -186,49 +209,64 @@
         try {
           const form = readForm(bundle);
           const body = path === "run" ? { form, limit: readLimit() } : { form };
-          const r = await UI.api("/api/" + path, { method: "POST", body });
+          if (path === "run") { starting = true; controls(); say(`Starting the run and creating results/${form.id}…`); }
+          const r = await UI.api("/api/" + path, { method: "POST", body }).finally(() => { starting = false; if (!dead) controls(); });
           if (dead) return;
-          const rel = bundle.release ? "?release=" + encodeURIComponent(bundle.release) : "";
-          msg.className = "msg ok";
-          msg.replaceChildren(`${label} started. Experiment ${r.status}. See the terminal. `);
-          if (path === "run") msg.append(h("a", { href: "#/experiments/" + encodeURIComponent(form.id) + rel, text: "Open its page" }));
-          if (path === "run") startProgress(form.id);
+          if (path === "run") {
+            // The branch exists by now, so the experiment's page can be opened and reloaded safely.
+            UI.go("#/experiments/" + encodeURIComponent(form.id) + (bundle.release ? "?release=" + encodeURIComponent(bundle.release) : ""));
+            return;
+          }
+          say(`${label} started. Experiment ${r.status}. See the terminal.`, "ok");
         } catch (e) { say(e.message, "err"); }
       }
 
-      async function stop() {
-        say("");
-        try {
-          await UI.api("/api/stop", { method: "POST", body: { id: S.id.trim() } });
-          say("Stop requested. A request in flight may be paid for and never recorded, so prefer a limit for small runs.", "ok");
-        } catch (e) { say(e.message, "err"); }
+      // The branch field: the suggested id until edited by hand, with every existing branch offered. An id
+      // that names an existing branch loads it once the edit is done (Enter, leaving the field, or picking a
+      // suggestion), never mid-typing; clearing the field brings the suggestion back.
+      function branchField() {
+        const list = h("datalist", { id: "branch-list" });
+        UI.api("/api/branches").then((rows) => {
+          branches = rows.map((b) => b.id);
+          list.replaceChildren(...branches.map((id) => h("option", { value: id })));
+          if (ref.note && !dead) ref.note.textContent = branchNote();
+        }).catch((e) => say(e.message, "err"));
+        ref.id = h("input", { type: "text", list: "branch-list", "aria-label": "Branch", value: S.id, spellcheck: "false" });
+        ref.id.addEventListener("input", () => {
+          // A keystroke drops a load in flight, so the form is no longer that branch's until it loads again.
+          if (loading) { S.branch = ""; loading = false; }
+          pickSeq++;
+          if (ref.id.value === "") {
+            Object.assign(S, { id: "", touched: false, branch: "" });
+            refreshId();
+          } else {
+            S.id = ref.id.value.trim(); S.touched = true;
+            if (S.branch && S.id !== S.branch) S.branch = "";
+          }
+          ref.note.textContent = branchNote();
+          controls();
+        });
+        ref.id.addEventListener("change", () => {
+          const value = ref.id.value.trim();
+          if (branches.includes(value) && value !== S.branch) pickBranch(value);
+        });
+        ref.note = h("p", { class: "muted small", text: branchNote() });
+        return h("div", { class: "branch-field" }, h("label", { class: "small" }, "Branch",
+          h("span", { class: "branch-input" }, h("span", { class: "prefix", text: "results/" }), ref.id)), list, ref.note);
       }
 
       function paint() {
-        const branch = h("select", { "aria-label": "Branch" });
-        ref.newOpt = h("option", { value: "", text: newOption() });
-        branch.append(ref.newOpt);
-        branch.value = S.branch;
-        UI.api("/api/branches").then((list) => {
-          if (!branch.isConnected) return;
-          branch.append(...list.map((b) => h("option", { value: b.id, text: b.id })));
-          branch.value = S.branch;
-        }).catch((e) => say(e.message, "err"));
-        branch.addEventListener("change", () => pickBranch(branch.value));
-        ref.id = h("input", { type: "text", "aria-label": "Experiment id", value: S.id });
-        ref.id.addEventListener("input", () => { S.id = ref.id.value; S.touched = true; ref.newOpt.textContent = newOption(); controls(); });
         for (const [key, text, fn] of [["estimate", "Estimate", () => send("estimate", "Estimate")],
-          ["dry", "Dry run", () => send("dry-run", "Dry run")], ["run", "Run", () => send("run", "Run")], ["stop", "Stop", stop]]) {
-          ref[key] = h("button", { type: "button", text, class: key === "run" ? "primary" : key === "stop" ? "danger" : "" });
+          ["dry", "Dry run", () => send("dry-run", "Dry run")], ["run", "Run", () => send("run", "Run")]]) {
+          ref[key] = h("button", { type: "button", text, class: key === "run" ? "primary" : "" });
           ref[key].addEventListener("click", fn);
         }
         formBox.replaceChildren(
-          h("section", {}, h("h2", { text: "New Experiment" }), h("label", { class: "small" }, "Branch ", branch),
-            h("label", { class: "small" }, " Experiment id ", ref.id)),
-          h("section", {}, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
-          h("section", {}, h("h3", { text: "AI models" }), modelList(bundle, choose)),
-          h("section", {}, h("h3", { text: "Parameters" }), numberFields(),
-            h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run, ref.stop), msg));
+          h("section", {}, h("h2", { text: "New Experiment" }), branchField()),
+          h("section", { class: "step" }, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
+          h("section", { class: "step" }, h("h3", { text: "AI models" }), modelList(bundle, choose)),
+          h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(),
+            h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run), msg));
         controls();
       }
 
@@ -239,12 +277,10 @@
         cleanup = null;
         dead = true;
         offJobs(); window.removeEventListener("hashchange", onHash);
-        if (ctl) ctl.destroy();
       };
 
       paint();
       refreshId();
-      if (S.progId) startProgress(S.progId);
     },
   });
 })();

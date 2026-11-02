@@ -26,6 +26,7 @@ from src.puzzles.registry import get_engine
 from test_release import commit_all, git, run_release, repo  # noqa: F401  (repo is a fixture)
 from ui import secrets as key_store
 from ui.common import merged_env
+from ui import app as app_module
 from ui import jobs as jobs_module
 from ui import server as server_module
 from ui.experiments import default_id
@@ -37,6 +38,7 @@ MODELS = (
     'kind = "system-2"\n'
     "params = { temperature = 1.0 }\n"
     '[[models]]\nname = "cloud-model"\nprovider = "anthropic"\napi_model_id = "cl-1"\n'
+    '[[models]]\nname = "edge-model"\nprovider = "cloudflare"\napi_model_id = "ed-1"\n'
     '[[models]]\nname = "unpriced"\nprovider = "fake"\napi_model_id = "up-1"\n'
 )
 PRICES = ("[example-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n"
@@ -181,6 +183,54 @@ def test_secret_files_and_env(tmp_path, monkeypatch):
         key_store.save(tmp_path, "nope", KEY)
 
 
+def test_cloudflare_token_and_account_id_share_one_file(tmp_path, monkeypatch):
+    for variable in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    path = tmp_path / "secrets" / "cloudflare.json"
+    key_store.save(tmp_path, "cloudflare", "cf-token-1234", None)
+    info = key_store.inspect(tmp_path)["cloudflare"]
+    assert info["account"]["source"] == "missing" and info["configured"] is False
+    key_store.save(tmp_path, "cloudflare", "", "acct-id-98765")
+    assert json.loads(path.read_text()) == {"api_key": "cf-token-1234", "account_id": "acct-id-98765"}
+    key_store.save(tmp_path, "cloudflare", "cf-token-5678")
+    assert json.loads(path.read_text()) == {"api_key": "cf-token-5678", "account_id": "acct-id-98765"}
+    info = key_store.inspect(tmp_path)["cloudflare"]
+    assert info["configured"] is True and info["account"]["source"] == "file"
+    assert "acct-id-98765" not in json.dumps(key_store.inspect(tmp_path))
+    assert merged_env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "acct-id-98765"
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "from-env")
+    assert merged_env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "from-env"
+    assert key_store.inspect(tmp_path)["cloudflare"]["account"]["source"] == "env"
+    key_store.clear(tmp_path, "cloudflare")
+    assert not path.exists()
+    with pytest.raises(key_store.ApiError, match="account_id"):
+        key_store.save(tmp_path, "anthropic", KEY, "acct")
+    with pytest.raises(key_store.ApiError, match="account_id"):
+        key_store.save(tmp_path, "cloudflare", KEY, "a b")
+
+
+def test_empty_account_env_var_does_not_hide_a_saved_id(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    key_store.save(tmp_path, "cloudflare", KEY, "acct-id-98765")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "")
+    assert key_store.env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "acct-id-98765"
+    assert merged_env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "acct-id-98765"
+    assert key_store.inspect(tmp_path)["cloudflare"]["account"]["source"] == "file"
+
+
+def test_account_id_route(server, monkeypatch):
+    for variable in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    status, data = call(server, "POST", "/api/secrets", {"provider": "anthropic", "action": "save", "api_key": KEY, "account_id": "x"})
+    assert status == 400 and "account_id" in json.dumps(data)
+    status, _ = call(server, "POST", "/api/secrets", {"provider": "cloudflare", "action": "save", "api_key": KEY, "account_id": "acct-id-98765"})
+    assert status == 200
+    for path in ("/api/secrets", "/api/bundle"):
+        assert "acct-id-98765" not in json.dumps(call(server, "GET", path)[1])
+    _, bundle = call(server, "GET", "/api/bundle")
+    assert next(p for p in bundle["providers"] if p["name"] == "cloudflare")["key"]["account"]["source"] == "file"
+
+
 def test_empty_env_var_does_not_hide_a_saved_key(tmp_path, monkeypatch):
     key_store.save(tmp_path, "anthropic", KEY)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
@@ -217,7 +267,8 @@ def test_bundle_disabled_reasons_and_defaults(server):
     assert status == 200
     reasons = {m["name"]: m["disabled_reason"] for p in data["providers"] for m in p["models"]}
     assert reasons == {"example-model": None, "cloud-model": "no API key: add it under Models",
-                       "unpriced": "no price in config/prices.toml"}
+                       "unpriced": "no price in config/prices.toml",
+                       "edge-model": "no price in config/prices.toml"}
     assert data["release"] == "1.0.0" and data["releases"] == ["1.0.0"]
     assert data["defaults"]["budget"] == BUDGET and data["defaults"]["attempts"] == 3
 
@@ -241,6 +292,36 @@ def test_run_from_form_writes_no_config_file(server):
     assert (server.root / "results" / "t1" / "experiment.toml").read_text() == saved + "\n"
     # the form may also come under a `form` key, with the limit beside it
     assert call(server, "POST", "/api/estimate", {"form": FORM})[1]["status"] == "unchanged"
+
+
+def test_run_answers_once_the_branch_exists(server):
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    assert git(server.root, "rev-parse", "--verify", "-q", "refs/heads/results/t1").strip()
+    wait_job(server, "run:example-model")
+
+
+def test_resume_of_a_branch_only_on_origin_answers(server):
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    wait_job(server, "run:example-model")
+    git(server.root, "fetch", "-q", "origin", "+refs/heads/results/*:refs/remotes/origin/results/*")
+    git(server.root, "branch", "-D", "results/t1")
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    wait_job(server, "run:example-model")
+
+
+def test_run_that_stops_before_its_branch_reports_why(server):
+    (server.root / "config" / "prices.toml").rename(server.root / "config" / "prices.toml.away")
+    status, data = call(server, "POST", "/api/run", FORM)
+    assert status == 409 and data["error"].startswith("run stopped before creating results/t1: ")
+    assert "prices.toml" in data["error"]
+
+
+def test_form_refused_when_the_release_is_not_in_this_checkout(server):
+    folder = server.root / "releases" / "1.0.0"
+    folder.rename(folder.with_name("away"))
+    for path in ("/api/run", "/api/estimate", "/api/dry-run"):
+        status, data = call(server, "POST", path, FORM)
+        assert status == 409 and "release 1.0.0 is on main but not in this checkout" in data["error"]
 
 
 def test_statuses(server):
@@ -763,6 +844,7 @@ def spawned(monkeypatch):
         self.finish(job, 0)
 
     monkeypatch.setattr(jobs_module.Jobs, "_spawn", fake)
+    monkeypatch.setattr(app_module.App, "wait_for_branch", lambda self, experiment_id, names: None)  # no process, no branch
     return seen
 
 

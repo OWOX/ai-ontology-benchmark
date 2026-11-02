@@ -9,7 +9,7 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
 ## Inputs
 
 1. `--experiment ID`. Reads `results/<ID>/experiment.toml` and every file in `results/<ID>/raw/`.
-2. `--release VERSION`, default the release in the experiment config. It must be that release or a [mirror](../definitions.md#releases-and-experiments) of it: same major and minor, the same `inputs.jsonl` hash, and the same `prompt_versions`. For example, an experiment run on `1.1.0` can be scored under `1.1.1`, never under `1.2.0`.
+2. `--release VERSION`, default the release in the experiment config. It must be that release or a [mirror](../definitions.md#releases-and-experiments) of it: same major and minor, the same `inputs.jsonl` hash, and the same `prompt_versions`, and the same `decision_prompt_versions` when both releases hold it. For example, an experiment run on `1.1.0` can be scored under `1.1.1`, never under `1.2.0`.
 3. The assessment files in the working tree must hash to that release's `assessment_sha256`, and the working tree must render exactly the prompt versions the release froze (the same checks [run](run.md) makes). To score under an older release, check out its tag first.
 4. Token prices. On the first evaluate of an experiment, `config/prices.toml` is copied to `results/<ID>/prices.toml`. Every later evaluate reads the copy, so a price change never rewrites a committed report. To use new prices, delete the copy on purpose.
 5. Every AI model in the experiment config needs a price in the prices file, whether or not it has records.
@@ -20,7 +20,8 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
 
 ## Outputs
 
-1. `compute(raw_records, release_dir, prices, models=None) -> (attempt_rows, metric_rows, summary_rows)`. `models` is the list of AI model names in config order, used to sort the rows; it defaults to the names found in the records.
+1. `compute(raw_records, release_dir, prices, models=None, decision_models=frozenset()) -> (attempt_rows, metric_rows, summary_rows)`. `models` is the list of AI model names in config order, used to sort the rows; it defaults to the names found in the records.
+   `evaluate` builds `decision_models` from the experiment config: the names of the AI models whose provider is a decision provider. `compute` passes the flag to the [validator](validator.md#decision-path) for their records, so those raw responses are read as arrays of calls.
    1. `attempt_rows` has one row per raw record: its identifying fields, the outcome from re-validation, and the outcome stored in the raw record.
    2. `metric_rows` has one row per puzzle, setup, AI model, scramble depth, and validity label, with these columns:
       1. `attempts` and `infrastructure_failure_count`.

@@ -16,14 +16,13 @@
     <div id="links" class="links"></div>
     <p id="fetch-error" class="msg err small" role="status"></p>
     <div class="menu-foot">
-      <div class="release-pick">
-        <select id="release" aria-label="Release"></select>
+      <div class="foot-row">
+        <div id="theme" class="theme-pick" role="group" aria-label="Theme">
+          <button type="button" data-theme="light" aria-pressed="false">Light</button>
+          <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+          <button type="button" data-theme="system" aria-pressed="false">System</button>
+        </div>
         <button id="refresh" type="button" class="small" title="Fetch from GitHub again" aria-label="Refresh">&#x21bb;</button>
-      </div>
-      <div id="theme" class="theme-pick" role="group" aria-label="Theme">
-        <button type="button" data-theme="light" aria-pressed="false">Light</button>
-        <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
-        <button type="button" data-theme="system" aria-pressed="false">System</button>
       </div>
     </div>
   </nav>

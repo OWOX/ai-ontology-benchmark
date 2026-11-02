@@ -1,5 +1,5 @@
 // Spec: docs/specs/ui.md (Models)
-// One block per provider: the key badge and icons (/api/secrets) and a table of the catalogue models. Reads the bundle only.
+// The title with the catalogue's source icon, then one block per provider: the key badge and Edit icon (/api/secrets) and a table of the catalogue models. Reads the bundle only.
 (function () {
   const h = UI.el;
 
@@ -18,36 +18,41 @@
     return a;
   }
 
-  async function secret(p, action, msg, key) {
+  async function secret(p, action, msg, key, account) {
     msg.textContent = ""; msg.className = "msg";
     try {
-      await UI.api("/api/secrets", { method: "POST", body: { provider: p.name, action, api_key: key } });
+      await UI.api("/api/secrets", { method: "POST", body: { provider: p.name, action, api_key: key, ...(account === undefined ? {} : { account_id: account }) } });
       await UI.reload(false);
       return true;
     } catch (e) { msg.textContent = e.message; msg.className = "msg err"; return false; }
   }
 
-  // The key edit row: the password field, showing only the saved key's last 4 characters, then Save, Cancel,
-  // and Clear. Cancel is left out when there is no key to fall back to, and Clear when no key is saved in a file.
+  // The key edit row: the password field, showing only the saved key's last 4 characters, then (for a provider
+  // with an account id) a second password field, then Save, Cancel, and Clear. An empty field keeps the saved value. Cancel is left out when there is no key to fall back to, and Clear when no key is saved in a file.
   function editRow(p, msg, onCancel) {
-    const saved = p.key.source === "file";
+    const saved = p.key.source === "file" || (p.key.account && p.key.account.source === "file");
     const field = h("input", { type: "password", autocomplete: "off", "aria-label": `${p.name} API key`,
-      placeholder: saved ? "•".repeat(12) + p.key.tail : p.variable });
+      placeholder: p.key.source === "file" ? "•".repeat(12) + p.key.tail : p.variable });
+    const acc = p.key.account;
+    const accountField = acc ? h("input", { type: "password", autocomplete: "off", "aria-label": `${p.name} account id`,
+      placeholder: acc.source === "file" ? "•".repeat(12) : acc.variable }) : null;
     const save = h("button", { type: "button", text: "Save" });
     save.addEventListener("click", async () => {
       const key = field.value; field.value = "";
+      let account;
+      if (accountField) { account = accountField.value; accountField.value = ""; }
       // The reload redraws the page, so the new Edit icon takes the focus.
-      if (await secret(p, "save", msg, key)) { const e = document.querySelector(`.provider[data-provider="${p.name}"] [aria-label="Edit API key"]`); if (e) e.focus(); }
+      if (await secret(p, "save", msg, key, account)) { const e = document.querySelector(`.provider[data-provider="${p.name}"] [aria-label="Edit API key"]`); if (e) e.focus(); }
     });
-    const row = h("div", { class: "row key-row" }, field, save);
+    const row = h("div", { class: "row key-row" }, field, ...(accountField ? [accountField] : []), save);
     if (onCancel) {
       const cancel = h("button", { type: "button", text: "Cancel" });
-      cancel.addEventListener("click", () => { field.value = ""; onCancel(); });
+      cancel.addEventListener("click", () => { field.value = ""; if (accountField) accountField.value = ""; onCancel(); });
       row.append(cancel);
     }
     if (saved) {
       const clear = h("button", { type: "button", class: "danger", text: "Clear" });
-      clear.addEventListener("click", () => { if (confirm(`Delete the saved ${p.name} API key?`)) secret(p, "clear", msg, ""); });
+      clear.addEventListener("click", () => { if (confirm(`Delete the saved ${p.name} ${p.key.account ? "API token and account id" : "API key"}?`)) secret(p, "clear", msg, ""); });
       row.append(clear);
     }
     return row;
@@ -55,25 +60,26 @@
 
   function providerBlock(p, bundle, msg, q) {
     const k = p.key;
-    const status = !k ? "" : k.source === "file" ? `Key …${k.tail} from secrets/${p.name}.json`
-      : k.source === "env" ? `Set by env var ${p.variable}` : "No API key";
+    const acc = k && k.account;
+    const lacks = !k ? [] : [k.source === "missing" ? "API key" : null, acc && acc.source === "missing" ? "account id" : null].filter(Boolean);
+    const status = !k ? "" : lacks.length ? `Missing: ${lacks.join(" and ")}` : k.source === "file" ? `Key …${k.tail} from secrets/${p.name}.json`
+      : `Set by env var ${p.variable}`;
+    const missing = k && lacks.length > 0;
     const head = h("div", { class: "provider-head" }, h("span", { text: p.name }));
-    if (k) head.append(h("span", { class: "badge " + (k.source === "missing" ? "bad" : "ok"), title: status, text: k.source === "missing" ? "not configured" : "configured" }));
-    if (k && k.source !== "missing") head.append(h("span", { class: "muted small", title: status, text: status }));
+    if (k) head.append(h("span", { class: "badge " + (missing ? "bad" : "ok"), title: status, text: missing ? "not configured" : "configured" }));
     const slot = h("div");
     let edit = null;
     const close = () => { slot.replaceChildren(); if (edit) edit.focus(); };
     const open = () => {
       if (slot.firstChild) return;
-      const row = editRow(p, msg, k.source === "missing" ? null : close);
+      const row = editRow(p, msg, missing ? null : close);
       slot.replaceChildren(row);
       row.querySelector("input").focus();
     };
     const icons = h("div", { class: "provider-icons" });
-    if (k && (k.source === "file" || k.source === "missing")) icons.append(edit = icon("edit", "Edit API key", open));
-    if (bundle.repo && bundle.main_sha) icons.append(icon("source", "Source: config/models.toml", null, `${bundle.repo}/blob/${bundle.main_sha}/config/models.toml`));
+    if (k && (k.source === "file" || missing || (acc && acc.source === "file"))) icons.append(edit = icon("edit", "Edit API key", open));
     head.append(icons);
-    if (k && k.source === "missing") open();
+    if (missing) open();
     return h("section", { class: "step provider", "data-provider": p.name }, head, slot, modelTable(p, q));
   }
 
@@ -84,7 +90,7 @@
   const colgroup = () => h("colgroup", {}, ...COLS.map((w) => h("col", { style: "width:" + w })));
 
   function modelRow(m, p, q) {
-    const noKey = p.key && p.key.source === "missing";
+    const noKey = p.key && !p.key.configured;
     const n = m.experiments.length;
     const name = h("td", {}, h("strong", { text: m.name }));
     if (m.disabled_reason && !noKey) name.append(h("div", { class: "reason", text: m.disabled_reason }));
@@ -105,7 +111,10 @@
   UI.registerPage("models", {
     render(bundle, params, el) {
       const q = params.release ? "&release=" + encodeURIComponent(params.release) : "";
-      el.append(h("h2", { text: "Models" }));
+      const title = h("h2", { class: "with-icon" }, "Models");
+      // One catalogue serves every provider, so its source link sits by the page title.
+      if (bundle.repo && bundle.main_sha) title.append(icon("source", "Source: config/models.toml", null, `${bundle.repo}/blob/${bundle.main_sha}/config/models.toml`));
+      el.append(title);
       const msg = h("p", { class: "msg", role: "status" });
       for (const p of bundle.providers) el.append(providerBlock(p, bundle, msg, q));
       el.append(h("p", { class: "muted small", text: "Keys are stored in ./secrets/ (one file per provider), which is .gitignored and never committed." }), msg);

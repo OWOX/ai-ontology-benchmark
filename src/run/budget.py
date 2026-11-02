@@ -8,7 +8,9 @@ import math
 from pathlib import Path
 
 from src.evaluate.metrics import attempt_cost
-from src.run.prompts import build_prompt
+from src.puzzles.registry import get_engine
+from src.run.models import DECISION_PROVIDERS
+from src.run.prompts import build_prompt, worst_state
 from src.run.raw import read_raw
 
 TOLERANCE = 1e-9  # keeps float rounding from stopping a run that sits exactly on a limit
@@ -49,9 +51,11 @@ def spent_by_model(config: dict, prices: dict, raw_dir: Path) -> dict[str, float
 
 
 def check_spend(config: dict, prices: dict, raw_dir: Path, model_name: str,
-                next_cost: float, attempts_left: int) -> None:
-    """Raise BudgetError if the next worst-case request could pass the model or experiment budget."""
-    spent = spent_by_model(config, prices, raw_dir)
+                next_cost: float, attempts_left: int, spent: dict[str, float] | None = None) -> None:
+    """Raise BudgetError if the next worst-case request could pass the model or experiment budget.
+    `spent` is a reading from spent_by_model; without it the raw files are read now."""
+    if spent is None:
+        spent = spent_by_model(config, prices, raw_dir)
     budget = config["budget"]
     left = f"{attempts_left} attempts left"
     if spent[model_name] + next_cost > budget["per_model_usd"] + TOLERANCE:
@@ -65,15 +69,25 @@ def check_spend(config: dict, prices: dict, raw_dir: Path, model_name: str,
             f"(spent {total:.4f}, next request up to {next_cost:.4f}); {left}")
 
 
-def print_estimate(config: dict, pending: list, prices: dict, templates: Path, raw_dir: Path) -> None:
+def print_estimate(config: dict, pending: list, prices: dict, templates: Path, raw_dir: Path,
+                   cap: int = 0) -> None:
+    """A decision model's attempt makes up to cap calls, each as long as the longest state."""
     spent = spent_by_model(config, prices, raw_dir)
     budget = config["budget"]
     total = 0.0
     for model in config["models"]:
         name = model["name"]
-        prompts = [build_prompt(templates, row, setup) for row, m, setup, _ in pending if m["name"] == name]
-        cost = sum(worst_case_request_cost(p, config["max_output_tokens"], prices[name]) for p in prompts)
-        tokens_in = sum(math.ceil(len(p) / 4) for p in prompts)
+        is_decision = model["provider"] in DECISION_PROVIDERS
+        calls = cap if is_decision else 1
+        prompts = []
+        for row, m, setup, _ in pending:
+            if m["name"] == name:
+                prompt = build_prompt(templates, row, setup)
+                if is_decision:
+                    prompt = worst_state(prompt, get_engine(row["puzzle"]).legal_moves(), cap)
+                prompts.append(prompt)
+        cost = calls * sum(worst_case_request_cost(p, config["max_output_tokens"], prices[name]) for p in prompts)
+        tokens_in = calls * sum(math.ceil(len(p) / 4) for p in prompts)
         total += cost
         print(f"{name}: {len(prompts)} attempts, ~{tokens_in} input tokens, worst case ${cost:.4f}; "
               f"spent ${spent[name]:.4f} of per_model_usd {budget['per_model_usd']}")

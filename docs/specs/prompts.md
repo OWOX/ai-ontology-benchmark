@@ -1,10 +1,10 @@
 # prompts
 
-Files: `src/run/prompts.py`, `prompts/<setup>/<puzzle>.txt`.
+Files: `src/run/prompts.py`, `prompts/<setup>/<puzzle>.txt`, `prompts/decision/questions.txt`.
 
 ## Purpose
 
-Turn one input and one [setup](../definitions.md#setups) into the exact prompt text, and compute the [prompt version](../definitions.md#setups) of every setup and puzzle in a release. Every AI model gets the same text for the same input and setup.
+Turn one input and one [setup](../definitions.md#setups) into the exact prompt text, and compute the [prompt version](../definitions.md#setups) and the [decision prompt version](../definitions.md#setups) of every setup and puzzle in a release. Every AI model gets the same text for the same input and setup.
 
 ## Inputs
 
@@ -17,7 +17,13 @@ Turn one input and one [setup](../definitions.md#setups) into the exact prompt t
 1. `build_prompt(templates_dir, input, setup) -> str`. The template with `{state}` replaced by the engine's `render()` and, for the prescriptive setup, `{legal_moves}` replaced by `legal_moves()` joined with single spaces, in the order the engine returns them. There is no system prompt. The text goes to the AI model as one user message.
 2. `prompt_versions(templates_dir, inputs) -> {setup: {puzzle: version}}`. For each setup and puzzle, the first 12 hex characters of one sha256 over every prompt built for it, in input order, each followed by a newline. A change to a template, to `render()`, or to `legal_moves()` changes the version.
 
-Both raise `ValueError` if a template is missing, has an unknown placeholder, lacks `{state}`, or (for the prescriptive setup) lacks `{legal_moves}`. Templates are read as UTF-8.
+3. `load_questions(templates_dir) -> {"next_move": str, "done": str, "mismatch": str}`. Reads `decision/questions.txt`, one `key: text` per line. Raises `ValueError` naming the file if it is missing or lacks a key.
+4. `worst_state(prompt, legal, cap) -> str`. The longest state a call can send: `decision_state` with `cap` copies of the longest move. For worst-case cost.
+4a. `decision_state(prompt, moves) -> str`. The prompt, a blank line, then `Moves so far: ` and the moves joined by single spaces, or `none`.
+5. `decision_questions(questions, legal) -> dict`. The request's `questions` object: `next_move` of type `choice` whose `criteria` map `move_<n>` (the move's position in `legal` from 1) to the move string, then `done` to the description from the file, and `mismatch` of type `noul`.
+6. `decision_prompt_versions(templates_dir, inputs) -> {setup: {puzzle: version}}`. For each setup and puzzle, the [decision prompt version](../definitions.md#setups): the first 12 hex characters of one sha256 over the questions file's bytes, then, for every input in order, `decision_state(prompt, [])` and `json.dumps(decision_questions(questions, legal), sort_keys=True)`, each followed by a newline. A change to `questions.txt`, to the suffix `decision_state` adds, or to the request's structure changes the decision versions and no LLM version.
+
+`build_prompt` and `prompt_versions` raise `ValueError` if a template is missing, has an unknown placeholder, lacks `{state}`, or (for the prescriptive setup) lacks `{legal_moves}`. Templates are read as UTF-8.
 
 ## How to test
 
@@ -28,7 +34,12 @@ Both raise `ValueError` if a template is missing, has an unknown placeholder, la
 5. Patching the engine's `render()` in a test changes every version for that puzzle.
 6. A template with `{scramble}` raises `ValueError`.
 7. A template without `{state}`, and a prescriptive template without `{legal_moves}`, each raise `ValueError`.
+8. `decision_state` gives `none` for no moves and the moves joined by spaces otherwise.
+9. `decision_questions` names options `move_1`, `move_2`, and so on, and keeps `done` last.
+10. `load_questions` raises `ValueError` for a missing file and for a missing key.
+11. Editing `questions.txt` changes every decision version and leaves `prompt_versions` equal.
 
 ## Open
 
-The template text for each setup ([open item 1](../../AGENTS.md#open)) was approved by the project owner on 2026-10-23. All three setups share the description of the state format, the notation name, and the closing instructions, so only the rules differ. The prescriptive setup carries the descriptive rules plus the move list.
+The template text for each setup ([open item 1](../../AGENTS.md#open)) was approved by the project owner on 2026-10-23. All three setups share the description of the state format, the notation name, and the closing instructions, so only the rules differ. The prescriptive setup carries the descriptive rules plus the move list. The text of `decision/questions.txt` was approved by the project owner on 2026-11-01.
+12. Changing the suffix `decision_state` adds, or the structure `decision_questions` builds, changes every decision version and leaves `prompt_versions` equal.
