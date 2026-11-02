@@ -19,15 +19,18 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.config import load_experiment_config, load_prices, parse_experiment_config
+from src.config import load_experiment_config, load_prices, max_moves, parse_experiment_config
 from src.release.release import assessment_sha256
 from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
                             print_estimate, worst_case_request_cost)
+from src.run.decision import DecisionResult, run_decision_attempt, worst_state
 from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model
 from src.run.progress import Progress
-from src.run.prompts import SETUPS, both_prompt_versions, build_prompt, prompt_versions
+from src.run.prompts import (SETUPS, both_prompt_versions, build_prompt, decision_questions, decision_state,
+                             load_questions, prompt_versions)
 from src.run.raw import read_raw
+from src.puzzles.registry import get_engine
 from src.validator import validate
 
 
@@ -138,14 +141,21 @@ def call_with_retries(model: dict, prompt: str, config: dict, can_afford) -> tup
 
 
 def make_record(config, manifest, row, model, setup, number, prompt, versions,
-                reply, retry_in: int, retry_out: int) -> dict:
-    """Build the raw record of one attempt from the reply (None after an infrastructure failure)."""
-    if reply is None:
+                reply, retry_in: int, retry_out: int, decision: DecisionResult | None = None) -> dict:
+    """Build the raw record of one attempt from the reply (None after an infrastructure failure).
+    A decision model passes its DecisionResult instead, and the raw response is the array of its calls."""
+    if decision is not None:
+        text, stop, served = json.dumps(decision.calls), decision.stop_reason, decision.served_model
+        tokens_in, tokens_out, latency = decision.input_tokens, decision.output_tokens, decision.latency_s
+        retry_in, retry_out = decision.retry_input_tokens, decision.retry_output_tokens
+        if not decision.calls and stop == "infrastructure_failure":
+            text = ""
+    elif reply is None:
         text, stop, served, tokens_in, tokens_out, latency = "", "infrastructure_failure", "", 0, 0, None
     else:
         text, stop, served = reply.text, reply.stop_reason, reply.served_model
         tokens_in, tokens_out, latency = reply.input_tokens, reply.output_tokens, reply.latency_s
-    verdict = validate(row, text, stop)
+    verdict = validate(row, text, stop, decision=decision is not None)
     return {
         "experiment_id": config["experiment_id"], "release_version": config["release"],
         "input_id": row["input_id"], "input_set_id": manifest["input_set_id"],
@@ -211,10 +221,14 @@ def run(args: argparse.Namespace) -> int:
     pending = list(pending_attempts(config, inputs, results / "raw", args.model))
     if args.limit is not None:
         pending = pending[: args.limit]
+    cap = max_moves(config, manifest["release_config"])
     for row, model, setup, _ in pending:
-        check_request_budget(source, config, model, build_prompt(folder / "prompts", row, setup), prices)
+        prompt = build_prompt(folder / "prompts", row, setup)
+        if model["provider"] in DECISION_PROVIDERS:  # the longest state any call of the attempt sends
+            prompt = worst_state(prompt, get_engine(row["puzzle"]).legal_moves(), cap)
+        check_request_budget(source, config, model, prompt, prices)
     if args.estimate:
-        print_estimate(config, pending, prices, folder / "prompts", results / "raw")
+        print_estimate(config, pending, prices, folder / "prompts", results / "raw", cap)
         return 0
     versions = manifest["prompt_versions"]
     branch = None
@@ -262,21 +276,37 @@ def finish(branch: ResultsBranch, experiment_id: str) -> None:
 
 
 def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress) -> None:
+    cap = max_moves(config, manifest["release_config"])
     for left, (row, model, setup, number) in zip(range(len(pending), 0, -1), pending):
         prompt = build_prompt(folder / "prompts", row, setup)
+        is_decision = model["provider"] in DECISION_PROVIDERS
+        legal = get_engine(row["puzzle"]).legal_moves() if is_decision else []
         if args.dry_run:
-            print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}\n{prompt}")
+            print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}")
+            if is_decision:
+                questions = decision_questions(load_questions(folder / "prompts"), legal)
+                print(f"{decision_state(prompt, [])}\n--- questions\n{json.dumps(questions, indent=2)}")
+            else:
+                print(prompt)
             continue
-        worst = worst_case_request_cost(prompt, config["max_output_tokens"], prices[model["name"]])
         price = prices[model["name"]]
+        worst = worst_case_request_cost(worst_state(prompt, legal, cap) if is_decision else prompt,
+                                        config["max_output_tokens"], price)
 
         def can_afford(retry_in: int, retry_out: int) -> None:
             paid = (retry_in * price["price_input_per_mtok"] + retry_out * price["price_output_per_mtok"]) / 1e6
             check_spend(config, prices, results / "raw", model["name"], worst + paid, left)
 
-        reply, retry_in, retry_out, stop = call_with_retries(model, prompt, config, can_afford)
-        record = make_record(config, manifest, row, model, setup, number, prompt, versions,
-                             reply, retry_in, retry_out)
+        result = None
+        if is_decision:
+            result = run_decision_attempt(model, prompt, legal, load_questions(folder / "prompts"),
+                                          cap, config["retry_cap"], can_afford)
+            reply, retry_in, retry_out, stop = None, result.retry_input_tokens, result.retry_output_tokens, result.budget_stop
+        else:
+            reply, retry_in, retry_out, stop = call_with_retries(model, prompt, config, can_afford)
+        record = make_record(config, manifest, row, model, setup, number, prompt,
+                             manifest["decision_prompt_versions"] if is_decision else versions,
+                             reply, retry_in, retry_out, result)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
         outcomes[record["outcome"]] += 1
         progress.update(record)

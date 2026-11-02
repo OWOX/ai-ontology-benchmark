@@ -1,6 +1,6 @@
 # run
 
-Files: `src/run/run.py`, `src/run/branch.py`, `src/run/progress.py`.
+Files: `src/run/run.py`, `src/run/decision.py`, `src/run/branch.py`, `src/run/progress.py`.
 
 ## Purpose
 
@@ -18,7 +18,7 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
    4. If `results/<ID>/experiment.toml` exists, it equals the experiment config apart from the `[budget]` table. An experiment never changes once it starts, except that its budget can be raised to resume.
    5. Every AI model in the experiment has a price in `config/prices.toml`.
    6. If the config has `puzzles`, every name is in the release's `release_config.puzzles`. The error names the config path and the field `puzzles`.
-   7. For every attempt still to run, the [worst-case request cost](../definitions.md#baseline-and-prices) is at most `per_request_usd`. The error names the AI model and its worst-case cost.
+   7. For every attempt still to run, the [worst-case request cost](../definitions.md#baseline-and-prices) is at most `per_request_usd`. The error names the AI model and its worst-case cost. For a decision model the request is the longest call of the attempt, the prompt with `max_moves` of the longest move after it (`worst_state(prompt, legal, cap)`).
    8. If the manifest holds `decision_prompt_versions`, `decision_prompt_versions()` equals it. If it lacks the field, this check is skipped, and `run` exits with code 1 naming `decision_prompt_versions` when any AI model in the experiment is a decision model (`load_release(folder, needs_decision)`). Releases cut before decision models keep working for the other AI models.
 
    It exits with code 1 before any call if a check fails.
@@ -28,8 +28,8 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
 4. Optional flags:
    1. `--model NAME` runs one AI model from the experiment. Separate processes can run different AI models at the same time, because each writes its own file.
    2. `--limit N` stops after N new attempts. For smoke tests.
-   3. `--dry-run` prints each prompt and writes nothing.
-   4. `--estimate` prints, for each AI model, the number of attempts still to run, the input tokens estimated as prompt characters divided by 4, and the worst-case cost with every answer at `max_output_tokens`, using `config/prices.toml`, and the cost spent so far against each budget. It calls nothing and writes nothing.
+   3. `--dry-run` prints each prompt and writes nothing. For a decision model it prints the first call's state (the prompt, then `Moves so far: none`) and the questions object.
+   4. `--estimate` prints, for each AI model, the number of attempts still to run, the input tokens estimated as prompt characters divided by 4, and the worst-case cost with every answer at `max_output_tokens`, using `config/prices.toml`, and the cost spent so far against each budget. For a decision model, the worst case is per attempt: `max_moves + 1` calls, each with the longest state (`worst_state`). It calls nothing and writes nothing.
    5. `--no-commit` skips the results branch described under Outputs. For tests.
    6. `--config -` reads the config from stdin, as in item 1.
    7. `--releases DIR`, `--configs DIR`, `--prices PATH`, and `--results DIR`, for tests.
@@ -58,6 +58,15 @@ Loop order: for each input, for each AI model, for each setup (`no_model`, `desc
 4. Call [models](models.md). On `InfrastructureError`, retry up to `retry_cap` times, adding any token counts from the failed calls to the retry token fields. Never retry for any other reason.
 5. If the cap is reached, the raw response is empty and `stop_reason` is `infrastructure_failure`.
 6. Run the [validator](validator.md) and write the record. The first [impossible move](../definitions.md#puzzles) in a reply makes the outcome `hallucination`: the attempt fails, the reply is stored whole, and `run` never asks again, because retries are for [infrastructure failures](../definitions.md#attempts-and-outcomes) only. The loop calls the model (with retries) and passes the reply and the retry token counts to the function that builds the record, so building a record never calls an API.
+
+A decision model's attempt is not one call, so step 4 and 5 are replaced by `run_decision_attempt()` in `src/run/decision.py`, which returns a `DecisionResult`:
+
+1. For call `k`, `call_decision()` gets `decision_state(prompt, moves so far)` and `decision_questions(questions, legal_moves())`. The questions come from `load_questions()` of the release's prompts.
+2. `can_afford(retry_in, retry_out)` runs before every call. A `BudgetError` before the first call is raised. A later one ends the loop with stop reason `infrastructure_failure`, and `play` writes the record, commits as usual, and then raises the `BudgetError`.
+3. An `InfrastructureError` adds its tokens to the retry tokens and counts one retry. Past `retry_cap` retries in the attempt, the loop stops with `infrastructure_failure`. A `RefusedError` stops it with `refused`, never retried.
+4. After each completed call, the loop stops when the `mismatch` probability is 0.5 or more, when the choice is `done`, or when the choice can't be read or mapped to `move_<n>` (stop reason `ok`, and the validator rules `malformed_output`). Otherwise the move is added, and the loop stops when the moves number `max_moves`.
+5. The record holds: `raw_response` is `json.dumps` of the completed calls; `input_tokens` and `output_tokens` are their sums; `latency_s` their sum; `served_model` the distinct values joined with `,`; `retry_*_tokens` the sums over failed calls; `prompt_version` is `decision_prompt_versions[setup][puzzle]`; the validator runs with `decision=True`. With `infrastructure_failure` and completed calls, the raw response, tokens, latency, and served model keep those calls. With none, the record is as for any AI model: raw response `""`, tokens 0, latency empty, served model `""`.
+6. The budget check counts the retry tokens of the attempt so far, not the tokens of its completed calls, which reach the check once the record is written.
 
 Each record has every field in [invariant 13](../../AGENTS.md#invariants): `experiment_id`, `release_version`, `input_id`, `input_set_id`, `puzzle`, `scramble_depth`, `validity`, `setup`, `prompt_version`, `model`, `seed`, `input_seed`, `attempt_number`, `raw_response`, `parsed_moves`, `outcome`, `hallucination`, `mismatch`, `move_count`, `input_tokens`, `output_tokens`, `retry_input_tokens`, `retry_output_tokens`, `latency_s`, `stop_reason`, and `served_model`, plus `created_at`. It never holds a cost or a metric.
 

@@ -3,12 +3,15 @@
 test_release), then calls run's main() in-process from inside that repo with the fake provider.
 """
 
+import csv
 import io
 import json
 import sys
 
 import pytest
 
+from src.evaluate import evaluate as evaluate_module
+from src.puzzles.registry import get_engine
 from src.run import models, run as run_module
 from src.run.models import InfrastructureError, Reply
 from src.run.raw import read_raw
@@ -698,3 +701,102 @@ def test_broken_stdin_config_refused_before_any_write(exp, monkeypatch, capsys):
     assert stdin_run(exp, monkeypatch, 'release = "1.0.0"\n') == 1
     assert "<stdin>" in capsys.readouterr().err
     assert not (exp / "results").exists()
+
+
+# Decision models. One model, one attempt per setup, driven by models.FAKE_DECISION_REPLIES.
+
+DECISION_EXPERIMENT = (
+    'release = "1.0.0"\nattempts = 1\nretry_cap = 3\nmax_output_tokens = 100\n'
+    '[[models]]\nname = "D"\nprovider = "fake_decision"\napi_model_id = "d-1"\n'
+)
+
+
+def decision_exp(repo, monkeypatch, config=DECISION_EXPERIMENT, prices="[D]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n"):
+    (repo / "config" / "experiments" / "exp.toml").write_text(config, encoding="utf-8")
+    (repo / "config" / "prices.toml").write_text(prices, encoding="utf-8")
+    monkeypatch.setattr(models, "FAKE_DECISION_REPLIES", [])
+    return models.FAKE_DECISION_REPLIES
+
+
+def d_reply(choice, p=0.0, tokens=(10, 0), model="d-served", latency=0.25):
+    call = {"answers": {"next_move": {"type": "choice", "choice": choice},
+                        "mismatch": {"type": "noul", "noul": p}},
+            "usage": {"input_tokens": tokens[0], "output_tokens": tokens[1]}, "model": model}
+    return models.DecisionReply(call, tokens[0], tokens[1], model, latency)
+
+
+def solving_replies(repo):
+    """The replies that undo the first input's scramble, then say done."""
+    first = json.loads((repo / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert first["validity"] == "valid"
+    legal = get_engine(first["puzzle"]).legal_moves()
+    undo = [m[:-1] if m.endswith("'") else m if m.endswith("2") else m + "'" for m in reversed(first["scramble"])]
+    return [d_reply(f"move_{legal.index(m) + 1}") for m in undo] + [d_reply("done")]
+
+
+def test_decision_model_end_to_end(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    solved = solving_replies(exp)
+    fake[:] = [*solved, models.DecisionReply({}, 3, 0, "d-served", 0.1),
+               *[InfrastructureError("x", 5, 1) for _ in range(4)]]
+    assert go("--limit", "3") == 0
+    solved_row, malformed_row, failed_row = records(exp, "D")
+    assert solved_row["outcome"] == "success" and solved_row["hallucination"] is False
+    assert len(json.loads(solved_row["raw_response"])) == len(solved)
+    assert solved_row["input_tokens"] == 10 * len(solved) and solved_row["served_model"] == "d-served"
+    assert solved_row["latency_s"] == pytest.approx(0.25 * len(solved)) and solved_row["stop_reason"] == "ok"
+    assert solved_row["prompt_version"] == json.loads(
+        (exp / "releases/1.0.0/manifest.json").read_text(encoding="utf-8"))["decision_prompt_versions"]["no_model"]["2x2"]
+    assert malformed_row["outcome"] == "malformed_output" and json.loads(malformed_row["raw_response"]) == [{}]
+    assert failed_row["outcome"] == "infrastructure_failure" and failed_row["raw_response"] == ""
+    assert (failed_row["retry_input_tokens"], failed_row["retry_output_tokens"]) == (20, 4)
+    assert failed_row["latency_s"] is None and failed_row["served_model"] == "" and failed_row["input_tokens"] == 0
+    assert set(solved_row) == FIELDS
+    assert evaluate_module.main(["--experiment", "exp"]) == 0
+    with open(exp / "results/exp/1.0.0.metrics.csv", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    by_setup = {r["setup"]: r for r in rows if r["model"] == "D"}
+    assert by_setup["no_model"]["success_rate"] == "1.0000" and by_setup["no_model"]["hallucination_rate"] == "0.0000"
+    assert by_setup["descriptive"]["malformed_output_rate"] == "1.0000"
+    assert by_setup["prescriptive"]["infrastructure_failure_count"] == "1"
+    assert by_setup["prescriptive"]["success_rate_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
+
+
+def test_decision_infrastructure_failure_keeps_the_completed_calls(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    fake[:] = [d_reply("move_1", tokens=(7, 1)), *[InfrastructureError("x", 2, 0) for _ in range(4)]]
+    assert go("--limit", "1") == 0
+    (row,) = records(exp, "D")
+    assert row["outcome"] == "infrastructure_failure" and row["stop_reason"] == "infrastructure_failure"
+    assert len(json.loads(row["raw_response"])) == 1 and (row["input_tokens"], row["output_tokens"]) == (7, 1)
+    assert row["retry_input_tokens"] == 8 and row["served_model"] == "d-served"
+
+
+def test_decision_budget_stop_mid_attempt_writes_the_record_then_stops(exp, monkeypatch, capsys):
+    prices = "[D]\nprice_input_per_mtok = 0.0\nprice_output_per_mtok = 100.0\n"
+    fake = decision_exp(exp, monkeypatch, DECISION_EXPERIMENT + "[budget]\nper_model_usd = 0.015\n", prices)
+    fake[:] = [d_reply("move_1", tokens=(0, 0)), InfrastructureError("x", 0, 100), d_reply("done")]
+    assert go("--limit", "2") == 1
+    (row,) = records(exp, "D")  # the second attempt is never started
+    assert row["outcome"] == "infrastructure_failure" and len(json.loads(row["raw_response"])) == 1
+    assert row["retry_output_tokens"] == 100 and len(fake) == 1
+    assert capsys.readouterr().err.strip().splitlines()[-1].startswith("error: budget reached:")
+
+
+def test_decision_dry_run_prints_the_first_state_and_questions(exp, monkeypatch, capsys):
+    fake = decision_exp(exp, monkeypatch)
+    fake[:] = [d_reply("done")]
+    assert go("--dry-run", "--limit", "1") == 0
+    out = capsys.readouterr().out
+    assert "Moves so far: none" in out and "--- questions" in out and '"move_1"' in out
+    assert len(fake) == 1 and not (exp / "results").exists()
+
+
+def test_decision_estimate_multiplies_the_worst_case_by_the_calls(exp, monkeypatch, capsys):
+    decision_exp(exp, monkeypatch)
+    assert go("--estimate") == 0
+    decision_line = capsys.readouterr().out.splitlines()[0]
+    (exp / "config" / "experiments" / "exp.toml").write_text(
+        DECISION_EXPERIMENT.replace('[[models]]', 'max_moves = 1\n[[models]]', 1), encoding="utf-8")
+    assert go("--estimate") == 0
+    assert decision_line != capsys.readouterr().out.splitlines()[0]

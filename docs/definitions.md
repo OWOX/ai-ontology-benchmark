@@ -68,7 +68,7 @@ Every term below means the same thing in code, configs, records, reports, and do
 9. **Prescriptive model.** The setup where the prompt lists the puzzle's move group, exactly as `legal_moves()` returns it, and the AI model must pick every move from that list. Only the prompt states the list. The output schema doesn't enforce it, so a move off the list is still possible, and it is an impossible move.
 10. **Prompt.** The full text sent to the AI model for one attempt. It contains the rendered state and never the scramble, because reversing the scramble solves the puzzle. It is the same for every AI model under the same setup and input.
 11. **Prompt version.** The version of the prompt text for one setup and puzzle in a release: the first 12 hex characters of one sha256 over every prompt built for that setup and puzzle, in input order. A change to the template, to `render()`, or to `legal_moves()` gives a new version.
-12. **Decision options.** The options of a decision model's move question: one per legal move, with id `move_<n>`, where `<n>` is the move's position in `legal_moves()` from 1, plus `done`, which says the moves so far solve the puzzle and ends the attempt.
+12. **Decision options.** The options of a decision model's move question: one per legal move, with id `move_<n>`, where `<n>` is the move's position in `legal_moves()` from 1, plus `done`, which says the moves so far solve the puzzle and ends the attempt. The request holds two questions: `next_move`, a choice among the options, and `mismatch`, a yes/no probability.
 
 ## Attempts and outcomes
 
@@ -79,7 +79,7 @@ Every term below means the same thing in code, configs, records, reports, and do
 5. **Report.** The experiment report and a CSV of its metrics, computed by `evaluate` from raw records, one release, and config.
 6. **Parsed moves.** The list of moves read from the AI model's JSON output, in the order given. For a decision model, the moves behind each call's `next_move` choice, in call order, before the first `done`.
 7. **Malformed output.** A response the validator can't use: it doesn't parse as the required JSON (for a decision model, the array of answers, where every call holds both questions and a choice the call offered), it was cut off at the token limit, or the AI model or a content filter refused to answer. A content-filter refusal counts here even when the API returns it as an error, and it is never retried.
-8. **Infrastructure failure.** A network error, timeout, or rate limit. `run` retries it up to the retry cap. When the cap is reached, the raw response is empty. A decision-model attempt keeps the calls that completed, and the retry cap counts across all its calls.
+8. **Infrastructure failure.** A network error, timeout, or rate limit. `run` retries it up to the retry cap. When the cap is reached, the raw response is empty, except that a decision-model attempt keeps the calls that completed, and the retry cap counts across all its calls.
 9. **Retry cap.** The maximum number of retries for one attempt. A config parameter.
 10. **Mismatch flag.** The flag in the AI model's JSON output that says the input describes a puzzle that can't be reached from the solved state by legal moves. For a decision model, it is on when any call's `mismatch` probability is 0.5 or more. Off for outcomes `malformed_output` and `infrastructure_failure`.
 11. **Hallucination flag.** True when the parsed moves contain at least one impossible move. False for outcomes `malformed_output` and `infrastructure_failure`, which have no parsed moves.
@@ -103,7 +103,7 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 4. **Retry input tokens and retry output tokens.** The token counts the API reports for every call in the attempt that failed, retried or not, summed and stored as returned. Zero when no call failed or the API reported no counts.
 5. **Latency.** The time from sending the request to receiving the full response, for the call that produced the raw response. For a decision model, the sum over its completed calls. Empty for outcome `infrastructure_failure`, except that a decision model with completed calls keeps their sum.
 6. **Stop reason.** How the call that produced the raw response ended (for a decision model, the last call of the attempt): `ok`, `truncated`, `refused`, or `infrastructure_failure`. The validator needs it, because a truncated or refused response can look like valid JSON.
-7. **Served model.** The AI model id the API reported for the call, stored as returned. For a decision model, the distinct values over its calls, in first-seen order, joined with `,`. Empty for outcome `infrastructure_failure`. It shows when a model alias pointed at a different model than expected.
+7. **Served model.** The AI model id the API reported for the call, stored as returned. For a decision model, the distinct values over its calls, in first-seen order, joined with `,`. Empty for outcome `infrastructure_failure`, except that a decision model with completed calls keeps its calls' values. It shows when a model alias pointed at a different model than expected.
 8. **Max moves.** The cap on the moves in one [decision-model](#setups) attempt. The attempt ends when its moves reach it. A config parameter, default twice the largest scramble depth in the release.
 
 ## Baseline and prices
