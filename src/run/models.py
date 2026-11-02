@@ -1,6 +1,8 @@
 # Spec: docs/specs/models.md
-"""Sends one prompt to one AI model and returns a Reply. Reads the provider's API key from its
-env var (ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY). Writes nothing.
+"""Sends one prompt to one AI model and returns a Reply, or one state and its questions to one
+decision model and returns a DecisionReply. Reads the provider's API key from its env var
+(ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, TYPESAFE_API_KEY, or CLOUDFLARE_API_TOKEN, plus
+CLOUDFLARE_ACCOUNT_ID). Writes nothing.
 This is the only file that talks to an AI model API.
 """
 
@@ -8,13 +10,21 @@ import os
 import time
 from dataclasses import dataclass
 
-KEY_VARIABLES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "google": "GOOGLE_API_KEY"}
+KEY_VARIABLES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "google": "GOOGLE_API_KEY",
+                 "typesafe": "TYPESAFE_API_KEY", "cloudflare": "CLOUDFLARE_API_TOKEN"}
+# A second variable some providers need besides the key.
+ACCOUNT_VARIABLES = {"cloudflare": "CLOUDFLARE_ACCOUNT_ID"}
+# Providers of decision models, which are called with call_decision() instead of call_model().
+DECISION_PROVIDERS = ("typesafe", "cloudflare", "fake_decision")
 # Google finish reasons that mean the answer was withheld.
 GOOGLE_REFUSALS = ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "RECITATION")
 
 # Tests fill this list. Each fake call pops the first item: a Reply is returned and an
 # InfrastructureError instance is raised.
 FAKE_REPLIES: list = []
+# The same for decision models: a DecisionReply is returned, an InfrastructureError or a
+# RefusedError instance is raised.
+FAKE_DECISION_REPLIES: list = []
 
 
 @dataclass(frozen=True)
@@ -34,6 +44,19 @@ class InfrastructureError(Exception):
         super().__init__(message)
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+
+
+@dataclass(frozen=True)
+class DecisionReply:
+    call: dict  # {"answers": ..., "usage": ..., "model": ...} exactly as the API returned them
+    input_tokens: int
+    output_tokens: int
+    served_model: str
+    latency_s: float
+
+
+class RefusedError(Exception):
+    """A content-filter refusal. Never retried. No decision-model SDK reports one today."""
 
 
 def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply:
@@ -137,6 +160,97 @@ def _fake() -> Reply:
     if isinstance(item, InfrastructureError):
         raise item
     return item
+
+
+def _typesafe_client(**options):
+    import typesafe_sdk
+
+    return typesafe_sdk.TypeSafeClient(**options)
+
+
+def _cloudflare_client(**options):
+    import cloudflare
+
+    return cloudflare.Cloudflare(**options)
+
+
+def _typesafe(model: dict, state: str, questions: dict, key: str) -> DecisionReply:
+    import typesafe_sdk
+    from pydantic import BaseModel, ConfigDict
+
+    class Raw(BaseModel):
+        """The reply as sent, so that nothing the SDK's typed answers would drop or change is lost."""
+
+        model_config = ConfigDict(extra="allow")
+        model: str
+        answers: dict
+        usage: dict | None = None
+
+    client = _typesafe_client(api_key=key, retry=typesafe_sdk.RetryPolicy(max_retries=0))
+    start = time.perf_counter()
+    try:
+        response = client.system_one(state, questions, model=model["api_model_id"], response_model=Raw)
+    except (typesafe_sdk.TypeSafeRateLimitError, typesafe_sdk.TypeSafeInternalServerError,
+            typesafe_sdk.TypeSafeAPIConnectionError) as error:  # connection errors include timeouts
+        raise InfrastructureError(f"typesafe: {error}") from error
+    latency = time.perf_counter() - start
+    return _decision_reply(response.model_dump(), latency)
+
+
+def _cloudflare(model: dict, state: str, questions: dict, key: str) -> DecisionReply:
+    import cloudflare
+
+    account = os.environ.get(ACCOUNT_VARIABLES["cloudflare"])
+    if not account:
+        raise ValueError(f"missing account id: set the env var {ACCOUNT_VARIABLES['cloudflare']}")
+    client = _cloudflare_client(api_token=key, max_retries=0)
+    body = {"model": model["api_model_id"].rsplit("/", 1)[-1], "state": state, "questions": questions}
+    start = time.perf_counter()
+    try:
+        # The SDK has no typed request for decision models, so the body goes through extra_body.
+        # It returns the envelope's result, already unwrapped, as a plain dict for this model.
+        result = client.ai.run(model["api_model_id"], account_id=account, extra_body=body)
+    except cloudflare.APIConnectionError as error:  # includes APITimeoutError
+        raise InfrastructureError(f"cloudflare: {error}") from error
+    except cloudflare.APIStatusError as error:
+        if error.status_code == 429 or error.status_code >= 500:
+            raise InfrastructureError(f"cloudflare: {error}") from error
+        raise
+    latency = time.perf_counter() - start
+    if result is None:
+        raise InfrastructureError("cloudflare: the response had no result")
+    return _decision_reply(result.model_dump() if hasattr(result, "model_dump") else dict(result), latency)
+
+
+def _decision_reply(data: dict, latency: float) -> DecisionReply:
+    usage = data.get("usage") or {}
+    return DecisionReply(data, usage.get("input_tokens") or 0, usage.get("output_tokens") or 0,
+                         data.get("model") or "", latency)
+
+
+def _fake_decision() -> DecisionReply:
+    if not FAKE_DECISION_REPLIES:
+        call = {"answers": {"next_move": {"type": "choice", "choice": "done"},
+                            "mismatch": {"type": "noul", "noul": 0.0}},
+                "usage": {"input_tokens": 0, "output_tokens": 0}, "model": "fake"}
+        return DecisionReply(call, 0, 0, "fake", 0.0)
+    item = FAKE_DECISION_REPLIES.pop(0)
+    if isinstance(item, (InfrastructureError, RefusedError)):
+        raise item
+    return item
+
+
+def call_decision(model: dict, state: str, questions: dict) -> DecisionReply:
+    """Send the state and questions to the decision model's provider and return one reply."""
+    provider = model["provider"]
+    if provider == "fake_decision":
+        return _fake_decision()
+    variable = KEY_VARIABLES[provider]
+    key = os.environ.get(variable)
+    if not key:
+        raise ValueError(f"missing API key: set the env var {variable}")
+    functions = {"typesafe": _typesafe, "cloudflare": _cloudflare}
+    return functions[provider](model, state, questions, key)
 
 
 def call_model(model: dict, prompt: str, max_output_tokens: int) -> Reply:

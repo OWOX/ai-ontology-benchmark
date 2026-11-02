@@ -17,11 +17,10 @@ from src.config import load_experiment_config, load_prices
 from src.evaluate.metrics import EvalError, compute
 from src.evaluate.report import write_report
 from src.release.release import parse_version
+from src.run.models import DECISION_PROVIDERS
 from src.run.raw import read_raw
 from src.run.run import RunError, load_release
 
-# Moves to src.run.models.DECISION_PROVIDERS in Task 4.
-DECISION_PROVIDERS = ("typesafe", "cloudflare", "fake_decision")
 
 REQUIRED = (
     "input_id", "setup", "model", "attempt_number", "raw_response", "stop_reason", "outcome",

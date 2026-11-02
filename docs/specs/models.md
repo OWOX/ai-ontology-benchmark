@@ -11,7 +11,7 @@ Send one prompt to one AI model and return the reply in the same shape for every
 1. One `models` entry from the experiment config ([config](config.md)), including its optional `params`.
 2. The prompt text.
 3. `max_output_tokens` from the experiment config.
-4. The provider's API key, read from its env var: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY`.
+4. The provider's API key, read from its env var: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY`. For decision models: `TYPESAFE_API_KEY` for `typesafe`, and `CLOUDFLARE_API_TOKEN` plus the account id in `CLOUDFLARE_ACCOUNT_ID` for `cloudflare`.
 
 ## Outputs
 
@@ -26,6 +26,17 @@ Send one prompt to one AI model and return the reply in the same shape for every
 7. Provider `fake` makes no network call. It returns replies from a list given to it in tests, and raises `InfrastructureError` when the list says so. When the list is empty, it returns the default reply: text `{"moves": [], "mismatch": false}`, stop reason `ok`, served model `fake`, zero tokens, and zero latency.
 8. A missing API key raises `ValueError` that names the env var, before any request is sent.
 
+## Decision models
+
+`call_decision(model, state, questions) -> DecisionReply` sends one state and its questions to a decision model. `DECISION_PROVIDERS` lists the providers that use it: `typesafe`, `cloudflare`, and `fake_decision`. The validator and [run](run.md) read the same tuple.
+
+1. `DecisionReply` has `call`, `input_tokens`, `output_tokens`, `served_model`, and `latency_s`. `call` is `{"answers": ..., "usage": ..., "model": ...}` exactly as the API returned them, plain and JSON-serializable, ready for the raw response array. Token counts are copied from `usage` as returned, and count as 0 when `usage` is missing. `served_model` is the reply's `model`.
+2. Provider `typesafe` uses `typesafe_sdk.TypeSafeClient(api_key=..., retry=RetryPolicy(max_retries=0))` and its `system_one(state, questions, model=api_model_id, response_model=...)`, which posts to `/v1/systemone`. The response model is a plain pydantic model that keeps every field as sent, so nothing the SDK's typed answers would drop or change is lost. `TypeSafeRateLimitError`, `TypeSafeInternalServerError`, and `TypeSafeAPIConnectionError`, which includes `TypeSafeAPITimeoutError`, raise `InfrastructureError`. Any other error, such as the 400 `TypeSafeBadRequestError` or the 422 `TypeSafeUnprocessableEntityError`, propagates.
+3. Provider `cloudflare` uses `cloudflare.Cloudflare(api_token=..., max_retries=0)` and `client.ai.run(api_model_id, account_id=..., extra_body={"model": ..., "state": ..., "questions": ...})`. The SDK has no typed request for these models, so the body goes through `extra_body`. The body's `model` is the part of `api_model_id` after the last `/`, which is `clef` or `clef-flash`. The SDK returns the envelope's `result`, already unwrapped. `APIConnectionError`, which includes `APITimeoutError`, HTTP 429, and HTTP 5xx raise `InfrastructureError`. Any other `APIStatusError` propagates. An empty result raises `InfrastructureError`.
+4. A missing key, or a missing `CLOUDFLARE_ACCOUNT_ID`, raises `ValueError` that names the env var, before any request is sent.
+5. `RefusedError` is for a content-filter refusal. Neither SDK has a distinct refusal error or code for these models, so no real provider raises it today. It exists for the fake and for later use. The loop driver records it as stop reason `refused`.
+6. Provider `fake_decision` makes no network call. It returns the items of `FAKE_DECISION_REPLIES` in order, which tests fill: a `DecisionReply` is returned, and an `InfrastructureError` or `RefusedError` instance is raised. When the list is empty, it returns a reply whose `next_move` choice is `done` and whose `mismatch` is `0.0`, with zero tokens and zero latency.
+
 ## How to test
 
 No test calls a real API.
@@ -38,3 +49,4 @@ No test calls a real API.
    4. A 429, a 500, and a timeout each raise `InfrastructureError`.
    5. The mock receives exactly one user message, no system prompt, and every key from `params`.
 3. A missing env var raises `ValueError` with the variable's name.
+4. For each decision provider, with the SDK client replaced by a stub: the call shape and the reply kept exactly, HTTP 429 and 503 raising `InfrastructureError`, HTTP 400 propagating, a missing key or account id raising `ValueError`, and the fake popping in order.

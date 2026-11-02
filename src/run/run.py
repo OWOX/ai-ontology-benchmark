@@ -24,7 +24,7 @@ from src.release.release import assessment_sha256
 from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
                             print_estimate, worst_case_request_cost)
-from src.run.models import InfrastructureError, call_model
+from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model
 from src.run.progress import Progress
 from src.run.prompts import SETUPS, both_prompt_versions, build_prompt, prompt_versions
 from src.run.raw import read_raw
@@ -33,10 +33,6 @@ from src.validator import validate
 
 class RunError(Exception):
     """A checked error. The message names the file or field at fault."""
-
-
-# Moves to src.run.models.DECISION_PROVIDERS in Task 4.
-DECISION_PROVIDERS = ("typesafe", "cloudflare", "fake_decision")
 
 
 def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list[dict]]:
