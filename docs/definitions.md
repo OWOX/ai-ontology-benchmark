@@ -59,7 +59,7 @@ Every term below means the same thing in code, configs, records, reports, and do
 
 1. **AI model.** The language model being tested. Which ones are tested comes from config.
 2. **System-1 model.** An AI model that answers directly, without a separate reasoning step before the answer.
-3. **Decision model.** An AI model that returns probabilities over options defined in the request and never generates text. It answers through a per-move loop of [calls](#attempts-and-outcomes), so it can't return an impossible move. Its entry in config names a decision provider.
+3. **Decision model.** An AI model that returns probabilities over options defined in the request and never generates text. It answers through a per-move loop of [calls](#attempts-and-outcomes), so it can't return an impossible move. Its options are the [decision options](#setups).
 4. **System-2 model.** An AI model trained to reason in tokens before it answers. It stays a system-2 model when an experiment runs it with reasoning switched off. Which kind an AI model is comes from the `kind` field of its entry in config.
 5. **Ontology model.** The rules of the system the AI model works in. For a puzzle, that means its pieces, its legal moves, and what each move does.
 6. **Setup.** How the ontology model goes into the prompt. There are three setups, and every input goes through all three.
@@ -68,6 +68,7 @@ Every term below means the same thing in code, configs, records, reports, and do
 9. **Prescriptive model.** The setup where the prompt lists the puzzle's move group, exactly as `legal_moves()` returns it, and the AI model must pick every move from that list. Only the prompt states the list. The output schema doesn't enforce it, so a move off the list is still possible, and it is an impossible move.
 10. **Prompt.** The full text sent to the AI model for one attempt. It contains the rendered state and never the scramble, because reversing the scramble solves the puzzle. It is the same for every AI model under the same setup and input.
 11. **Prompt version.** The version of the prompt text for one setup and puzzle in a release: the first 12 hex characters of one sha256 over every prompt built for that setup and puzzle, in input order. A change to the template, to `render()`, or to `legal_moves()` gives a new version.
+12. **Decision options.** The options of a decision model's move question: one per legal move, with id `move_<n>`, where `<n>` is the move's position in `legal_moves()` from 1, plus `done`, which says the moves so far solve the puzzle and ends the attempt.
 
 ## Attempts and outcomes
 
@@ -76,16 +77,16 @@ Every term below means the same thing in code, configs, records, reports, and do
 3. **Raw record.** The stored result of one attempt in `results/<experiment id>/raw/`. It is never edited.
 4. **Raw response.** The full text the API returned for an attempt, stored as received. For a decision model, it is the JSON array of the answers of every completed call, in order.
 5. **Report.** The experiment report and a CSV of its metrics, computed by `evaluate` from raw records, one release, and config.
-6. **Parsed moves.** The list of moves read from the AI model's JSON output, in the order given.
+6. **Parsed moves.** The list of moves read from the AI model's JSON output, in the order given. For a decision model, the moves behind each call's `next_move` choice, in call order, before the first `done`.
 7. **Malformed output.** A response the validator can't use: it doesn't parse as the required JSON (for a decision model, the array of answers, where every call holds both questions and a choice the call offered), it was cut off at the token limit, or the AI model or a content filter refused to answer. A content-filter refusal counts here even when the API returns it as an error, and it is never retried.
 8. **Infrastructure failure.** A network error, timeout, or rate limit. `run` retries it up to the retry cap. When the cap is reached, the raw response is empty. A decision-model attempt keeps the calls that completed, and the retry cap counts across all its calls.
 9. **Retry cap.** The maximum number of retries for one attempt. A config parameter.
-10. **Mismatch flag.** The flag in the AI model's JSON output that says the input describes a puzzle that can't be reached from the solved state by legal moves. Off for outcomes `malformed_output` and `infrastructure_failure`.
+10. **Mismatch flag.** The flag in the AI model's JSON output that says the input describes a puzzle that can't be reached from the solved state by legal moves. For a decision model, it is on when any call's `mismatch` probability is 0.5 or more. Off for outcomes `malformed_output` and `infrastructure_failure`.
 11. **Hallucination flag.** True when the parsed moves contain at least one impossible move. False for outcomes `malformed_output` and `infrastructure_failure`, which have no parsed moves.
 12. **Solved.** The validator applied every parsed move to the input state in order, every move was legal, and `is_solved()` is true for the final state. An empty move list is never solved, because no input starts solved.
 13. **Expected result.** For a valid input, the puzzle ends solved and the mismatch flag is off. For an invalid input, the mismatch flag is on. Moves returned with the flag on are still checked for impossible moves.
 14. **Outcome.** The one result the validator gives each attempt, checked in this order:
-    1. `infrastructure_failure`: the retry cap was reached, so there is no response to judge.
+    1. `infrastructure_failure`: the retry cap was reached, so there is no complete response to judge.
     2. `malformed_output`: malformed output.
     3. `hallucination`: the hallucination flag is true. The attempt fails, even if the final state happens to be solved.
     4. `success`: the expected result is reached.
@@ -98,7 +99,7 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 
 1. **Move count.** The number of parsed moves, in the half-turn metric. Each impossible move counts as one. Empty for outcomes `infrastructure_failure` and `malformed_output`.
 2. **Half-turn metric.** The way moves are counted: any turn of one part, including a half turn such as `R2`, counts as one move. How whole-puzzle rotations and wide moves count is still [open](../AGENTS.md#open).
-3. **Input tokens and output tokens.** The token counts the API reports for the call that produced the raw response, stored as returned. For a decision model, the sums over its completed calls. Zero for outcome `infrastructure_failure`. For Google, output tokens are `candidates_token_count + thoughts_token_count`, both as returned, because Gemini bills thoughts as output. The other providers' output counts already include reasoning tokens.
+3. **Input tokens and output tokens.** The token counts the API reports for the call that produced the raw response, stored as returned. For a decision model, the sums over its completed calls. Zero for outcome `infrastructure_failure`, except that a decision model with completed calls keeps their sums, so cost counts them. For Google, output tokens are `candidates_token_count + thoughts_token_count`, both as returned, because Gemini bills thoughts as output. The other providers' output counts already include reasoning tokens.
 4. **Retry input tokens and retry output tokens.** The token counts the API reports for every call in the attempt that failed, retried or not, summed and stored as returned. Zero when no call failed or the API reported no counts.
 5. **Latency.** The time from sending the request to receiving the full response, for the call that produced the raw response. For a decision model, the sum over its completed calls. Empty for outcome `infrastructure_failure`, except that a decision model with completed calls keeps their sum.
 6. **Stop reason.** How the call that produced the raw response ended (for a decision model, the last call of the attempt): `ok`, `truncated`, `refused`, or `infrastructure_failure`. The validator needs it, because a truncated or refused response can look like valid JSON.
