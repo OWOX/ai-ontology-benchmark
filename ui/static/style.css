@@ -22,8 +22,8 @@
     color-scheme: dark;
   }
 }
-:root[data-theme="dark"] select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1 3l4 4 4-4' fill='none' stroke='%239aa3b0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1 3l4 4 4-4' fill='none' stroke='%239aa3b0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); } }
+:root[data-theme="dark"] select, :root[data-theme="dark"] details.col-picker > summary { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1 3l4 4 4-4' fill='none' stroke='%239aa3b0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) select, :root:not([data-theme="light"]) details.col-picker > summary { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1 3l4 4 4-4' fill='none' stroke='%239aa3b0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); } }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
@@ -91,6 +91,12 @@ button.small { padding: 2px 8px; font-size: 12px; }
 input[type=password] { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--field); color: inherit; }
 .actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
 .exp-filters { margin-bottom: 20px; }
+details.col-picker { position: relative; margin: 0; border: 0; background: none; }
+details.col-picker > summary { list-style: none; display: block; box-sizing: border-box; height: 30px; line-height: 20px; padding: 4px 28px 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M1 3l4 4 4-4' fill='none' stroke='%236a7482' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 11px center / 10px 10px; font: inherit; min-width: 160px; cursor: pointer; }
+details.col-picker > summary::-webkit-details-marker { display: none; }
+.col-menu { position: absolute; z-index: 10; top: 34px; left: 0; min-width: 220px; padding: 6px 0; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, .12); }
+.col-menu label { display: flex; gap: 6px; align-items: center; padding: 3px 10px; white-space: nowrap; cursor: pointer; }
+.col-menu label:hover { background: var(--hover); }
 .msg { margin: 8px 0 0; min-height: 1em; font-size: 13px; }
 .msg.err { color: var(--danger); }
 .msg.ok { color: var(--ok); }
