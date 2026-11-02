@@ -59,7 +59,6 @@
       : k.source === "env" ? `Set by env var ${p.variable}` : "No API key";
     const head = h("div", { class: "provider-head" }, h("span", { text: p.name }));
     if (k) head.append(h("span", { class: "badge " + (k.source === "missing" ? "bad" : "ok"), title: status, text: k.source === "missing" ? "not configured" : "configured" }));
-    if (k && k.source !== "missing") head.append(h("span", { class: "muted small", title: status, text: status }));
     const slot = h("div");
     let edit = null;
     const close = () => { slot.replaceChildren(); if (edit) edit.focus(); };
@@ -73,6 +72,7 @@
     if (k && (k.source === "file" || k.source === "missing")) icons.append(edit = icon("edit", "Edit API key", open));
     if (bundle.repo && bundle.main_sha) icons.append(icon("source", "Source: config/models.toml", null, `${bundle.repo}/blob/${bundle.main_sha}/config/models.toml`));
     head.append(icons);
+    if (k && k.source !== "missing") head.append(h("span", { class: "muted small", title: status, text: status }));
     if (k && k.source === "missing") open();
     return h("section", { class: "step provider", "data-provider": p.name }, head, slot, modelTable(p, q));
   }
