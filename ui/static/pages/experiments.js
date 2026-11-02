@@ -50,6 +50,7 @@
     const lead = shown.filter((k) => k in cells);
     if (r.error) {
       const rest = shown.length - lead.length;
+      if (!rest) cells[lead[lead.length - 1]].append(" ", h("span", { class: "msg err", text: r.error }));
       return h("tr", {}, ...lead.map((k) => cells[k]), rest ? h("td", { colspan: String(rest), class: "msg err", text: r.error }) : null);
     }
     cells.attempts = h("td", { text: num(r.attempts) });
@@ -63,7 +64,7 @@
 
   // A dropdown of checkboxes, one per column. The experiment id always shows, because it is the row's link.
   // A toggle re-renders the page, so the new picker opens again to let several columns change in a row.
-  let reopen = false;
+  let reopen = null;  // the key of the checkbox just toggled
   function columnPicker(hidden, onChange) {
     const boxes = COLUMNS.map(([k, t]) => {
       const box = h("input", { type: "checkbox" });
@@ -71,7 +72,7 @@
       box.disabled = k === "id";
       box.addEventListener("change", () => {
         const off = COLUMNS.map(([c]) => c).filter((c) => c !== k ? hidden.has(c) : !box.checked);
-        reopen = true;
+        reopen = k;
         onChange(off.join(","));
       });
       return h("label", {}, box, " " + t);
@@ -80,8 +81,12 @@
     const picker = h("details", { class: "col-picker" },
       h("summary", { text: count === COLUMNS.length ? "all" : `${count} of ${COLUMNS.length}` }),
       h("div", { class: "col-menu" }, ...boxes));
-    picker.open = reopen;
-    reopen = false;
+    if (reopen) {
+      picker.open = true;
+      const box = boxes[COLUMNS.findIndex(([k]) => k === reopen)].firstChild;
+      requestAnimationFrame(() => box.focus());
+    }
+    reopen = null;
     return h("div", { class: "small" }, "Columns", picker);  // not a label: a click would reach the first checkbox
   }
 
@@ -119,7 +124,7 @@
         th.firstChild.addEventListener("click", () => go({ sort: k, dir: on && query.dir !== "desc" ? "desc" : "" }));
         return th;
       }));
-      const body = sorted(rows, query.sort, query.dir).map((r) => line(r, rel, shown));
+      const body = sorted(rows, hidden.has(query.sort) ? "" : query.sort, query.dir).map((r) => line(r, rel, shown));
       el.append(h("h2", { text: "Experiments" }), filters);
       if (!body.length) el.append(h("p", { class: "muted", text: "No experiments for this release and filters." }));
       else el.append(h("div", { class: "table-wrap" }, h("table", { class: "exp-table" }, h("thead", {}, head), h("tbody", {}, ...body))));
