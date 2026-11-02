@@ -459,3 +459,16 @@ def test_typesafe_through_the_real_sdk(monkeypatch):
     assert seen["url"] == "https://api.typesafe.ai/v1/systemone"
     assert seen["body"] == {"state": "S", "model": "jev-latest", "questions": questions}
     assert reply.call == API_REPLY and reply.input_tokens == 40 and reply.served_model == "served"
+
+
+@pytest.mark.parametrize("content", [b"[1]", b"not json", b""])
+def test_typesafe_body_that_is_not_a_json_object_gives_an_empty_call(monkeypatch, content):
+    import httpx2
+    import typesafe_sdk
+
+    monkeypatch.setattr(models, "_typesafe_client", lambda **o: typesafe_sdk.TypeSafeClient(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(200, content=content)), **o))
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    reply = models.call_decision(TYPESAFE_MODEL, "S", {"q": {"type": "noul", "instructions": "x"}})
+    assert reply.call == {} and reply.served_model == "jev-latest"
+    assert reply.input_tokens == 0 and reply.output_tokens == 0 and reply.latency_s >= 0

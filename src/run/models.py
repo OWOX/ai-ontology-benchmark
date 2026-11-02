@@ -206,6 +206,9 @@ def _typesafe(model: dict, state: str, questions: dict, key: str) -> DecisionRep
     except (typesafe_sdk.TypeSafeRateLimitError, typesafe_sdk.TypeSafeInternalServerError,
             typesafe_sdk.TypeSafeAPIConnectionError) as error:  # connection errors include timeouts
         raise InfrastructureError(f"typesafe: {error}") from error
+    except typesafe_sdk.TypeSafeAPIResponseValidationError:
+        # A 200 whose body is not a JSON object. The call stays empty, and the validator rules it malformed.
+        return _decision_reply({}, time.perf_counter() - start, model["api_model_id"])
     latency = time.perf_counter() - start
     return _decision_reply(response.model_dump(exclude_unset=True), latency, model["api_model_id"])
 
