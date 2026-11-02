@@ -554,3 +554,14 @@ def test_provider_without_catalogue_models_is_left_out():
     catalogue = {"m": {"name": "m", "provider": "typesafe", "api_model_id": "x"}}
     assert PROVIDER_ORDER[3:5] == ("typesafe", "cloudflare")
     assert [p["name"] for p in build_providers(catalogue, {}, [])] == ["typesafe"]
+
+
+def test_decision_model_attempts_are_scored_not_malformed(ui_repo, samples):
+    _, invalid, _ = samples
+    calls = json.dumps([{"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": 0.9}}}])
+    toml = EXP_TOML.replace('provider = "fake"', 'provider = "fake_decision"')
+    files = {"results/e/experiment.toml": toml,
+             "results/e/raw/example-model.jsonl": jsonl([record(invalid, "no_model", 1, calls)])}
+    exp, inputs = open_experiment(ui_repo, "e", files)
+    rows = expdata.attempt_rows(exp, inputs)
+    assert [r["outcome"] for r in rows] == ["success"]
