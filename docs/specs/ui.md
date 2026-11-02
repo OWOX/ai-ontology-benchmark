@@ -260,11 +260,11 @@ One block per provider, in bundle order.
 One card per puzzle of the release. Under the title, two columns: on the left, items 1, 2, 3, and 4 in that order; on the right, item 5, aligned right, its top level with the top of the picture. Under 900px wide the columns stack. Items 6 and 7 follow at full width.
 
 1. A picture of the solved puzzle: `cube3d` for an `NxN` cube, else the name in a box. `cube3d` draws all six faces in 3D, starting with U on top, F front-left, and R front-right, and the viewer turns it by dragging with the mouse or a finger. The pitch stops at a quarter turn up or down, so the cube never flips. The `<svg>` has `role="img"` and the label "3D view of the cube; drag to turn".
-2. The description, from `docs/puzzles/<puzzle>.md`, with its source link.
+2. "Description": the text from `docs/puzzles/<puzzle>.md`, with no border, and its source as a footnote marker `[1]` after the heading, opening the file on GitHub.
 3. "Allowed moves": the `legal_moves` list as chips, with a source link to the engine. "No engine" when it is `null`.
 4. The input count, the depths, and the valid and invalid counts. "Scrambled states" links to `#/puzzles/<puzzle>/inputs`. "Experiments" links to `#/experiments?puzzle=<puzzle>`.
-5. A 2D net of the solved puzzle with every sticker named by its face letter and its index in the face, row by row from 1, for example `U1` to `U9` on the 3x3, in the state's reading order ([cube.md](cube.md)), so a reader can match the net to a state string. Cubes only.
-6. "What the AI model is told": one folded section per setup with the prompt template, its prompt version, and its source link.
+5. A 2D net of the solved puzzle with every sticker named by its face letter and its index in the face, row by row from 1, for example `U1` to `U9` on the 3x3, in the state's reading order ([cube.md](cube.md)), so a reader can match the net to a state string. Every sticker is 40px square, whatever the size of the cube, and the net scrolls sideways when it is wider than the page. Cubes only.
+6. "Prompts": one toggle button per setup, named "no model", "descriptive", or "prescriptive". A click shows that setup's prompt template under the buttons, with its source link, and a second click hides it. The prompt version is not shown.
 7. "Not allowed moves seen": a table of `impossible_seen`, with the move in a code span, the count, and the AI models, each experiment id linking to its page. "None in pushed experiments yet" when it is empty.
 
 The inputs page lists every input of the puzzle: the input id, the depth, the validity, the net of its state, and, for an invalid input, its source input and corruption, filtered by depth and validity, with a source link to `inputs.jsonl`.

@@ -4,6 +4,8 @@
 // seen. Reads the bundle only.
 (function () {
   const h = UI.el;
+  // Sticker size in px on the named net, the same for every puzzle size.
+  const NET_CELL = 40;
 
   function picture(p) {
     if (!p.n) return h("div", { class: "puzzle-name-box", text: p.name });
@@ -12,13 +14,21 @@
     return wrap;
   }
 
+  // A heading with the source as a numbered footnote marker after it.
+  function heading(text, source) {
+    const head = h("h4", { text });
+    if (source) head.append(h("sup", { class: "footnote" },
+      h("a", { href: source, target: "_blank", rel: "noopener", title: "Source", text: "[1]" })));
+    return head;
+  }
+
   function description(p) {
     const d = p.description || {};
-    if (!d.text) return h("p", { class: "muted", text: "no description on main" });
-    const box = h("div", { class: "md" });
-    box.innerHTML = window.renderMarkdown(d.text, d.source ? d.source.replace(/[^/]*$/, "") : "");
-    const src = UI.sourceLink(d.source);
-    if (src) box.append(src);
+    const box = h("div", {}, heading("Description", d.source));
+    if (!d.text) { box.append(h("p", { class: "muted", text: "no description on main" })); return box; }
+    const body = h("div", { class: "md plain" });
+    body.innerHTML = window.renderMarkdown(d.text, d.source ? d.source.replace(/[^/]*$/, "") : "");
+    box.append(body);
     return box;
   }
 
@@ -30,17 +40,27 @@
     return row;
   }
 
+  // One toggle per setup. A click shows that setup's prompt template below, and a second click hides it.
   function prompts(p) {
-    const box = h("div", {}, h("h4", { text: "What the AI model is told" }));
+    const box = h("div", {}, h("h4", { text: "Prompts" }));
     const setups = Object.entries(p.prompts || {});
-    if (!setups.length) box.append(h("p", { class: "muted small", text: "No prompt templates in this release." }));
-    for (const [setup, t] of setups) {
-      const d = h("details", {}, h("summary", { text: `${setup}${t.version ? " (prompt version " + t.version + ")" : ""}` }),
-        h("pre", { class: "prompt-text", text: t.text }));
-      const src = UI.sourceLink(t.source);
-      if (src) d.append(src);
-      box.append(d);
-    }
+    if (!setups.length) { box.append(h("p", { class: "muted small", text: "No prompt templates in this release." })); return box; }
+    const panel = h("div", { class: "prompt-panel", hidden: true });
+    const buttons = setups.map(([setup, t]) => {
+      const b = h("button", { type: "button", class: "small", "aria-pressed": "false", text: setup.replace(/_/g, " ") });
+      b.addEventListener("click", () => {
+        const open = b.getAttribute("aria-pressed") !== "true";
+        for (const o of buttons) o.setAttribute("aria-pressed", String(open && o === b));
+        panel.replaceChildren();
+        panel.hidden = !open;
+        if (!open) return;
+        panel.append(h("pre", { class: "prompt-text", text: t.text }));
+        const src = UI.sourceLink(t.source);
+        if (src) panel.append(src);
+      });
+      return b;
+    });
+    box.append(h("div", { class: "setup-toggles" }, ...buttons), panel);
     return box;
   }
 
@@ -71,7 +91,7 @@
       el.append(h("h2", { text: "Puzzles" }));
       for (const p of bundle.puzzles) {
         const top = h("div", { class: "puzzle-top" }, h("div", { class: "puzzle-main" }, picture(p), description(p), allowed(p), links(p, q)));
-        if (p.n) top.append(h("div", { class: "named-net" }, cubeNetNamed(p.n, { width: 480 })));
+        if (p.n) top.append(h("div", { class: "named-net" }, cubeNetNamed(p.n, { width: 4 * p.n * NET_CELL, height: 3 * p.n * NET_CELL })));
         const card = h("section", { class: "step puzzle" }, h("h3", { text: p.name }), top, prompts(p), seen(p, q));
         el.append(card);
       }
