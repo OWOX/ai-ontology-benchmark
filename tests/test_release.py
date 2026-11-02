@@ -196,6 +196,16 @@ def test_patch_after_validator_edit(repo):
     assert new["assessment_sha256"] != old["assessment_sha256"]
 
 
+@pytest.mark.parametrize("name", ["decision.py", "prompts.py"])
+def test_patch_after_decision_code_edit(repo, name):
+    release_ok(repo, "major")
+    path = repo / "src" / "run" / name
+    path.write_text(path.read_text(encoding="utf-8") + "\n# fix\n", encoding="utf-8")
+    commit_all(repo, "decision code")
+    release_ok(repo, "patch")
+    assert manifest_of(repo, "1.0.1")["assessment_sha256"] != manifest_of(repo, "1.0.0")["assessment_sha256"]
+
+
 def test_patch_after_render_change_fails(repo):
     release_ok(repo, "major")
     edit(repo, "src/puzzles/cube.py", '"\\n\\n".join(blocks)', '"\\n\\n\\n".join(blocks)')
