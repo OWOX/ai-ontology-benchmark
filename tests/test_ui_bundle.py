@@ -355,6 +355,22 @@ def test_key_status_not_cached(ui_repo):
     assert unpriced["disabled_reason"] == "no price in config/prices.toml" and unpriced["price"] is None
 
 
+def test_cloudflare_reason_names_what_is_missing(ui_repo, monkeypatch):
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    bundles = make_bundles(ui_repo)
+
+    def reasons():
+        provider = next(p for p in bundles.get(None, False, set(), {}, set())["providers"] if p["name"] == "cloudflare")
+        return {m["disabled_reason"] for m in provider["models"]}
+
+    assert "no API key: add it under Models" in reasons()
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "t")
+    assert "no account id: add it under Models" in reasons()
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "a")
+    assert not {r for r in reasons() if r and r.startswith("no ") and "add it under Models" in r}
+
+
 def test_model_matching(ui_repo, samples):
     _, _, records = samples
     renamed = EXP_TOML.replace('name = "example-model"', 'name = "renamed"')

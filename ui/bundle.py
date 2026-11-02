@@ -21,6 +21,7 @@ from ui.gitdata import REMOTE_RESULTS, GitData
 from ui.puzzleinfo import build_puzzle
 
 NO_KEY = "no API key: add it under Models"
+NO_ACCOUNT = "no account id: add it under Models"
 CACHE_LIMIT = 16
 
 
@@ -113,7 +114,7 @@ class Bundles(BranchReaders):
             have = info is None or info["configured"] or (bool(env.get(provider["variable"])) and "account" not in info)
             for model in provider["models"]:
                 if model["disabled_reason"] is None and not have:
-                    model["disabled_reason"] = NO_KEY
+                    model["disabled_reason"] = NO_ACCOUNT if info["source"] != "missing" else NO_KEY
         return bundle
 
     def _load_all(self, refs: dict[str, str], main: str) -> list[dict]:
