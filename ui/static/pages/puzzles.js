@@ -14,12 +14,14 @@
     return wrap;
   }
 
-  // A heading with the source as a numbered footnote marker after it.
+  // The source as a numbered footnote marker, or null without a source.
+  function footnote(source) {
+    return source ? h("sup", { class: "footnote" },
+      h("a", { href: source, target: "_blank", rel: "noopener", title: "Source", text: "[1]" })) : null;
+  }
+
   function heading(text, source) {
-    const head = h("h4", { text });
-    if (source) head.append(h("sup", { class: "footnote" },
-      h("a", { href: source, target: "_blank", rel: "noopener", title: "Source", text: "[1]" })));
-    return head;
+    return h("h4", { text }, footnote(source));
   }
 
   function description(p) {
@@ -55,8 +57,8 @@
         panel.hidden = !open;
         if (!open) return;
         panel.append(h("pre", { class: "prompt-text", text: t.text }));
-        const src = UI.sourceLink(t.source);
-        if (src) panel.append(src);
+        if (t.source) panel.append(h("p", { class: "small footnote-line" }, footnote(t.source), " ",
+          h("a", { href: t.source, target: "_blank", rel: "noopener", text: t.source.replace(/^.*\/blob\/[^/]+\//, "") })));
       });
       return b;
     });
@@ -65,11 +67,9 @@
   }
 
   function allowed(p) {
-    const box = h("div", {}, h("h4", { text: "Allowed moves" }));
+    const box = h("div", {}, heading("Allowed moves", p.legal_moves === null ? null : p.legal_moves_source));
     if (p.legal_moves === null) { box.append(h("p", { class: "muted small", text: "No engine" })); return box; }
     box.append(h("div", { class: "chips" }, ...p.legal_moves.map((m) => h("code", { class: "chip", text: m }))));
-    const src = UI.sourceLink(p.legal_moves_source);
-    if (src) box.append(src);
     return box;
   }
 
