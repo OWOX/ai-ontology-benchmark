@@ -6,13 +6,6 @@
 # reasoning models of the other providers fix their own sampling.
 
 [[models]]
-name = "example-model"
-provider = "fake"
-api_model_id = "example-model-2026-01-01"
-kind = "system-2"
-params = { temperature = 1.0 }
-
-[[models]]
 name = "claude-opus-5-5"
 provider = "anthropic"
 api_model_id = "claude-opus-5-5"
