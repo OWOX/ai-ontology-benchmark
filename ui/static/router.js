@@ -101,10 +101,9 @@
   function drawMenu() {
     const b = st.bundle;
     if (!b) return;
-    const warn = b.providers.some((p) => p.key && !p.key.configured);
     const current = st.params.top;
     $("links").replaceChildren(...MENU.map(([name, label]) => {
-      const a = Object.assign(document.createElement("a"), { href: menuHref(name), textContent: label + (name === "models" && warn ? " ⚠️" : "") });
+      const a = Object.assign(document.createElement("a"), { href: menuHref(name), textContent: label });
       if (name === current) a.className = "current";
       return a;
     }));
