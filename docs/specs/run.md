@@ -19,7 +19,7 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
    5. Every AI model in the experiment has a price in `config/prices.toml`.
    6. If the config has `puzzles`, every name is in the release's `release_config.puzzles`. The error names the config path and the field `puzzles`.
    7. For every attempt still to run, the [worst-case request cost](../definitions.md#baseline-and-prices) is at most `per_request_usd`. The error names the AI model and its worst-case cost. For a decision model the request is the longest call of the attempt, the prompt with `max_moves` of the longest move after it (`worst_state(prompt, legal, cap)`).
-   8. If the manifest holds `decision_prompt_versions`, `decision_prompt_versions()` equals it. If it lacks the field, this check is skipped, and `run` exits with code 1 naming `decision_prompt_versions` when any AI model in the experiment is a decision model (`load_release(folder, needs_decision)`). Releases cut before decision models keep working for the other AI models.
+   8. If the manifest holds `decision_prompt_versions`, `decision_prompt_versions()` (the [decision prompt version](../definitions.md#setups)) equals it. If it lacks the field, this check is skipped, and `run` exits with code 1 naming `decision_prompt_versions` when any AI model in the experiment is a decision model (`load_release(folder, needs_decision)`). Releases cut before decision models keep working for the other AI models.
 
    It exits with code 1 before any call if a check fails.
 

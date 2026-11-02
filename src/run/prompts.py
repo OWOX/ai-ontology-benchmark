@@ -4,6 +4,7 @@ and writes nothing.
 """
 
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -44,9 +45,12 @@ def build_prompt(templates_dir: Path, input: dict, setup: str) -> str:
     return text
 
 
-def _versions(templates_dir: Path, inputs: list[dict], questions_bytes: bytes | None) -> tuple[dict, dict | None]:
-    """Build each prompt once and feed two digests: a plain one and, when questions_bytes is given,
-    one seeded with those bytes. Return (plain, decision), decision being None without questions_bytes."""
+def _versions(templates_dir: Path, inputs: list[dict], questions: dict | None) -> tuple[dict, dict | None]:
+    """Build each prompt once and feed two digests: a plain one and, when `questions` is given, one
+    seeded with the questions file's bytes that takes, per input, the state a decision model is sent
+    first (`decision_state(prompt, [])`) and its request's questions object. Return (plain, decision),
+    decision being None without `questions`."""
+    questions_bytes = _questions_path(templates_dir).read_bytes() if questions is not None else None
     puzzles = list(dict.fromkeys(row["puzzle"] for row in inputs))
     plain: dict[str, dict[str, str]] = {}
     decision: dict[str, dict[str, str]] | None = {} if questions_bytes is not None else None
@@ -59,12 +63,14 @@ def _versions(templates_dir: Path, inputs: list[dict], questions_bytes: bytes | 
             decision_digest = hashlib.sha256(questions_bytes) if questions_bytes is not None else None
             # Check the template even when no input uses it.
             _read_template(templates_dir, setup, puzzle)
+            legal = get_engine(puzzle).legal_moves()
             for row in inputs:
                 if row["puzzle"] == puzzle:
-                    data = (build_prompt(templates_dir, row, setup) + "\n").encode()
-                    digest.update(data)
+                    prompt = build_prompt(templates_dir, row, setup)
+                    digest.update((prompt + "\n").encode())
                     if decision_digest is not None:
-                        decision_digest.update(data)
+                        asked = json.dumps(decision_questions(questions, legal), sort_keys=True)
+                        decision_digest.update((decision_state(prompt, []) + "\n" + asked + "\n").encode())
             plain[setup][puzzle] = digest.hexdigest()[:12]
             if decision is not None:
                 decision[setup][puzzle] = decision_digest.hexdigest()[:12]
@@ -125,12 +131,11 @@ def decision_questions(questions: dict, legal: list[str]) -> dict:
 
 def both_prompt_versions(templates_dir: Path, inputs: list[dict]) -> tuple[dict, dict]:
     """Return (prompt_versions, decision_prompt_versions), rendering every prompt once."""
-    load_questions(templates_dir)  # validate the file
-    plain, decision = _versions(templates_dir, inputs, _questions_path(templates_dir).read_bytes())
+    plain, decision = _versions(templates_dir, inputs, load_questions(templates_dir))  # validates the file
     return plain, decision
 
 
 def decision_prompt_versions(templates_dir: Path, inputs: list[dict]) -> dict[str, dict[str, str]]:
     """Return {setup: {puzzle: version}} for decision models: sha256 over the questions file's
-    bytes, then every prompt for that setup and puzzle in input order, each followed by a newline."""
+    bytes, then for every input in order its decision state and its request's questions object."""
     return both_prompt_versions(templates_dir, inputs)[1]

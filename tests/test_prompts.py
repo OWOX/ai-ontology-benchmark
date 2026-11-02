@@ -187,3 +187,20 @@ def test_decision_versions_change_with_a_template(templates):
     for setup in SETUPS:
         for puzzle in ("2x2", "3x3"):
             assert (before[setup][puzzle] == after[setup][puzzle]) == ((setup, puzzle) != ("descriptive", "3x3"))
+
+
+def test_decision_versions_follow_what_is_sent(templates, monkeypatch):
+    from src.run import prompts
+    before = prompts.decision_prompt_versions(templates, INPUTS)
+    llm_before = prompt_versions(templates, INPUTS)
+    original = prompts.decision_state
+    monkeypatch.setattr(prompts, "decision_state", lambda p, moves: original(p, moves).replace("Moves so far", "Moves"))
+    assert prompts.decision_prompt_versions(templates, INPUTS) != before
+    assert prompt_versions(templates, INPUTS) == llm_before
+    monkeypatch.setattr(prompts, "decision_state", original)
+    assert prompts.decision_prompt_versions(templates, INPUTS) == before
+    structure = prompts.decision_questions
+    monkeypatch.setattr(prompts, "decision_questions",
+                        lambda q, legal: {**structure(q, legal), "mismatch": {"type": "other"}})
+    assert prompts.decision_prompt_versions(templates, INPUTS) != before
+    assert prompt_versions(templates, INPUTS) == llm_before

@@ -41,7 +41,7 @@ Every term below means the same thing in code, configs, records, reports, and do
 
 1. **Release.** A frozen bundle in `releases/<release version>/` that holds everything an AI model sees and everything that judges it: the input set, the prompt templates, and the assessment. Each release has a git tag `release-<release version>`.
 2. **Release version.** `MAJOR.MINOR.PATCH`. A new input set bumps MAJOR. A prompt change with the same input set bumps MINOR. An assessment fix bumps PATCH.
-3. **Mirror.** A patch release is a mirror of the release before it: its input set and every prompt version are identical, and only the assessment differs. Raw records made under one release are scored under any of its mirrors without calling an AI model again.
+3. **Mirror.** A patch release is a mirror of the release before it: its input set and every prompt version are identical, and only the assessment differs. A patch release may also add `decision_prompt_versions` to a release that lacked them, because no earlier raw record used them. Raw records made under one release are scored under any of its mirrors without calling an AI model again.
 4. **Assessment.** The code that judges attempts and computes metrics: the validator, the engines, and `evaluate`. The code that only formats the experiment report isn't part of it. A release pins the assessment as one hash over those files.
 5. **Experiment.** One `run` of every AI model in an experiment config over one release, and the reports computed from it.
 6. **Experiment id.** The name of an experiment config file, without the extension. Every raw record carries it.
@@ -69,6 +69,7 @@ Every term below means the same thing in code, configs, records, reports, and do
 10. **Prompt.** The full text sent to the AI model for one attempt. It contains the rendered state and never the scramble, because reversing the scramble solves the puzzle. It is the same for every AI model under the same setup and input.
 11. **Prompt version.** The version of the prompt text for one setup and puzzle in a release: the first 12 hex characters of one sha256 over every prompt built for that setup and puzzle, in input order. A change to the template, to `render()`, or to `legal_moves()` gives a new version.
 12. **Decision options.** The options of a decision model's move question: one per legal move, with id `move_<n>`, where `<n>` is the move's position in `legal_moves()` from 1, plus `done`, which says the moves so far solve the puzzle and ends the attempt. The request holds two questions: `next_move`, a choice among the options, and `mismatch`, a yes/no probability.
+13. **Decision prompt version.** The version of what a decision model is sent for one setup and puzzle in a release: the first 12 hex characters of one sha256 over the bytes of `prompts/decision/questions.txt`, then, for every input in order, its state as the decision model first receives it (the prompt, then `Moves so far: none`) and its request's questions object as JSON with sorted keys. A change to the template, to `render()`, to `legal_moves()`, to the questions file, or to how the state or the request is built gives a new version. It changes no [prompt version](#setups).
 
 ## Attempts and outcomes
 
