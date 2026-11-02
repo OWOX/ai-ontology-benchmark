@@ -145,13 +145,13 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
 .menu { position: sticky; top: 0; height: 100vh; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
 .menu h1 { font-size: 14px; margin: 0; }
 .menu-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
-.theme-pick { display: flex; }
+.foot-row { display: flex; gap: 6px; align-items: stretch; }
+.theme-pick { display: flex; flex: 1; }
 .theme-pick button { flex: 1; padding: 3px 0; font-size: 12px; border-radius: 0; margin-left: -1px; }
 .theme-pick button:first-child { margin-left: 0; border-radius: 4px 0 0 4px; }
 .theme-pick button:last-child { border-radius: 0 4px 4px 0; }
 .theme-pick button[aria-pressed="true"] { background: var(--sel); color: var(--accent); font-weight: 600; position: relative; }
-.release-pick { display: flex; gap: 6px; align-items: stretch; }
-.release-pick button { box-sizing: border-box; height: 30px; width: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.foot-row #refresh { box-sizing: border-box; width: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .links { display: flex; flex-direction: column; gap: 2px; }
 .links a { padding: 6px 8px; border-radius: 4px; color: inherit; text-decoration: none; }
 .links a:hover { background: var(--hover); }

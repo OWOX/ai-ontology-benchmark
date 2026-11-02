@@ -99,10 +99,6 @@
   function drawMenu() {
     const b = st.bundle;
     if (!b) return;
-    const sel = $("release");
-    const keep = st.params.release || b.release;
-    sel.replaceChildren(...b.releases.map((v) => Object.assign(document.createElement("option"), { value: v, textContent: v })));
-    sel.value = keep;
     const warn = b.providers.some((p) => p.name !== "fake" && p.key && p.key.source === "missing");
     const current = st.params.top;
     $("links").replaceChildren(...MENU.map(([name, label]) => {
@@ -199,12 +195,6 @@
     if (atBottom) term.scrollTop = term.scrollHeight;
   }
 
-  $("release").addEventListener("change", () => {
-    const p = parse();
-    const q = new URLSearchParams(p.query);
-    q.set("release", $("release").value);
-    UI.go("#/" + [p.top].concat(p.parts).join("/") + "?" + q);
-  });
   $("refresh").addEventListener("click", () => UI.reload(true));
   $("new-exp").addEventListener("click", () => UI.go(menuHref("new")));
   $("btn-clear").addEventListener("click", () => $("terminal").replaceChildren());

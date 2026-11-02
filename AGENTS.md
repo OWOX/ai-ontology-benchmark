@@ -80,7 +80,7 @@ Decided by the project owner on 2026-10-25. The full design is in [docs/specs/ui
 2. `ui/` holds code only. No data file, and no copy of data held elsewhere in the repo, lives there.
 3. The UI process writes only `./secrets/`. Experiment data reaches git through `run`, `evaluate`, and the commit step, which write to the branch `results/<experiment id>`. The UI never writes `config/experiments/<experiment id>.toml`. It passes the experiment config to `run` on stdin.
 4. One experiment is one branch, `results/<experiment id>`. The New Experiment screen names the id from the chosen AI models and puzzles by default, and picking an existing branch loads that experiment.
-5. The server builds one structured bundle per release, with everything the menu shows, and keeps it in memory only, keyed by the shas of the refs it read. The page caches each bundle in browser storage and renders from it at once. The refresh icon next to the release dropdown fetches from GitHub and replaces the bundle.
+5. The server builds one structured bundle per release, with everything the menu shows, and keeps it in memory only, keyed by the shas of the refs it read. The page caches each bundle in browser storage and renders from it at once. The refresh icon at the bottom of the menu fetches from GitHub and replaces the bundle.
 6. The Experiments list has one row per experiment, AI model, and puzzle. Its metrics come from the committed report CSV when there is one. Otherwise they are computed from the raw records for display only, and marked with `*` and a note saying so.
 7. The Puzzles page lists as not allowed only the impossible moves AI models returned in pushed experiments. There is no hand-written list of impossible moves.
 
