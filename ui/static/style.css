@@ -145,13 +145,13 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
 .menu { position: sticky; top: 0; height: 100vh; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
 .menu h1 { font-size: 14px; margin: 0; }
 .menu-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
-.theme-pick { display: flex; }
+.foot-row { display: flex; gap: 6px; align-items: stretch; }
+.theme-pick { display: flex; flex: 1; }
 .theme-pick button { flex: 1; padding: 3px 0; font-size: 12px; border-radius: 0; margin-left: -1px; }
 .theme-pick button:first-child { margin-left: 0; border-radius: 4px 0 0 4px; }
 .theme-pick button:last-child { border-radius: 0 4px 4px 0; }
 .theme-pick button[aria-pressed="true"] { background: var(--sel); color: var(--accent); font-weight: 600; position: relative; }
-.release-pick { display: flex; gap: 6px; align-items: stretch; }
-.release-pick button { box-sizing: border-box; height: 30px; width: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.foot-row #refresh { box-sizing: border-box; width: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .links { display: flex; flex-direction: column; gap: 2px; }
 .links a { padding: 6px 8px; border-radius: 4px; color: inherit; text-decoration: none; }
 .links a:hover { background: var(--hover); }
@@ -161,6 +161,7 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
 @keyframes spin { to { transform: rotate(360deg); } }
 .page { padding: 16px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 #main h2 { margin: 0 0 10px; font-size: 18px; }
+#main h2.with-icon { display: flex; align-items: center; gap: 6px; }
 #main .step { margin-bottom: 10px; }
 #main .step > :not(h2) { margin-left: 0; }
 .provider-head .reason { margin-left: 4px; }
@@ -175,9 +176,10 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
 .badge { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; text-transform: none; }
 .badge.ok { color: var(--ok); background: var(--ok-bg); }
 .badge.bad { color: var(--danger); background: var(--bad-bg); }
-.provider-icons { margin-left: auto; display: flex; gap: 4px; opacity: 0; }
-.provider:hover .provider-icons, .provider:focus-within .provider-icons { opacity: 1; }
-@media (hover: none) { .provider-icons { opacity: 1; } }
+/* Hidden icons take no width, so the key status sits right after the badge; they stay focusable. */
+.provider-icons { display: flex; gap: 4px; max-width: 0; overflow: hidden; opacity: 0; }
+.provider:hover .provider-icons, .provider:focus-within .provider-icons { max-width: 80px; opacity: 1; }
+@media (hover: none) { .provider-icons { max-width: 80px; opacity: 1; } }
 .icon-btn { display: inline-flex; align-items: center; padding: 3px; border: 0; background: none; color: var(--muted); border-radius: 4px; }
 .icon-btn:hover:not(:disabled) { background: none; color: var(--text); }
 .provider .key-row { margin-bottom: 6px; }
@@ -218,4 +220,14 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .exp-detail h3 { font-size: 14px; margin: 0 0 6px; }
 .exp-detail details > summary { font-weight: 600; }
 .newexp section { margin-bottom: 14px; }
+.newexp .step > h3 { font-size: 14px; margin: 0 0 10px; }
+.newexp .step .cards { margin-top: 0; }
+.branch-field label { display: flex; flex-direction: column; gap: 3px; color: var(--muted); }
+.branch-input { display: flex; max-width: 520px; }
+.branch-input .prefix { display: inline-flex; align-items: center; padding: 0 8px; border: 1px solid var(--line); border-right: 0; border-radius: 4px 0 0 4px; background: var(--code); color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.branch-input input { border-radius: 0 4px 4px 0; font-family: var(--mono); font-size: 12px; }
+.branch-field .muted { margin: 4px 0 0; }
+.model-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; align-items: start; }
+.model-col .provider-head { cursor: pointer; }
+.model-col .reason { font-weight: 400; margin-bottom: 4px; }
 .newexp .grid input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--field); color: inherit; }

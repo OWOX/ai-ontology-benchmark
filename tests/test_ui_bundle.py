@@ -13,6 +13,7 @@ from src.run.run import make_record
 from test_release import git, repo  # noqa: F401
 from test_ui import PRICES, ui_repo  # noqa: F401  (ui_repo is a fixture)
 from ui import expdata
+from ui.catalogue import build_providers
 from ui import secrets as key_store
 from ui.bundle import Bundles, is_mirror
 from ui.common import ApiError

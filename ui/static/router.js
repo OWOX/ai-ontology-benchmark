@@ -92,17 +92,15 @@
     return { name, top, parts: rest, query, release: query.release || "" };
   }
 
+  // Menu links always lead to the newest release: with no release select, a `?release=` picked up from one
+  // link would otherwise stick to every page.
   function menuHref(name) {
-    return "#/" + name + (st.params && st.params.release ? "?release=" + encodeURIComponent(st.params.release) : "");
+    return "#/" + name;
   }
 
   function drawMenu() {
     const b = st.bundle;
     if (!b) return;
-    const sel = $("release");
-    const keep = st.params.release || b.release;
-    sel.replaceChildren(...b.releases.map((v) => Object.assign(document.createElement("option"), { value: v, textContent: v })));
-    sel.value = keep;
     const warn = b.providers.some((p) => p.key && !p.key.configured);
     const current = st.params.top;
     $("links").replaceChildren(...MENU.map(([name, label]) => {
@@ -121,8 +119,10 @@
     const fetched = f.error ? `GitHub not reached, ${when ? "showing data from " + when : "no data yet"}: ${f.error}` : when ? `Fetched from GitHub ${when}` : "Not fetched yet";
     const server = { live: "live", down: "not reachable, reconnecting" }[st.server] || "connecting";
     const text = `Server: ${server}\n${fetched}`;
-    el.className = "conn" + (st.server === "down" ? " bad" : st.server === "live" ? (f.error ? " warn" : " ok") : "");
-    el.title = text; el.setAttribute("aria-label", text);
+    const cls = "conn" + (st.server === "down" ? " bad" : st.server === "live" ? (f.error ? " warn" : " ok") : "");
+    // The log poll calls this every few seconds. Rewriting an unchanged title hides the open tooltip.
+    if (el.className !== cls) el.className = cls;
+    if (el.title !== text) { el.title = text; el.setAttribute("aria-label", text); }
   }
 
   function draw(b, force) {
@@ -197,12 +197,6 @@
     if (atBottom) term.scrollTop = term.scrollHeight;
   }
 
-  $("release").addEventListener("change", () => {
-    const p = parse();
-    const q = new URLSearchParams(p.query);
-    q.set("release", $("release").value);
-    UI.go("#/" + [p.top].concat(p.parts).join("/") + "?" + q);
-  });
   $("refresh").addEventListener("click", () => UI.reload(true));
   $("new-exp").addEventListener("click", () => UI.go(menuHref("new")));
   $("btn-clear").addEventListener("click", () => $("terminal").replaceChildren());
