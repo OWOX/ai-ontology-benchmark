@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import anthropic
 import httpx
+import httpx2
 import openai
 import pytest
 from google import genai
@@ -141,7 +142,33 @@ def test_anthropic_streams_and_never_calls_create(monkeypatch):
 
 def test_anthropic_error_when_opening_the_stream_is_infrastructure(monkeypatch):
     create = install(monkeypatch, "anthropic", anthropic_response())
-    create.side_effect = anthropic.APIConnectionError(request=REQUEST)
+    create.return_value.__enter__.side_effect = anthropic.APIConnectionError(request=REQUEST)  # the request is sent here
+    with pytest.raises(InfrastructureError):
+        call_model(entry("anthropic"), "prompt", 50)
+
+
+def sse_error(error_type):
+    """What the SDK raises for an SSE error event: a status error built on the stream's 200 response."""
+    body = {"type": "error", "error": {"type": error_type, "message": "x"}}
+    return anthropic.APIStatusError("x", response=httpx.Response(200, request=REQUEST), body=body)
+
+
+@pytest.mark.parametrize("error_type", ["overloaded_error", "api_error", "rate_limit_error"])
+def test_anthropic_transient_stream_error_event_is_infrastructure(monkeypatch, error_type):
+    install(monkeypatch, "anthropic", sse_error(error_type))
+    with pytest.raises(InfrastructureError):
+        call_model(entry("anthropic"), "prompt", 50)
+
+
+def test_anthropic_other_stream_error_event_propagates(monkeypatch):
+    install(monkeypatch, "anthropic", sse_error("invalid_request_error"))
+    with pytest.raises(anthropic.APIStatusError):
+        call_model(entry("anthropic"), "prompt", 50)
+
+
+@pytest.mark.parametrize("error", [httpx2.ReadError("cut"), httpx2.RemoteProtocolError("closed")])
+def test_anthropic_transport_error_while_reading_the_stream_is_infrastructure(monkeypatch, error):
+    install(monkeypatch, "anthropic", error)
     with pytest.raises(InfrastructureError):
         call_model(entry("anthropic"), "prompt", 50)
 
