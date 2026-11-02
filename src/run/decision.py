@@ -64,7 +64,7 @@ def run_decision_attempt(model: dict, prompt: str, legal: list[str], questions: 
         tokens_in += reply.input_tokens
         tokens_out += reply.output_tokens
         latency += reply.latency_s
-        if reply.served_model not in served:
+        if reply.served_model and reply.served_model not in served:
             served.append(reply.served_model)
         read = read_decision_call(reply.call, legal)
         if read is None:

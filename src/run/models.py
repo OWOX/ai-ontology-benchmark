@@ -98,7 +98,7 @@ def _openai(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply
         )
     except openai.BadRequestError as error:
         if error.code == "content_filter":
-            return Reply("", "refused", model["api_model_id"], 0, 0, time.perf_counter() - start)
+            return Reply("", "refused", "", 0, 0, time.perf_counter() - start)
         raise
     except (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError) as error:
         raise InfrastructureError(f"openai: {error}") from error
@@ -149,7 +149,7 @@ def _google(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply
     if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
         text = "".join(part.text for part in response.candidates[0].content.parts
                        if part.text and not part.thought)
-    return Reply(text, stop_reason, response.model_version or model["api_model_id"],
+    return Reply(text, stop_reason, response.model_version or "",
                  input_tokens, output_tokens, latency)
 
 
@@ -208,9 +208,9 @@ def _typesafe(model: dict, state: str, questions: dict, key: str) -> DecisionRep
         raise InfrastructureError(f"typesafe: {error}") from error
     except typesafe_sdk.TypeSafeAPIResponseValidationError:
         # A 200 whose body is not a JSON object. The call stays empty, and the validator rules it malformed.
-        return _decision_reply({}, time.perf_counter() - start, model["api_model_id"])
+        return _decision_reply({}, time.perf_counter() - start)
     latency = time.perf_counter() - start
-    return _decision_reply(response.model_dump(exclude_unset=True), latency, model["api_model_id"])
+    return _decision_reply(response.model_dump(exclude_unset=True), latency)
 
 
 def _cloudflare(model: dict, state: str, questions: dict, key: str) -> DecisionReply:
@@ -236,14 +236,14 @@ def _cloudflare(model: dict, state: str, questions: dict, key: str) -> DecisionR
     if hasattr(result, "model_dump"):
         result = result.model_dump()
     # A result that is not an object leaves the call empty, and the validator rules it malformed.
-    return _decision_reply(result if isinstance(result, dict) else {}, latency, model["api_model_id"])
+    return _decision_reply(result if isinstance(result, dict) else {}, latency)
 
 
-def _decision_reply(data: dict, latency: float, requested_model: str) -> DecisionReply:
+def _decision_reply(data: dict, latency: float) -> DecisionReply:
     """Keep exactly the answers, usage, and model the API sent, and no other key."""
     call = {k: data[k] for k in ("answers", "usage", "model") if k in data}
     usage = call.get("usage") if isinstance(call.get("usage"), dict) else {}
-    served = call.get("model") if isinstance(call.get("model"), str) and call.get("model") else requested_model
+    served = call["model"] if isinstance(call.get("model"), str) else ""
     return DecisionReply(call, _count(usage.get("input_tokens")), _count(usage.get("output_tokens")),
                          served, latency)
 

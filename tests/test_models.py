@@ -147,6 +147,20 @@ def test_openai_content_filter_error_is_refused(monkeypatch):
     assert call_model(entry("openai"), "prompt", 50).stop_reason == "refused"
 
 
+def test_openai_content_filter_reports_no_served_model(monkeypatch):
+    error = status_error(openai.BadRequestError, 400)
+    error.code = "content_filter"
+    install(monkeypatch, "openai", error)
+    assert call_model(entry("openai"), "prompt", 50).served_model == ""
+
+
+def test_google_reply_without_a_model_version_has_no_served_model(monkeypatch):
+    response = google_response()
+    response.model_version = None
+    install(monkeypatch, "google", response)
+    assert call_model(entry("google"), "prompt", 50).served_model == ""
+
+
 def test_openai_other_bad_request_propagates(monkeypatch):
     error = status_error(openai.BadRequestError, 400)
     error.code = "invalid_request"
@@ -398,7 +412,7 @@ def test_extra_top_level_keys_are_not_kept(monkeypatch):
 def test_typesafe_reply_missing_the_schema_returns_with_absent_keys(monkeypatch, body):
     _typesafe_stub(monkeypatch, lambda m: m.model_validate(body))
     reply = models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
-    assert reply.call == body and reply.served_model == "jev-latest"
+    assert reply.call == body and reply.served_model == ""
     assert reply.input_tokens == 0 and reply.output_tokens == 0
 
 
@@ -406,7 +420,7 @@ def test_typesafe_reply_missing_the_schema_returns_with_absent_keys(monkeypatch,
 def test_cloudflare_result_that_is_not_an_object_gives_an_empty_call(monkeypatch, result):
     _cloudflare_stub(monkeypatch, lambda: result)
     reply = models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
-    assert reply.call == {} and reply.served_model == "@cf/cloudflare/clef-flash"
+    assert reply.call == {} and reply.served_model == ""
 
 
 def test_provider_routing_is_checked_both_ways():
@@ -470,5 +484,5 @@ def test_typesafe_body_that_is_not_a_json_object_gives_an_empty_call(monkeypatch
         transport=httpx2.MockTransport(lambda request: httpx2.Response(200, content=content)), **o))
     monkeypatch.setenv("TYPESAFE_API_KEY", "k")
     reply = models.call_decision(TYPESAFE_MODEL, "S", {"q": {"type": "noul", "instructions": "x"}})
-    assert reply.call == {} and reply.served_model == "jev-latest"
+    assert reply.call == {} and reply.served_model == ""
     assert reply.input_tokens == 0 and reply.output_tokens == 0 and reply.latency_s >= 0
