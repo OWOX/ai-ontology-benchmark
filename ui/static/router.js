@@ -92,8 +92,10 @@
     return { name, top, parts: rest, query, release: query.release || "" };
   }
 
+  // Menu links always lead to the newest release: with no release select, a `?release=` picked up from one
+  // link would otherwise stick to every page.
   function menuHref(name) {
-    return "#/" + name + (st.params && st.params.release ? "?release=" + encodeURIComponent(st.params.release) : "");
+    return "#/" + name;
   }
 
   function drawMenu() {

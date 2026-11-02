@@ -156,8 +156,9 @@
         ctl.id = id;
       }
 
-      let branches = [];
+      let branches = [], pickSeq = 0;
       const branchNote = () => S.branch ? "Existing branch: its config is loaded, and Run resumes it."
+        : S.touched && branches.includes(S.id) ? "This branch exists. Press Enter or leave the field to load it."
         : S.touched ? "Edited by hand. Clear the field to get the suggestion back."
           : "Suggested from the chosen puzzles and AI models. Edit it, or pick an existing branch to load it.";
 
@@ -181,11 +182,13 @@
 
       async function pickBranch(value) {
         say("");
+        // A later pick or a keystroke in the branch field supersedes a load still in flight.
+        const seq = ++pickSeq;
         S.branch = value;
         if (!value) { S.touched = false; await refreshId(); if (!dead) paint(); return; }
         try {
           const cfg = await UI.api("/api/experiment/" + encodeURIComponent(value) + "/config");
-          if (dead) return;
+          if (dead || seq !== pickSeq) return;
           const all = bundle.providers.flatMap((p) => p.models);
           const enabled = new Set(all.filter((m) => !m.disabled_reason).map((m) => m.name));
           const dropped = cfg.models.filter((n) => !enabled.has(n)).map((n) => {
@@ -226,22 +229,32 @@
       }
 
       // The branch field: the suggested id until edited by hand, with every existing branch offered. An id
-      // that names an existing branch loads it; clearing the field brings the suggestion back.
+      // that names an existing branch loads it once the edit is done (Enter, leaving the field, or picking a
+      // suggestion), never mid-typing; clearing the field brings the suggestion back.
       function branchField() {
         const list = h("datalist", { id: "branch-list" });
         UI.api("/api/branches").then((rows) => {
           branches = rows.map((b) => b.id);
           list.replaceChildren(...branches.map((id) => h("option", { value: id })));
+          if (ref.note && !dead) ref.note.textContent = branchNote();
         }).catch((e) => say(e.message, "err"));
         ref.id = h("input", { type: "text", list: "branch-list", "aria-label": "Branch", value: S.id, spellcheck: "false" });
         ref.id.addEventListener("input", () => {
-          const value = ref.id.value.trim();
-          if (!value) { S.id = ""; S.touched = false; S.branch = ""; refreshId(); controls(); return; }
-          if (branches.includes(value) && value !== S.branch) { pickBranch(value); return; }
-          S.id = value; S.touched = true;
-          if (S.branch && value !== S.branch) S.branch = "";
+          pickSeq++;
+          if (ref.id.value === "") {
+            Object.assign(S, { id: "", touched: false, branch: "", progId: "" });
+            if (ctl) { ctl.destroy(); ctl = null; }
+            refreshId();
+          } else {
+            S.id = ref.id.value.trim(); S.touched = true;
+            if (S.branch && S.id !== S.branch) S.branch = "";
+          }
           ref.note.textContent = branchNote();
           controls();
+        });
+        ref.id.addEventListener("change", () => {
+          const value = ref.id.value.trim();
+          if (branches.includes(value) && value !== S.branch) pickBranch(value);
         });
         ref.note = h("p", { class: "muted small", text: branchNote() });
         return h("div", { class: "branch-field" }, h("label", { class: "small" }, "Branch",
