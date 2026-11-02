@@ -116,6 +116,12 @@ def test_decision_ignores_calls_after_done():
     json.dumps([{"answers": {"next_move": {"choice": "move_0"}, "mismatch": {"noul": 0.1}}}]),
     json.dumps([{"answers": {"next_move": {"choice": "R"}, "mismatch": {"noul": 0.1}}}]),
     json.dumps([{"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": "high"}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "move_\u00b2"}, "mismatch": {"noul": 0.1}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "move_03"}, "mismatch": {"noul": 0.1}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "move_\u0663"}, "mismatch": {"noul": 0.1}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": 1.5}}}]),
+    json.dumps([{"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": -0.1}}}]),
+    '[{"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": NaN}}}]',
 ])
 def test_decision_malformed(raw):
     assert validate(ONE_VALID, raw, "ok", decision=True).outcome == "malformed_output"

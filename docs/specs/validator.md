@@ -33,10 +33,10 @@ Steps, in order:
 
 With `decision` true, `raw_response` is a JSON array, one element per completed call, each shaped `{"answers": {"next_move": {"type": "choice", "choice": "move_3"}, "mismatch": {"type": "noul", "noul": 0.12}}, ...}`. Steps 1 to 3 above are unchanged, and the parse in step 4 is replaced by these rules:
 
-1. The array must parse and hold at least one call. Each call needs a `next_move` choice and a numeric `mismatch` probability. Anything else is `malformed_output`.
-2. A choice is `done` or `move_<n>`, where `n` is the 1-based position in `legal_moves()`. Any other choice, including a move written out as `R`, is `malformed_output`.
+1. The array must parse and hold at least one call. Each call needs a `next_move` choice and a finite `mismatch` probability from 0 to 1. Anything else is `malformed_output`.
+2. A choice is `done` or `move_<n>`, where `n` is the 1-based position in `legal_moves()`, written exactly as offered (no leading zeros, no other digits). Any other choice, including a move written out as `R`, is `malformed_output`.
 3. The parsed moves are the moves behind the `move_<n>` choices before the first `done`. Calls after `done` are ignored.
-4. The mismatch flag is on if any call up to and including the first `done` has a probability of `MISMATCH_THRESHOLD` (0.5) or more.
+4. The mismatch flag is on if any call up to and including the first `done` has a `mismatch` probability of `MISMATCH_THRESHOLD` (0.5) or more.
 5. Steps 5 to 7 are unchanged. The options are exactly the legal moves and `done`, so a decision model's hallucination rate is 0 by construction.
 
 ## How to test

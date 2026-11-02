@@ -66,7 +66,7 @@ The record keeps every field of invariant 13. For a decision model:
 The validator gets a second parse path. It picks the path from the AI model's provider: `DECISION_PROVIDERS = {"typesafe", "cloudflare"}` in `src/run/models.py`. It never guesses from the text.
 
 1. Parse the raw response as the JSON array above. If it doesn't parse, or a call lacks `next_move` or `mismatch`, or a `next_move` choice isn't one of the offered ids, the outcome is `malformed_output`.
-2. The mismatch flag is on if any call's `mismatch` probability is 0.5 or more.
+2. The mismatch flag is on if any call up to and including the first `done` has a `mismatch` probability of 0.5 or more.
 3. The parsed moves are the moves behind the `next_move` ids of every call before the first `done`.
 4. The stop reason `infrastructure_failure` gives outcome `infrastructure_failure`, whatever the array holds.
 5. Every later step is unchanged: the same legality check, the same `apply_move` sequence, the same `is_solved()`, and the same outcome order.

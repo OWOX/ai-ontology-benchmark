@@ -4,6 +4,7 @@ stop reason. Writes nothing and makes no network calls.
 """
 
 import json
+import math
 import re
 from dataclasses import dataclass
 
@@ -65,6 +66,7 @@ def _parse_decision(raw_response: str, legal: list[str]) -> tuple[list[str], boo
         return None
     if not isinstance(data, list) or not data:
         return None
+    ids = {f"move_{i}": m for i, m in enumerate(legal, 1)}
     moves, mismatch = [], False
     for call in data:
         try:
@@ -74,13 +76,14 @@ def _parse_decision(raw_response: str, legal: list[str]) -> tuple[list[str], boo
             return None
         if not isinstance(probability, (int, float)) or isinstance(probability, bool):
             return None
+        if not math.isfinite(probability) or not 0 <= probability <= 1:
+            return None
         mismatch = mismatch or probability >= MISMATCH_THRESHOLD
         if choice == "done":
             break
-        if not (isinstance(choice, str) and choice.startswith("move_") and choice[5:].isdigit()
-                and 1 <= int(choice[5:]) <= len(legal)):
+        if not isinstance(choice, str) or choice not in ids:
             return None
-        moves.append(legal[int(choice[5:]) - 1])
+        moves.append(ids[choice])
     return moves, mismatch
 
 

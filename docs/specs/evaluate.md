@@ -20,7 +20,8 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
 
 ## Outputs
 
-1. `compute(raw_records, release_dir, prices, models=None) -> (attempt_rows, metric_rows, summary_rows)`. `models` is the list of AI model names in config order, used to sort the rows; it defaults to the names found in the records.
+1. `compute(raw_records, release_dir, prices, models=None, decision_models=frozenset()) -> (attempt_rows, metric_rows, summary_rows)`. `models` is the list of AI model names in config order, used to sort the rows; it defaults to the names found in the records.
+   `evaluate` builds `decision_models` from the experiment config: the names of the AI models whose provider is a decision provider. `compute` passes the flag to the [validator](validator.md#decision-path) for their records, so those raw responses are read as arrays of calls.
    1. `attempt_rows` has one row per raw record: its identifying fields, the outcome from re-validation, and the outcome stored in the raw record.
    2. `metric_rows` has one row per puzzle, setup, AI model, scramble depth, and validity label, with these columns:
       1. `attempts` and `infrastructure_failure_count`.
