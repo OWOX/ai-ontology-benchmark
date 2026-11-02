@@ -207,7 +207,7 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
 .named-net svg { max-width: 100%; height: auto; display: block; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip { border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; font-family: var(--mono); font-size: 12px; }
-.puzzle > h3 { font-size: 14px; margin: 0 0 10px; }
+.puzzle > h3 { font-size: 18px; margin: 0 0 12px; }
 .puzzle h4 { font-size: 13px; margin: 12px 0 4px; }
 .prompt-text { white-space: pre-wrap; background: var(--code); padding: 8px; border-radius: 4px; font-size: 12px; max-height: 320px; overflow: auto; }
 .puzzle table, .inputs table { border-collapse: collapse; }
