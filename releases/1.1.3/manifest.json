@@ -1,0 +1,61 @@
+{
+  "assessment_sha256": "1f49949338373aba0d77ca8f41660fc115917839677b7491ac2911dd4f81e844",
+  "commit": "ebde2fda04cc1eb8effa6ef97baacde9af565b22",
+  "created_at": "2026-11-02T13:03:15Z",
+  "decision_prompt_versions": {
+    "descriptive": {
+      "2x2": "d948cff23a9a",
+      "3x3": "5a2cbc90b020"
+    },
+    "no_model": {
+      "2x2": "256d47010dd4",
+      "3x3": "2346e7abbb0a"
+    },
+    "prescriptive": {
+      "2x2": "3eb76ac17caf",
+      "3x3": "0a35fac3a670"
+    }
+  },
+  "files": {
+    "README.md": "59cdf5ae0a9cacafab3ee1236230f56cedb2ff5c5b27e60aa004abd2ca498c98",
+    "inputs.jsonl": "960e785fb03e10d5d181b4cc592e1f3ab92cf332841ce54441d8cb31fcc9cb6e",
+    "prompts/decision/questions.txt": "d2c197a6561ba6b72763281c02e353edb231996225f599636c9b941567adcb3b",
+    "prompts/descriptive/2x2.txt": "f18b2728c42fd8c6a54b37d1df2d0dc0acd1dbc731065ea712dd9e89fd3d122a",
+    "prompts/descriptive/3x3.txt": "147c905506899d5cf8461f2e7cec91a2bd7e8d7bfec9f61947d74405c5f974b1",
+    "prompts/no_model/2x2.txt": "9cc75f75cdb9b4a2024480ba08c89573ce4c5a56ef29e20cbdd8d025077f2498",
+    "prompts/no_model/3x3.txt": "6f6f974f5d6c091423586a1c3363c4eb008fa3718c43d771092ca70d9463273e",
+    "prompts/prescriptive/2x2.txt": "3a6b92a7180d1887058b82e89c1011513662a47422882b3ad699952c006675a2",
+    "prompts/prescriptive/3x3.txt": "d91733267fc9c9d4318ef632ade4bd5e713c008229766cfa3a553029b0bb3222"
+  },
+  "input_set_id": "1",
+  "note": "Decision models (Jev, Clef, Clef-flash): validator decision path, decision prompt versions, and the UI changes since 1.1.2",
+  "prompt_versions": {
+    "descriptive": {
+      "2x2": "c73bc3c402b2",
+      "3x3": "bf7bd31d24ce"
+    },
+    "no_model": {
+      "2x2": "39826219a35f",
+      "3x3": "2b340850dbf8"
+    },
+    "prescriptive": {
+      "2x2": "e29b0e335344",
+      "3x3": "4270735ea5ca"
+    }
+  },
+  "release_config": {
+    "puzzles": [
+      "2x2",
+      "3x3"
+    ],
+    "scramble_count": 10,
+    "scramble_depths": [
+      5,
+      10,
+      20
+    ],
+    "seed": 20261017,
+    "valid_invalid_split": 0.5
+  },
+  "release_version": "1.1.3"
+}
