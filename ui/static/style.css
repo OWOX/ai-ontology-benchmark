@@ -202,7 +202,7 @@ dialog ul { margin: 4px 0; padding-left: 20px; font-family: var(--mono); font-si
   .shell { grid-template-columns: 1fr; }
   .menu { position: static; height: auto; }
 }
-.puzzle-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: start; }
+.puzzle-top { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(50%); gap: 16px; align-items: start; }
 .puzzle-pic, .puzzle-name-box { display: inline-block; margin: 0 0 8px; }
 .cube3d { display: block; cursor: grab; touch-action: none; user-select: none; }
 .cube3d:active { cursor: grabbing; }

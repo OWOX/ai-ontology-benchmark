@@ -17,7 +17,7 @@
   // The source as a numbered footnote marker, or null without a source.
   function footnote(source) {
     return source ? h("sup", { class: "footnote" },
-      h("a", { href: source, target: "_blank", rel: "noopener", title: "Source", text: "[1]" })) : null;
+      h("a", { href: source, target: "_blank", rel: "noopener", title: "Source", "aria-label": "Source", text: "[1]" })) : null;
   }
 
   function heading(text, source) {
