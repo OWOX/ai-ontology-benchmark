@@ -72,9 +72,9 @@ EXP_TOML = ('release = "1.0.0"\nattempts = 1\nretry_cap = 1\nmax_output_tokens =
             '[[models]]\nname = "example-model"\nprovider = "fake"\napi_model_id = "ex-1"\n')
 MANIFEST = {"input_set_id": "1", "release_config": {"seed": 7}}
 VERSIONS = {s: {"2x2": "v"} for s in ("no_model", "descriptive", "prescriptive")}
-SUCCESS = '{"moves": [], "mismatch": true}'
-HALLUCINATION = '{"moves": ["u"], "mismatch": false}'
-FAILURE = '{"moves": [], "mismatch": false}'
+SUCCESS = "MISMATCH"
+HALLUCINATION = "u"
+FAILURE = "U"
 
 
 class Reply:
@@ -133,7 +133,7 @@ def samples(ui_repo):
               (ui_repo / "releases" / "1.0.0" / "inputs.jsonl").read_text(encoding="utf-8").splitlines()]
     valid = next(r for r in inputs if r["validity"] == "valid")
     invalid = next(r for r in inputs if r.get("source_input_id") == valid["input_id"])
-    records = [record(valid, "no_model", 1, HALLUCINATION), record(valid, "descriptive", 1, "nope"),
+    records = [record(valid, "no_model", 1, HALLUCINATION), record(valid, "descriptive", 1, ""),
                record(invalid, "no_model", 1, SUCCESS), record(invalid, "prescriptive", 1, FAILURE)]
     return valid, invalid, records
 
@@ -406,7 +406,7 @@ def test_kind_shown_but_ignored_by_differs_from_catalogue(ui_repo, samples):
 
 def test_impossible_seen(ui_repo, samples):
     valid, _, _ = samples
-    reply = '{"moves": ["u", "x", "u"], "mismatch": false}'
+    reply = "u\nx\nu"
     push_results(ui_repo, "e", files_for([record(valid, "no_model", 1, reply)]))
     puzzle = make_bundles(ui_repo).get(None, True, set(), {}, set())["puzzles"][0]
     assert [(m["move"], m["count"]) for m in puzzle["impossible_seen"]] == [("u", 2), ("x", 1)]

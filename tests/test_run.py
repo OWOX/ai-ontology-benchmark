@@ -108,14 +108,14 @@ def test_infrastructure_failure_after_cap(exp):
 
 
 def test_retry_then_success_sums_retry_tokens(exp):
-    models.FAKE_REPLIES[:] = [InfrastructureError("x", 5, 1), Reply("{}", "ok", "s", 10, 3, 0.5)]
+    models.FAKE_REPLIES[:] = [InfrastructureError("x", 5, 1), Reply("U", "ok", "s", 10, 3, 0.5)]
     go("--model", "A", "--limit", "1")
     (row,) = records(exp, "A")
     assert (row["retry_input_tokens"], row["retry_output_tokens"], row["input_tokens"]) == (5, 1, 10)
 
 
 def test_malformed_output_not_retried(exp):
-    models.FAKE_REPLIES[:] = [Reply("not json", "ok", "s", 1, 1, 0.1), Reply("x", "ok", "s", 1, 1, 0.1)]
+    models.FAKE_REPLIES[:] = [Reply("", "ok", "s", 1, 1, 0.1), Reply("x", "ok", "s", 1, 1, 0.1)]
     go("--model", "A", "--limit", "1")
     (row,) = records(exp, "A")
     assert row["outcome"] == "malformed_output" and len(models.FAKE_REPLIES) == 1
@@ -233,7 +233,7 @@ def drop_manifest_field(repo, field):
 
 def test_old_release_without_decision_versions_still_runs_llms(exp):
     drop_manifest_field(exp, "decision_prompt_versions")
-    models.FAKE_REPLIES[:] = [Reply('{"moves": [], "mismatch": false}', "ok", "s", 1, 1, 0.1)] * 200
+    models.FAKE_REPLIES[:] = [Reply("U", "ok", "s", 1, 1, 0.1)] * 200
     assert go() == 0
     assert records(exp, "A")
 
@@ -265,7 +265,7 @@ CENT_PRICES = "".join(f"[{n}]\nprice_input_per_mtok = 0.0\nprice_output_per_mtok
 
 
 def cent_replies():
-    return [Reply('{"moves": [], "mismatch": false}', "ok", "s", 0, 100, 0.1) for _ in range(200)]
+    return [Reply("U", "ok", "s", 0, 100, 0.1) for _ in range(200)]
 
 
 def with_budget(repo, **limits):
@@ -490,8 +490,8 @@ def test_outside_a_git_work_tree_refused_before_any_call(exp, tmp_path_factory, 
 
 # Progress. Plain lines when stdout is not a terminal (capsys), a rich display on a terminal.
 
-def reply(moves="[]", mismatch="false", tokens=(10, 4)):
-    return Reply('{"moves": %s, "mismatch": %s}' % (moves, mismatch), "ok", "s", *tokens, 0.1)
+def reply(text="U", tokens=(10, 4)):
+    return Reply(text, "ok", "s", *tokens, 0.1)
 
 
 def progress_lines(out):
@@ -499,7 +499,7 @@ def progress_lines(out):
 
 
 def test_plain_progress_line_per_attempt(exp, capsys):
-    models.FAKE_REPLIES[:] = [reply(), reply('["X"]'), Reply("not json", "ok", "s", 10, 4, 0.1)]
+    models.FAKE_REPLIES[:] = [reply(), reply("X"), Reply("", "ok", "s", 10, 4, 0.1)]
     assert go("--model", "A", "--limit", "3", "--no-commit") == 0
     first, second, third = progress_lines(capsys.readouterr().out)
     assert first.startswith("[1/3] A 2x2 ") and " no_model #1 failure | in 10 out 4 | $0.0000 | " in first
