@@ -29,7 +29,7 @@ Steps, in order:
    4. Exactly one line, and it is `MISMATCH`: no moves, mismatch flag on.
    5. Otherwise every line is one parsed move and the mismatch flag is off. A `MISMATCH` line among other lines is an impossible move. Prose instead of moves is not malformed output: each of its lines is an impossible move, so the attempt is a `hallucination`.
 
-    With `decision` true, see [the decision path](#decision-path) instead, which needs the engine first for the move options.
+   With `decision` true, see [the decision path](#decision-path) instead, which needs the engine first for the move options.
 5. Mark each move as legal only if it exactly equals a string in `legal_moves()`. If any move isn't, `hallucination` is true and the outcome is `hallucination`. The first impossible move is enough: the attempt fails whatever follows it or whether the final state would be solved, `run` stores the reply whole, and the attempt is never re-asked ([run](run.md#outputs) retries only infrastructure failures).
 6. Otherwise, apply every move to the input's state with `apply_move()`.
 7. Return `success` if the expected result is reached and `failure` if not. For a valid input, the expected result is solved with mismatch off. For an invalid input, it is mismatch on.
