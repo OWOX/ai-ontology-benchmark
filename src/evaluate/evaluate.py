@@ -20,6 +20,9 @@ from src.release.release import parse_version
 from src.run.raw import read_raw
 from src.run.run import RunError, load_release
 
+# Moves to src.run.models.DECISION_PROVIDERS in Task 4.
+DECISION_PROVIDERS = ("typesafe", "cloudflare", "fake_decision")
+
 REQUIRED = (
     "input_id", "setup", "model", "attempt_number", "raw_response", "stop_reason", "outcome",
     "input_tokens", "output_tokens", "retry_input_tokens", "retry_output_tokens", "latency_s",
@@ -100,7 +103,8 @@ def evaluate(args: argparse.Namespace) -> None:
     prices = load_prices(prices_path)
     check_prices(prices, prices_path, config)
     names = [m["name"] for m in config["models"]]
-    attempt_rows, metric_rows, summary_rows = compute(records, release_dir, prices, names)
+    decision_models = {m["name"] for m in config["models"] if m["provider"] in DECISION_PROVIDERS}
+    attempt_rows, metric_rows, summary_rows = compute(records, release_dir, prices, names, decision_models)
     if not metric_rows:
         raise EvalError(f"{results / 'raw'}: no raw records")
     csv_content = csv_text(metric_rows)
