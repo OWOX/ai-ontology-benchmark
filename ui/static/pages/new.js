@@ -156,7 +156,7 @@
         ctl.id = id;
       }
 
-      let branches = [], pickSeq = 0;
+      let branches = [], pickSeq = 0, loading = false;
       const branchNote = () => S.branch ? "Existing branch: its config is loaded, and Run resumes it."
         : S.touched && branches.includes(S.id) ? "This branch exists. Press Enter or leave the field to load it."
         : S.touched ? "Edited by hand. Clear the field to get the suggestion back."
@@ -185,10 +185,11 @@
         // A later pick or a keystroke in the branch field supersedes a load still in flight.
         const seq = ++pickSeq;
         S.branch = value;
-        if (!value) { S.touched = false; await refreshId(); if (!dead) paint(); return; }
+        loading = true;
         try {
           const cfg = await UI.api("/api/experiment/" + encodeURIComponent(value) + "/config");
           if (dead || seq !== pickSeq) return;
+          loading = false;
           const all = bundle.providers.flatMap((p) => p.models);
           const enabled = new Set(all.filter((m) => !m.disabled_reason).map((m) => m.name));
           const dropped = cfg.models.filter((n) => !enabled.has(n)).map((n) => {
@@ -202,7 +203,12 @@
           startProgress(value);
           if (dropped.length) say(`Loaded ${value}. ${dropped.join(". ")}.`, "err");
           else say(`Loaded ${value}.`, "ok");
-        } catch (e) { say(e.message, "err"); }
+        } catch (e) {
+          if (seq !== pickSeq) return;
+          loading = false; S.branch = "";
+          if (ref.note) ref.note.textContent = branchNote();
+          say(e.message, "err");
+        }
       }
 
       async function send(path, label) {
@@ -240,10 +246,13 @@
         }).catch((e) => say(e.message, "err"));
         ref.id = h("input", { type: "text", list: "branch-list", "aria-label": "Branch", value: S.id, spellcheck: "false" });
         ref.id.addEventListener("input", () => {
+          // A keystroke drops a load in flight, so the form is no longer that branch's until it loads again.
+          if (loading) { S.branch = ""; loading = false; }
           pickSeq++;
           if (ref.id.value === "") {
             Object.assign(S, { id: "", touched: false, branch: "", progId: "" });
             if (ctl) { ctl.destroy(); ctl = null; }
+            progMount.replaceChildren();
             refreshId();
           } else {
             S.id = ref.id.value.trim(); S.touched = true;
