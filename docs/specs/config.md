@@ -24,7 +24,7 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
    release = "1.0.0"
    attempts = 3
    retry_cap = 3
-   max_output_tokens = 4096
+   max_output_tokens = 32000
    max_moves = 14                 # optional; decision models only; default is twice the largest scramble depth
    puzzles = ["2x2"]              # optional; default is every puzzle in the release
 
@@ -36,7 +36,7 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
    params = { temperature = 1.0 } # optional, passed to the SDK call unchanged
 
    [budget]                       # optional, in USD; these values are the defaults
-   per_request_usd = 0.50
+   per_request_usd = 1.00
    per_model_usd = 5.00
    per_experiment_usd = 10.00
    ```

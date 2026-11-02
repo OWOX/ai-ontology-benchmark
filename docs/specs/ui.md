@@ -68,8 +68,8 @@ Every path below is read from a git ref, never from the work tree, except the AP
 {"schema": 2, "release": "1.1.1", "releases": ["1.1.1", "1.1.0", "1.0.0"],
  "fetched_at": "2026-10-25T10:12:00Z", "fetch_error": null, "repo": "https://github.com/<owner>/<repo>",
  "main_sha": "<sha>",
- "defaults": {"attempts": 3, "retry_cap": 3, "max_output_tokens": 4096,
-              "budget": {"per_request_usd": 0.5, "per_model_usd": 5.0, "per_experiment_usd": 10.0}},
+ "defaults": {"attempts": 3, "retry_cap": 3, "max_output_tokens": 32000,
+              "budget": {"per_request_usd": 1.0, "per_model_usd": 5.0, "per_experiment_usd": 10.0}},
  "providers": [{"name": "anthropic", "variable": "ANTHROPIC_API_KEY", "key": {"source": "file", "tail": "ab12", "configured": true},
                 "models": [{"name": "claude-opus-5-5", "api_model_id": "claude-opus-5-5", "kind": "system-2", "params": {},
                             "price": {"input_per_mtok": 5.0, "output_per_mtok": 25.0}, "disabled_reason": null,
@@ -132,8 +132,8 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
 
    ```json
    {"id": "claude-opus-5-5-gpt-6-astra_2x2-3x3_20261025-1012", "release": "1.1.1", "puzzles": ["2x2"],
-    "models": ["claude-opus-5-5"], "attempts": 3, "retry_cap": 3, "max_output_tokens": 4096,
-    "budget": {"per_request_usd": 0.5, "per_model_usd": 5.0, "per_experiment_usd": 10.0}}
+    "models": ["claude-opus-5-5"], "attempts": 3, "retry_cap": 3, "max_output_tokens": 32000,
+    "budget": {"per_request_usd": 1.0, "per_model_usd": 5.0, "per_experiment_usd": 10.0}}
    ```
 
    `models` holds catalogue names. A disabled model, an unknown release, or a puzzle that isn't in the release gives 400.

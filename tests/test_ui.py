@@ -270,7 +270,7 @@ def test_bundle_disabled_reasons_and_defaults(server):
                        "unpriced": "no price in config/prices.toml",
                        "edge-model": "no price in config/prices.toml"}
     assert data["release"] == "1.0.0" and data["releases"] == ["1.0.0"]
-    assert data["defaults"]["budget"] == BUDGET and data["defaults"]["attempts"] == 3
+    assert data["defaults"]["budget"] == {**BUDGET, "per_request_usd": 1.0} and data["defaults"]["attempts"] == 3
 
 
 def test_bundle_needs_token(server):
