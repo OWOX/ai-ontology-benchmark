@@ -1,7 +1,7 @@
 release = "1.0.0"
 attempts = 3
 retry_cap = 3
-max_output_tokens = 4096
+max_output_tokens = 32000
 
 [[models]]
 name = "example-model"
@@ -10,6 +10,6 @@ api_model_id = "example-model-2026-01-01"
 params = { temperature = 1.0 }
 
 [budget]
-per_request_usd = 0.50
+per_request_usd = 1.00
 per_model_usd = 5.00
 per_experiment_usd = 10.00
