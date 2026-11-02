@@ -37,7 +37,7 @@ With `decision` true, `raw_response` is a JSON array, one element per completed 
 2. A choice is `done`, `mismatch`, or `move_<n>`, where `n` is the 1-based position in `legal_moves()`, written exactly as offered (no leading zeros, no other digits). Any other choice, including a move written out as `R`, is `malformed_output`.
 3. The parsed moves are the moves behind the `move_<n>` choices before the first `done` or `mismatch`. Calls after it are ignored.
 4. The mismatch flag is on if the first `done` or `mismatch` is `mismatch`.
-5. Each call is read by `read_decision_call(call, legal) -> str | None`, the move, `"done"`, or `"mismatch"`,, which returns `None` for a malformed call. [run](run.md) uses the same function to stop its loop.
+5. Each call is read by `read_decision_call(call, legal) -> str | None`, the move, `"done"`, or `"mismatch"`, which returns `None` for a malformed call. [run](run.md) uses the same function to stop its loop.
 6. Steps 5 to 7 are unchanged. The options are exactly the legal moves, `done`, and `mismatch`, so a decision model's hallucination rate is 0 by construction.
 
 ## How to test

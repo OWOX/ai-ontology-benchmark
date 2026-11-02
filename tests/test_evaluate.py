@@ -304,8 +304,8 @@ def test_decision_model_records_are_parsed_as_arrays(release_dir):
     state, scramble = get_engine("2x2").scramble(1, 1)
     inverse = {"": "'", "'": "", "2": "2"}
     solve = scramble[0][0] + inverse[scramble[0][1:]]
-    calls = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}, "mismatch": {"noul": 0.1}}},
-             {"answers": {"next_move": {"choice": "done"}, "mismatch": {"noul": 0.1}}}]
+    calls = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}}},
+             {"answers": {"next_move": {"choice": "done"}}}]
     record = raw("2x2-d1-001", 1, json.dumps(calls), "success", model="M")
     attempts, _, _ = compute([record], release_dir, PRICES, decision_models={"M"})
     assert attempts[0]["outcome"] == "success"

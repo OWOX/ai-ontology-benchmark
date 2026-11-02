@@ -2,6 +2,8 @@
 
 Status: design approved in conversation on 2026-11-01. Waiting for written review.
 
+Superseded in part on 2026-11-02: mismatch is now an option of next_move, with no threshold; see docs/definitions.md.
+
 ## Goal
 
 Add three decision models to the study: Jev from TypeSafe AI, and Clef and Clef-flash from Cloudflare Workers AI. They answer the same frozen inputs under the same three setups as the other AI models. The same validator judges them, and `evaluate` computes the same metrics. Their `kind` is `system-1`.

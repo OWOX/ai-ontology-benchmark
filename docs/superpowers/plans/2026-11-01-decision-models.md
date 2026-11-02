@@ -1,5 +1,7 @@
 # Decision models implementation plan
 
+Superseded in part on 2026-11-02: mismatch is now an option of next_move, with no threshold; see docs/definitions.md.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Run Jev, Clef, and Clef-flash as AI models through a per-move loop, judged by the same validator and metrics as the LLMs.

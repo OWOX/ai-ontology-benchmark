@@ -41,5 +41,5 @@ Turn one input and one [setup](../definitions.md#setups) into the exact prompt t
 
 ## Open
 
-The template text for each setup ([open item 1](../../AGENTS.md#open)) was approved by the project owner on 2026-10-23. All three setups share the description of the state format, the notation name, and the closing instructions, so only the rules differ. The prescriptive setup carries the descriptive rules plus the move list. The text of `decision/questions.txt` was approved by the project owner on 2026-11-01.
+The template text for each setup ([open item 1](../../AGENTS.md#open)) was approved by the project owner on 2026-10-23. All three setups share the description of the state format, the notation name, and the closing instructions, so only the rules differ. The prescriptive setup carries the descriptive rules plus the move list. The 2026-11-01 text of `decision/questions.txt` was approved by the project owner. The `next_move` and `mismatch` wording changed on 2026-11-02 and awaits the project owner's approval.
 12. Changing the suffix `decision_state` adds, or the structure `decision_questions` builds, changes every decision version and leaves `prompt_versions` equal.
