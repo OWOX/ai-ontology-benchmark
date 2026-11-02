@@ -216,6 +216,50 @@ def test_missing_manifest_field_refused(exp, capsys, field):
     assert len(models.FAKE_REPLIES) == 1 and not (exp / "results/exp").exists()
 
 
+def drop_manifest_field(repo, field):
+    path = repo / "releases/1.0.0/manifest.json"
+    path.chmod(0o644)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    del manifest[field]
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_old_release_without_decision_versions_still_runs_llms(exp):
+    drop_manifest_field(exp, "decision_prompt_versions")
+    models.FAKE_REPLIES[:] = [Reply('{"moves": [], "mismatch": false}', "ok", "s", 1, 1, 0.1)] * 200
+    assert go() == 0
+    assert records(exp, "A")
+
+
+def test_old_release_refuses_a_decision_model(exp, capsys):
+    drop_manifest_field(exp, "decision_prompt_versions")
+    config = exp / "config" / "experiments" / "exp.toml"
+    config.write_text(EXPERIMENT + '[[models]]\nname = "D"\nprovider = "fake_decision"\napi_model_id = "d-1"\n',
+                      encoding="utf-8")
+    assert go() == 1
+    err = capsys.readouterr().err
+    assert "manifest.json" in err and "decision_prompt_versions" in err and "cut after" in err
+    assert not (exp / "results/exp").exists()
+
+
+def test_changed_questions_refused_when_the_field_is_present(exp, capsys):
+    questions = exp / "releases/1.0.0/prompts/decision/questions.txt"
+    questions.chmod(0o644)
+    questions.write_text(questions.read_text(encoding="utf-8").replace("Pick", "Choose"), encoding="utf-8")
+    assert go() == 1
+    assert "manifest.json" in capsys.readouterr().err
+
+
+def test_changed_decision_versions_refused(exp, capsys):
+    path = exp / "releases/1.0.0/manifest.json"
+    path.chmod(0o644)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["decision_prompt_versions"]["no_model"]["2x2"] = "0" * 12
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert go() == 1
+    assert "decision_prompt_versions" in capsys.readouterr().err
+
+
 # Budgets. Price 0 for input and 100 USD per million output tokens, with max_output_tokens = 100,
 # make every worst-case request cost 0.01 USD, and a reply of 100 output tokens cost 0.01 USD.
 CENT_PRICES = "".join(f"[{n}]\nprice_input_per_mtok = 0.0\nprice_output_per_mtok = 100.0\n" for n in "AB")

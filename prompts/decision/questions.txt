@@ -1,0 +1,3 @@
+next_move: Which move should be applied next to solve the puzzle, after the moves so far? Pick done when the moves so far solve it.
+done: The moves so far solve the puzzle.
+mismatch: Is this state impossible to reach from the solved state by legal moves?

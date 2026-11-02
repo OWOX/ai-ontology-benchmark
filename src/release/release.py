@@ -17,7 +17,7 @@ from pathlib import Path
 
 from src.config import load_release_config
 from src.generate.generate import build_inputs
-from src.run.prompts import prompt_versions
+from src.run.prompts import decision_prompt_versions, prompt_versions
 
 VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 # Globs for the assessment. src/evaluate/report.py is left out on purpose.
@@ -91,12 +91,17 @@ def parse_inputs(text: str) -> list[dict]:
     return [json.loads(line) for line in text.splitlines()]
 
 
-def check_bump_rules(bump: str, old: dict, new_versions: dict, old_assessment: str, new_assessment: str) -> None:
-    """Raise ReleaseError if the changes since the latest release don't fit a minor or patch bump."""
-    if bump == "minor" and new_versions == old["prompt_versions"]:
+def check_bump_rules(bump: str, old: dict, new_versions: dict, old_assessment: str, new_assessment: str,
+                     new_decision_versions: dict | None = None) -> None:
+    """Raise ReleaseError if the changes since the latest release don't fit a minor or patch bump.
+    A change in either prompt_versions or decision_prompt_versions is a prompt change. A release
+    without decision_prompt_versions counts as different."""
+    prompts_same = (new_versions == old["prompt_versions"]
+                    and new_decision_versions == old.get("decision_prompt_versions"))
+    if bump == "minor" and prompts_same:
         raise ReleaseError("prompts: a minor bump needs at least one prompt version to differ")
     if bump == "patch":
-        if new_versions != old["prompt_versions"]:
+        if not prompts_same:
             raise ReleaseError("prompts: a patch bump needs every prompt version to equal the latest release")
         if new_assessment == old_assessment:
             raise ReleaseError("assessment: a patch bump needs the assessment to differ from the latest release")
@@ -122,13 +127,14 @@ def versions_table(versions: dict) -> str:
     return "\n".join(rows)
 
 
-def build_readme(version, note, created, inputs, versions, assessment, previous) -> str:
+def build_readme(version, note, created, inputs, versions, decision_versions, assessment, previous) -> str:
     link = f"[{previous}](../{previous}/README.md)" if previous else "none"
     return (
         f"# Release {version}\n\n"
         f"Note: {note}\n\nDate: {created}\n\n"
         f"## Inputs\n\n{counts_table(inputs)}\n\n"
         f"## Prompt versions\n\n{versions_table(versions)}\n\n"
+        f"## Decision prompt versions\n\n{versions_table(decision_versions)}\n\n"
         f"## Assessment\n\nsha256: `{assessment}`\n\n"
         f"## Previous release\n\n{link}\n"
     )
@@ -171,9 +177,10 @@ def release(bump: str, note: str, releases: Path) -> str:
         inputs_text = read_text(releases / latest / "inputs.jsonl")
     inputs = parse_inputs(inputs_text)
     versions = prompt_versions(PROMPTS_DIR, inputs)
+    decision_versions = decision_prompt_versions(PROMPTS_DIR, inputs)
     assessment = assessment_sha256()
     if old:
-        check_bump_rules(bump, old, versions, old["assessment_sha256"], assessment)
+        check_bump_rules(bump, old, versions, old["assessment_sha256"], assessment, decision_versions)
     created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     manifest = {
         "release_version": version,
@@ -183,9 +190,10 @@ def release(bump: str, note: str, releases: Path) -> str:
         "created_at": created,
         "commit": git("rev-parse", "HEAD").strip(),
         "prompt_versions": versions,
+        "decision_prompt_versions": decision_versions,
         "assessment_sha256": assessment,
     }
-    readme = build_readme(version, note, created, inputs, versions, assessment, latest)
+    readme = build_readme(version, note, created, inputs, versions, decision_versions, assessment, latest)
     folder = releases / version
     write_release(folder, inputs_text, manifest, readme)
     commit_release(folder, version, note)

@@ -9,7 +9,7 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
 ## Inputs
 
 1. `--experiment ID`. Reads `results/<ID>/experiment.toml` and every file in `results/<ID>/raw/`.
-2. `--release VERSION`, default the release in the experiment config. It must be that release or a [mirror](../definitions.md#releases-and-experiments) of it: same major and minor, the same `inputs.jsonl` hash, and the same `prompt_versions`. For example, an experiment run on `1.1.0` can be scored under `1.1.1`, never under `1.2.0`.
+2. `--release VERSION`, default the release in the experiment config. It must be that release or a [mirror](../definitions.md#releases-and-experiments) of it: same major and minor, the same `inputs.jsonl` hash, and the same `prompt_versions`, and the same `decision_prompt_versions` when both releases hold it. For example, an experiment run on `1.1.0` can be scored under `1.1.1`, never under `1.2.0`.
 3. The assessment files in the working tree must hash to that release's `assessment_sha256`, and the working tree must render exactly the prompt versions the release froze (the same checks [run](run.md) makes). To score under an older release, check out its tag first.
 4. Token prices. On the first evaluate of an experiment, `config/prices.toml` is copied to `results/<ID>/prices.toml`. Every later evaluate reads the copy, so a price change never rewrites a committed report. To use new prices, delete the copy on purpose.
 5. Every AI model in the experiment config needs a price in the prices file, whether or not it has records.

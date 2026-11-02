@@ -20,18 +20,20 @@ The [`release`](../definitions.md#workflows) workflow. Freeze the current input 
 
 1. A new folder `releases/<MAJOR.MINOR.PATCH>/`, every file set read-only once written:
    1. `inputs.jsonl`. For a major bump, built by [generate](generate.md). Otherwise a byte-for-byte copy from the latest release.
-   2. `prompts/<setup>/<puzzle>.txt`. A copy of the working templates.
-   3. `manifest.json`. It holds the release version, the input set id, the release config, the note, the creation time, the git commit it was built from, the sha256 of every other file in the folder, `prompt_versions` from [prompts](prompts.md), and `assessment_sha256`. That last one is the sha256 of the assessment files' contents, taken in sorted path order.
-   4. `README.md`, for people. It holds the version, the note, and the date, a table of input counts by puzzle, depth, and validity, a table of prompt versions by setup and puzzle, the assessment hash, and a link to the release before it.
+   2. `prompts/<setup>/<puzzle>.txt` and `prompts/decision/questions.txt`. A copy of the working templates.
+   3. `manifest.json`. It holds the release version, the input set id, the release config, the note, the creation time, the git commit it was built from, the sha256 of every other file in the folder, `prompt_versions` and `decision_prompt_versions` from [prompts](prompts.md), and `assessment_sha256`. That last one is the sha256 of the assessment files' contents, taken in sorted path order.
+   4. `README.md`, for people. It holds the version, the note, and the date, a table of input counts by puzzle, depth, and validity, a table of prompt versions and a table of decision prompt versions by setup and puzzle, the assessment hash, and a link to the release before it.
 2. A local git commit holding only the new folder, with the message `Release <version>: <note>`, and a local tag `release-<version>` on it. Nothing is pushed.
 
 Bump rules, compared with the latest release. `release` exits with code 1 and writes nothing if any rule fails:
 
-| Bump | Inputs | Prompt versions | Assessment |
+| Bump | Inputs | Prompt versions and decision prompt versions | Assessment |
 |---|---|---|---|
 | major | new input set, input set id = new major | any | any |
-| minor | copied | at least one differs | any |
-| patch | copied | all equal | differs |
+| minor | copied | at least one, in either table, differs | any |
+| patch | copied | all equal in both tables | differs |
+
+An old release without `decision_prompt_versions` counts as different, so the next minor bump is accepted on that field alone.
 
 It also refuses when the git working tree has uncommitted changes, because the manifest's commit must describe the code exactly.
 
@@ -47,3 +49,5 @@ All tests use a temporary releases folder inside a temporary git repo.
 6. A patch bump after a change only to `report.py` exits with code 1, because the assessment didn't change.
 7. Uncommitted changes make every bump exit with code 1.
 8. Files in the new release can't be opened for writing.
+9. The manifest and README hold `decision_prompt_versions`, and `prompts/decision/questions.txt` is in `files`.
+10. A minor bump after editing only `questions.txt` is accepted. A patch bump after the same edit exits with code 1.

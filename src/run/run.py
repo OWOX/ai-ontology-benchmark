@@ -26,7 +26,7 @@ from src.run.budget import (BudgetError, check_prices, check_request_budget, che
                             print_estimate, worst_case_request_cost)
 from src.run.models import InfrastructureError, call_model
 from src.run.progress import Progress
-from src.run.prompts import SETUPS, build_prompt, prompt_versions
+from src.run.prompts import SETUPS, build_prompt, decision_prompt_versions, prompt_versions
 from src.run.raw import read_raw
 from src.validator import validate
 
@@ -35,8 +35,14 @@ class RunError(Exception):
     """A checked error. The message names the file or field at fault."""
 
 
-def load_release(folder: Path) -> tuple[dict, list[dict]]:
-    """Check the release against its manifest and the working tree. Return (manifest, inputs)."""
+# Moves to src.run.models.DECISION_PROVIDERS in Task 4.
+DECISION_PROVIDERS = ("typesafe", "cloudflare", "fake_decision")
+
+
+def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list[dict]]:
+    """Check the release against its manifest and the working tree. Return (manifest, inputs).
+    A release without decision_prompt_versions is checked as before, and is refused only when
+    needs_decision is true."""
     manifest_path = folder / "manifest.json"
     if not manifest_path.is_file():
         raise RunError(f"{manifest_path}: file not found")
@@ -47,6 +53,9 @@ def load_release(folder: Path) -> tuple[dict, list[dict]]:
     for field in ("files", "assessment_sha256", "prompt_versions", "input_set_id", "release_config"):
         if field not in manifest:
             raise RunError(f"{manifest_path}: field '{field}' is missing")
+    if needs_decision and "decision_prompt_versions" not in manifest:
+        raise RunError(f"{manifest_path}: field 'decision_prompt_versions' is missing; "
+                       "decision models need a release cut after they were added")
     if "seed" not in manifest["release_config"]:
         raise RunError(f"{manifest_path}: field 'release_config.seed' is missing")
     for name, digest in manifest["files"].items():
@@ -59,6 +68,10 @@ def load_release(folder: Path) -> tuple[dict, list[dict]]:
     inputs = [json.loads(line) for line in lines]
     if prompt_versions(folder / "prompts", inputs) != manifest["prompt_versions"]:
         raise RunError(f"{manifest_path}: field 'prompt_versions' differs from the prompts the working tree renders")
+    if "decision_prompt_versions" in manifest and (
+            decision_prompt_versions(folder / "prompts", inputs) != manifest["decision_prompt_versions"]):
+        raise RunError(
+            f"{manifest_path}: field 'decision_prompt_versions' differs from the prompts the working tree renders")
     return manifest, inputs
 
 
@@ -187,7 +200,8 @@ def run(args: argparse.Namespace) -> int:
     if args.model and args.model not in names:
         raise RunError(f"{source}: field 'models' has no model {args.model!r}")
     folder = args.releases / config["release"]
-    manifest, inputs = load_release(folder)
+    needs_decision = any(m["provider"] in DECISION_PROVIDERS for m in config["models"])
+    manifest, inputs = load_release(folder, needs_decision)
     for name in config.get("puzzles", []):
         if name not in manifest["release_config"]["puzzles"]:
             raise RunError(f"{source}: field 'puzzles' names {name!r}, which release {config['release']} does not hold")

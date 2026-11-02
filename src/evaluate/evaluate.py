@@ -68,6 +68,11 @@ def check_release(releases: Path, base: str, target: str) -> None:
         raise EvalError(
             f"{releases / target / 'manifest.json'}: "
             f"field 'prompt_versions' differs from release {base}")
+    if "decision_prompt_versions" in old and "decision_prompt_versions" in manifest:
+        if old["decision_prompt_versions"] != manifest["decision_prompt_versions"]:
+            raise EvalError(
+                f"{releases / target / 'manifest.json'}: "
+                f"field 'decision_prompt_versions' differs from release {base}")
 
 
 def show_float(value: object) -> object:
