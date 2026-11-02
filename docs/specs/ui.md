@@ -229,7 +229,7 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 
 ### Left menu
 
-1. A "New Experiment" button under the menu title. It opens `#/new` for the release in the hash, else the newest.
+1. A "New Experiment" button under the menu title. It opens `#/new` for the newest release.
 2. Models, Puzzles, Experiments, and About, with the current page highlighted. Models shows ⚠️ when any provider with a key is not configured.
 3. The menu has no release select. Every page shows the newest release, unless the hash names another with `?release=`. Menu links and New Experiment never carry `?release=`, so they always lead back to the newest release. Experiments of a release that is neither the newest nor one of its mirrors show only under such a hash.
 4. At the bottom of the menu, a theme switch with a ↻ button beside it. The theme switch is Light, Dark, and System, default System. System follows the browser's `prefers-color-scheme`. `theme.js` keeps the choice in `localStorage` under `theme`, inside try/catch, and loads in `<head>`, so the page never paints in the wrong theme.
