@@ -31,6 +31,9 @@ body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -app
 .top h1 { font-size: 16px; margin: 0; }
 .nowrap { white-space: nowrap; }
 .conn { display: inline-block; box-sizing: content-box; width: 9px; height: 9px; padding: 4px; margin-left: 0; border-radius: 50%; vertical-align: middle; background-color: #8a919c; background-clip: content-box; }
+.conn-wrap { position: relative; display: inline-block; }
+.conn-tip { display: none; position: fixed; left: 12px; top: 0; z-index: 30; width: max-content; max-width: min(340px, calc(100vw - 24px)); padding: 10px 14px; background: var(--tip); color: #fff; border-radius: 10px; font: 400 13px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; white-space: normal; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); }
+.conn:hover + .conn-tip, .conn:focus + .conn-tip, .conn:focus-visible + .conn-tip { display: block; }
 .conn.ok { background-color: #2e9e5b; }
 .conn.warn { background-color: #f2b705; }
 .conn.bad { background-color: var(--danger); }
