@@ -24,11 +24,11 @@ from src.release.release import assessment_sha256
 from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
                             print_estimate, worst_case_request_cost)
-from src.run.decision import DecisionResult, run_decision_attempt, worst_state
+from src.run.decision import DecisionResult, run_decision_attempt
 from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model
 from src.run.progress import Progress
 from src.run.prompts import (SETUPS, both_prompt_versions, build_prompt, decision_questions, decision_state,
-                             load_questions, prompt_versions)
+                             load_questions, prompt_versions, worst_state)
 from src.run.raw import read_raw
 from src.puzzles.registry import get_engine
 from src.validator import validate
@@ -277,6 +277,8 @@ def finish(branch: ResultsBranch, experiment_id: str) -> None:
 
 def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress) -> None:
     cap = max_moves(config, manifest["release_config"])
+    questions = load_questions(folder / "prompts") if any(
+        m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending) else None  # once per run
     for left, (row, model, setup, number) in zip(range(len(pending), 0, -1), pending):
         prompt = build_prompt(folder / "prompts", row, setup)
         is_decision = model["provider"] in DECISION_PROVIDERS
@@ -284,8 +286,8 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
         if args.dry_run:
             print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}")
             if is_decision:
-                questions = decision_questions(load_questions(folder / "prompts"), legal)
-                print(f"{decision_state(prompt, [])}\n--- questions\n{json.dumps(questions, indent=2)}")
+                asked = decision_questions(questions, legal)
+                print(f"{decision_state(prompt, [])}\n--- questions\n{json.dumps(asked, indent=2)}")
             else:
                 print(prompt)
             continue
@@ -299,7 +301,7 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
 
         result = None
         if is_decision:
-            result = run_decision_attempt(model, prompt, legal, load_questions(folder / "prompts"),
+            result = run_decision_attempt(model, prompt, legal, questions,
                                           cap, config["retry_cap"], can_afford)
             reply, retry_in, retry_out, stop = None, result.retry_input_tokens, result.retry_output_tokens, result.budget_stop
         else:

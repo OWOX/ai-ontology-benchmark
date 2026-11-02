@@ -10,7 +10,7 @@ from pathlib import Path
 from src.evaluate.metrics import attempt_cost
 from src.puzzles.registry import get_engine
 from src.run.models import DECISION_PROVIDERS
-from src.run.prompts import build_prompt
+from src.run.prompts import build_prompt, worst_state
 from src.run.raw import read_raw
 
 TOLERANCE = 1e-9  # keeps float rounding from stopping a run that sits exactly on a limit
@@ -70,18 +70,18 @@ def check_spend(config: dict, prices: dict, raw_dir: Path, model_name: str,
 def print_estimate(config: dict, pending: list, prices: dict, templates: Path, raw_dir: Path,
                    cap: int = 0) -> None:
     """A decision model's attempt makes up to cap + 1 calls, each as long as the longest state."""
-    from src.run.decision import worst_state  # decision imports BudgetError from this module
     spent = spent_by_model(config, prices, raw_dir)
     budget = config["budget"]
     total = 0.0
     for model in config["models"]:
         name = model["name"]
-        calls = cap + 1 if model["provider"] in DECISION_PROVIDERS else 1
+        is_decision = model["provider"] in DECISION_PROVIDERS
+        calls = cap + 1 if is_decision else 1
         prompts = []
         for row, m, setup, _ in pending:
             if m["name"] == name:
                 prompt = build_prompt(templates, row, setup)
-                if calls > 1:
+                if is_decision:
                     prompt = worst_state(prompt, get_engine(row["puzzle"]).legal_moves(), cap)
                 prompts.append(prompt)
         cost = calls * sum(worst_case_request_cost(p, config["max_output_tokens"], prices[name]) for p in prompts)

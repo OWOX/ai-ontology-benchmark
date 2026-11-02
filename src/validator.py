@@ -58,6 +58,27 @@ def _parse(raw_response: str) -> tuple[list[str], bool] | None:
     return moves, mismatch
 
 
+def read_decision_call(call: object, legal: list[str]) -> tuple[str, float] | None:
+    """Read one call of a decision model: return (move or "done", mismatch probability), or None
+    when the call is malformed. The id must match exactly (move_1, never move_01) and the
+    probability must be a finite number from 0 to 1. The run loop shares this reader."""
+    try:
+        choice = call["answers"]["next_move"]["choice"]
+        probability = call["answers"]["mismatch"]["noul"]
+    except (KeyError, TypeError):
+        return None
+    if not isinstance(probability, (int, float)) or isinstance(probability, bool):
+        return None
+    if not math.isfinite(probability) or not 0 <= probability <= 1:
+        return None
+    if choice == "done":
+        return "done", probability
+    ids = {f"move_{i}": m for i, m in enumerate(legal, 1)}
+    if not isinstance(choice, str) or choice not in ids:
+        return None
+    return ids[choice], probability
+
+
 def _parse_decision(raw_response: str, legal: list[str]) -> tuple[list[str], bool] | None:
     """Return (moves, mismatch) from a decision model's array of calls, else None."""
     try:
@@ -66,24 +87,16 @@ def _parse_decision(raw_response: str, legal: list[str]) -> tuple[list[str], boo
         return None
     if not isinstance(data, list) or not data:
         return None
-    ids = {f"move_{i}": m for i, m in enumerate(legal, 1)}
     moves, mismatch = [], False
     for call in data:
-        try:
-            choice = call["answers"]["next_move"]["choice"]
-            probability = call["answers"]["mismatch"]["noul"]
-        except (KeyError, TypeError):
+        read = read_decision_call(call, legal)
+        if read is None:
             return None
-        if not isinstance(probability, (int, float)) or isinstance(probability, bool):
-            return None
-        if not math.isfinite(probability) or not 0 <= probability <= 1:
-            return None
+        move, probability = read
         mismatch = mismatch or probability >= MISMATCH_THRESHOLD
-        if choice == "done":
+        if move == "done":
             break
-        if not isinstance(choice, str) or choice not in ids:
-            return None
-        moves.append(ids[choice])
+        moves.append(move)
     return moves, mismatch
 
 

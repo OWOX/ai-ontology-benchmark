@@ -14,6 +14,7 @@ from src.evaluate import evaluate as evaluate_module
 from src.puzzles.registry import get_engine
 from src.run import models, run as run_module
 from src.run.models import InfrastructureError, Reply
+from src.run.prompts import build_prompt, worst_state
 from src.run.raw import read_raw
 from test_release import git, release_ok, repo  # noqa: F401  (repo is a fixture)
 
@@ -783,6 +784,17 @@ def test_decision_budget_stop_mid_attempt_writes_the_record_then_stops(exp, monk
     assert capsys.readouterr().err.strip().splitlines()[-1].startswith("error: budget reached:")
 
 
+def test_decision_budget_counts_the_completed_calls_of_the_attempt(exp, monkeypatch):
+    # 100 output tokens cost 0.01 USD, as does the worst case of one call: room for two calls only.
+    prices = "[D]\nprice_input_per_mtok = 0.0\nprice_output_per_mtok = 100.0\n"
+    fake = decision_exp(exp, monkeypatch, DECISION_EXPERIMENT + "[budget]\nper_model_usd = 0.025\n", prices)
+    fake[:] = [d_reply("move_1", tokens=(0, 100)), d_reply("move_1", tokens=(0, 100)), d_reply("done")]
+    assert go("--limit", "1") == 1
+    (row,) = records(exp, "D")
+    assert len(json.loads(row["raw_response"])) == 2 and row["output_tokens"] == 200
+    assert row["outcome"] == "infrastructure_failure" and len(fake) == 1
+
+
 def test_decision_dry_run_prints_the_first_state_and_questions(exp, monkeypatch, capsys):
     fake = decision_exp(exp, monkeypatch)
     fake[:] = [d_reply("done")]
@@ -792,11 +804,18 @@ def test_decision_dry_run_prints_the_first_state_and_questions(exp, monkeypatch,
     assert len(fake) == 1 and not (exp / "results").exists()
 
 
-def test_decision_estimate_multiplies_the_worst_case_by_the_calls(exp, monkeypatch, capsys):
+def test_decision_estimate_is_cap_plus_one_calls_of_the_longest_state(exp, monkeypatch, capsys):
     decision_exp(exp, monkeypatch)
-    assert go("--estimate") == 0
-    decision_line = capsys.readouterr().out.splitlines()[0]
-    (exp / "config" / "experiments" / "exp.toml").write_text(
-        DECISION_EXPERIMENT.replace('[[models]]', 'max_moves = 1\n[[models]]', 1), encoding="utf-8")
-    assert go("--estimate") == 0
-    assert decision_line != capsys.readouterr().out.splitlines()[0]
+    rows = [json.loads(line) for line in (exp / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    for cap, text in ((6, DECISION_EXPERIMENT),  # default: twice the largest scramble depth, 3
+                      (1, DECISION_EXPERIMENT.replace("[[models]]", "max_moves = 1\n[[models]]", 1))):
+        (exp / "config" / "experiments" / "exp.toml").write_text(text, encoding="utf-8")
+        assert go("--estimate") == 0
+        line = capsys.readouterr().out.splitlines()[0]
+        expected = 0.0
+        for row in rows:
+            for setup in run_module.SETUPS:
+                state = worst_state(build_prompt(exp / "releases/1.0.0/prompts", row, setup),
+                                    get_engine(row["puzzle"]).legal_moves(), cap)
+                expected += (cap + 1) * (-(-len(state) // 4) * 1.0 + 100 * 2.0) / 1e6
+        assert f"worst case ${expected:.4f}" in line

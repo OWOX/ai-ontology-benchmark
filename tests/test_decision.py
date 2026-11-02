@@ -6,7 +6,7 @@ import pytest
 from src.run import decision, models
 from src.run.budget import BudgetError
 from src.run.models import DecisionReply, InfrastructureError, RefusedError
-from src.run.prompts import decision_state
+from src.run.prompts import decision_state, worst_state
 
 LEGAL = ["R", "R'", "U"]
 QUESTIONS = {"next_move": "q", "done": "d", "mismatch": "m"}
@@ -139,4 +139,35 @@ def test_an_unmappable_choice_stops_ok_and_keeps_the_call(fake, call):
 
 
 def test_worst_state_uses_cap_of_the_longest_move():
-    assert decision.worst_state("P", ["R", "R2'", "U"], 3) == decision_state("P", ["R2'"] * 3)
+    assert worst_state("P", ["R", "R2'", "U"], 3) == decision_state("P", ["R2'"] * 3)
+
+
+def bad_call(answers):
+    return DecisionReply({"answers": answers, "usage": {}, "model": "m"}, 1, 0, "m", 0.1)
+
+
+@pytest.mark.parametrize("answers", [
+    {"next_move": {"choice": "move_1"}},
+    {"next_move": {"choice": "move_1"}, "mismatch": {"noul": float("nan")}},
+    {"next_move": {"choice": "move_1"}, "mismatch": {"noul": -0.1}},
+    {"next_move": {"choice": "move_1"}, "mismatch": {"noul": "0.1"}},
+    {"next_move": {"choice": "move_01"}, "mismatch": {"noul": 0.0}},
+])
+def test_a_call_the_validator_rejects_stops_the_loop_with_ok(fake, answers):
+    fake[:] = [reply("move_1"), bad_call(answers), reply("done")]
+    result = attempt()
+    assert len(result.calls) == 2 and result.stop_reason == "ok" and len(fake) == 1
+
+
+def test_can_afford_sees_the_tokens_of_completed_calls(fake):
+    fake[:] = [reply("move_1", tokens=40), reply("move_1", tokens=40), reply("done")]
+    seen = []
+
+    def afford(paid_in, paid_out):
+        seen.append(paid_in)
+        if paid_in >= 80:
+            raise BudgetError("b")
+
+    result = attempt(can_afford=afford)
+    assert seen == [0, 40, 80] and len(result.calls) == 2 and isinstance(result.budget_stop, BudgetError)
+    assert len(fake) == 1
