@@ -30,7 +30,7 @@ One attempt for one input, setup, and decision model:
 1. Build the setup's prompt as for any AI model. Call it `P`.
 2. For call `k` (from 1), send:
    1. `state`: `P`, a blank line, then `Moves so far: ` and the chosen moves joined by single spaces, or `none` for the first call.
-   2. Question `next_move`, type `choice`. Its options are every move of `legal_moves()` in engine order, then `done`. Each option's description is the move string itself, and `done` has the description from the questions file.
+   2. Question `next_move`, type `choice`. Its options are every move of `legal_moves()` in engine order, then `done`. A move option's id is `move_<n>`, its position in `legal_moves()` from 1, because moves such as `R'` hold characters an id may not. Its description is the move string. `done` has the description from the questions file.
    3. Question `mismatch`, type `noul` (a yes/no probability), with the wording from the questions file.
 3. Stop after call `k` when its `mismatch` probability is 0.5 or more, or its `next_move` choice is `done`. Otherwise add the choice to the moves. Stop when the moves number `max_moves`, and else make call `k + 1`.
 
@@ -65,9 +65,9 @@ The record keeps every field of invariant 13. For a decision model:
 
 The validator gets a second parse path. It picks the path from the AI model's provider: `DECISION_PROVIDERS = {"typesafe", "cloudflare"}` in `src/run/models.py`. It never guesses from the text.
 
-1. Parse the raw response as the JSON array above. If it doesn't parse, or a call lacks `next_move` or `mismatch`, or a `next_move` choice isn't one of the offered options, the outcome is `malformed_output`.
+1. Parse the raw response as the JSON array above. If it doesn't parse, or a call lacks `next_move` or `mismatch`, or a `next_move` choice isn't one of the offered ids, the outcome is `malformed_output`.
 2. The mismatch flag is on if any call's `mismatch` probability is 0.5 or more.
-3. The parsed moves are the `next_move` choices of every call before the first `done`, leaving out `done`.
+3. The parsed moves are the moves behind the `next_move` ids of every call before the first `done`.
 4. The stop reason `infrastructure_failure` gives outcome `infrastructure_failure`, whatever the array holds.
 5. Every later step is unchanged: the same legality check, the same `apply_move` sequence, the same `is_solved()`, and the same outcome order.
 
