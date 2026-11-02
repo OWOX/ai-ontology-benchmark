@@ -14,7 +14,8 @@ Turn one input and one [setup](../definitions.md#setups) into the exact prompt t
 
 ## Outputs
 
-1. `build_prompt(templates_dir, input, setup) -> str`. The template with `{state}` replaced by the engine's `render()` and, for the prescriptive setup, `{legal_moves}` replaced by `legal_moves()` joined with single spaces, in the order the engine returns them. There is no system prompt. The text goes to the AI model as one user message.
+1. `fill_template(template, input, setup) -> str`. The substitution part of `build_prompt`: the template text with `{state}` replaced by the engine's `render()` and, for the prescriptive setup, `{legal_moves}` replaced by `legal_moves()` joined with single spaces, in the order the engine returns them. It reads no file.
+1a. `build_prompt(templates_dir, input, setup) -> str`. Reads the template and returns `fill_template` of it. There is no system prompt. The text goes to the AI model as one user message. Every LLM template ends by asking for the moves one per line, or the single line `MISMATCH`, as [invariant 9](../../AGENTS.md#invariants) says.
 2. `prompt_versions(templates_dir, inputs) -> {setup: {puzzle: version}}`. For each setup and puzzle, the first 12 hex characters of one sha256 over every prompt built for it, in input order, each followed by a newline. A change to a template, to `render()`, or to `legal_moves()` changes the version.
 
 3. `load_questions(templates_dir) -> {"next_move": str, "done": str, "mismatch": str}`. Reads `decision/questions.txt`, one `key: text` per line. Raises `ValueError` naming the file if it is missing or lacks a key.
