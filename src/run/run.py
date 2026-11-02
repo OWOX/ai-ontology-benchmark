@@ -23,12 +23,12 @@ from src.config import load_experiment_config, load_prices, max_moves, parse_exp
 from src.release.release import assessment_sha256
 from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
-                            print_estimate, spent_by_model, worst_case_request_cost)
+                            print_estimate, spent_by_model, worst_case_request_cost, worst_request)
 from src.run.decision import DecisionResult, run_decision_attempt
 from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model
 from src.run.progress import Progress
 from src.run.prompts import (SETUPS, both_prompt_versions, build_prompt, decision_questions, decision_state,
-                             load_questions, prompt_versions, worst_request)
+                             load_questions, prompt_versions)
 from src.run.raw import read_raw
 from src.puzzles.registry import get_engine
 from src.validator import validate
