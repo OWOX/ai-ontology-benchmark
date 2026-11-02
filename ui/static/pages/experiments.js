@@ -70,7 +70,7 @@
       const rows = all.filter((r) => (r.error || r.validity === validity)
         && (!query.model || r.model === query.model) && (!query.puzzle || r.puzzle === query.puzzle));
       const uniq = (k) => [...new Set(all.map((r) => r[k]).filter(Boolean))].sort();
-      const filters = h("div", { class: "actions" },
+      const filters = h("div", { class: "actions exp-filters" },
         select("AI model", query.model || "", uniq("model"), (v) => go({ model: v })),
         select("Puzzle", query.puzzle || "", uniq("puzzle"), (v) => go({ puzzle: v })),
         h("label", { class: "small" }, "Validity ", Object.assign(h("select", { "aria-label": "Validity" },
