@@ -51,7 +51,7 @@ def test_fake_raises_scripted_error_then_default():
         call_model({"provider": "fake"}, "p", 10)
     assert raised.value.input_tokens == 5
     reply = call_model({"provider": "fake"}, "p", 10)
-    assert reply == Reply('{"moves": [], "mismatch": false}', "ok", "fake", 0, 0, 0.0)
+    assert reply == Reply("U", "ok", "fake", 0, 0, 0.0)
 
 
 # ---- real providers, with the SDK client mocked
@@ -76,11 +76,18 @@ def google_response(finish="STOP", block=None, thoughts=None):
 
 
 def install(monkeypatch, provider, result):
-    """Replace the SDK client class; return the mocked create function."""
+    """Replace the SDK client class; return the mocked create function (for Anthropic, stream).
+    An Anthropic error is raised while the stream is read, as a dropped stream would."""
     client = MagicMock()
     if provider == "anthropic":
-        create = client.messages.create
+        create = client.messages.stream
+        final = create.return_value.__enter__.return_value.get_final_message
         monkeypatch.setattr(anthropic, "Anthropic", MagicMock(return_value=client))
+        if isinstance(result, Exception):
+            final.side_effect = result
+        else:
+            final.return_value = result
+        return create
     elif provider == "openai":
         create = client.chat.completions.create
         monkeypatch.setattr(openai, "OpenAI", MagicMock(return_value=client))
@@ -121,6 +128,22 @@ def test_request_shape_anthropic(monkeypatch):
     create.assert_called_once_with(model="alias-1", max_tokens=50,
                                    messages=[{"role": "user", "content": "prompt"}], **PARAMS)
     assert anthropic.Anthropic.call_args.kwargs["max_retries"] == 0
+
+
+def test_anthropic_streams_and_never_calls_create(monkeypatch):
+    install(monkeypatch, "anthropic", anthropic_response())
+    call_model(entry("anthropic"), "prompt", 32000)
+    client = anthropic.Anthropic.return_value
+    assert client.messages.stream.call_args.kwargs["max_tokens"] == 32000
+    client.messages.create.assert_not_called()
+    client.messages.stream.return_value.__exit__.assert_called_once()
+
+
+def test_anthropic_error_when_opening_the_stream_is_infrastructure(monkeypatch):
+    create = install(monkeypatch, "anthropic", anthropic_response())
+    create.side_effect = anthropic.APIConnectionError(request=REQUEST)
+    with pytest.raises(InfrastructureError):
+        call_model(entry("anthropic"), "prompt", 50)
 
 
 def test_request_shape_openai(monkeypatch):

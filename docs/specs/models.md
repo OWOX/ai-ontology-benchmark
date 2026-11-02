@@ -17,13 +17,13 @@ Send one prompt to one AI model and return the reply in the same shape for every
 
 `call_model(model, prompt, max_output_tokens) -> Reply`, where `Reply` has `text`, `stop_reason`, `served_model`, `input_tokens`, `output_tokens`, and `latency_s`.
 
-1. There is one short function per provider: `anthropic`, `openai`, and `google`. Each calls the official SDK with its built-in retries turned off, so that [run](run.md) controls every retry.
-2. Every request has the same shape: one user message holding the prompt, no system prompt, and no provider JSON mode or output schema. The prompt alone asks for JSON, so every AI model gets the same request. `params` is passed to the SDK call unchanged.
+1. There is one short function per provider: `anthropic`, `openai`, and `google`. Each calls the official SDK with its built-in retries turned off, so that [run](run.md) controls every retry. The Anthropic call streams (`messages.stream` and `get_final_message()`), because the SDK refuses a non-streaming call with a large `max_tokens`. Stream errors map like any other: a connection error, HTTP 429, or HTTP 5xx is an `InfrastructureError`.
+2. Every request has the same shape: one user message holding the prompt, no system prompt, and no provider JSON mode or output schema. The prompt alone asks for the answer format (moves one per line, or `MISMATCH`), so every AI model gets the same request. `params` is passed to the SDK call unchanged.
 3. `stop_reason` is `ok` for a complete answer, `truncated` when the answer hit the token limit, and `refused` for a refusal, including a content-filter refusal the API returns as an error.
 4. `served_model` is the model id the API response reports, or `""` when it reports none (a Google response without `model_version`, or an OpenAI content-filter refusal, which has no response). It is never filled in from `api_model_id`. Token counts are copied from the API response as returned. For Google, `output_tokens` is `candidates_token_count + thoughts_token_count`, both as returned, because Gemini bills thoughts as output. The other providers' counts already include reasoning tokens.
 5. `latency_s` is the time from sending the request to receiving the full response.
 6. A network error, timeout, HTTP 429, or HTTP 5xx raises `InfrastructureError`. The exception carries any token counts the API reported.
-7. Provider `fake` makes no network call. It returns replies from a list given to it in tests, and raises `InfrastructureError` when the list says so. When the list is empty, it returns the default reply: text `{"moves": [], "mismatch": false}`, stop reason `ok`, served model `fake`, zero tokens, and zero latency.
+7. Provider `fake` makes no network call. It returns replies from a list given to it in tests, and raises `InfrastructureError` when the list says so. When the list is empty, it returns the default reply: text `U`, stop reason `ok`, served model `fake`, zero tokens, and zero latency.
 8. A missing API key raises `ValueError` that names the env var, before any request is sent.
 
 ## Decision models

@@ -65,12 +65,14 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str) -> Re
     client = anthropic.Anthropic(api_key=key, max_retries=0)
     start = time.perf_counter()
     try:
-        response = client.messages.create(
+        # Streamed, because the SDK refuses a non-streaming call with a large max_tokens.
+        with client.messages.stream(
             model=model["api_model_id"],
             max_tokens=max_output_tokens,
             messages=[{"role": "user", "content": prompt}],
             **model.get("params", {}),
-        )
+        ) as stream:
+            response = stream.get_final_message()
     except anthropic.APIConnectionError as error:
         raise InfrastructureError(f"anthropic: {error}") from error
     except anthropic.APIStatusError as error:
@@ -155,7 +157,7 @@ def _google(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply
 
 def _fake() -> Reply:
     if not FAKE_REPLIES:
-        return Reply('{"moves": [], "mismatch": false}', "ok", "fake", 0, 0, 0.0)
+        return Reply("U", "ok", "fake", 0, 0, 0.0)
     item = FAKE_REPLIES.pop(0)
     if isinstance(item, InfrastructureError):
         raise item
