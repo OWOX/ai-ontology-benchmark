@@ -92,9 +92,14 @@ def _questions_path(templates_dir: Path) -> Path:
     return Path(templates_dir) / "decision" / "questions.txt"
 
 
-def parse_questions(text: str, source: object) -> dict[str, str]:
-    """Return {"next_move": ..., "done": ..., "mismatch": ...} from the text of questions.txt, one
-    `key: text` per line. Raise ValueError naming `source` if a key is missing."""
+def load_questions(templates_dir: Path) -> dict[str, str]:
+    """Return {"next_move": ..., "done": ..., "mismatch": ...} from decision/questions.txt, one
+    `key: text` per line. Raise ValueError naming the file if it is missing or lacks a key."""
+    path = _questions_path(templates_dir)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise ValueError(f"{path}: file not found") from None
     questions: dict[str, str] = {}
     for line in text.splitlines():
         key, sep, value = line.partition(":")
@@ -102,19 +107,8 @@ def parse_questions(text: str, source: object) -> dict[str, str]:
             questions[key.strip()] = value.strip()
     for key in QUESTION_KEYS:
         if not questions.get(key):
-            raise ValueError(f"{source}: key '{key}' is missing")
+            raise ValueError(f"{path}: key '{key}' is missing")
     return questions
-
-
-def load_questions(templates_dir: Path) -> dict[str, str]:
-    """Return the questions from decision/questions.txt. Raise ValueError naming the file if it
-    is missing or lacks a key."""
-    path = _questions_path(templates_dir)
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise ValueError(f"{path}: file not found") from None
-    return parse_questions(text, path)
 
 
 def decision_state(prompt: str, moves: list[str]) -> str:
