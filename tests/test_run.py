@@ -347,7 +347,7 @@ def test_estimate_shows_spent_against_budgets(exp, capsys):
     assert go("--estimate") == 0
     out = capsys.readouterr().out
     assert "spent $0.0300 of per_model_usd 1.0" in out
-    assert "spent $0.0300 of per_experiment_usd 10.0" in out
+    assert "spent $0.0300 of per_experiment_usd 50.0" in out
 
 
 def test_budget_checked_before_each_retry(exp, capsys):

@@ -11,5 +11,5 @@ params = { temperature = 1.0 }
 
 [budget]
 per_request_usd = 2.00
-per_model_usd = 5.00
-per_experiment_usd = 10.00
+per_model_usd = 25.00
+per_experiment_usd = 50.00
