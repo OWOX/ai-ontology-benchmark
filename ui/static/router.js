@@ -45,7 +45,12 @@
       const res = await fetch(path, o);
       let data = null;
       try { data = await res.json(); } catch (e) { /* non-JSON body */ }
-      if (!res.ok) throw new Error((data && data.error) || `${o.method} ${path} failed (${res.status})`);
+      if (!res.ok) {
+        const err = new Error((data && data.error) || `${o.method} ${path} failed (${res.status})`);
+        // The token changes on every server start, so a page loaded before a restart sends a stale one.
+        err.staleToken = res.status === 403 && err.message === "missing or wrong X-Token";
+        throw err;
+      }
       return data;
     },
     // Resolves with the server's bundle. onCached(cached) runs first when the cache holds one.
@@ -157,6 +162,14 @@
     page.render(b, st.params, main);
   }
 
+  function showFetchError(e) {
+    const box = $("fetch-error");
+    if (!e.staleToken) { box.textContent = e.message; return; }
+    const link = el("a", { href: location.href, text: "Reload the page" });
+    link.addEventListener("click", (ev) => { ev.preventDefault(); location.reload(); });
+    box.replaceChildren("The server restarted, so this page is out of date. ", link, ".");
+  }
+
   async function load(release, refresh) {
     const mine = ++st.seq;
     const btn = $("refresh");
@@ -166,7 +179,7 @@
       const b = await UI.bundle(release, refresh, (c) => { if (mine === st.seq) draw(c); });
       if (mine === st.seq) draw(b);
     } catch (e) {
-      if (mine === st.seq) $("fetch-error").textContent = e.message;
+      if (mine === st.seq) showFetchError(e);
     } finally {
       if (mine === st.seq) btn.classList.remove("spin");
     }
