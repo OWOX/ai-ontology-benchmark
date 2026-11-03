@@ -10,10 +10,10 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from ui import attempt as attempt_module
 from ui import commit as commit_module
 from ui import experiments, forms
-from ui import project
-from ui import replay
+from ui import project, replay
 from ui import secrets as key_store
 from ui.bundle import Bundles
 from ui.common import ApiError, check_id, merged_env
@@ -171,6 +171,8 @@ class App:
                 return experiments.snapshot(self.bundles, experiment_id, live, self.jobs.states(experiment_id))
             if parts[1] == "replay":
                 return replay.replay(self.bundles, experiment_id, live, query)
+            if parts[1] == "attempt":
+                return attempt_module.attempt(self.bundles, experiment_id, live, query)
             if parts[1] == "commit":
                 self.guard_commit(experiment_id)
                 return commit_module.preview(self.root, experiment_id, lambda s, t: self.jobs.say(experiment_id, "commit", s, t))

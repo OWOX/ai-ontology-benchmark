@@ -23,6 +23,7 @@ import pytest
 
 from src.config import EXPERIMENT_ID_PATTERN
 from src.puzzles.registry import get_engine
+from src.run.prompts import fill_template
 from test_release import commit_all, git, run_release, repo  # noqa: F401  (repo is a fixture)
 from ui import secrets as key_store
 from ui.common import merged_env
@@ -1120,3 +1121,45 @@ def test_saved_config_without_kind_still_resumes_and_takes_a_new_budget(server):
     raised = dict(FORM, budget=dict(BUDGET, per_model_usd=9.0))
     assert call(server, "POST", "/api/run", raised)[1]["status"] == "budget_updated"
     wait_job(server, "run:example-model")
+
+
+ATTEMPT = "/api/attempt/t1?model=example-model&input=ID&setup=no_model&attempt=1"
+
+
+def test_attempt_rebuilds_the_prompt_and_returns_the_record(server):
+    start_state(server)
+    status, data = call(server, "GET", url(server, ATTEMPT))
+    template = (server.root / "releases" / "1.0.0" / "prompts" / "no_model" / "2x2.txt").read_text(encoding="utf-8")
+    assert status == 404  # no experiment branch yet
+    put_raw(server, raw_response="R U", parsed_moves=["R", "U"])
+    status, data = call(server, "GET", url(server, ATTEMPT))
+    assert status == 200 and data["prompt"] == fill_template(template, server.first, "no_model")
+    assert data["raw_response"] == "R U" and data["record"]["parsed_moves"] == ["R", "U"]
+    status, data = call(server, "GET", url(server, ATTEMPT.replace("attempt=1", "attempt=2")))
+    assert status == 200 and data["raw_response"] is None and data["record"] is None and data["prompt"]
+
+
+def test_attempt_prompt_for_a_decision_model_holds_the_questions(server):
+    start_state(server)
+    config = {**CONFIG, "models": [{"name": "example-model", "provider": "fake_decision", "api_model_id": "ex-1"}]}
+    put_raw(server)
+    put_branch(server.root, "t1", {"results/t1/experiment.toml": dumps_config(config),
+                                   "results/t1/raw/example-model.jsonl": server.raw})
+    status, data = call(server, "GET", url(server, ATTEMPT))
+    assert status == 200
+    head, _, tail = data["prompt"].partition("\n--- questions\n")
+    assert head.endswith("Moves so far: none")
+    questions = json.loads(tail)["next_move"]["criteria"]
+    assert list(questions.values())[: len(get_engine("2x2").legal_moves())] == get_engine("2x2").legal_moves()
+
+
+def test_attempt_errors(server):
+    start_state(server)
+    put_raw(server)
+    assert call(server, "GET", url(server, ATTEMPT.replace("input=ID", "input=nope")))[0] == 404
+    assert call(server, "GET", url(server, ATTEMPT.replace("model=example-model", "model=other")))[0] == 404
+    assert call(server, "GET", ATTEMPT.replace("ID", "x").replace("&input=x", ""))[0] == 400
+    for bad in ("attempt=0", "attempt=x", "setup=bogus"):
+        name = bad.split("=")[0]
+        status, data = call(server, "GET", url(server, ATTEMPT.replace(f"{name}={'1' if name == 'attempt' else 'no_model'}", bad)))
+        assert status == 400 and name in data["error"], bad
