@@ -229,7 +229,7 @@
       paint(k);
     }
 
-    const inFlight = (model) => Progress.inFlight(S.snap, model, (S.snap.parallel || {})[model] || 1, (k) => S.records.has(k));
+    const inFlightOf = (model) => Progress.inFlight(S.snap, model, (S.snap.parallel || {})[model] || 1, (k) => S.records.has(k));
 
     const drawBanners = () => banners.replaceChildren(...ProgressView.banners(S.jobs,
       Object.fromEntries(Object.keys(S.jobs).map((j) => [j, S.lastErr[id + "\u0000" + j]]))));
@@ -267,7 +267,7 @@
       if (rebuild) { S.fresh = []; panel.reset(snap.models, running); }  // records already there are not replayed
       for (const m of snap.models) {
         const prev = S.pending[m] || [];
-        S.pending[m] = running(m) ? inFlight(m) : [];
+        S.pending[m] = running(m) ? inFlightOf(m) : [];
         for (const k of prev) paint(k);
         for (const k of S.pending[m]) paint(k);
       }
