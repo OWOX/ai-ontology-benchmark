@@ -5,6 +5,7 @@
 
   let box = null;  // the live Project box, if the About page is showing
   let project = null;
+  const draft = { bump: "patch", note: "" };  // the release fields, kept across a redraw such as ↻
 
   function busy() { return UI.jobs.some((j) => j.state === "running"); }
 
@@ -35,8 +36,8 @@
   }
 
   async function start(path, body, text) {
-    try { await UI.api(path, { method: "POST", body: body || {} }); say(text, "ok"); }
-    catch (e) { say(e.message, "err"); }
+    try { await UI.api(path, { method: "POST", body: body || {} }); say(text, "ok"); return true; }
+    catch (e) { say(e.message, "err"); return false; }
   }
 
   async function push() {
@@ -51,22 +52,29 @@
     } catch (e) { say(e.message, "err"); }
   }
 
-  function release() {
+  async function release() {
     const note = box.querySelector(".note").value.trim();
     if (!note) return say("note: enter a release note", "err");
-    return start("/api/release", { bump: box.querySelector(".bump").value, note }, "Release started, see the terminal.");
+    // A started release clears the kept fields, so the redraw after it can't offer the same release again.
+    if (await start("/api/release", { bump: box.querySelector(".bump").value, note }, "Release started, see the terminal.")) {
+      Object.assign(draft, { bump: "patch", note: "" });
+    }
   }
 
   function buildBox() {
     const btn = (cls, text, fn, extra) => { const b = h("button", { type: "button", class: cls + (extra || ""), text }); b.addEventListener("click", fn); return b; };
     const bump = h("select", { class: "bump" }, ...["patch", "minor", "major"].map((v) => h("option", { text: v })));
+    const note = h("input", { type: "text", class: "note", placeholder: "Note", autocomplete: "off" });
+    bump.value = draft.bump; note.value = draft.note;
+    bump.addEventListener("change", () => { draft.bump = bump.value; });
+    note.addEventListener("input", () => { draft.note = note.value; });
     return h("section", { class: "step project" }, h("h3", { text: "Project" }),
       h("p", { class: "muted small status" }),
       h("div", { class: "actions" },
         btn("install", "Install dependencies", () => start("/api/install", {}, "Install started, see the terminal.")),
         btn("tests", "Run tests", () => start("/api/tests", {}, "Tests started, see the terminal."))),
       h("div", { class: "actions" }, h("label", { class: "inline" }, "Bump ", bump),
-        h("input", { type: "text", class: "note", placeholder: "Note", autocomplete: "off" }),
+        note,
         btn("release", "Release", release, " primary")),
       h("p", { class: "muted small state" }),
       h("div", { class: "actions" }, btn("push", "Push and open PR", push)),

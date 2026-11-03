@@ -269,16 +269,17 @@
             if (path === "run") { starting = false; if (!dead) controls(); }
             throw e;
           }
-          if (dead) return;
           if (path === "run") {
-            // Run stays disabled until the page moves on. The experiment page waits for results/<id> while a run job
-            // is alive, so bring the job states in first.
+            // A redraw (↻, or a bundle reload) makes this page dead without leaving it, and the run has started, so
+            // the route decides, not the flag. Run stays disabled until the page moves on. The experiment page waits
+            // for results/<id> while a run job is alive, so bring the job states in first.
+            if (!location.hash.startsWith("#/new")) return;
             await UI.pollNow();
-            // A bundle reload in that poll can redraw this page (dead), so check the route rather than the flag.
             if (!location.hash.startsWith("#/new")) return;
             UI.go("#/experiments/" + encodeURIComponent(form.id) + (bundle.release ? "?release=" + encodeURIComponent(bundle.release) : ""));
             return;
           }
+          if (dead) return;
           say(`${label} started. Experiment ${r.status}.`, "ok");
           showResult(label, path, form.id, after);
         } catch (e) { say(e.message, "err"); }
