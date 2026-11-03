@@ -85,7 +85,7 @@ With `--parallel N` above 1, `run` keeps up to N attempts in flight. With 1 it r
 4. Reservations. An attempt reserves its worst-case request cost from its submission until its record is appended, under a lock, and after each passed check the reservation grows to the worst case plus what the attempt has paid so far. The cost of each appended record is added to a per-model total of this process in the same step as its reservation is dropped. Its first budget check adds the reservations of the attempts submitted before it, so attempts started together are admitted in loop order and a budget refuses the last of them. Its later checks (a retry, or the next call of a decision model) add the reservations of all other in-flight attempts.
 5. Budget stop. After a `BudgetError` no new attempt starts. The attempts in flight finish and their records are written and committed as usual, and then the first `BudgetError` is raised, so the `error: budget reached:` line stays the last stderr line.
 6. Interrupt. Ctrl-C or SIGTERM stops `run` at once and does not wait for in-flight calls. Their attempts get no record, and a resume runs them again. The `finally` in `run()` still commits and pushes what was written. The workers are daemon threads, so none keeps the process alive after `run()` returns.
-7. Anything other than `InfrastructureError` raised in a worker, including a `BaseException` (a bug, an unexpected SDK error) is raised in the main thread and ends the run.
+7. Anything other than `InfrastructureError` raised in a worker, including a `BaseException` (a bug, an unexpected SDK error), is raised in the main thread and ends the run.
 
 ## Progress
 
