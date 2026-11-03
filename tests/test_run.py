@@ -894,7 +894,8 @@ class Gate:
             if number <= self.hold:
                 self.full.wait(5)
             if self.block_after is not None and number > self.block_after:
-                self.release.wait(self.block_for)
+                if self.release.wait(self.block_for):
+                    return Reply("x", "ok", "s", 1, 1, 0.1)  # released after the test: touch nothing shared
             time.sleep(self.sleep)
             return self.real(model, prompt, max_output_tokens)
         finally:
