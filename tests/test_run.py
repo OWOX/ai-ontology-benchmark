@@ -952,6 +952,22 @@ def test_a_budget_stop_writes_the_attempts_in_flight_first(exp, capsys, monkeypa
     assert lines[-1].startswith("error: budget reached:")
 
 
+def test_a_parallel_budget_stop_counts_the_attempts_that_have_no_record():
+    from src.run.budget import BudgetError
+
+    class Stub:
+        def __init__(self, seq, refused):
+            self.seq, self.refused, self.error, self.stop = seq, refused, None, None
+
+        def call(self):
+            if self.refused:
+                raise BudgetError("budget reached: per_model_usd 1 for model A (spent 1.0000, next request up to 0.0100)", 9)
+
+    stubs = iter(Stub(seq, seq == 1) for seq in range(4))  # attempts 0, 2, and 3 finish; 1 is refused
+    with pytest.raises(BudgetError, match=r"next request up to 0\.0100\); 7 attempts left$"):
+        run_module.play_parallel(4, 10, stubs, lambda attempt: None, run_module.Flight())
+
+
 def test_an_interrupt_with_attempts_in_flight_commits_and_returns_promptly(exp, monkeypatch):
     gate = Gate(monkeypatch, block_after=3, block_for=10.0)
 
