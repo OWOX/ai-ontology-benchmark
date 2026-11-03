@@ -95,8 +95,11 @@
       const head = h("label", { class: "provider-head" }, all, h("span", { text: p.name }));
       // A missing key shows as a warning sign after the provider name, linking to Models; the reason is its tooltip.
       const problem = p.models.map((m) => m.disabled_reason).find(keyProblem);
-      const warn = problem ? h("a", { class: "key-warn", href: "#/models" + rel, title: problem[0].toUpperCase() + problem.slice(1),
-        "aria-label": `${p.name}: ${problem}`, text: "⚠️" }) : null;
+      const tipId = "key-tip-" + p.name;
+      const warn = problem ? h("span", { class: "tip-wrap" },
+        h("a", { class: "key-warn tip-src", href: "#/models" + rel, "aria-label": `${p.name}: ${problem}`, "aria-describedby": tipId, text: "⚠️" }),
+        h("span", { class: "tip-fixed", id: tipId, role: "tooltip", text: problem[0].toUpperCase() + problem.slice(1) })) : null;
+      if (warn) UI.tipOn(warn.firstChild);
       const col = h("div", { class: "model-col" }, h("div", { class: "provider-row" }, head, warn));
       for (const m of p.models) {
         const off = !!m.disabled_reason;
