@@ -31,9 +31,9 @@ def records(changed_outcome: bool = False) -> list[dict]:
     for setup in SETUPS:
         out += [
             raw("2x2-d1-001", 1, answer(["R"]), "success", 1.5, setup=setup),
-            raw("2x2-d1-001", 2, answer([]), "failure", 2.0, setup=setup),
-            raw("2x2-d1-001-x", 1, answer([], True), "success", 0.5, setup=setup),
-            raw("2x2-d1-001-x", 2, "oops", "malformed_output", 0.5, setup=setup),
+            raw("2x2-d1-001", 2, answer(["U"]), "failure", 2.0, setup=setup),
+            raw("2x2-d1-001-x", 1, answer([]), "success", 0.5, setup=setup),
+            raw("2x2-d1-001-x", 2, " \n", "malformed_output", 0.5, setup=setup),
         ]
     if changed_outcome:
         out[1]["outcome"] = "success"

@@ -34,15 +34,18 @@ def _read_template(templates_dir: Path, setup: str, puzzle: str) -> str:
     return text
 
 
-def build_prompt(templates_dir: Path, input: dict, setup: str) -> str:
-    """Return the prompt text for one input under one setup."""
-    puzzle = input["puzzle"]
-    engine = get_engine(puzzle)
-    text = _read_template(templates_dir, setup, puzzle)
-    text = text.replace("{state}", engine.render(input["state"]))
+def fill_template(template: str, input: dict, setup: str) -> str:
+    """Return the prompt text for one input under one setup, from the template text."""
+    engine = get_engine(input["puzzle"])
+    text = template.replace("{state}", engine.render(input["state"]))
     if setup == "prescriptive":
         text = text.replace("{legal_moves}", " ".join(engine.legal_moves()))
     return text
+
+
+def build_prompt(templates_dir: Path, input: dict, setup: str) -> str:
+    """Return the prompt text for one input under one setup."""
+    return fill_template(_read_template(templates_dir, setup, input["puzzle"]), input, setup)
 
 
 def _versions(templates_dir: Path, inputs: list[dict], questions: dict | None) -> tuple[dict, dict | None]:

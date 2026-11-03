@@ -59,22 +59,39 @@ class RefusedError(Exception):
     """A content-filter refusal. Never retried. No decision-model SDK reports one today."""
 
 
+# Error types an SSE error event can carry that mean the service, not the request, failed.
+ANTHROPIC_TRANSIENT_STREAM_ERRORS = ("overloaded_error", "api_error", "rate_limit_error")
+
+
+def _stream_error_is_transient(error) -> bool:
+    """An SSE error event arrives as a status error built on the stream's own 200 response, so the
+    status code says nothing. Read the error type from its body instead."""
+    body = error.body if isinstance(error.body, dict) else {}
+    detail = body.get("error") if isinstance(body.get("error"), dict) else body
+    return error.status_code == 200 and detail.get("type") in ANTHROPIC_TRANSIENT_STREAM_ERRORS
+
+
 def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply:
     import anthropic
+    import httpx2
 
     client = anthropic.Anthropic(api_key=key, max_retries=0)
     start = time.perf_counter()
     try:
-        response = client.messages.create(
+        # Streamed, because the SDK refuses a non-streaming call with a large max_tokens.
+        with client.messages.stream(
             model=model["api_model_id"],
             max_tokens=max_output_tokens,
             messages=[{"role": "user", "content": prompt}],
             **model.get("params", {}),
-        )
+        ) as stream:
+            response = stream.get_final_message()
     except anthropic.APIConnectionError as error:
         raise InfrastructureError(f"anthropic: {error}") from error
+    except httpx2.TransportError as error:  # a dropped connection while reading the stream
+        raise InfrastructureError(f"anthropic: {error}") from error
     except anthropic.APIStatusError as error:
-        if error.status_code == 429 or error.status_code >= 500:
+        if error.status_code == 429 or error.status_code >= 500 or _stream_error_is_transient(error):
             raise InfrastructureError(f"anthropic: {error}") from error
         raise
     latency = time.perf_counter() - start
@@ -155,7 +172,7 @@ def _google(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply
 
 def _fake() -> Reply:
     if not FAKE_REPLIES:
-        return Reply('{"moves": [], "mismatch": false}', "ok", "fake", 0, 0, 0.0)
+        return Reply("U", "ok", "fake", 0, 0, 0.0)
     item = FAKE_REPLIES.pop(0)
     if isinstance(item, InfrastructureError):
         raise item

@@ -27,7 +27,7 @@ Token prices per million tokens, from [prices.toml](prices.toml):
 |---|---|---|
 | A | 1.0 | 2.0 |
 
-Budgets in force (USD): request 0.5, AI model 5.0, experiment 10.0.
+Budgets in force (USD): request 2.0, AI model 25.0, experiment 50.0.
 
 Cost spent, at the prices above (USD):
 
@@ -78,34 +78,34 @@ Cost spent, at the prices above (USD):
 
 | AI model | Setup | Attempt | Outcome | Moves | Mismatch | Input tokens (excl. retries) | Output tokens (excl. retries) | Latency (s) |
 |---|---|---|---|---|---|---|---|---|
-| A | no_model | 1 | failure |  | false | 0 | 0 | 0.00 |
-| A | no_model | 2 | failure |  | false | 0 | 0 | 0.00 |
-| A | descriptive | 1 | failure |  | false | 0 | 0 | 0.00 |
-| A | descriptive | 2 | failure |  | false | 0 | 0 | 0.00 |
-| A | prescriptive | 1 | failure |  | false | 0 | 0 | 0.00 |
-| A | prescriptive | 2 | failure |  | false | 0 | 0 | 0.00 |
+| A | no_model | 1 | failure | U | false | 0 | 0 | 0.00 |
+| A | no_model | 2 | failure | U | false | 0 | 0 | 0.00 |
+| A | descriptive | 1 | failure | U | false | 0 | 0 | 0.00 |
+| A | descriptive | 2 | failure | U | false | 0 | 0 | 0.00 |
+| A | prescriptive | 1 | failure | U | false | 0 | 0 | 0.00 |
+| A | prescriptive | 2 | failure | U | false | 0 | 0 | 0.00 |
 
 ### [2x2-d1-001-x](../../releases/1.0.0/inputs.jsonl#L2) (invalid, depth 1)
 
 | AI model | Setup | Attempt | Outcome | Moves | Mismatch | Input tokens (excl. retries) | Output tokens (excl. retries) | Latency (s) |
 |---|---|---|---|---|---|---|---|---|
-| A | no_model | 1 | failure |  | false | 0 | 0 | 0.00 |
-| A | no_model | 2 | failure |  | false | 0 | 0 | 0.00 |
-| A | descriptive | 1 | failure |  | false | 0 | 0 | 0.00 |
-| A | descriptive | 2 | failure |  | false | 0 | 0 | 0.00 |
-| A | prescriptive | 1 | failure |  | false | 0 | 0 | 0.00 |
-| A | prescriptive | 2 | failure |  | false | 0 | 0 | 0.00 |
+| A | no_model | 1 | failure | U | false | 0 | 0 | 0.00 |
+| A | no_model | 2 | failure | U | false | 0 | 0 | 0.00 |
+| A | descriptive | 1 | failure | U | false | 0 | 0 | 0.00 |
+| A | descriptive | 2 | failure | U | false | 0 | 0 | 0.00 |
+| A | prescriptive | 1 | failure | U | false | 0 | 0 | 0.00 |
+| A | prescriptive | 2 | failure | U | false | 0 | 0 | 0.00 |
 
 ### [2x2-d1-002](../../releases/1.0.0/inputs.jsonl#L3) (valid, depth 1)
 
 | AI model | Setup | Attempt | Outcome | Moves | Mismatch | Input tokens (excl. retries) | Output tokens (excl. retries) | Latency (s) |
 |---|---|---|---|---|---|---|---|---|
-| A | no_model | 1 | failure |  | false | 0 | 0 | 0.00 |
-| A | no_model | 2 | failure |  | false | 0 | 0 | 0.00 |
-| A | descriptive | 1 | failure |  | false | 0 | 0 | 0.00 |
-| A | descriptive | 2 | failure |  | false | 0 | 0 | 0.00 |
-| A | prescriptive | 1 | failure |  | false | 0 | 0 | 0.00 |
-| A | prescriptive | 2 | failure |  | false | 0 | 0 | 0.00 |
+| A | no_model | 1 | failure | U | false | 0 | 0 | 0.00 |
+| A | no_model | 2 | failure | U | false | 0 | 0 | 0.00 |
+| A | descriptive | 1 | failure | U | false | 0 | 0 | 0.00 |
+| A | descriptive | 2 | failure | U | false | 0 | 0 | 0.00 |
+| A | prescriptive | 1 | failure | U | false | 0 | 0 | 0.00 |
+| A | prescriptive | 2 | failure | U | false | 0 | 0 | 0.00 |
 
 ## Raw responses
 

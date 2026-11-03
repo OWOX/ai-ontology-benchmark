@@ -95,7 +95,7 @@ All tests use the `fake` provider and temporary folders.
 3. A run stopped with `--limit 5` and then run again ends with the same records as one full run, apart from `created_at` and `latency_s`.
 4. `--model A` writes only `raw/A.jsonl`.
 5. A fake that fails 5 times in a row with `retry_cap = 3` gives one record with outcome `infrastructure_failure`, an empty raw response, and 4 calls made.
-6. A fake that returns malformed JSON is called once, never retried.
+6. A fake that returns a malformed reply (a truncated stop reason) is called once, never retried.
 7. Changing one byte of the release's `inputs.jsonl` makes `run` exit with code 1 before any call.
 8. Changing one byte of `src/validator.py` makes `run` exit with code 1 before any call.
 9. Patching the engine's `render()` makes `run` exit with code 1 before any call.

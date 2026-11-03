@@ -9,7 +9,7 @@ import pytest
 from src.generate.generate import build_inputs
 from src.puzzles.cube import CubeEngine
 from src.puzzles.registry import get_engine
-from src.run.prompts import SETUPS, build_prompt, prompt_versions
+from src.run.prompts import SETUPS, build_prompt, fill_template, prompt_versions
 
 CONFIG = {
     "seed": 3,
@@ -33,6 +33,13 @@ def test_repeated_calls_are_identical(templates):
         assert build_prompt(templates, INPUTS[0], setup) == build_prompt(templates, INPUTS[0], setup)
 
 
+def test_fill_template_equals_build_prompt(templates):
+    for row in INPUTS:
+        for setup in SETUPS:
+            text = (templates / setup / f"{row['puzzle']}.txt").read_text(encoding="utf-8")
+            assert fill_template(text, row, setup) == build_prompt(templates, row, setup)
+
+
 def test_prompt_never_contains_scramble(templates):
     for row in INPUTS:
         for setup in SETUPS:
@@ -43,15 +50,19 @@ def test_prescriptive_lists_legal_moves(templates):
     for row in INPUTS:
         text = build_prompt(templates, row, "prescriptive")
         assert " ".join(get_engine(row["puzzle"]).legal_moves()) in text
-        assert "{" not in text.replace('{"moves": [...], "mismatch": true|false}', "")
+        assert "{" not in text
 
 
-def test_templates_ask_for_json_and_are_not_placeholders(templates):
+def test_templates_ask_for_lines_and_are_not_placeholders(templates):
     for setup in SETUPS:
         for puzzle in ("2x2", "3x3"):
             text = (templates / setup / f"{puzzle}.txt").read_text()
             assert "PLACEHOLDER" not in text
-            assert '{"moves": [...], "mismatch": true|false}' in text
+            assert text.endswith(
+                "If the state cannot be reached from the solved state by legal moves, reply with the single line "
+                "MISMATCH and nothing else.\nOtherwise reply with the moves that solve it, in the order they are "
+                "applied, one move per line, and nothing else.\n")
+            assert "JSON" not in text
 
 
 def test_changing_a_template_changes_only_its_version(templates):

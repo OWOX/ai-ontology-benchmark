@@ -78,11 +78,11 @@ Every term below means the same thing in code, configs, records, reports, and do
 3. **Raw record.** The stored result of one attempt in `results/<experiment id>/raw/`. It is never edited.
 4. **Raw response.** The full text the API returned for an attempt, stored as received. For a decision model, it is the JSON array of the answers of every completed call, in order.
 5. **Report.** The experiment report and a CSV of its metrics, computed by `evaluate` from raw records, one release, and config.
-6. **Parsed moves.** The list of moves read from the AI model's JSON output, in the order given. For a decision model, the moves behind each call's `next_move` choice, in call order, before the first `done` or `mismatch`.
-7. **Malformed output.** A response the validator can't use: it doesn't parse as the required JSON (for a decision model, the array of answers, where every call holds a `next_move` choice the call offered), it was cut off at the token limit, or the AI model or a content filter refused to answer. A content-filter refusal counts here even when the API returns it as an error, and it is never retried.
+6. **Parsed moves.** The list of moves read from the AI model's output, one per line, in the order given. For a decision model, the moves behind each call's `next_move` choice, in call order, before the first `done` or `mismatch`.
+7. **Malformed output.** A response the validator can't use: it has no lines left once blank lines are dropped (for a decision model, it doesn't parse as the array of answers, where every call holds a `next_move` choice the call offered), it was cut off at the token limit, or the AI model or a content filter refused to answer. A content-filter refusal counts here even when the API returns it as an error, and it is never retried. Prose instead of moves is not malformed output: each line that is not a legal move is an impossible move, so the attempt is a hallucination.
 8. **Infrastructure failure.** A network error, timeout, or rate limit. `run` retries it up to the retry cap. When the cap is reached, the raw response is empty, except that a decision-model attempt keeps the calls that completed, and the retry cap counts across all its calls.
 9. **Retry cap.** The maximum number of retries for one attempt. A config parameter.
-10. **Mismatch flag.** The flag in the AI model's JSON output that says the input describes a puzzle that can't be reached from the solved state by legal moves. For a decision model, it is on when the call that ended the attempt chose `mismatch`. Off for outcomes `malformed_output` and `infrastructure_failure`.
+10. **Mismatch flag.** The flag set when the AI model's output is the single line `MISMATCH`, which says the input describes a puzzle that can't be reached from the solved state by legal moves. For a decision model, it is on when the call that ended the attempt chose `mismatch`. Off for outcomes `malformed_output` and `infrastructure_failure`.
 11. **Hallucination flag.** True when the parsed moves contain at least one impossible move. False for outcomes `malformed_output` and `infrastructure_failure`, which have no parsed moves.
 12. **Solved.** The validator applied every parsed move to the input state in order, every move was legal, and `is_solved()` is true for the final state. An empty move list is never solved, because no input starts solved.
 13. **Expected result.** For a valid input, the puzzle ends solved and the mismatch flag is off. For an invalid input, the mismatch flag is on. Moves returned with the flag on are still checked for impossible moves.
@@ -117,9 +117,9 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 4. **Cost.** For one raw record, its input and retry input tokens times the input token price, plus its output and retry output tokens times the output token price, in USD.
 5. **Worst-case request cost.** The most one request can cost, per call for a decision model, whose request then holds the state with `max_moves` moves and the questions object: the request's characters divided by 4, rounded up, as input tokens, plus `max_output_tokens` as output tokens, at the AI model's token prices.
 6. **Budget.** A cost limit in USD in the experiment config. There are three:
-   1. **Request budget.** No worst-case request cost may exceed it. Default 0.50 USD.
-   2. **Model budget.** The cost of one AI model's raw records in one experiment may not exceed it. Default 5.00 USD.
-   3. **Experiment budget.** The cost of all raw records in one experiment may not exceed it. Default 10.00 USD.
+   1. **Request budget.** No worst-case request cost may exceed it. Default 2.00 USD.
+   2. **Model budget.** The cost of one AI model's raw records in one experiment may not exceed it. Default 25.00 USD.
+   3. **Experiment budget.** The cost of all raw records in one experiment may not exceed it. Default 50.00 USD.
 
 ## Metrics
 
