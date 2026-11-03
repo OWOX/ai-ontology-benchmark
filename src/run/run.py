@@ -391,7 +391,7 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
             yield Attempt(seq, left, row, model, setup, number,
                           (config, prices, results, flight, cap, questions, folder / "prompts"))
 
-    def finish(attempt: Attempt):
+    def record_attempt(attempt: Attempt):
         """Main thread only: build, write, count, show, and commit the record. Return a budget stop or None."""
         row, model, setup, number = attempt.row, attempt.model, attempt.setup, attempt.number
         record = make_record(config, manifest, row, model, setup, number, attempt.prompt,
@@ -408,14 +408,14 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
     if args.parallel == 1:
         for attempt in attempts():
             attempt.call()
-            stop = finish(attempt)
+            stop = record_attempt(attempt)
             if stop:
                 raise stop
         return
-    play_parallel(args.parallel, attempts(), finish, flight)
+    play_parallel(args.parallel, attempts(), record_attempt, flight)
 
 
-def play_parallel(size: int, attempts, finish, flight: Flight) -> None:
+def play_parallel(size: int, attempts, record_attempt, flight: Flight) -> None:
     """Keep up to `size` attempts in flight. Daemon workers run only Attempt.call(); this thread takes
     each finished attempt in completion order. After a BudgetError nothing new starts, the attempts
     in flight finish and are written, and then the first BudgetError is raised. An interrupt leaves
@@ -455,7 +455,7 @@ def play_parallel(size: int, attempts, finish, flight: Flight) -> None:
             elif attempt.error is not None:
                 raise attempt.error
             else:
-                stop = finish(attempt)  # always runs: an attempt in flight keeps its record
+                stop = record_attempt(attempt)  # always runs: an attempt in flight keeps its record
                 budget_stop = budget_stop or stop
     finally:
         for _ in range(size):
