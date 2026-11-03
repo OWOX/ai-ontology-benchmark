@@ -206,7 +206,7 @@ Job names are `run:<model>`, `estimate`, `dry-run`, `evaluate`, and `commit`, pl
 
 1. Snapshot. The page loads `GET /api/state/<id>` on load, and again every 1.5 seconds while any job of that experiment is alive. The poll that sees the last job end is the final one. With no job alive it loads once and stops.
 2. Log. The page polls `GET /api/log?after=<seq>` every second while any job is alive and every 5 seconds otherwise.
-3. In-progress attempts. For each model with a running `run:<model>` job, the page marks the first N attempts with no record, in the loop order of [run.md](run.md#outputs): input in release order, then setup, then attempt number. N is the model's `parallel` from the snapshot, 1 when it is missing. These are the attempts [`run --parallel N`](run.md) keeps in flight, so it is an inference that holds, as `run` doesn't report them. Each is marked in the plan and gets its own "sending…" block in the terminal. The Cube panel follows the first of them.
+3. In-progress attempts. For each model with a running `run:<model>` job, the page marks the first N attempts with no record, in the loop order of [run.md](run.md#outputs): input in release order, then setup, then attempt number. N is the model's `parallel` from the snapshot, 1 when it is missing. These are the attempts [`run --parallel N`](run.md) keeps in flight, so it is an inference, as `run` doesn't report them. It holds, except that near the end of a `--limit` run, and after a budget stop until the job ends, it can overcount by up to N−1. Each is marked in the plan and gets its own "sending…" block in the terminal. The Cube panel follows the first of them.
 
 ## Commit
 
@@ -398,7 +398,7 @@ Cube turn view: `cubeIsoTurn(state, n, move, p)` draws `state` with `move` done 
 21. `default_id`: names, the three-item cap, the character rule, and the time format, and the result passes `EXPERIMENT_ID_PATTERN`.
 22. `/api/branches` lists local-only and remote-only branches, and `/api/experiment/<id>/config` reads the local branch before the remote one.
 23. `/api/inputs` returns the release's inputs of one puzzle in order, and 400 for an unknown puzzle.
-24. Outcome colours and the in-progress inference are in the page scripts and are not tested here. The colour table is one object, in one file.
+24. Outcome colours are in the page scripts and are not tested here. The colour table is one object, in one file.
     The terminal's pattern for `run`'s progress line is checked against a real `Progress.plain_line` in `tests/test_ui_js.py`, so a change to either breaks the test. The layout, the plan tree, and the terminal are checked by hand with screenshots in both themes at 900 and 1500 pixels wide.
 25. The page scripts pass `node --check`. A node script, `tests/js/markdown.test.mjs`, run by a pytest test when `node` is found and skipped otherwise, checks that `markdown.js` escapes `<script>` and HTML attributes, drops `javascript:` links, and renders a table, a numbered list, and a link.
 26. The cube drawing is checked by hand with `node --check` on both scripts and a throwaway node script that loads `cube.js`, draws scrambled states from a release, and compares every sticker of `cubeIso` with `cubeNet`, and the edges where U, F, and R meet.
