@@ -163,13 +163,14 @@
           // The job states may be a poll behind (a page opened right after Run, or reloaded), so fetch them first.
           await UI.pollNow();
           if (!root.isConnected) return;
-          const runs = UI.jobs.filter((j) => j.id === id && j.job.startsWith("run:"));
-          if (runs.some((j) => j.state === "running")) {
+          if (UI.jobs.some((j) => j.id === id && j.job.startsWith("run:") && j.state === "running")) {
             headBox.replaceChildren(h("h2", { text: id }), h("p", { class: "muted", text: `Waiting for the run to create results/${id}…` }));
             setTimeout(loadDetail, 2000);
             return;
           }
-          const text = runs.length ? `The run stopped before creating results/${id}. The terminal shows why.` : e.message;
+          // Blame the run only when the server's branch watcher said it stopped first (API 7).
+          const step = UI.lines.filter((l) => l.id === id && l.job === "branch").pop();
+          const text = step && step.stream === "stderr" ? step.text : e.message;
           headBox.replaceChildren(h("h2", { text: id }), h("p", { class: "msg err", text }));
         }
       }

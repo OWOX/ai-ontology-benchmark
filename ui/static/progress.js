@@ -291,6 +291,8 @@
         apply(await UI.api("/api/state/" + encodeURIComponent(id)));
         again = alive();
       } catch (e) {
+        await UI.pollNow();  // the job states can be a poll behind, as on a reload before the first poll
+        if (S.dead) return;
         again = UI.jobs.some((j) => j.id === id && j.state === "running");
         status.textContent = again ? "Starting: waiting for the first results." : e.message;
       } finally { S.loading = false; }

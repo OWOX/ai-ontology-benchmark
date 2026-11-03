@@ -264,10 +264,15 @@
           const form = readForm(bundle);
           const body = path === "run" ? { form, limit: readLimit(), parallel: readParallel() } : { form };
           if (path === "run") { starting = true; controls(); say("Starting the run…"); }
-          const r = await UI.api("/api/" + path, { method: "POST", body }).finally(() => { starting = false; if (!dead) controls(); });
+          let r;
+          try { r = await UI.api("/api/" + path, { method: "POST", body }); } catch (e) {
+            if (path === "run") { starting = false; if (!dead) controls(); }
+            throw e;
+          }
           if (dead) return;
           if (path === "run") {
-            // The experiment's page waits for results/<id> while a run job is alive, so bring the job states in first.
+            // Run stays disabled until the page moves on. The experiment page waits for results/<id> while a run job
+            // is alive, so bring the job states in first.
             await UI.pollNow();
             if (dead) return;
             UI.go("#/experiments/" + encodeURIComponent(form.id) + (bundle.release ? "?release=" + encodeURIComponent(bundle.release) : ""));
