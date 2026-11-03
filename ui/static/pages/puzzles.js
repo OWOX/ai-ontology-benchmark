@@ -14,7 +14,7 @@
     return wrap;
   }
 
-  // Footnote numbers for one card: each distinct source gets the next number, in the order the card shows them.
+  // Footnote numbers for the whole page: each distinct source gets the next number, in the order the page shows them.
   function notes() {
     const seen = new Map();
     return (source) => {
@@ -79,7 +79,7 @@
 
   function seen(p, q) {
     const box = h("div", {}, h("h4", { text: "Not allowed moves seen" }));
-    if (!p.impossible_seen.length) { box.append(h("p", { class: "muted small", text: "None in pushed experiments yet" })); return box; }
+    if (!p.impossible_seen.length) { box.append(h("p", { class: "muted small empty-note", text: "None in pushed experiments yet" })); return box; }
     const rows = p.impossible_seen.map((s) => h("tr", {},
       h("td", {}, h("code", { text: s.move })), h("td", { text: String(s.count) }), h("td", { text: s.models.join(", ") }),
       h("td", {}, ...s.experiments.flatMap((id, i) => [i ? ", " : null,
@@ -93,8 +93,8 @@
     render(bundle, params, el) {
       const q = params.release ? "release=" + encodeURIComponent(params.release) : "";
       el.append(h("h2", { text: "Puzzles" }));
+      const footnote = notes();
       for (const p of bundle.puzzles) {
-        const footnote = notes();
         const top = h("div", { class: "puzzle-top" }, h("div", { class: "puzzle-main" }, picture(p), description(p, footnote), allowed(p, footnote), links(p, q)));
         if (p.n) top.append(h("div", { class: "named-net" }, cubeNetNamed(p.n, { width: 4 * p.n * NET_CELL, height: 3 * p.n * NET_CELL })));
         const card = h("section", { class: "step puzzle" }, h("h3", { text: p.name }), top, prompts(p, footnote), seen(p, q));
