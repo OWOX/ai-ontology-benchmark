@@ -12,7 +12,7 @@
     ["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
   // The form survives a redraw of the page (a bundle reload after a job) and resets with the release.
-  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "" };
+  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", result: null };
   let cleanup = null;
   let idSeq = 0;
 
@@ -20,7 +20,7 @@
 
   function reset(bundle) {
     const d = bundle.defaults;
-    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "",
+    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", result: null,
       vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, ...d.budget } });
   }
 
@@ -146,7 +146,6 @@
       let dead = false, starting = false;
 
       const msg = h("p", { class: "msg", role: "status" });
-      ref.result = h("div", { class: "job-result" });
       const say = (text, kind) => { msg.className = "msg" + (kind ? " " + kind : ""); msg.textContent = text; };
 
       function controls() {
@@ -215,8 +214,11 @@
 
       // The output of Estimate or Dry run: that job's log lines for this experiment id, from the log history and
       // then as they arrive. Text only. A later press of either button starts the block afresh.
+      // What it shows is kept in S, so a redraw of the page draws it again from the log history.
       function showResult(label, job, id, after) {
+        S.result = { label, job, id, after };
         if (ref.off) ref.off();
+        if (!ref.result) { ref.result = h("div", { class: "job-result" }); ref.section.append(ref.result); }
         const box = h("pre", { class: "terminal", role: "log", "aria-label": `${label} output` });
         ref.result.replaceChildren(h("h4", { text: `${label} output` }), box);
         const add = (ev) => {
@@ -285,6 +287,7 @@
       }
 
       function paint() {
+        ref.result = null;
         for (const [key, text, fn] of [["estimate", "Estimate", () => send("estimate", "Estimate")],
           ["dry", "Dry run", () => send("dry-run", "Dry run")], ["run", "Run", () => send("run", "Run")]]) {
           ref[key] = h("button", { type: "button", text, class: key === "run" ? "primary" : "" });
@@ -294,8 +297,9 @@
           h("section", {}, h("h2", { text: "New Experiment" }), branchField()),
           h("section", { class: "step" }, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
           h("section", { class: "step" }, h("h3", { text: "AI models" }), modelList(bundle, choose)),
-          h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(),
-            h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run), msg, ref.result));
+          ref.section = h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(),
+            h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run), msg));
+        if (S.result) showResult(S.result.label, S.result.job, S.result.id, S.result.after);
         controls();
       }
 
