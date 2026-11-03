@@ -274,7 +274,8 @@
             // Run stays disabled until the page moves on. The experiment page waits for results/<id> while a run job
             // is alive, so bring the job states in first.
             await UI.pollNow();
-            if (dead) return;
+            // A bundle reload in that poll can redraw this page (dead), so check the route rather than the flag.
+            if (!location.hash.startsWith("#/new")) return;
             UI.go("#/experiments/" + encodeURIComponent(form.id) + (bundle.release ? "?release=" + encodeURIComponent(bundle.release) : ""));
             return;
           }
