@@ -973,3 +973,58 @@ def test_parallel_below_one_is_refused(exp, capsys):
     assert go("--parallel", "0") == 1
     assert "--parallel" in capsys.readouterr().err
     assert not (exp / "results").exists()
+
+
+def bare_attempt(flight, results, seq, decision, budget):
+    """An Attempt with only what can_afford reads, so a budget scenario can be played step by step."""
+    attempt = object.__new__(run_module.Attempt)
+    attempt.seq, attempt.flight, attempt.results, attempt.model = seq, flight, results, {"name": "A"}
+    attempt.config = {"budget": {"per_model_usd": budget, "per_experiment_usd": 100.0}, "models": [{"name": "A"}]}
+    attempt.prices = {"A": {"price_input_per_mtok": 0.0, "price_output_per_mtok": 100.0}}
+    attempt.price, attempt.is_decision, attempt.worst, attempt.left = attempt.prices["A"], decision, 0.01, 1
+    attempt.checks, attempt.snapshot = 0, {}
+    flight.reserve(seq, "A", 0.01)
+    return attempt
+
+
+def test_a_decision_attempt_counts_records_other_attempts_write_after_its_snapshot(tmp_path):
+    from src.run.budget import BudgetError
+    flight = run_module.Flight()
+    first, second = (bare_attempt(flight, tmp_path, n, True, 0.035) for n in (0, 1))
+    first.can_afford(0, 0)  # snapshot taken: nothing spent
+    second.can_afford(0, 0)
+    flight.release(1, 0.03)  # the second attempt records 0.03 and its reservation goes
+    with pytest.raises(BudgetError, match="per_model_usd"):
+        first.can_afford(0, 0)  # 0.03 recorded + 0.01 next is above 0.035
+
+
+def test_a_reservation_grows_with_the_tokens_its_attempt_has_paid(tmp_path):
+    from src.run.budget import BudgetError
+    flight = run_module.Flight()
+    first = bare_attempt(flight, tmp_path, 0, False, 0.025)
+    first.can_afford(0, 0)
+    first.can_afford(0, 100)  # a failed call has paid 0.01 of output tokens: reserved 0.02
+    second = bare_attempt(flight, tmp_path, 1, False, 0.025)
+    with pytest.raises(BudgetError, match="per_model_usd"):
+        second.can_afford(0, 0)  # 0.02 + 0.01 is above 0.025
+
+
+def test_a_worker_failure_that_is_not_an_exception_ends_the_run(exp, monkeypatch):
+    import threading
+
+    def boom(model, prompt, max_output_tokens):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_module, "call_model", boom)
+    outcome = []
+
+    def target():
+        try:
+            go("--parallel", "2", "--model", "A", "--no-commit")
+        except BaseException as error:
+            outcome.append(error)
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(10)
+    assert not thread.is_alive() and isinstance(outcome[0], KeyboardInterrupt)

@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config import load_experiment_config, load_prices, max_moves, parse_experiment_config
+from src.evaluate.metrics import attempt_cost
 from src.release.release import assessment_sha256
 from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
@@ -282,30 +283,36 @@ def finish(branch: ResultsBranch, experiment_id: str) -> None:
 
 class Flight:
     """The worst-case cost each in-flight attempt of this process has reserved, from its submission
-    until its record is appended. The lock guards the table: workers read it, the main thread edits it."""
+    until its record is appended, and the cost of the records this process has appended, per model.
+    The lock guards both: workers read them, the main thread edits them."""
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.held: dict[int, tuple[str, float]] = {}  # sequence number -> (model name, cost)
+        self.settled: dict[str, float] = {}  # model name -> cost of the records appended so far
 
     def reserve(self, seq: int, name: str, cost: float) -> None:
         with self.lock:
             self.held[seq] = (name, cost)
 
-    def release(self, seq: int) -> None:
+    def release(self, seq: int, record_cost: float = 0.0) -> None:
+        """Drop a reservation and, in the same step, add the cost of the record it became."""
         with self.lock:
-            self.held.pop(seq, None)
+            held = self.held.pop(seq, None)
+            if held and record_cost:
+                self.settled[held[0]] = self.settled.get(held[0], 0.0) + record_cost
 
-    def others(self, seq: int, earlier_only: bool) -> dict[str, float]:
-        """The reserved cost of the other in-flight attempts, per model. An attempt's first check
-        counts only those submitted before it, so the attempts started together are admitted in
-        loop order and the last of them is the one a budget refuses."""
-        total: dict[str, float] = {}
+    def view(self, seq: int, earlier_only: bool) -> tuple[dict[str, float], dict[str, float]]:
+        """Return (reserved, settled) per model, read together. Reserved is the cost of the other
+        in-flight attempts. An attempt's first check counts only those submitted before it, so the
+        attempts started together are admitted in loop order and the last of them is the one a
+        budget refuses."""
+        reserved: dict[str, float] = {}
         with self.lock:
             for other, (name, cost) in self.held.items():
                 if other != seq and (other < seq or not earlier_only):
-                    total[name] = total.get(name, 0.0) + cost
-        return total
+                    reserved[name] = reserved.get(name, 0.0) + cost
+            return reserved, dict(self.settled)
 
 
 class Attempt:
@@ -331,16 +338,22 @@ class Attempt:
     def can_afford(self, retry_in: int, retry_out: int) -> None:
         paid = (retry_in * self.price["price_input_per_mtok"] + retry_out * self.price["price_output_per_mtok"]) / 1e6
         name = self.model["name"]
-        # Reservations first, then the files: a record appended in between is then counted once or twice, never missed.
-        reserved = self.flight.others(self.seq, earlier_only=self.checks == 0)
+        # Reservations and settled costs first, then the files: a record appended in between is then
+        # counted once or twice, never missed.
+        reserved, settled = self.flight.view(self.seq, earlier_only=self.checks == 0)
         self.checks += 1
         if self.is_decision and "spent" not in self.snapshot:
+            self.snapshot["settled"] = settled
             self.snapshot["spent"] = spent_by_model(self.config, self.prices, self.results / "raw")
         spent = self.snapshot.get("spent")
         if spent is None:
             spent = spent_by_model(self.config, self.prices, self.results / "raw")
+        else:  # the snapshot is stale: add what other attempts of this process recorded since
+            then = self.snapshot["settled"]
+            spent = {n: cost + settled.get(n, 0.0) - then.get(n, 0.0) for n, cost in spent.items()}
         spent = {n: cost + reserved.get(n, 0.0) for n, cost in spent.items()}
         check_spend(self.config, self.prices, self.results / "raw", name, self.worst + paid, self.left, spent)
+        self.flight.reserve(self.seq, name, self.worst + paid)  # what it has paid is not in any file yet
 
     def call(self) -> None:
         if self.is_decision:
@@ -385,7 +398,7 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
                              manifest["decision_prompt_versions"] if attempt.is_decision else versions,
                              attempt.reply, attempt.retry_in, attempt.retry_out, attempt.result)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
-        flight.release(attempt.seq)  # after the append, so the cost is never in neither place
+        flight.release(attempt.seq, attempt_cost(record, prices[model['name']]))  # after the append, so the cost is never in neither place
         outcomes[record["outcome"]] += 1
         progress.update(record)
         safe_commit(branch, f"Results: experiment {config['experiment_id']}, {model['name']} "
@@ -417,7 +430,7 @@ def play_parallel(size: int, attempts, finish, flight: Flight) -> None:
                 return
             try:
                 attempt.call()
-            except Exception as error:  # handed to the main thread, which decides
+            except BaseException as error:  # handed to the main thread, which decides and re-raises
                 attempt.error = error
             done.put(attempt)
 
