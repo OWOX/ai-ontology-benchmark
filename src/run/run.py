@@ -398,7 +398,8 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
                              manifest["decision_prompt_versions"] if attempt.is_decision else versions,
                              attempt.reply, attempt.retry_in, attempt.retry_out, attempt.result)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
-        flight.release(attempt.seq, attempt_cost(record, prices[model['name']]))  # after the append, so the cost is never in neither place
+        # after the append, so the cost is never in neither place
+        flight.release(attempt.seq, attempt_cost(record, prices[model['name']]))
         outcomes[record["outcome"]] += 1
         progress.update(record)
         safe_commit(branch, f"Results: experiment {config['experiment_id']}, {model['name']} "
