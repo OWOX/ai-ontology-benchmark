@@ -223,7 +223,7 @@ Every git and gh command is echoed to the terminal as a `commit` job.
 
 Two parts: a left menu, fixed to the viewport height, and the page on the right. The router (`router.js`) reads the hash: `#/models`, `#/puzzles`, `#/puzzles/<puzzle>/inputs`, `#/experiments`, `#/experiments/<id>`, `#/new`, and `#/about`, each with `?release=<version>`, and any other filter, in the hash too, so a link or a reload opens the same view. An empty hash opens `#/experiments`. Each page is one file in `ui/static/pages/` with a `render(bundle, params)` function, and a page that needs more than the bundle loads it itself.
 
-The page title and every block heading, such as a puzzle card's name or the New Experiment page's Puzzles, AI models, and Parameters, are 18px.
+The page title and every block heading, such as a puzzle card's name or the New Experiment page's Puzzles, AI models, and Parameters, are 18px. The gap under the page title equals the page's 16px top padding.
 
 Every text taken from a file ends with a small "source" link to that file on GitHub, at the commit sha of the ref it was read from, as `https://github.com/<owner>/<repo>/blob/<sha>/<path>`. With no GitHub base URL, there is no link. On the Puzzles page the sources are footnote markers instead.
 
