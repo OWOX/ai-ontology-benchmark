@@ -269,7 +269,7 @@ One card per puzzle of the release. Under the title, two columns: on the left, i
 6. "Prompts": one toggle button per setup, named "no model", "descriptive", or "prescriptive". A click shows that setup's prompt template under the buttons, with a footnote under it, the marker and the template's path, both linking to the template on GitHub, and a second click hides it. The prompt version is not shown.
 7. "Not allowed moves seen": a table of `impossible_seen`, with the move in a code span, the count, and the AI models, each experiment id linking to its page. "None in pushed experiments yet", with no gap under the heading, when it is empty.
 
-Footnote markers are numbered per card, `[1]`, `[2]`, and so on, in the order the card shows them: the description, the allowed moves, then each setup's prompt in setup order. A source used twice keeps one number.
+Footnote markers are numbered once for the whole page, `[1]`, `[2]`, and so on, in the order the page shows them: card by card, and within a card the description, the allowed moves, then each setup's prompt in setup order. A source used twice keeps one number.
 
 The inputs page lists every input of the puzzle: the input id, the depth, the validity, the net of its state, and, for an invalid input, its source input and corruption, filtered by depth and validity, with a source link to `inputs.jsonl`.
 
