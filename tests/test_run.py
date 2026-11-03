@@ -972,7 +972,9 @@ def test_a_finished_attempt_is_replaced_by_the_next_pending_in_loop_order(exp, m
 
 def test_parallel_budget_never_passes_the_model_budget(exp, capsys, monkeypatch):
     with_budget(exp, per_model_usd=0.035)
+    gate = Gate(monkeypatch, hold=2)  # the first two calls wait for each other, so they really overlap
     assert go("--parallel", "4", "--model", "A") == 1
+    assert gate.peak >= 2
     assert len(records(exp, "A")) == 3
     assert "per_model_usd 0.035 for model A" in capsys.readouterr().err
 
