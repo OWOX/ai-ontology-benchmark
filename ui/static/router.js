@@ -81,6 +81,8 @@
     // Every log line received so far (at most 5,000, like the server), so a page can draw the history on mount.
     get lines() { return st.lines; },
     get bundleNow() { return st.bundle; },
+    // Gives a `.tip-src` element the status dot's tooltip panel: the `.tip-fixed` sibling after it, placed at each open.
+    tipOn(src) { for (const ev of ["mouseenter", "focus"]) src.addEventListener(ev, () => placeTip(src, src.nextElementSibling)); },
   };
 
   function parse() {
@@ -125,20 +127,20 @@
     const b = st.bundle, newest = b && b.releases && b.releases[0];
     const release = !b ? "" : !newest || newest === b.release ? `Release ${b.release}, the newest.` : `Release ${b.release}. The newest is ${newest}.`;
     const text = [server, fetched, release].filter(Boolean).join(" ");
-    const cls = "conn" + (st.server === "down" ? " bad" : st.server === "live" ? (f.error ? " warn" : " ok") : "");
+    const cls = "conn tip-src" + (st.server === "down" ? " bad" : st.server === "live" ? (f.error ? " warn" : " ok") : "");
     // The log poll calls this every few seconds. Writing only on change keeps an open panel steady.
     if (el.className !== cls) el.className = cls;
     if (tip.textContent !== text) tip.textContent = text;
   }
 
   // The panel is fixed so the menu's overflow cannot clip it. It is placed at each open, because the menu can scroll.
-  function placeConn() {
-    const r = $("conn").getBoundingClientRect(), tip = $("conn-tip");
+  function placeTip(src, tip) {
+    const r = src.getBoundingClientRect();
     const left = Math.max(12, Math.min(r.left - 6, window.innerWidth - 12 - tip.offsetWidth));
     tip.style.left = left + "px";
     tip.style.top = (r.bottom + 6) + "px";
   }
-  for (const ev of ["mouseenter", "focus"]) $("conn").addEventListener(ev, placeConn);
+  UI.tipOn($("conn"));
 
   function draw(b, force) {
     // A reload that brings nothing new keeps the page, so typed fields survive.
@@ -147,7 +149,7 @@
     st.drawn = sig;
     st.bundle = b;
     drawMenu();
-    $("termbox").hidden = !["new", "about"].includes(st.params.name);
+    $("termbox").hidden = st.params.name !== "about";
     const page = pages[st.params.name];
     const main = $("main");
     if (!page) { main.replaceChildren(); return; }

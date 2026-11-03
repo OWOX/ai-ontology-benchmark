@@ -12,7 +12,7 @@
     ["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
   // The form survives a redraw of the page (a bundle reload after a job) and resets with the release.
-  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "" };
+  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", result: null };
   let cleanup = null;
   let idSeq = 0;
 
@@ -20,7 +20,7 @@
 
   function reset(bundle) {
     const d = bundle.defaults;
-    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "",
+    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", result: null,
       vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, ...d.budget } });
   }
 
@@ -95,8 +95,11 @@
       const head = h("label", { class: "provider-head" }, all, h("span", { text: p.name }));
       // A missing key shows as a warning sign after the provider name, linking to Models; the reason is its tooltip.
       const problem = p.models.map((m) => m.disabled_reason).find(keyProblem);
-      const warn = problem ? h("a", { class: "key-warn", href: "#/models" + rel, title: problem[0].toUpperCase() + problem.slice(1),
-        "aria-label": `${p.name}: ${problem}`, text: "⚠️" }) : null;
+      const tipId = "key-tip-" + p.name;
+      const warn = problem ? h("span", { class: "tip-wrap" },
+        h("a", { class: "key-warn tip-src", href: "#/models" + rel, "aria-label": `${p.name}: ${problem}`, "aria-describedby": tipId, text: "⚠️" }),
+        h("span", { class: "tip-fixed", id: tipId, role: "tooltip", text: problem[0].toUpperCase() + problem.slice(1) })) : null;
+      if (warn) UI.tipOn(warn.firstChild);
       const col = h("div", { class: "model-col" }, h("div", { class: "provider-row" }, head, warn));
       for (const m of p.models) {
         const off = !!m.disabled_reason;
@@ -116,16 +119,21 @@
     }));
   }
 
+  // Two columns: the three budgets, then the rest.
   function numberFields() {
-    return h("div", { class: "grid" }, ...NUMBERS.map(([key, label]) => {
+    const field = ([key, label]) => {
       const input = h("input", { type: "text", inputmode: "decimal", "aria-label": label, value: String(S.vals[key]) });
       input.addEventListener("input", () => { S.vals[key] = input.value; });
       return h("label", {}, label, input);
-    }), (() => {
+    };
+    const limit = (() => {
       const input = h("input", { type: "text", inputmode: "numeric", "aria-label": "Limit per model", value: S.limit });
       input.addEventListener("input", () => { S.limit = input.value; });
       return h("label", {}, "Limit per model (optional): stops each AI model after N attempts", input);
-    })());
+    })();
+    const budgets = NUMBERS.filter(([k]) => k.endsWith("_usd")), rest = NUMBERS.filter(([k]) => !k.endsWith("_usd"));
+    return h("div", { class: "params-cols" }, h("div", { class: "grid" }, ...budgets.map(field)),
+      h("div", { class: "grid" }, ...rest.map(field), limit));
   }
 
   UI.registerPage("new", {
@@ -164,7 +172,7 @@
         try {
           const r = await UI.api("/api/default-id?" + q);
           if (mine_ !== idSeq || S.touched || S.branch || dead) return;
-          S.id = r.id;
+          S.id = r.id; dropStaleResult();
           if (ref.id) ref.id.value = S.id;
           if (ref.note) ref.note.textContent = branchNote();
           controls();
@@ -204,8 +212,38 @@
         }
       }
 
+      // The output of Estimate or Dry run: that job's log lines for this experiment id, from the log history and
+      // then as they arrive. Text only. A later press of either button starts the block afresh.
+      // What it shows is kept in S, so a redraw of the page draws it again from the log history.
+      function showResult(label, job, id, after) {
+        S.result = { label, job, id, after };
+        if (ref.off) ref.off();
+        if (!ref.result) { ref.result = h("div", { class: "job-result" }); ref.section.append(ref.result); }
+        const box = h("pre", { class: "terminal", role: "log", "aria-label": `${label} output` });
+        ref.result.replaceChildren(h("h4", { text: `${label} output` }), box);
+        const add = (ev) => {
+          if (ev.id !== id || ev.job !== job || ev.seq <= after) return;
+          const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
+          const line = h("span", { class: ev.stream === "cmd" ? "cmd" : ev.stream === "stderr" ? "err" : "" });
+          line.append((ev.stream === "cmd" ? "$ " : "") + ev.text + "\n");
+          box.append(line);
+          if (atBottom) box.scrollTop = box.scrollHeight;
+        };
+        UI.lines.forEach(add);
+        ref.off = UI.onLines(add);
+      }
+
+      // The output belongs to one experiment id: it goes when the id changes, by typing, a new suggestion, or a loaded branch.
+      function dropStaleResult() {
+        if (!S.result || S.result.id === S.id.trim()) return;
+        S.result = null;
+        if (ref.off) { ref.off(); ref.off = null; }
+        if (ref.result) { ref.result.remove(); ref.result = null; }
+      }
+
       async function send(path, label) {
         say("");
+        const after = UI.lines.length ? UI.lines[UI.lines.length - 1].seq : 0;
         try {
           const form = readForm(bundle);
           const body = path === "run" ? { form, limit: readLimit() } : { form };
@@ -217,10 +255,8 @@
             UI.go("#/experiments/" + encodeURIComponent(form.id) + (bundle.release ? "?release=" + encodeURIComponent(bundle.release) : ""));
             return;
           }
-          say(`${label} started. Experiment ${r.status}. See the terminal below.`, "ok");
-          const term = document.getElementById("termbox");
-          term.open = true;
-          term.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          say(`${label} started. Experiment ${r.status}.`, "ok");
+          showResult(label, path, form.id, after);
         } catch (e) { say(e.message, "err"); }
       }
 
@@ -246,6 +282,7 @@
             S.id = ref.id.value.trim(); S.touched = true;
             if (S.branch && S.id !== S.branch) S.branch = "";
           }
+          dropStaleResult();
           ref.note.textContent = branchNote();
           controls();
         });
@@ -259,6 +296,8 @@
       }
 
       function paint() {
+        ref.result = null;
+        dropStaleResult();
         for (const [key, text, fn] of [["estimate", "Estimate", () => send("estimate", "Estimate")],
           ["dry", "Dry run", () => send("dry-run", "Dry run")], ["run", "Run", () => send("run", "Run")]]) {
           ref[key] = h("button", { type: "button", text, class: key === "run" ? "primary" : "" });
@@ -268,8 +307,9 @@
           h("section", {}, h("h2", { text: "New Experiment" }), branchField()),
           h("section", { class: "step" }, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
           h("section", { class: "step" }, h("h3", { text: "AI models" }), modelList(bundle, choose)),
-          h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(),
+          ref.section = h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(),
             h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run), msg));
+        if (S.result) showResult(S.result.label, S.result.job, S.result.id, S.result.after);
         controls();
       }
 
@@ -279,7 +319,7 @@
       cleanup = () => {
         cleanup = null;
         dead = true;
-        offJobs(); window.removeEventListener("hashchange", onHash);
+        offJobs(); if (ref.off) ref.off(); window.removeEventListener("hashchange", onHash);
       };
 
       paint();
