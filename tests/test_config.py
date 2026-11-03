@@ -149,7 +149,7 @@ def test_missing_and_malformed_files(tmp_path):
         load_release_config(write(tmp_path, "seed = = 1"))
 
 
-DEFAULT_BUDGET = {"per_request_usd": 2.00, "per_model_usd": 5.00, "per_experiment_usd": 10.00}
+DEFAULT_BUDGET = {"per_request_usd": 2.00, "per_model_usd": 25.00, "per_experiment_usd": 50.00}
 
 
 def test_no_budget_table_gives_the_defaults(tmp_path):
