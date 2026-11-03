@@ -1,8 +1,9 @@
 // Spec: docs/specs/ui.md (Progress, Arc colours, Polling)
-// The Progress block shared by the Experiment page and New Experiment: Cube panel, legend, banners, and
-// one accordion per AI model and puzzle with a ring per input. Reads GET /api/state/<id>; writes only its DOM.
-// Interface: Progress.mount(el, experimentId, opts) -> {refresh(), destroy(), snapshot()} and Progress.COLORS.
-// opts.onSnapshot(snap) runs after every applied snapshot. Mounting again replaces the previous mount.
+// The Plan of the Experiment page: a legend and a tree of foldable nodes (puzzle, AI model, input with its ring, attempt),
+// the job banners, and the data the Cube panel and the terminal read. Reads GET /api/state/<id>; writes only its DOM.
+// Interface: Progress.mount(el, experimentId, opts) -> {refresh(), destroy(), snapshot(), panelNode, records(), pending(),
+// inputs(), totals()} and Progress.COLORS, Progress.OUTCOMES. opts: onSnapshot(snap) after every applied snapshot,
+// onStep(step) on a click of a node, arc, or leaf, bannerEl for the banners. Mounting again replaces the previous mount.
 (function () {
   const h = UI.el;
   // The one arc colour table: the legend, the rings, the counts, and the Cube panel all read it.
@@ -319,7 +320,6 @@
     const ctl = {
       refresh: load, snapshot: () => S.snap, panelNode: panel.node,
       records: () => S.records, pending: () => S.pending, inputs: () => S.inputs,
-      reveal: (step) => step.input ? reveal(step.puzzle, step.model, step.input, false) : null,
       // Done and planned attempts over all models, with the count per outcome.
       totals() {
         const out = {}; let done = 0;
