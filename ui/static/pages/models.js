@@ -28,7 +28,7 @@
   }
 
   // The key edit row: the password field, showing only the saved key's last 4 characters, then (for a provider
-  // with an account id) a second password field, then Save, Cancel, and Clear. An empty field keeps the saved value. Cancel is left out when there is no key to fall back to, and Clear when no key is saved in a file.
+  // with an account id) a second password field, then Save, Cancel, and Clear. An empty field keeps the saved value. Clear is left out when no key is saved in a file.
   function editRow(p, msg, onCancel) {
     const saved = p.key.source === "file" || (p.key.account && p.key.account.source === "file");
     const field = h("input", { type: "password", autocomplete: "off", "aria-label": `${p.name} API key`,
@@ -44,12 +44,11 @@
       // The reload redraws the page, so the new Edit icon takes the focus.
       if (await secret(p, "save", msg, key, account)) { const e = document.querySelector(`.provider[data-provider="${p.name}"] [aria-label="Edit API key"]`); if (e) e.focus(); }
     });
-    const row = h("div", { class: "row key-row" }, field, ...(accountField ? [accountField] : []), save);
-    if (onCancel) {
-      const cancel = h("button", { type: "button", text: "Cancel" });
-      cancel.addEventListener("click", () => { field.value = ""; if (accountField) accountField.value = ""; onCancel(); });
-      row.append(cancel);
-    }
+    const cancel = h("button", { type: "button", text: "Cancel" });
+    cancel.addEventListener("click", () => { field.value = ""; if (accountField) accountField.value = ""; onCancel(); });
+    const row = h("div", { class: "row key-row" }, field, ...(accountField ? [accountField] : []), save, cancel);
+    // Esc anywhere in the row does what Cancel does.
+    row.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); cancel.click(); } });
     if (saved) {
       const clear = h("button", { type: "button", class: "danger", text: "Clear" });
       clear.addEventListener("click", () => { if (confirm(`Delete the saved ${p.name} ${p.key.account ? "API token and account id" : "API key"}?`)) secret(p, "clear", msg, ""); });
@@ -72,14 +71,13 @@
     const close = () => { slot.replaceChildren(); if (edit) edit.focus(); };
     const open = () => {
       if (slot.firstChild) return;
-      const row = editRow(p, msg, missing ? null : close);
+      const row = editRow(p, msg, close);
       slot.replaceChildren(row);
       row.querySelector("input").focus();
     };
     const icons = h("div", { class: "provider-icons" });
     if (k && (k.source === "file" || missing || (acc && acc.source === "file"))) icons.append(edit = icon("edit", "Edit API key", open));
     head.append(icons);
-    if (missing) open();
     return h("section", { class: "step provider", "data-provider": p.name }, head, slot, modelTable(p, q));
   }
 
