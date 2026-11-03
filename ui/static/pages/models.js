@@ -47,6 +47,8 @@
     const cancel = h("button", { type: "button", text: "Cancel" });
     cancel.addEventListener("click", () => { field.value = ""; if (accountField) accountField.value = ""; onCancel(); });
     const row = h("div", { class: "row key-row" }, field, ...(accountField ? [accountField] : []), save, cancel);
+    // Esc anywhere in the row does what Cancel does.
+    row.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); cancel.click(); } });
     if (saved) {
       const clear = h("button", { type: "button", class: "danger", text: "Clear" });
       clear.addEventListener("click", () => { if (confirm(`Delete the saved ${p.name} ${p.key.account ? "API token and account id" : "API key"}?`)) secret(p, "clear", msg, ""); });
