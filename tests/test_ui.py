@@ -295,10 +295,22 @@ def test_run_from_form_writes_no_config_file(server):
     assert call(server, "POST", "/api/estimate", {"form": FORM})[1]["status"] == "unchanged"
 
 
-def test_run_answers_once_the_branch_exists(server):
+def branch_lines(server, experiment_id="t1"):
+    """The `branch` job's log lines of one experiment, as (stream, text), once its watcher has had its say."""
+    deadline = time.monotonic() + 10
+    while True:
+        lines = [(l["stream"], l["text"]) for l in call(server, "GET", "/api/log")[1]["lines"]
+                 if l["id"] == experiment_id and l["job"] == "branch"]
+        if len(lines) > 1 or (lines and lines[0][1].endswith("resuming")) or time.monotonic() > deadline:
+            return lines
+        time.sleep(0.05)
+
+
+def test_run_answers_at_once_and_logs_the_branch_step(server):
     assert call(server, "POST", "/api/run", FORM)[0] == 200
-    assert git(server.root, "rev-parse", "--verify", "-q", "refs/heads/results/t1").strip()
     wait_job(server, "run:example-model")
+    assert branch_lines(server) == [("stdout", "creating results/t1…"), ("stdout", "results/t1 created")]
+    assert git(server.root, "rev-parse", "--verify", "-q", "refs/heads/results/t1").strip()
 
 
 def test_resume_of_a_branch_only_on_origin_answers(server):
@@ -308,13 +320,16 @@ def test_resume_of_a_branch_only_on_origin_answers(server):
     git(server.root, "branch", "-D", "results/t1")
     assert call(server, "POST", "/api/run", FORM)[0] == 200
     wait_job(server, "run:example-model")
+    assert branch_lines(server)[-1] == ("stdout", "results/t1 exists: resuming")
 
 
-def test_run_that_stops_before_its_branch_reports_why(server):
+def test_run_that_stops_before_its_branch_logs_why(server):
     (server.root / "config" / "prices.toml").rename(server.root / "config" / "prices.toml.away")
-    status, data = call(server, "POST", "/api/run", FORM)
-    assert status == 409 and data["error"].startswith("run stopped before creating results/t1: ")
-    assert "prices.toml" in data["error"]
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    lines = branch_lines(server)
+    assert lines[0] == ("stdout", "creating results/t1…")
+    stream, text = lines[-1]
+    assert stream == "stderr" and text.startswith("run stopped before creating results/t1: ") and "prices.toml" in text
 
 
 def test_form_refused_when_the_release_is_not_in_this_checkout(server):
@@ -847,7 +862,7 @@ def spawned(monkeypatch):
         self.finish(job, 0)
 
     monkeypatch.setattr(jobs_module.Jobs, "_spawn", fake)
-    monkeypatch.setattr(app_module.App, "wait_for_branch", lambda self, experiment_id, names: None)  # no process, no branch
+    monkeypatch.setattr(app_module.App, "watch_branch", lambda self, experiment_id, names: None)  # no process, no branch
     return seen
 
 

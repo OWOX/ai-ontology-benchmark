@@ -1,7 +1,7 @@
 // Spec: docs/specs/ui.md (New Experiment, Banners, HTTP API 4 to 11)
 // New Experiment: the form, Estimate, Dry run, and Run. Reads the bundle,
 // GET /api/branches, /api/default-id, and /api/experiment/<id>/config; writes only through POST /api/estimate,
-// /api/dry-run, and /api/run. Run answers once the branch exists, and the page then opens the experiment's page,
+// /api/dry-run, and /api/run. Run answers once its jobs start, and the page then opens the experiment's page,
 // which shows the settings, Progress, Stop, and the terminal.
 (function () {
   const h = UI.el;
@@ -263,11 +263,19 @@
         try {
           const form = readForm(bundle);
           const body = path === "run" ? { form, limit: readLimit(), parallel: readParallel() } : { form };
-          if (path === "run") { starting = true; controls(); say(`Starting the run and creating results/${form.id}…`); }
-          const r = await UI.api("/api/" + path, { method: "POST", body }).finally(() => { starting = false; if (!dead) controls(); });
+          if (path === "run") { starting = true; controls(); say("Starting the run…"); }
+          let r;
+          try { r = await UI.api("/api/" + path, { method: "POST", body }); } catch (e) {
+            if (path === "run") { starting = false; if (!dead) controls(); }
+            throw e;
+          }
           if (dead) return;
           if (path === "run") {
-            // The branch exists by now, so the experiment's page can be opened and reloaded safely.
+            // Run stays disabled until the page moves on. The experiment page waits for results/<id> while a run job
+            // is alive, so bring the job states in first.
+            await UI.pollNow();
+            // A bundle reload in that poll can redraw this page (dead), so check the route rather than the flag.
+            if (!location.hash.startsWith("#/new")) return;
             UI.go("#/experiments/" + encodeURIComponent(form.id) + (bundle.release ? "?release=" + encodeURIComponent(bundle.release) : ""));
             return;
           }

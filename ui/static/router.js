@@ -196,7 +196,22 @@
     else load(st.params.release, false);
   }
 
-  async function pollLog() {
+  // One poll at a time: a call while one is in flight shares it, and a call between polls runs one now and
+  // reschedules the next.
+  function pollLog() {
+    if (st.polling) return st.polling;
+    clearTimeout(st.pollTimer);
+    st.polling = pollOnce().finally(() => {
+      st.polling = null;
+      st.pollTimer = setTimeout(pollLog, st.jobs.some((j) => j.state === "running") ? 1000 : 5000);
+    });
+    return st.polling;
+  }
+  // Brings the job states up to date at once. A poll already in flight may predate what the caller just did,
+  // so it waits for that one and then polls again.
+  UI.pollNow = async () => { if (st.polling) await st.polling; return pollLog(); };
+
+  async function pollOnce() {
     try {
       const data = await UI.api("/api/log?after=" + st.logAfter);
       st.server = "live"; drawConn();
@@ -216,7 +231,6 @@
     } catch (e) {
       st.server = "down"; drawConn();
     }
-    setTimeout(pollLog, st.jobs.some((j) => j.state === "running") ? 1000 : 5000);
   }
 
   function termLine(ev) {
