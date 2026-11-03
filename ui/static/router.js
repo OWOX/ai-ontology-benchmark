@@ -165,7 +165,7 @@
   function showFetchError(e) {
     const box = $("fetch-error");
     if (!e.staleToken) { box.textContent = e.message; return; }
-    const link = el("a", { href: "", text: "Reload the page" });
+    const link = el("a", { href: location.href, text: "Reload the page" });
     link.addEventListener("click", (ev) => { ev.preventDefault(); location.reload(); });
     box.replaceChildren("The server restarted, so this page is out of date. ", link, ".");
   }

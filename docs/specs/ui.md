@@ -244,8 +244,9 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 
 1. The page keeps each bundle in `localStorage` under `bundle:<release>`, and the release of the newest answer under `bundle:last` (the instant cached render uses it when the hash names no release), inside try/catch, so a blocked storage only loses the cache. A cached bundle with another `schema` is dropped.
 2. On load, and on a release change, the page renders at once from the cached bundle if there is one, then requests `GET /api/bundle` and renders again when it answers. The server's answer always replaces the cache.
-3. ↻ requests the bundle with `refresh=1`, and spins until the answer. A failed request keeps the cached view and shows the error under the menu. A 403 "missing or wrong X-Token" means the server restarted since the page loaded, because the token changes on every start, so the menu shows "The server restarted, so this page is out of date. Reload the page." instead, with "Reload the page" a link that reloads it.
+3. ↻ requests the bundle with `refresh=1`, and spins until the answer. A failed request keeps the cached view and shows the error under the menu.
 4. When a job ends, the page requests the bundle again, so a pushed experiment appears.
+5. The token changes on every server start, so a page loaded before a restart gets 403 "missing or wrong X-Token". When any bundle request fails that way, the menu shows "The server restarted, so this page is out of date. Reload the page." in place of the error. "Reload the page" is a link to the current view that reloads it. Other requests still show the plain error.
 
 ### Terminal
 
