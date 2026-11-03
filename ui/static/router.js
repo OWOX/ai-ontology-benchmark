@@ -190,6 +190,8 @@
     const prev = st.params;
     st.params = parse();
     if (location.hash === "" || location.hash === "#") history.replaceState(null, "", "#/experiments");
+    const reloadLink = $("fetch-error").querySelector("a");
+    if (reloadLink) reloadLink.href = location.href;  // the stale-token link keeps pointing at the current view
     if (st.bundle && prev && prev.release === st.params.release) draw(st.bundle, true);
     else load(st.params.release, false);
   }
