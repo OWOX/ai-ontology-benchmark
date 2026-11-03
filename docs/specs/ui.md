@@ -267,7 +267,7 @@ One card per puzzle of the release. Under the title, two columns: on the left, i
 4. The input count, the depths, and the valid and invalid counts. "Scrambled states" links to `#/puzzles/<puzzle>/inputs`. "Experiments" links to `#/experiments?puzzle=<puzzle>`.
 5. A 2D net of the solved puzzle with every sticker named by its face letter and its index in the face, row by row from 1, for example `U1` to `U9` on the 3x3, in the state's reading order ([cube.md](cube.md)), so a reader can match the net to a state string. Every sticker is 40px square, whatever the size of the cube, and the net takes at most half the card and scrolls sideways when it is wider. Cubes only.
 6. "Prompts": one toggle button per setup, named "no model", "descriptive", or "prescriptive". A click shows that setup's prompt template under the buttons, with a footnote under it, the marker and the template's path, both linking to the template on GitHub, and a second click hides it. The prompt version is not shown.
-7. "Not allowed moves seen": a table of `impossible_seen`, with the move in a code span, the count, and the AI models, each experiment id linking to its page. "None in pushed experiments yet" when it is empty.
+7. "Not allowed moves seen": a table of `impossible_seen`, with the move in a code span, the count, and the AI models, each experiment id linking to its page. "None in pushed experiments yet", with no gap under the heading, when it is empty.
 
 Footnote markers are numbered per card, `[1]`, `[2]`, and so on, in the order the card shows them: the description, the allowed moves, then each setup's prompt in setup order. A source used twice keeps one number.
 

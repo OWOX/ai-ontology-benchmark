@@ -14,7 +14,7 @@
     return wrap;
   }
 
-  // Footnote numbers for one card: each distinct source gets the next number, in the order the card shows them.
+  // Footnote numbers for the whole page: each distinct source gets the next number, in the order the page shows them.
   function notes() {
     const seen = new Map();
     return (source) => {
