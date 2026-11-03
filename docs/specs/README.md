@@ -18,7 +18,7 @@ One spec per script. Each spec lists the script's inputs, its outputs, and how t
    ```
    python -m src.release.release --bump major --note "First input set"
    ```
-3. Write `config/experiments/<id>.toml` naming the release, the AI models, their sampling `params`, and optionally a `[budget]` (defaults: 1.00 USD per request, 5.00 USD per AI model, 10.00 USD per experiment). Check the prompts and the cost, then run. If a budget stops the run, raise it in the config and run the same command again. Each AI model can run in its own terminal:
+3. Write `config/experiments/<id>.toml` naming the release, the AI models, their sampling `params`, and optionally a `[budget]` (defaults: 2.00 USD per request, 5.00 USD per AI model, 10.00 USD per experiment). Check the prompts and the cost, then run. If a budget stops the run, raise it in the config and run the same command again. Each AI model can run in its own terminal:
    ```
    python -m src.run.run --experiment <id> --dry-run
    python -m src.run.run --experiment <id> --estimate

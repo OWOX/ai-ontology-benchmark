@@ -117,7 +117,7 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 4. **Cost.** For one raw record, its input and retry input tokens times the input token price, plus its output and retry output tokens times the output token price, in USD.
 5. **Worst-case request cost.** The most one request can cost, per call for a decision model, whose request then holds the state with `max_moves` moves and the questions object: the request's characters divided by 4, rounded up, as input tokens, plus `max_output_tokens` as output tokens, at the AI model's token prices.
 6. **Budget.** A cost limit in USD in the experiment config. There are three:
-   1. **Request budget.** No worst-case request cost may exceed it. Default 1.00 USD.
+   1. **Request budget.** No worst-case request cost may exceed it. Default 2.00 USD.
    2. **Model budget.** The cost of one AI model's raw records in one experiment may not exceed it. Default 5.00 USD.
    3. **Experiment budget.** The cost of all raw records in one experiment may not exceed it. Default 10.00 USD.
 

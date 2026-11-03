@@ -36,7 +36,7 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
    params = { temperature = 1.0 } # optional, passed to the SDK call unchanged
 
    [budget]                       # optional, in USD; these values are the defaults
-   per_request_usd = 1.00
+   per_request_usd = 2.00
    per_model_usd = 5.00
    per_experiment_usd = 10.00
    ```
