@@ -292,3 +292,13 @@ def test_failing_commit_leaves_nothing_behind(repo):
     assert git(repo, "status", "--porcelain") == ""
     hook.unlink()
     release_ok(repo, "major")
+
+
+def test_assessment_hash_matches_the_newest_release_manifest():
+    """The assessment files on this branch must still match the frozen release, or run refuses to start."""
+    from src.release.release import assessment_sha256
+    root = Path(__file__).resolve().parent.parent
+    newest = max((p for p in (root / "releases").iterdir() if (p / "manifest.json").is_file()),
+                 key=lambda p: tuple(int(n) for n in p.name.split(".")))
+    manifest = json.loads((newest / "manifest.json").read_text(encoding="utf-8"))
+    assert assessment_sha256() == manifest["assessment_sha256"]

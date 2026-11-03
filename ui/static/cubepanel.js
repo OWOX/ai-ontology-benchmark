@@ -6,11 +6,13 @@
   const h = UI.el;
   const BASE_STEP_MS = 300;
   const REPLAY_GAP_MS = 600;  // pause between a finished replay and the queued one
+  const TURN_HOLD_MS = 40;    // the most a turn waits at its end before the next move starts
+  const reduced = () => !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   // host: {id, input(inputId), hasRecord(model, inputId, setup, attempt), pending(model) -> key | null}
   window.CubePanel = function (host) {
     const P = { live: true, model: "", data: null, input: null, frame: 0, playing: false, timer: null,
-                speed: 1, seq: 0, shown: "", info: null, queue: null, gap: null, last: null };
+                speed: 1, seq: 0, shown: "", info: null, queue: null, gap: null, last: null, raf: 0 };
     const COLORS = () => window.Progress.COLORS;
     const live = h("input", { type: "checkbox", checked: "" });
     const model = h("select", { "aria-label": "Model to follow", hidden: "" });
@@ -23,7 +25,7 @@
     const speed = h("select", {}, ...["0.5", "1", "2", "4"].map((v) => h("option", { value: v, text: v + "x" })));
     speed.value = "1";
     const node = h("div", { class: "cube-panel" },
-      h("div", { class: "cube-head" }, h("strong", { text: "Cube" }), h("label", {}, live, " Live"), model),
+      h("div", { class: "cube-head" }, h("label", {}, live, " Live"), model),
       views, moves, info,
       h("div", { class: "cube-ctl" }, back, play, fwd, h("label", {}, "Speed ", speed)));
 
@@ -32,7 +34,11 @@
     // Forget the queued record and any pending pause, and drop a load still in flight.
     const drop = () => { stop(); clearTimeout(P.gap); P.gap = null; P.queue = null; P.seq++; };
 
-    function draw() {
+    const stopTurn = () => { if (P.raf) cancelAnimationFrame(P.raf); P.raf = 0; };
+
+    // turn: {from, move} draws that move part way on the 3D view, with the net still at the frame before.
+    function draw(turn) {
+      stopTurn();
       const state = P.data ? P.data.frames[P.frame] : P.input ? P.input.state : null;
       const puzzle = P.data ? P.data.puzzle : P.input ? P.input.puzzle : "";
       node.classList.toggle("waiting", !P.data && !!P.input);
@@ -52,7 +58,15 @@
       }
       const m = P.data && P.frame > 0 ? P.data.moves[P.frame - 1] : null;
       // The flash is CSS and stops under reduced motion; the thicker outline stays.
-      views.replaceChildren(cubeIso(state, cubeSize(state), m ? m[0] : null, { height: 200 }), cubeNet(state, { width: 240 }));
+      const n = cubeSize(state);
+      if (turn) {
+        const at = (p) => cubeIsoTurn(turn.from, n, turn.move, p, { height: 200 });
+        let iso = at(0);
+        views.replaceChildren(iso, cubeNet(turn.from, { width: 240 }));
+        runTurn(turn, at, (next) => { iso.replaceWith(next); iso = next; });
+      } else {
+        views.replaceChildren(cubeIso(state, n, m ? m[0] : null, { height: 200 }), cubeNet(state, { width: 240 }));
+      }
       if (!P.data) { info.textContent = `waiting for ${P.model}`; return; }
       P.data.moves.forEach((mv, i) => {
         const bad = i === P.data.stopped_at;
@@ -66,6 +80,21 @@
       outcome.style.color = COLORS()[P.data.outcome] || "inherit";
       info.replaceChildren(outcome, ` · ${i.input_id} · ${i.setup} · attempt ${i.attempt}`
         + (P.data.stopped_at !== null ? ` · stopped at impossible move ${P.data.moves[P.data.stopped_at]}` : ""));
+    }
+
+    // Eases the move over one playback interval minus a short hold, then draws the frame itself.
+    function runTurn(turn, at, show) {
+      const ms = BASE_STEP_MS / P.speed, dur = Math.max(1, ms - Math.min(TURN_HOLD_MS, 0.2 * ms));
+      const frame = P.frame, t0 = performance.now();
+      const tickTurn = (now) => {
+        P.raf = 0;
+        if (P.frame !== frame) return;
+        const t = Math.min(1, (now - t0) / dur);
+        if (t >= 1) { draw(); return; }
+        show(at(easeInOut(t)));
+        P.raf = requestAnimationFrame(tickTurn);
+      };
+      P.raf = requestAnimationFrame(tickTurn);
     }
 
     // A replay error shows in the panel's own line.
@@ -83,10 +112,15 @@
 
     function step(delta) {
       if (!P.data) return;
+      const from = P.frame;
       P.frame = Math.max(0, Math.min(P.data.frames.length - 1, P.frame + delta));
       const last = P.frame === P.data.frames.length - 1;
       if (last) stop();
-      draw();
+      // Only a forward step by a face turn animates; a step back or any other move just shows the frame.
+      const move = P.frame === from + 1 ? P.data.moves[from] : null;
+      const turn = move && FACE_TURN.test(move) && !reduced() && /^(\d+)x\1$/.test(P.data.puzzle)
+        && cubeSize(P.data.frames[from]) > 0 ? { from: P.data.frames[from], move } : null;
+      draw(turn);
       if (last) ended();
     }
 
@@ -168,7 +202,7 @@
         P.input = host.input(key.split("|")[1]);
         draw();
       },
-      destroy() { drop(); },
+      destroy() { drop(); stopTurn(); },
     };
     draw();
     return api;

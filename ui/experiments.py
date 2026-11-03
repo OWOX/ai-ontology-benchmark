@@ -47,7 +47,7 @@ def snapshot(bundles, experiment_id: str, live_ids: set[str], job_states: dict) 
     git = bundles.git
     inputs = [row for row in expdata.read_inputs(git, git.main_ref(), config["release"]) if row["puzzle"] in puzzles]
     names = [m["name"] for m in config["models"]]
-    keys = ("model", "input_id", "setup", "attempt_number", "outcome", "mismatch")
+    keys = ("model", "input_id", "setup", "attempt_number", "outcome", "mismatch", "created_at")
     report = f"results/{experiment_id}/{exp['report_version']}.md" if exp["report_md"] is not None else None
     return {
         "id": experiment_id, "release": config["release"], "setups": list(SETUPS),

@@ -215,3 +215,11 @@ def test_decision_versions_follow_what_is_sent(templates, monkeypatch):
                         lambda q, legal: {**structure(q, legal), "mismatch": {"type": "other"}})
     assert prompts.decision_prompt_versions(templates, INPUTS) != before
     assert prompt_versions(templates, INPUTS) == llm_before
+
+
+def test_parse_questions_reads_text_and_names_the_source():
+    from src.run.prompts import parse_questions
+    text = "next_move: pick one\ndone: solved\nmismatch: unreachable\n"
+    assert parse_questions(text, "here") == {"next_move": "pick one", "done": "solved", "mismatch": "unreachable"}
+    with pytest.raises(ValueError, match="here.*mismatch"):
+        parse_questions("next_move: a\ndone: b\n", "here")
