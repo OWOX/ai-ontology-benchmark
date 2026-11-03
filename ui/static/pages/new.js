@@ -145,7 +145,7 @@
       const term = bundle.repo && bundle.main_sha
         ? h("a", { href: `${bundle.repo}/blob/${bundle.main_sha}/docs/definitions.md#workflows`, target: "_blank", rel: "noopener", text: "Parallel requests" })
         : document.createTextNode("Parallel requests");
-      return h("label", {}, term, ": attempts in flight at once per AI model, 1 to 16. Only the speed changes, never what an attempt sends or records.", input);
+      return h("label", {}, h("span", {}, term, ": attempts in flight at once per AI model, 1 to 16. Only the speed changes, never what an attempt sends or records."), input);
     })();
     const budgets = NUMBERS.filter(([k]) => k.endsWith("_usd")), rest = NUMBERS.filter(([k]) => !k.endsWith("_usd"));
     return h("div", { class: "params-cols" }, h("div", { class: "grid" }, ...budgets.map(field)),
