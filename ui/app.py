@@ -21,6 +21,7 @@ from ui.gitdata import GitData
 from ui.jobs import Jobs
 
 VERSION = re.compile(r"\d+\.\d+\.\d+")
+MAX_PARALLEL = 16  # the most `run --parallel` the form accepts
 BRANCH_WAIT_S = 30  # how long POST /api/run waits for `run` to create results/<id>
 
 
@@ -55,6 +56,9 @@ class App:
         limit = body.get("limit") if name == "run" else None
         if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit < 1):
             raise ApiError(400, "field 'limit' must be a whole number of at least 1, or null")
+        parallel = body.get("parallel", 1) if name == "run" else 1
+        if not isinstance(parallel, int) or isinstance(parallel, bool) or not 1 <= parallel <= MAX_PARALLEL:
+            raise ApiError(400, f"field 'parallel' must be a whole number from 1 to {MAX_PARALLEL}")
         text = forms.config_text(self.bundles, form, merged_env(self.root))
         # The menu offers releases from main, but `run` reads the release from this checkout.
         release = form.get("release")
@@ -67,10 +71,12 @@ class App:
             models = form["models"]
             names = [f"run:{m}" for m in models]
             extra = ["--limit", str(limit)] if limit is not None else []
+            extra += ["--parallel", str(parallel)] if parallel != 1 else []
             items = [(n, [*base, "--model", m, *extra]) for n, m in zip(names, models)]
         else:
             names, items = [name], [(name, [*base, "--estimate" if name == "estimate" else "--dry-run"])]
-        self.jobs.start(experiment_id, items, blocked_by=("evaluate",) if name == "run" else (), stdin=text)
+        self.jobs.start(experiment_id, items, blocked_by=("evaluate",) if name == "run" else (), stdin=text,
+                        parallel=parallel)
         if name == "run":
             self.wait_for_branch(experiment_id, names)
         return {"id": experiment_id, "status": status, "jobs": names}
@@ -168,7 +174,8 @@ class App:
             if parts[1] == "experiments":
                 return self.bundles.experiment(experiment_id, live, self.jobs.running_ids())
             if parts[1] == "state":
-                return experiments.snapshot(self.bundles, experiment_id, live, self.jobs.states(experiment_id))
+                return experiments.snapshot(self.bundles, experiment_id, live, self.jobs.states(experiment_id),
+                                            self.jobs.parallels(experiment_id))
             if parts[1] == "replay":
                 return replay.replay(self.bundles, experiment_id, live, query)
             if parts[1] == "attempt":

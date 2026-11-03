@@ -37,8 +37,8 @@ def load_form(bundles, experiment_id: str) -> dict:
     return config_form(config, bundles.release_puzzles(config["release"]) or [])
 
 
-def snapshot(bundles, experiment_id: str, live_ids: set[str], job_states: dict) -> dict:
-    """Live state of one experiment: its inputs, the raw records so far, and its job states."""
+def snapshot(bundles, experiment_id: str, live_ids: set[str], job_states: dict, parallel: dict | None = None) -> dict:
+    """Live state of one experiment: its inputs, the raw records so far, and its job states and each running job's `--parallel`."""
     exp = bundles.loaded(check_id(experiment_id), live_ids)
     config = exp["config"]
     if config is None:
@@ -55,5 +55,5 @@ def snapshot(bundles, experiment_id: str, live_ids: set[str], job_states: dict) 
         "inputs": [{k: row[k] for k in ("input_id", "puzzle", "scramble_depth", "validity", "state")}
                    for row in inputs],
         "records": [{k: r.get(k) for k in keys} for name in names for r in exp["records"].get(name, [])],
-        "jobs": job_states, "report": report,
+        "jobs": job_states, "parallel": parallel or {}, "report": report,
     }

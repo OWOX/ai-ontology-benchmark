@@ -2,7 +2,7 @@
 // The Experiment page's terminal: the job log of one experiment, and one block per attempt with its input
 // (the prompt) and its output (the raw response), loaded from GET /api/attempt on first unfold.
 // Interface: Terminal.mount(el, experimentId, host) -> {sync(), focus(step), destroy()}, where
-// host = {records(): Map, pending(): {model: key}, inputs(): Map}. Keys are model|input|setup|attempt.
+// host = {records(): Map, pending(): {model: [key]}, inputs(): Map}. Keys are model|input|setup|attempt.
 // Reads UI.lines and UI.onLines; writes only its DOM. Raw text is set with textContent, never as markup.
 (function () {
   const h = UI.el;
@@ -134,7 +134,7 @@
           const b = T.blocks.get(key(rec.model, rec.input_id, rec.setup, rec.attempt_number));
           if (b && (b.sending || b.state !== rec.outcome || (b.loaded && !b.loaded.record))) applyRecord(b, rec);
         }
-        const pending = new Set(Object.values(host.pending()).filter(Boolean));
+        const pending = new Set(Object.values(host.pending()).flat());
         for (const b of [...T.blocks.values()]) {
           if (b.sending && !pending.has(b.key)) { b.el.remove(); T.blocks.delete(b.key); T.seen.delete(b.key); }
         }
@@ -170,7 +170,7 @@
           b = block(step.model, step.input, step.setup, step.attempt, step.puzzle);
           const rec = host.records().get(k);
           if (rec) applyRecord(b, rec);
-          else if (Object.values(host.pending()).includes(k)) {
+          else if (Object.values(host.pending()).flat().includes(k)) {
             b.sending = true; b.text = `${step.model} ${puzzleOf(b)} ${step.input} ${step.setup} #${step.attempt}`;
             setHead(b, b.text, "in_progress");
           } else {

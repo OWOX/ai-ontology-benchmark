@@ -865,3 +865,167 @@ def test_decision_attempt_reads_spent_cost_once(exp, monkeypatch):
     assert go("--limit", "1") == 0
     assert len(json.loads(records(exp, "D")[0]["raw_response"])) == len(solved) > 1
     assert len(reads) == 1
+
+
+# Parallel requests. The fake provider is wrapped at run's call_model, so each test controls timing.
+
+class Gate:
+    """Wraps call_model: counts calls in flight, notes the first arrivals, and holds them until `hold` have arrived."""
+
+    def __init__(self, monkeypatch, hold=0, sleep=0.0, block_after=None, block_for=5.0):
+        import threading
+        self.real, self.lock, self.hold, self.sleep = run_module.call_model, threading.Lock(), hold, sleep
+        self.block_after, self.block_for = block_after, block_for
+        self.arrived, self.now, self.peak, self.calls = [], 0, 0, 0
+        self.full, self.release = threading.Event(), threading.Event()
+        monkeypatch.setattr(run_module, "call_model", self)
+
+    def __call__(self, model, prompt, max_output_tokens):
+        with self.lock:
+            self.calls += 1
+            number = self.calls
+            self.now += 1
+            self.peak = max(self.peak, self.now)
+            if len(self.arrived) < self.hold:
+                self.arrived.append((model["name"], prompt))
+                if len(self.arrived) == self.hold:
+                    self.full.set()
+        try:
+            if number <= self.hold:
+                self.full.wait(5)
+            if self.block_after is not None and number > self.block_after:
+                if self.release.wait(self.block_for):
+                    return Reply("x", "ok", "s", 1, 1, 0.1)  # released after the test: touch nothing shared
+            time.sleep(self.sleep)
+            return self.real(model, prompt, max_output_tokens)
+        finally:
+            with self.lock:
+                self.now -= 1
+
+
+import time  # noqa: E402
+
+
+def test_parallel_writes_the_same_records_as_serial(exp, tmp_path):
+    assert go("--parallel", "1", "--no-commit", "--results", str(tmp_path / "one")) == 0
+    assert go("--parallel", "4", "--no-commit", "--results", str(tmp_path / "four")) == 0
+
+    def keyed(folder, name):
+        rows = [json.loads(line) for line in (folder / "exp/raw" / f"{name}.jsonl").read_text().splitlines()]
+        return {(r["input_id"], r["setup"], r["model"], r["attempt_number"]): stable([r])[0] for r in rows}
+
+    for name in "AB":
+        assert keyed(tmp_path / "one", name) == keyed(tmp_path / "four", name)
+        assert len(keyed(tmp_path / "four", name)) == input_count(exp) * 6
+
+
+def test_the_fake_sees_at_most_n_calls_and_n_at_once(exp, monkeypatch):
+    gate = Gate(monkeypatch, hold=3, sleep=0.01)
+    assert go("--parallel", "3", "--no-commit") == 0
+    assert gate.peak == 3
+
+
+def test_in_flight_attempts_are_the_first_pending_in_loop_order(exp, monkeypatch):
+    gate = Gate(monkeypatch, hold=4)
+    manifest, inputs = run_module.load_release(exp / "releases/1.0.0")
+    config = run_module.load_experiment_config(exp / "config/experiments/exp.toml")
+    expected = [(m["name"], build_prompt(exp / "releases/1.0.0/prompts", row, setup))
+                for row, m, setup, _ in list(run_module.pending_attempts(config, inputs, exp / "results/exp/raw", None))[:4]]
+    assert go("--parallel", "4", "--no-commit", "--limit", "8") == 0
+    assert sorted(gate.arrived) == sorted(expected)
+
+
+def test_parallel_budget_never_passes_the_model_budget(exp, capsys, monkeypatch):
+    with_budget(exp, per_model_usd=0.035)
+    assert go("--parallel", "4", "--model", "A") == 1
+    assert len(records(exp, "A")) == 3
+    assert "per_model_usd 0.035 for model A" in capsys.readouterr().err
+
+
+def test_a_budget_stop_writes_the_attempts_in_flight_first(exp, capsys, monkeypatch):
+    with_budget(exp, per_model_usd=0.035)
+    Gate(monkeypatch, sleep=0.1)
+    assert go("--parallel", "4", "--model", "A") == 1
+    assert len(records(exp, "A")) == 3
+    assert len(git(exp, "show", f"{BRANCH}:results/exp/raw/A.jsonl").splitlines()) == 3
+    lines = capsys.readouterr().err.strip().splitlines()
+    assert lines[-1].startswith("error: budget reached:")
+
+
+def test_an_interrupt_with_attempts_in_flight_commits_and_returns_promptly(exp, monkeypatch):
+    gate = Gate(monkeypatch, block_after=3, block_for=10.0)
+
+    def stop():
+        raise KeyboardInterrupt
+
+    interrupt_on_third_record(monkeypatch, stop)
+    started = time.monotonic()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            go("--parallel", "4", "--model", "A")
+        assert time.monotonic() - started < 5
+        assert len(records(exp, "A")) == 2
+        assert len(git(exp, "show", f"{BRANCH}:results/exp/raw/A.jsonl").splitlines()) == 2
+    finally:
+        gate.release.set()
+
+
+def test_parallel_below_one_is_refused(exp, capsys):
+    assert go("--parallel", "0") == 1
+    assert "--parallel" in capsys.readouterr().err
+    assert not (exp / "results").exists()
+
+
+def bare_attempt(flight, results, seq, decision, budget):
+    """An Attempt with only what can_afford reads, so a budget scenario can be played step by step."""
+    attempt = object.__new__(run_module.Attempt)
+    attempt.seq, attempt.flight, attempt.results, attempt.model = seq, flight, results, {"name": "A"}
+    attempt.config = {"budget": {"per_model_usd": budget, "per_experiment_usd": 100.0}, "models": [{"name": "A"}]}
+    attempt.prices = {"A": {"price_input_per_mtok": 0.0, "price_output_per_mtok": 100.0}}
+    attempt.price, attempt.is_decision, attempt.worst, attempt.left = attempt.prices["A"], decision, 0.01, 1
+    attempt.checks, attempt.snapshot = 0, {}
+    flight.reserve(seq, "A", 0.01)
+    return attempt
+
+
+def test_a_decision_attempt_counts_records_other_attempts_write_after_its_snapshot(tmp_path):
+    from src.run.budget import BudgetError
+    flight = run_module.Flight()
+    first, second = (bare_attempt(flight, tmp_path, n, True, 0.035) for n in (0, 1))
+    first.can_afford(0, 0)  # snapshot taken: nothing spent
+    second.can_afford(0, 0)
+    flight.release(1, 0.03)  # the second attempt records 0.03 and its reservation goes
+    with pytest.raises(BudgetError, match="per_model_usd"):
+        first.can_afford(0, 0)  # 0.03 recorded + 0.01 next is above 0.035
+
+
+def test_a_reservation_grows_with_the_tokens_its_attempt_has_paid(tmp_path):
+    from src.run.budget import BudgetError
+    flight = run_module.Flight()
+    first = bare_attempt(flight, tmp_path, 0, False, 0.025)
+    first.can_afford(0, 0)
+    first.can_afford(0, 100)  # a failed call has paid 0.01 of output tokens: reserved 0.02
+    second = bare_attempt(flight, tmp_path, 1, False, 0.025)
+    with pytest.raises(BudgetError, match="per_model_usd"):
+        second.can_afford(0, 0)  # 0.02 + 0.01 is above 0.025
+
+
+def test_a_worker_failure_that_is_not_an_exception_ends_the_run(exp, monkeypatch):
+    import threading
+
+    def boom(model, prompt, max_output_tokens):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_module, "call_model", boom)
+    outcome = []
+
+    def target():
+        try:
+            go("--parallel", "2", "--model", "A", "--no-commit")
+        except BaseException as error:
+            outcome.append(error)
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(10)
+    assert not thread.is_alive() and isinstance(outcome[0], KeyboardInterrupt)

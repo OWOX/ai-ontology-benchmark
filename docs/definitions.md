@@ -54,6 +54,7 @@ Every term below means the same thing in code, configs, records, reports, and do
 3. **`run`.** Sends every input of one release to every AI model under every setup, validates each attempt, and appends one raw record per attempt. It never changes a release.
 4. **`evaluate`.** Re-validates every attempt of one experiment from its raw response under one release, then computes the metrics into reports. It never edits raw records.
 5. **Validator.** The deterministic code that turns a raw response into parsed moves, flags, a move count, and an outcome. `run` calls it before writing each raw record, and `evaluate` calls it again. If a validator fix changes an outcome, the reports follow the outcome from `evaluate`, and the raw record stays as written. No AI model judges another AI model.
+6. **Parallel requests.** The number of attempts `run` keeps in flight at once in one process, set with `--parallel`. It changes how fast an experiment runs and never what any attempt sends or records.
 
 ## Setups
 

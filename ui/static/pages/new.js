@@ -12,7 +12,7 @@
     ["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
   // The form survives a redraw of the page (a bundle reload after a job) and resets with the release.
-  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", result: null };
+  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", parallel: "4", result: null };
   let cleanup = null;
   let idSeq = 0;
 
@@ -20,7 +20,7 @@
 
   function reset(bundle) {
     const d = bundle.defaults;
-    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", result: null,
+    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", parallel: "4", result: null,
       vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, ...d.budget } });
   }
 
@@ -50,6 +50,13 @@
       budget: { per_request_usd: amount(v.per_request_usd, "per_request_usd"), per_model_usd: amount(v.per_model_usd, "per_model_usd"),
         per_experiment_usd: amount(v.per_experiment_usd, "per_experiment_usd") },
     };
+  }
+
+  // Not part of the experiment config: it goes beside `limit` in the run request and becomes `run --parallel`.
+  function readParallel() {
+    const n = Number(S.parallel.trim());
+    if (S.parallel.trim() === "" || !Number.isInteger(n) || n < 1 || n > 16) throw new Error("parallel must be a whole number from 1 to 16");
+    return n;
   }
 
   function readLimit() {
@@ -120,7 +127,7 @@
   }
 
   // Two columns: the three budgets, then the rest.
-  function numberFields() {
+  function numberFields(bundle) {
     const field = ([key, label]) => {
       const input = h("input", { type: "text", inputmode: "decimal", "aria-label": label, value: String(S.vals[key]) });
       input.addEventListener("input", () => { S.vals[key] = input.value; });
@@ -131,9 +138,18 @@
       input.addEventListener("input", () => { S.limit = input.value; });
       return h("label", {}, "Limit per model (optional): stops each AI model after N attempts", input);
     })();
+    const parallel = (() => {
+      const input = h("input", { type: "text", inputmode: "numeric", "aria-label": "Parallel requests", value: S.parallel });
+      input.addEventListener("input", () => { S.parallel = input.value; });
+      // The definition is on main: linked when the bundle knows the repository, plain text otherwise.
+      const term = bundle.repo && bundle.main_sha
+        ? h("a", { href: `${bundle.repo}/blob/${bundle.main_sha}/docs/definitions.md#workflows`, target: "_blank", rel: "noopener", text: "Parallel requests" })
+        : document.createTextNode("Parallel requests");
+      return h("label", {}, h("span", {}, term, ": attempts in flight at once per AI model, 1 to 16. Only the speed changes, never what an attempt sends or records."), input);
+    })();
     const budgets = NUMBERS.filter(([k]) => k.endsWith("_usd")), rest = NUMBERS.filter(([k]) => !k.endsWith("_usd"));
     return h("div", { class: "params-cols" }, h("div", { class: "grid" }, ...budgets.map(field)),
-      h("div", { class: "grid" }, ...rest.map(field), limit));
+      h("div", { class: "grid" }, ...rest.map(field), limit, parallel));
   }
 
   UI.registerPage("new", {
@@ -246,7 +262,7 @@
         const after = UI.lines.length ? UI.lines[UI.lines.length - 1].seq : 0;
         try {
           const form = readForm(bundle);
-          const body = path === "run" ? { form, limit: readLimit() } : { form };
+          const body = path === "run" ? { form, limit: readLimit(), parallel: readParallel() } : { form };
           if (path === "run") { starting = true; controls(); say(`Starting the run and creating results/${form.id}…`); }
           const r = await UI.api("/api/" + path, { method: "POST", body }).finally(() => { starting = false; if (!dead) controls(); });
           if (dead) return;
@@ -307,7 +323,7 @@
           h("section", {}, h("h2", { text: "New Experiment" }), branchField()),
           h("section", { class: "step" }, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
           h("section", { class: "step" }, h("h3", { text: "AI models" }), modelList(bundle, choose)),
-          ref.section = h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(),
+          ref.section = h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(bundle),
             h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run), msg));
         if (S.result) showResult(S.result.label, S.result.job, S.result.id, S.result.after);
         controls();
