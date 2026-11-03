@@ -1,0 +1,28 @@
+release = "1.3.1"
+puzzles = ["2x2", "3x3"]
+attempts = 3
+retry_cap = 3
+max_output_tokens = 32000
+
+[[models]]
+name = "gpt-6-astra"
+provider = "openai"
+api_model_id = "gpt-6-astra"
+kind = "system-2"
+
+[[models]]
+name = "gpt-6.1-sol"
+provider = "openai"
+api_model_id = "gpt-6.1-sol"
+kind = "system-2"
+
+[[models]]
+name = "gpt-6-luna"
+provider = "openai"
+api_model_id = "gpt-6-luna"
+kind = "system-2"
+
+[budget]
+per_request_usd = 2.0
+per_model_usd = 5.0
+per_experiment_usd = 50.0
