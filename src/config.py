@@ -22,7 +22,7 @@ FORBIDDEN_PARAMS = {
 RELEASE_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 EXPERIMENT_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 # Budget limits in USD; an experiment config may set any of them.
-DEFAULT_PER_REQUEST_USD = 1.00
+DEFAULT_PER_REQUEST_USD = 2.00
 DEFAULT_PER_MODEL_USD = 5.00
 DEFAULT_PER_EXPERIMENT_USD = 10.00
 
