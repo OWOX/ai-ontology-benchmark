@@ -1,6 +1,6 @@
 # ui
 
-Files: `ui/server.py`, `ui/app.py`, `ui/gitdata.py`, `ui/bundle.py`, `ui/puzzleinfo.py`, `ui/catalogue.py`, `ui/experiments.py`, `ui/forms.py`, `ui/branches.py`, `ui/expdata.py`, `ui/pooling.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/theme.js`, `ui/static/router.js`, `ui/static/markdown.js`, `ui/static/cube.js`, `ui/static/progress.js`, `ui/static/progressview.js`, `ui/static/cubepanel.js`, `ui/static/expmetrics.js`, `ui/static/pages/models.js`, `ui/static/pages/puzzles.js`, `ui/static/pages/inputs.js`, `ui/static/pages/experiments.js`, `ui/static/pages/experiment.js`, `ui/static/pages/new.js`, `ui/static/pages/about.js`, `ui/static/style.css`, `ui/start.sh`.
+Files: `ui/server.py`, `ui/app.py`, `ui/gitdata.py`, `ui/bundle.py`, `ui/puzzleinfo.py`, `ui/catalogue.py`, `ui/experiments.py`, `ui/forms.py`, `ui/branches.py`, `ui/expdata.py`, `ui/pooling.py`, `ui/jobs.py`, `ui/commit.py`, `ui/project.py`, `ui/secrets.py`, `ui/common.py`, `ui/tomlw.py`, `ui/replay.py`, `ui/static/index.html`, `ui/static/theme.js`, `ui/static/router.js`, `ui/static/markdown.js`, `ui/static/cube.js`, `ui/static/progress.js`, `ui/static/progressview.js`, `ui/static/cubepanel.js`, `ui/static/terminal.js`, `ui/static/expmetrics.js`, `ui/static/pages/models.js`, `ui/static/pages/puzzles.js`, `ui/static/pages/inputs.js`, `ui/static/pages/experiments.js`, `ui/static/pages/experiment.js`, `ui/static/pages/new.js`, `ui/static/pages/about.js`, `ui/static/style.css`, `ui/start.sh`.
 
 Start: `./ui/start.sh` changes to the repo root, creates `.venv` with `python3 -m venv` (3.11 or later) and runs `pip install -e '.[test]'` only when `.venv` is missing, then runs `python -m ui.server` with its arguments, adding `--port 7991` unless they include `--port`. Before that it stops any process listening on that port: SIGTERM first, so a UI server stops its jobs, then SIGKILL for whatever still listens after 5 seconds. Later updates go through the Install button.
 
@@ -158,7 +158,7 @@ Every JSON error is `{"error": "<message>"}` with a 4xx status. The message name
      "inputs": [{"input_id": "2x2-d5-001", "puzzle": "2x2", "scramble_depth": 5,
                  "validity": "valid", "state": "RUUL..."}],
      "records": [{"model": "...", "input_id": "...", "setup": "...", "attempt_number": 1,
-                  "outcome": "success", "mismatch": false}],
+                  "outcome": "success", "mismatch": false, "created_at": "2026-11-02T21:09:49Z"}],
      "jobs": {"run:example-model": "running"},
      "report": "results/<id>/1.0.0.md"}
     ```
@@ -248,7 +248,9 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 
 ### Terminal
 
-A folded "Terminal" box with the job log from `GET /api/log` and a Clear button. It sits at the foot of the page, a sibling of `#main` and not inside the actions, and shows on the Experiment, New Experiment, and About pages. It is hidden on the others. It shows every job's log, for all experiments and project jobs. The UI keeps collecting log lines while the terminal is hidden, so the history is there when it is shown.
+The foot terminal: a folded "Terminal" box with the job log from `GET /api/log` and a Clear button. It sits at the foot of the page, a sibling of `#main` and not inside the actions, and shows on the New Experiment and About pages. It is hidden on the others. It shows every job's log, for all experiments and project jobs. The UI keeps collecting log lines while it is hidden, so the history is there when it is shown. The Experiment page has its own terminal ([Experiment](#experiment)), so this one is hidden there.
+
+`router.js` keeps every log line it receives, at most 5,000 like the server, and exposes them as `UI.lines`, so a page can draw the history when it mounts.
 
 ### Models
 
@@ -287,15 +289,25 @@ The inputs page lists every input of the puzzle: the input id, the depth, the va
 
 One experiment, from `GET /api/experiments/<id>`. The page is the one place for a started experiment: New Experiment opens it after Run. When the experiment's release differs from the bundle's, the page reopens itself with `?release=<its release>`, because the settings and inputs come from the bundle. While a job of the id is alive and its branch is not there yet, the page says it is waiting for the run to create `results/<id>` and asks again every 2 seconds, instead of showing "not found".
 
-1. The header: the id, the release, a link to the branch on GitHub, "running, not pushed" when it applies, and the served models.
-2. Under the header, Stop, enabled while a run job of the experiment is alive. It calls `POST /api/stop` and says that a request in flight may be paid for and never recorded.
-3. The settings, read-only, in the same blocks as New Experiment: Puzzles with every puzzle of the release as a card, the experiment's own highlighted and the rest faded; AI models with one column per provider, every catalogue model and every model of the experiment listed with a disabled checkbox, ticked for the experiment's own, whose tooltip is its `api_model_id` and `params`; and Parameters as disabled fields for attempts, retry cap, max output tokens, and the three budgets.
-4. Summary, after the settings: one row per AI model and setup, split by validity label, from `summary_rows` (pooled over puzzles and depths, as in [evaluate](evaluate.md#outputs)), with success, hallucination, mismatch detection, false mismatch, and malformed output rates, each with `n` and its interval, plus attempts, total tokens, and cost per AI model. With a report CSV, which holds no summary rows, the server pools them from the CSV's rows the same way. The `*` note applies when computed.
-5. The full metrics table, folded: one row per puzzle, setup, AI model, scramble depth, and validity label, with each rate, its `n`, and its interval, and the `*` note when computed.
-6. The report, rendered, with its source link, when there is one.
-7. Progress: the Cube panel and the per-input rings described below, from `GET /api/state/<id>`.
-8. Actions while the experiment's results are in this checkout: Evaluate, with an optional "Score under release" select, and Commit, which opens a dialog with the preview's branch, files, and diffstat. Confirm calls `POST /api/commit` and shows the PR link. Commit is disabled while any job of this experiment is alive or before a report exists in this checkout.
-9. The terminal, at the foot of the page.
+The page is a workspace: a progress bar across the top, and under it two columns. The left column scrolls with the page. The right column is the terminal, `position: sticky`, as tall as the viewport less its margins. Under 1100px wide the columns stack, with the terminal below. The layout is the same whether or not a job is running.
+
+1. The progress bar: done attempts over planned attempts, as a bar and a `%` label with the counts, and a chip per outcome in the arc colours. Planned is the experiment's inputs times its AI models times 3 setups times the attempts per input and setup, from the snapshot. Before the first snapshot it says it is waiting for the first results.
+2. The left column, in order. Each block below is a `<details>` with an 18px heading, except the first:
+   1. The header: the id, the release, a link to the branch on GitHub, "running, not pushed" when it applies, and the served models. Under it, Stop, enabled while a run job of the experiment is alive. It calls `POST /api/stop` and says that a request in flight may be paid for and never recorded. Then the job banners ([Progress](#progress)). This block does not fold.
+   2. Settings, read-only, in the same blocks as New Experiment: Puzzles with every puzzle of the release as a card, the experiment's own highlighted and the rest faded; AI models with one column per provider, every catalogue model and every model of the experiment listed with a disabled checkbox, ticked for the experiment's own, whose tooltip is its `api_model_id` and `params`; and Parameters as disabled fields for attempts, retry cap, max output tokens, and the three budgets. It starts folded while a run job of the experiment is alive and open otherwise, and a fold by hand stays.
+   3. Cube, open: the Cube panel ([Progress](#progress)).
+   4. Plan, open: the plan tree ([Progress](#progress)).
+   5. Summary, folded: one row per AI model and setup, split by validity label, from `summary_rows` (pooled over puzzles and depths, as in [evaluate](evaluate.md#outputs)), with success, hallucination, mismatch detection, false mismatch, and malformed output rates, each with `n` and its interval, plus attempts, total tokens, and cost per AI model. With a report CSV, which holds no summary rows, the server pools them from the CSV's rows the same way. The `*` note applies when computed.
+   6. Full metrics, folded: one row per puzzle, setup, AI model, scramble depth, and validity label, with each rate, its `n`, and its interval, and the `*` note when computed.
+   7. Report, folded: the report, rendered, with its source link, when there is one.
+   8. Evaluate and commit, while the experiment's results are in this checkout: Evaluate, with an optional "Score under release" select, and Commit, which opens a dialog with the preview's branch, files, and diffstat. Confirm calls `POST /api/commit` and shows the PR link. Commit is disabled while any job of this experiment is alive or before a report exists in this checkout.
+3. The terminal, in the right column, with a Clear button that clears the view only. It shows only this experiment's jobs, and holds:
+   1. The log lines of the experiment: the history in `UI.lines` when the page mounts, then each line from `UI.onLines` whose `id` is the experiment's. A stdout line of a `run:` job that matches `run`'s progress line (`[k/N] <model> <puzzle> <input id> <setup> #<attempt> <outcome> | ...`, [run.md](run.md#outputs)) is the header of an attempt block. Every other line is plain text, with the job name as a tag.
+   2. One attempt block per attempt, keyed by AI model, input, setup, and attempt number, so a log line and a snapshot record never make two blocks. The header is the `run` progress line when it has arrived, else a line built from the snapshot record (AI model, puzzle, input id, setup, attempt number, and outcome), with a swatch in the outcome's arc colour. Under it are two folded sub-blocks, "input" and "output". The first unfold of either loads `GET /api/attempt/<id>` once: input is the prompt and output is the raw response, both set as text. An output that is empty shows "(empty response)". A record that lands after a load without one reloads it.
+   3. The in-flight attempt of each running AI model ([Polling](#polling)) as a block marked "sending…" whose input can be unfolded before any output exists, and which fills in place when its line or record arrives. A block still marked "sending…" when the inference moves on is removed.
+   4. Order: by arrival. The first snapshot adds the attempts the log never showed (after a server restart, or for a pushed experiment) before the live lines, oldest `created_at` first. A later record with no block is appended.
+   5. The view follows the bottom only when it was at the bottom. Clear forgets the blocks but not which attempts it has seen, so a later snapshot does not bring them back.
+4. A click on a step of the plan tree, at any level, scrolls the terminal to the first attempt block under that step and highlights it for about 1.6 seconds. On a whole attempt it also unfolds its input and output, and when the terminal has no block for it yet, it adds one marked "not started" or "sending…". On a step with no block it says "no output for this step yet" in the terminal's bar. When the columns are stacked, it also brings the terminal into view.
 
 ### New Experiment
 
@@ -316,9 +328,18 @@ The README from `main`, rendered, with its source link. Under it, a "Project" bo
 
 ### Progress
 
-One accordion per model, inside it one per puzzle, inside that one row per input. Headers show done/total and a count per outcome. Each row has a ring SVG split into `3 × attempts` arcs, in setup order then attempt order, with the input's cube net inside the ring, the input id, the depth, and the validity. Rows render when their accordion first opens. Hovering an arc shows setup, attempt, outcome, and, on invalid inputs, mismatch. A later snapshot only adds records, so open accordions stay open.
+The Plan block of the Experiment page: a legend of the arc colours, then a tree of foldable nodes, from the puzzle to the model to the input to the attempt. Each node shows a status mark, its name, done/total, and a chip per outcome:
 
-Cube panel: the first thing in Progress. The 3D view (`cubeIso`) is on the left and the net (`cubeNet`) of the same frame is on the right, always both. Below them are the move list, with the current move highlighted and an impossible move in the hallucination colour, and then the outcome, the input id, the setup, and the attempt number. The page never holds the move group: it draws the `frames` of `GET /api/replay/<id>`.
+1. The mark is ✓ when every attempt under the node has a record, a highlighted "in progress" badge on the node that holds the in-flight attempt ([Polling](#polling)), and an empty circle otherwise.
+2. An input node shows a ring SVG split into `3 × attempts` arcs, in setup order then attempt order, with the input's cube net inside the ring, the input id, the depth, and the validity. Hovering an arc shows setup, attempt, outcome, and, on invalid inputs, mismatch. Clicking an arc with a record replays it in the Cube panel, as the Cube panel's item 3 says.
+3. An attempt, the leaf under an input, shows its setup, attempt number, and outcome, with a swatch in the outcome's arc colour.
+4. Children render when their node first opens, so a release of hundreds of attempts draws only what is opened.
+5. A click on any node or arc, or on a leaf, tells the terminal to show that step ([Experiment](#experiment) item 4). A click on a node's summary also folds or unfolds it.
+6. The nodes down to the in-flight attempt open themselves when it moves, unless the user folded one by hand. An input node that opened itself and no longer holds the in-flight attempt folds again, unless the user touched it. A later snapshot only adds records, so open nodes stay open.
+
+The job banners show under the header of the left column. Their rules are the Banners paragraph of [New Experiment](#new-experiment).
+
+Cube panel: the Cube block of the Experiment page. The 3D view (`cubeIso`) is on the left and the net (`cubeNet`) of the same frame is on the right, always both. Below them are the move list, with the current move highlighted and an impossible move in the hallucination colour, and then the outcome, the input id, the setup, and the attempt number. The page never holds the move group: it draws the `frames` of `GET /api/replay/<id>`.
 
 1. Controls: Play/Pause, Step back, Step forward, and a speed select of 0.5x, 1x, 2x, and 4x, where 1x is 300 ms per move. A frame that follows a move highlights the face named by the move's first letter. Play at the last frame starts again from the first.
    Turn animation: when the panel steps forward by one frame, by Play or Step forward, and the move is a face turn (`U`, `R`, `F`, `D`, `L`, or `B`, plain, `'`, or `2`) that the replay applied, the 3D view shows the turn with `cubeIsoTurn` before it shows the new frame. The outer layer of the named face turns about that face's axis, a quarter turn for `X` and `X'` in the direction the engine moves the stickers and a half turn for `X2`, using the colours of the frame before the move, while the net stays on that frame until the turn ends. It runs on `requestAnimationFrame`, eased in and out, for one playback interval at the current speed less a hold of 40 ms (at most a fifth of the interval). Stepping back, a move the replay stopped at, a move that is not a face turn, a new replay, and a click on an arc show the frame at once. Any redraw ends a turn in progress.
@@ -377,6 +398,7 @@ Cube turn view: `cubeIsoTurn(state, n, move, p)` draws `state` with `move` done 
 22. `/api/branches` lists local-only and remote-only branches, and `/api/experiment/<id>/config` reads the local branch before the remote one.
 23. `/api/inputs` returns the release's inputs of one puzzle in order, and 400 for an unknown puzzle.
 24. Outcome colours and the in-progress inference are in the page scripts and are not tested here. The colour table is one object, in one file.
+    The terminal's pattern for `run`'s progress line is checked against a real `Progress.plain_line` in `tests/test_ui_js.py`, so a change to either breaks the test. The layout, the plan tree, and the terminal are checked by hand with screenshots in both themes at 900 and 1500 pixels wide.
 25. The page scripts pass `node --check`. A node script, `tests/js/markdown.test.mjs`, run by a pytest test when `node` is found and skipped otherwise, checks that `markdown.js` escapes `<script>` and HTML attributes, drops `javascript:` links, and renders a table, a numbered list, and a link.
 26. The cube drawing is checked by hand with `node --check` on both scripts and a throwaway node script that loads `cube.js`, draws scrambled states from a release, and compares every sticker of `cubeIso` with `cubeNet`, and the edges where U, F, and R meet.
 27. `kind`: the catalogue and `model_entries` carry it (`null` when unset), the form copies it from the catalogue into the experiment config, and `differs_from_catalogue` ignores it.

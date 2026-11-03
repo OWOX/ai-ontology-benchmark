@@ -1,5 +1,6 @@
 // Spec: docs/specs/ui.md (Experiment)
-// One experiment: header, Stop, the settings read-only, Summary, full metrics, report, Progress, and Evaluate and Commit.
+// One experiment as a workspace: a progress bar across the top, then two columns. Left: header and Stop, the settings
+// read-only, the Cube panel, the Plan tree, Summary, full metrics, report, and Evaluate and Commit. Right: the terminal.
 // Reads GET /api/experiments/<id> and the bundle; writes through POST /api/stop, /api/evaluate, and /api/commit.
 (function () {
   const h = UI.el;
@@ -92,17 +93,26 @@
     dlg.showModal();
   }
 
-  function section(title, body, folded) {
-    if (!folded) return h("section", {}, h("h3", { text: title }), body);
-    return h("details", {}, h("summary", { text: title }), body);
+  // A foldable block with an 18px heading. The returned element keeps its open state when its body is replaced.
+  function block(title, body, open) {
+    const det = h("details", { class: "blk" }, h("summary", { text: title }), body);
+    det.open = !!open;
+    return det;
   }
 
   UI.registerPage("experiment", {
     render(bundle, params, el) {
       const id = decodeURIComponent(params.parts[0]);
       const root = h("div", { class: "exp-detail" });
-      const top = h("div"), progress = h("div"), actions = h("section"), result = h("p", { class: "msg", role: "status" });
-      root.append(top, section("Progress", progress), actions);
+      const headBox = h("div"), bannerBox = h("div"), settingsBody = h("div"), cubeBody = h("div"), planBody = h("div");
+      const resultsBox = h("div"), actions = h("section"), result = h("p", { class: "msg", role: "status" });
+      const settingsBlock = block("Settings", settingsBody, true);
+      const bar = ProgressView.bar(Progress.COLORS, Progress.OUTCOMES);
+      const termBox = h("div", { class: "ws-right" });
+      root.append(bar.node, h("div", { class: "workspace" },
+        h("div", { class: "ws-left" }, headBox, bannerBox, settingsBlock, block("Cube", cubeBody, true), block("Plan", planBody, true),
+          resultsBox, actions),
+        termBox));
       el.append(root);
       const state = { detail: null, ctl: null, off: null };
       const evalRelease = h("select", { "aria-label": "Score under release" }, h("option", { value: "", text: "the experiment's release" }),
@@ -128,9 +138,14 @@
           if (!root.isConnected) return;
           // The settings and inputs come from the bundle, so it must be the experiment's own release.
           if (d.release && d.release !== bundle.release) { UI.go(`#/experiments/${encodeURIComponent(id)}?release=${encodeURIComponent(d.release)}`); return; }
-          top.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, stopMsg), ...settings(d, bundle),
-            section("Summary", ExpMetrics.summary(d, bundle.experiments)), section("Full metrics", ExpMetrics.full(d), true),
-            section("Report", reportBox(d)));
+          headBox.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, stopMsg));
+          settingsBody.replaceChildren(...settings(d, bundle));
+          if (!state.settingsInit) {  // folded while a run job is alive, open otherwise; after that the user's fold stays
+            state.settingsInit = true;
+            settingsBlock.open = !(mine(id, (j) => j.startsWith("run:")) || snapRunning(state.ctl && state.ctl.snapshot(), (j) => j.startsWith("run:")));
+          }
+          resultsBox.replaceChildren(block("Summary", ExpMetrics.summary(d, bundle.experiments), false),
+            block("Full metrics", ExpMetrics.full(d), false), block("Report", reportBox(d), false));
           actions.replaceChildren(...(d.local_results ? [h("h3", { text: "Evaluate and commit" }),
             h("div", { class: "actions" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit), result] : []));
           controls();
@@ -138,11 +153,11 @@
           if (!root.isConnected) return;
           // A run that has started but not yet committed its branch: wait for it rather than show "not found".
           if (UI.jobs.some((j) => j.id === id && j.state === "running")) {
-            top.replaceChildren(h("h2", { text: id }), h("p", { class: "muted", text: `Waiting for the run to create results/${id}…` }));
+            headBox.replaceChildren(h("h2", { text: id }), h("p", { class: "muted", text: `Waiting for the run to create results/${id}…` }));
             setTimeout(loadDetail, 2000);
             return;
           }
-          top.replaceChildren(h("h2", { text: id }), h("p", { class: "msg err", text: e.message }));
+          headBox.replaceChildren(h("h2", { text: id }), h("p", { class: "msg err", text: e.message }));
         }
       }
 
@@ -163,9 +178,14 @@
       });
       commit.addEventListener("click", () => openCommit(id, result, loadDetail).catch((e) => { result.className = "msg err"; result.textContent = e.message; }));
 
-      state.ctl = Progress.mount(progress, id, { onSnapshot: controls });
+      const onSnapshot = () => { controls(); bar.update(state.ctl.totals()); state.term.sync(); };
+      const host = { records: () => state.ctl.records(), pending: () => state.ctl.pending(), inputs: () => state.ctl.inputs() };
+      state.term = Terminal.mount(termBox, id, host);
+      state.ctl = Progress.mount(planBody, id, { onSnapshot, bannerEl: bannerBox, onStep: (step) => state.term.focus(step) });
+      cubeBody.append(state.ctl.panelNode);
+      bar.update(state.ctl.totals());
       state.off = UI.onJobs((jobs, ended) => {
-        if (!root.isConnected) { state.off(); return; }
+        if (!root.isConnected) { state.off(); state.term.destroy(); return; }
         if (ended && ended.length) { loadDetail(); state.ctl.refresh(); }  // a finished evaluate brings the report
         controls();
       });

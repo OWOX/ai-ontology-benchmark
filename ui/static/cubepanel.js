@@ -25,7 +25,7 @@
     const speed = h("select", {}, ...["0.5", "1", "2", "4"].map((v) => h("option", { value: v, text: v + "x" })));
     speed.value = "1";
     const node = h("div", { class: "cube-panel" },
-      h("div", { class: "cube-head" }, h("strong", { text: "Cube" }), h("label", {}, live, " Live"), model),
+      h("div", { class: "cube-head" }, h("label", {}, live, " Live"), model),
       views, moves, info,
       h("div", { class: "cube-ctl" }, back, play, fwd, h("label", {}, "Speed ", speed)));
 

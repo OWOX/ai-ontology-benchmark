@@ -19,7 +19,8 @@
     if (current) current.destroy();
     const o = opts || {};
     const S = { snap: null, shape: "", jobs: {}, inputs: new Map(), records: new Map(), counts: new Map(),
-                arcs: new Map(), pending: {}, fresh: [], lastErr: {}, puzzles: [], timer: null, dead: false,
+                inputCounts: new Map(), arcs: new Map(), leaves: new Map(), nodes: new Map(), userSet: new Map(),
+                autoOpened: new Set(), pending: {}, fresh: [], lastErr: {}, puzzles: [], timer: null, dead: false,
                 loading: false, runSig: "" };
     const running = (m) => S.jobs["run:" + m] === "running";
     const panel = CubePanel({
@@ -28,34 +29,88 @@
     });
     const status = h("p", { class: "muted small", text: "Loading progress." });
     const banners = h("div");
-    const tree = h("div");
-    el.replaceChildren(panel.node, ProgressView.legend(COLORS, OUTCOMES), banners, status, tree);
+    const tree = h("div", { class: "plan-tree" });
+    el.replaceChildren(ProgressView.legend(COLORS, OUTCOMES), status, tree);
+    if (o.bannerEl) o.bannerEl.replaceChildren(banners); else el.prepend(banners);
 
     const alive = () => Object.values(S.jobs).includes("running");
     const countFor = (m, p) => {
       if (!S.counts.has(m + "|" + p)) S.counts.set(m + "|" + p, { done: 0, out: {} });
       return S.counts.get(m + "|" + p);
     };
-    const total = (p) => S.snap.inputs.filter((i) => i.puzzle === p).length * S.snap.setups.length * S.snap.attempts;
+    const inputCount = (m, i) => {
+      if (!S.inputCounts.has(m + "|" + i)) S.inputCounts.set(m + "|" + i, { done: 0, out: {} });
+      return S.inputCounts.get(m + "|" + i);
+    };
+    const perInput = () => S.snap.setups.length * S.snap.attempts;
+    const inputsOf = (p) => S.snap.inputs.filter((i) => i.puzzle === p);
 
     function fill(box, done, all, out) {
       box.replaceChildren(h("span", { text: `${done}/${all}` }));
       for (const k of OUTCOMES) if (out[k]) box.append(ProgressView.chip(COLORS, k, out[k]));
     }
 
-    function headers(model, puzzle) {
-      const pick = (v) => tree.querySelector(`[data-counts="${CSS.escape(v)}"]`);
-      const pb = pick(model + "|" + puzzle), mb = pick(model);
-      if (pb) { const c = countFor(model, puzzle); fill(pb, c.done, total(puzzle), c.out); }
-      if (!mb) return;
-      let done = 0, all = 0; const out = {};
-      for (const p of S.puzzles) {
-        const c = countFor(model, p);
-        done += c.done; all += total(p);
-        for (const [k, n] of Object.entries(c.out)) out[k] = (out[k] || 0) + n;
+    // Plan nodes: id -> {det, mark, counts, kind, puzzle, model, input}. Ids are p:<puzzle>, m:<puzzle>|<model>,
+    // and i:<puzzle>|<model>|<input>. `userSet` remembers a fold or unfold by hand, which auto-opening respects.
+    const nodeId = (kind, ...parts) => `${kind}:${parts.join("|")}`;
+    const nodeNumbers = (n) => {
+      if (n.kind === "i") return [inputCount(n.model, n.input.input_id), perInput()];
+      const per = inputsOf(n.puzzle).length * perInput();
+      if (n.kind === "m") return [countFor(n.model, n.puzzle), per];
+      const sum = { done: 0, out: {} };
+      for (const m of S.snap.models) {
+        const c = countFor(m, n.puzzle);
+        sum.done += c.done;
+        for (const [k, v] of Object.entries(c.out)) sum.out[k] = (sum.out[k] || 0) + v;
       }
-      fill(mb, done, all, out);
+      return [sum, per * S.snap.models.length];
+    };
+    const holdsPending = (n) => Object.entries(S.pending).some(([m, k]) => {
+      if (!k) return false;
+      const input = S.inputs.get(k.split("|")[1]);
+      if (input.puzzle !== n.puzzle) return false;
+      if (n.kind === "p") return true;
+      if (m !== n.model) return false;
+      return n.kind === "m" || input.input_id === n.input.input_id;
+    });
+    const MARKS = { done: "✓", run: "●", todo: "○" };
+
+    function refreshNode(n) {
+      const [c, all] = nodeNumbers(n);
+      const status = holdsPending(n) ? "run" : c.done >= all && all > 0 ? "done" : "todo";
+      n.det.dataset.status = status;
+      n.mark.textContent = MARKS[status];
+      n.badge.hidden = status !== "run";
+      fill(n.counts, c.done, all, c.out);
     }
+    const refreshNodes = () => S.nodes.forEach(refreshNode);
+
+    function setOpen(det, v) {
+      if (det.open === v) return;
+      det._prog = v;
+      det.open = v;
+    }
+
+    // One foldable node. `drawBody(body)` runs once, when the node first opens.
+    function node(kind, parts, label, drawBody, extra) {
+      const id = nodeId(kind, ...parts);
+      const mark = h("span", { class: "mark" }), badge = h("span", { class: "run-badge", text: "in progress", hidden: "" });
+      const counts = h("span", { class: "counts" });
+      const body = h("div", { class: "body" });
+      const det = h("details", { class: "pn pn-" + kind }, h("summary", {}, mark, label, badge, counts), body);
+      const n = Object.assign({ id, kind, det, mark, badge, counts, body, drawn: false }, extra);
+      n.draw = () => { if (!n.drawn) { n.drawn = true; drawBody(body); } };
+      det.addEventListener("toggle", () => {
+        if (det._prog === det.open) det._prog = undefined;
+        else S.userSet.set(id, det.open);
+        if (det.open) n.draw();
+      });
+      det.firstChild.addEventListener("click", () => o.onStep && o.onStep(stepOf(n)));
+      S.nodes.set(id, n);
+      refreshNode(n);
+      return n;
+    }
+    const stepOf = (n) => ({ puzzle: n.puzzle, model: n.model, input: n.input && n.input.input_id });
 
     function arcState(k, model) {
       const rec = S.records.get(k);
@@ -63,20 +118,28 @@
     }
 
     function paint(k) {
-      const path = S.arcs.get(k);
-      if (!path) return;
+      const path = S.arcs.get(k), leaf = S.leaves.get(k);
+      if (!path && !leaf) return;
       const [model, inputId, setup, attempt] = k.split("|");
       const state = arcState(k, model), rec = S.records.get(k);
-      path.setAttribute("fill", COLORS[state] || COLORS.pending);
-      path.classList.toggle("pulse", state === "in_progress");
-      path.classList.toggle("done", !!rec);
-      let t = `${setup}, attempt ${attempt}: ${state.replace("_", " ")}`;
-      if (rec && S.inputs.get(inputId).validity !== "valid") t += `, mismatch: ${rec.mismatch ? "yes" : "no"}`;
-      path.firstChild.textContent = t;
+      const colour = COLORS[state] || COLORS.pending;
+      if (path) {
+        path.setAttribute("fill", colour);
+        path.classList.toggle("pulse", state === "in_progress");
+        path.classList.toggle("done", !!rec);
+        let t = `${setup}, attempt ${attempt}: ${state.replace("_", " ")}`;
+        if (rec && S.inputs.get(inputId).validity !== "valid") t += `, mismatch: ${rec.mismatch ? "yes" : "no"}`;
+        path.firstChild.textContent = t;
+      }
+      if (leaf) {
+        leaf.sw.style.background = colour;
+        leaf.text.textContent = state.replace("_", " ");
+        leaf.leaf.dataset.state = state;
+      }
     }
 
     function ring(model, input) {
-      const n = S.snap.setups.length * S.snap.attempts;
+      const n = perInput();
       const root = svg("svg", { viewBox: "0 0 100 100", width: 84, height: 84 });
       const gap = n > 1 ? Math.min(0.06, 0.3 * 2 * Math.PI / n) : 0;
       let idx = 0;
@@ -88,7 +151,11 @@
           path.append(svg("title"));
           const k = key(model, input.input_id, setup, a);
           S.arcs.set(k, path);
-          path.addEventListener("click", () => panel.open(model, input.input_id, setup, a));
+          path.addEventListener("click", (ev) => {
+            ev.stopPropagation(); ev.preventDefault();  // the ring sits in a summary: no fold
+            panel.open(model, input.input_id, setup, a);
+            if (o.onStep) o.onStep({ puzzle: input.puzzle, model, input: input.input_id, setup, attempt: a });
+          });
           root.append(path);
           paint(k);
         }
@@ -97,43 +164,69 @@
       return root;
     }
 
+    function leaves(body, model, input) {
+      for (const setup of S.snap.setups) {
+        for (let a = 1; a <= S.snap.attempts; a++) {
+          const k = key(model, input.input_id, setup, a);
+          const sw = h("i"), text = h("span", { class: "lt" });
+          const leaf = h("div", { class: "leaf", tabindex: "0", role: "button" }, sw, h("span", { text: `${setup} #${a}` }), text);
+          const go = () => o.onStep && o.onStep({ puzzle: input.puzzle, model, input: input.input_id, setup, attempt: a });
+          leaf.addEventListener("click", go);
+          leaf.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); } });
+          S.leaves.set(k, { leaf, sw, text });
+          body.append(leaf);
+          paint(k);
+        }
+      }
+    }
+
+    function inputNode(puzzle, model, input) {
+      const label = h("span", { class: "irow" }, ring(model, input), h("span", { class: "meta" },
+        h("span", { class: "id", text: input.input_id }), h("span", { text: `depth ${input.scramble_depth}, ${input.validity}` })));
+      return node("i", [puzzle, model, input.input_id], label, (body) => leaves(body, model, input), { puzzle, model, input });
+    }
+
+    function modelNode(puzzle, model) {
+      return node("m", [puzzle, model], h("strong", { text: model }), (body) => {
+        for (const input of inputsOf(puzzle)) body.append(inputNode(puzzle, model, input).det);
+      }, { puzzle, model });
+    }
+
     function build() {
       tree.replaceChildren();
-      for (const model of S.snap.models) {
-        const mDet = h("details", {}, h("summary", {}, h("strong", { text: model }), h("span", { class: "counts", "data-counts": model })));
-        for (const puzzle of S.puzzles) {
-          const body = h("div", { class: "body" });
-          const pDet = h("details", {}, h("summary", {}, h("span", { text: puzzle }),
-            h("span", { class: "counts", "data-counts": `${model}|${puzzle}` })), body);
-          let drawn = false;
-          pDet.addEventListener("toggle", () => {  // rows render when the accordion first opens
-            if (!pDet.open || drawn) return;
-            drawn = true;
-            for (const input of S.snap.inputs.filter((i) => i.puzzle === puzzle)) {
-              body.append(h("div", { class: "irow" }, ring(model, input), h("div", { class: "meta" },
-                h("div", { class: "id", text: input.input_id }),
-                h("div", { text: `depth ${input.scramble_depth}, ${input.validity}` }))));
-            }
-          });
-          mDet.append(pDet);
-        }
-        tree.append(mDet);
-        S.puzzles.forEach((p) => headers(model, p));
+      S.nodes = new Map(); S.leaves = new Map();
+      for (const puzzle of S.puzzles) {
+        const p = node("p", [puzzle], h("strong", { text: puzzle }), (body) => {
+          for (const model of S.snap.models) body.append(modelNode(puzzle, model).det);
+        }, { puzzle });
+        tree.append(p.det);
       }
+    }
+
+    // Opens the nodes down to an input, drawing the lazy bodies on the way, unless the user folded one by hand.
+    function reveal(puzzle, model, inputId, auto) {
+      const path = [nodeId("p", puzzle), nodeId("m", puzzle, model), nodeId("i", puzzle, model, inputId)];
+      for (const id of path) {
+        const n = S.nodes.get(id);
+        if (!n) return null;
+        if (S.userSet.get(id) === false && auto) return null;
+        if (!n.det.open) { setOpen(n.det, true); if (auto) S.autoOpened.add(id); }
+        n.draw();
+      }
+      return S.nodes.get(path[2]);
     }
 
     function add(rec) {
       const input = S.inputs.get(rec.input_id);
       if (!input) return;
       const k = key(rec.model, rec.input_id, rec.setup, rec.attempt_number);
-      const c = countFor(rec.model, input.puzzle), old = S.records.get(k);
+      const cs = [countFor(rec.model, input.puzzle), inputCount(rec.model, rec.input_id)], old = S.records.get(k);
       if (old && old.outcome === rec.outcome) return;
-      if (old) { c.done--; c.out[old.outcome]--; }
+      if (old) for (const c of cs) { c.done--; c.out[old.outcome]--; }
       else S.fresh.push(rec);
       S.records.set(k, rec);
-      c.done++; c.out[rec.outcome] = (c.out[rec.outcome] || 0) + 1;
+      for (const c of cs) { c.done++; c.out[rec.outcome] = (c.out[rec.outcome] || 0) + 1; }
       paint(k);
-      headers(rec.model, input.puzzle);
     }
 
     // The attempt a running model is on: the first without a record, in run's loop order. An inference.
@@ -150,13 +243,29 @@
     const drawBanners = () => banners.replaceChildren(...ProgressView.banners(S.jobs,
       Object.fromEntries(Object.keys(S.jobs).map((j) => [j, S.lastErr[id + "\u0000" + j]]))));
 
-    // A later snapshot only adds records, so open accordions stay open; a new shape rebuilds the tree.
+    // The node holding each in-flight attempt opens itself unless the user folded it by hand. An input node that
+    // opened itself and no longer holds the in-flight attempt folds again, unless the user touched it.
+    function followPending() {
+      for (const [m, k] of Object.entries(S.pending)) {
+        if (!k) continue;
+        const input = S.inputs.get(k.split("|")[1]);
+        reveal(input.puzzle, m, input.input_id, true);
+      }
+      for (const id of [...S.autoOpened]) {
+        const n = S.nodes.get(id);
+        if (!n || n.kind !== "i" || S.userSet.has(id)) continue;
+        if (!holdsPending(n)) { setOpen(n.det, false); S.autoOpened.delete(id); }
+      }
+    }
+
+    // A later snapshot only adds records, so open nodes stay open; a new shape rebuilds the tree.
     function apply(snap) {
       const shape = JSON.stringify([id, snap.release, snap.models, snap.attempts, snap.inputs.map((i) => i.input_id)]);
       const rebuild = shape !== S.shape;
       S.fresh = [];
       if (rebuild) {
-        Object.assign(S, { shape, records: new Map(), counts: new Map(), arcs: new Map(), pending: {}, inputs: new Map() });
+        Object.assign(S, { shape, records: new Map(), counts: new Map(), inputCounts: new Map(), arcs: new Map(),
+          leaves: new Map(), nodes: new Map(), userSet: new Map(), autoOpened: new Set(), pending: {}, inputs: new Map() });
         S.puzzles = [...new Set(snap.inputs.map((i) => i.puzzle))];
         for (const i of snap.inputs) S.inputs.set(i.input_id, i);
       }
@@ -170,6 +279,8 @@
         if (prev) paint(prev);
         if (S.pending[m]) paint(S.pending[m]);
       }
+      followPending();
+      refreshNodes();
       status.textContent = snap.records.length ? "" : "No attempts recorded yet.";
       panel.live(S.fresh);
       drawBanners();
@@ -206,7 +317,16 @@
     });
 
     const ctl = {
-      refresh: load, snapshot: () => S.snap,
+      refresh: load, snapshot: () => S.snap, panelNode: panel.node,
+      records: () => S.records, pending: () => S.pending, inputs: () => S.inputs,
+      reveal: (step) => step.input ? reveal(step.puzzle, step.model, step.input, false) : null,
+      // Done and planned attempts over all models, with the count per outcome.
+      totals() {
+        const out = {}; let done = 0;
+        for (const r of S.records.values()) { done++; out[r.outcome] = (out[r.outcome] || 0) + 1; }
+        const planned = S.snap ? S.snap.inputs.length * S.snap.models.length * perInput() : 0;
+        return { done, planned, out };
+      },
       destroy() { S.dead = true; clearTimeout(S.timer); panel.destroy(); offJobs(); offLines(); if (current === ctl) current = null; },
     };
     current = ctl;

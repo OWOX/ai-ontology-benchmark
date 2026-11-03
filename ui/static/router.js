@@ -7,7 +7,7 @@
   const meta = document.querySelector('meta[name="ui-token"]');
   const MENU = [["models", "Models"], ["puzzles", "Puzzles"], ["experiments", "Experiments"], ["about", "About"]];
   const pages = {};
-  const st = { bundle: null, seq: 0, params: null, jobs: [], listeners: [], lineListeners: [], logAfter: 0 };
+  const st = { bundle: null, seq: 0, params: null, jobs: [], listeners: [], lineListeners: [], logAfter: 0, lines: [] };
 
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -78,6 +78,8 @@
     onJobs(fn) { return listen(st.listeners, fn); },
     onLines(fn) { return listen(st.lineListeners, fn); },
     get jobs() { return st.jobs; },
+    // Every log line received so far (at most 5,000, like the server), so a page can draw the history on mount.
+    get lines() { return st.lines; },
     get bundleNow() { return st.bundle; },
   };
 
@@ -145,7 +147,7 @@
     st.drawn = sig;
     st.bundle = b;
     drawMenu();
-    $("termbox").hidden = !["experiment", "new", "about"].includes(st.params.name);
+    $("termbox").hidden = !["new", "about"].includes(st.params.name);
     const page = pages[st.params.name];
     const main = $("main");
     if (!page) { main.replaceChildren(); return; }
@@ -182,6 +184,8 @@
       const data = await UI.api("/api/log?after=" + st.logAfter);
       st.server = "live"; drawConn();
       for (const ev of data.lines) {
+        st.lines.push(ev);
+        if (st.lines.length > 5000) st.lines.shift();
         termLine(ev);
         for (const fn of st.lineListeners.slice()) { try { fn(ev); } catch (e) { console.error(e); } }
       }
