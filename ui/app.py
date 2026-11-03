@@ -6,13 +6,14 @@ nothing here writes a config file. Key routes go to ui.secrets. Writes only thro
 
 import re
 import secrets
+import time
 from datetime import datetime
 from pathlib import Path
 
+from ui import attempt as attempt_module
 from ui import commit as commit_module
 from ui import experiments, forms
-from ui import project
-from ui import replay
+from ui import project, replay
 from ui import secrets as key_store
 from ui.bundle import Bundles
 from ui.common import ApiError, check_id, merged_env
@@ -20,6 +21,8 @@ from ui.gitdata import GitData
 from ui.jobs import Jobs
 
 VERSION = re.compile(r"\d+\.\d+\.\d+")
+MAX_PARALLEL = 16  # the most `run --parallel` the form accepts
+BRANCH_WAIT_S = 30  # how long POST /api/run waits for `run` to create results/<id>
 
 
 class App:
@@ -53,18 +56,48 @@ class App:
         limit = body.get("limit") if name == "run" else None
         if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit < 1):
             raise ApiError(400, "field 'limit' must be a whole number of at least 1, or null")
+        parallel = body.get("parallel", 1) if name == "run" else 1
+        if not isinstance(parallel, int) or isinstance(parallel, bool) or not 1 <= parallel <= MAX_PARALLEL:
+            raise ApiError(400, f"field 'parallel' must be a whole number from 1 to {MAX_PARALLEL}")
         text = forms.config_text(self.bundles, form, merged_env(self.root))
+        # The menu offers releases from main, but `run` reads the release from this checkout.
+        release = form.get("release")
+        if not (self.root / "releases" / str(release) / "manifest.json").is_file():
+            raise ApiError(409, f"release {release} is on main but not in this checkout (releases/{release}/): "
+                                "merge main into the checked-out branch, then restart the UI")
         status, text = forms.resolve_status(self.bundles, self.root, experiment_id, text)
         base = ["src.run.run", "--experiment", experiment_id, "--config", "-"]
         if name == "run":
             models = form["models"]
             names = [f"run:{m}" for m in models]
             extra = ["--limit", str(limit)] if limit is not None else []
+            extra += ["--parallel", str(parallel)] if parallel != 1 else []
             items = [(n, [*base, "--model", m, *extra]) for n, m in zip(names, models)]
         else:
             names, items = [name], [(name, [*base, "--estimate" if name == "estimate" else "--dry-run"])]
-        self.jobs.start(experiment_id, items, blocked_by=("evaluate",) if name == "run" else (), stdin=text)
+        self.jobs.start(experiment_id, items, blocked_by=("evaluate",) if name == "run" else (), stdin=text,
+                        parallel=parallel)
+        if name == "run":
+            self.wait_for_branch(experiment_id, names)
         return {"id": experiment_id, "status": status, "jobs": names}
+
+    def wait_for_branch(self, experiment_id: str, names: list[str]) -> None:
+        """Return once results/<id> exists, so the page it opens next can read it: a new experiment's comes from
+        `run`'s first commit, and a resumed one may exist only on origin until `run` commits a record. When every
+        run job ends first without any branch, the run failed before its first commit: report its last stderr line."""
+        git = self.bundles.git
+        exists = lambda: experiment_id in git.local_ids() or experiment_id in git.remote_ids()
+        deadline = time.monotonic() + BRANCH_WAIT_S
+        while time.monotonic() < deadline:
+            if exists():
+                return
+            states = self.jobs.states(experiment_id)
+            if not any(states.get(n) == "running" for n in names):
+                if exists():
+                    return
+                line = next((t for t in (self.jobs.last_stderr(experiment_id, n) for n in names) if t), "no output")
+                raise ApiError(409, f"run stopped before creating results/{experiment_id}: {line}")
+            time.sleep(0.2)
 
     def project_job(self, name: str, args: list[str]) -> dict:
         """A job of no experiment. install, release, and push also refuse while any job is alive."""
@@ -141,9 +174,12 @@ class App:
             if parts[1] == "experiments":
                 return self.bundles.experiment(experiment_id, live, self.jobs.running_ids())
             if parts[1] == "state":
-                return experiments.snapshot(self.bundles, experiment_id, live, self.jobs.states(experiment_id))
+                return experiments.snapshot(self.bundles, experiment_id, live, self.jobs.states(experiment_id),
+                                            self.jobs.parallels(experiment_id))
             if parts[1] == "replay":
                 return replay.replay(self.bundles, experiment_id, live, query)
+            if parts[1] == "attempt":
+                return attempt_module.attempt(self.bundles, experiment_id, live, query)
             if parts[1] == "commit":
                 self.guard_commit(experiment_id)
                 return commit_module.preview(self.root, experiment_id, lambda s, t: self.jobs.say(experiment_id, "commit", s, t))
@@ -153,7 +189,7 @@ class App:
         if path == "/api/secrets":
             provider = body.get("provider")
             if body.get("action") == "save":
-                key_store.save(self.root, provider, body.get("api_key"))
+                key_store.save(self.root, provider, body.get("api_key"), body.get("account_id"))
             elif body.get("action") == "clear":
                 key_store.clear(self.root, provider)
             else:

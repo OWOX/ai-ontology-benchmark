@@ -23,9 +23,11 @@ import pytest
 
 from src.config import EXPERIMENT_ID_PATTERN
 from src.puzzles.registry import get_engine
+from src.run.prompts import fill_template
 from test_release import commit_all, git, run_release, repo  # noqa: F401  (repo is a fixture)
 from ui import secrets as key_store
 from ui.common import merged_env
+from ui import app as app_module
 from ui import jobs as jobs_module
 from ui import server as server_module
 from ui.experiments import default_id
@@ -37,6 +39,7 @@ MODELS = (
     'kind = "system-2"\n'
     "params = { temperature = 1.0 }\n"
     '[[models]]\nname = "cloud-model"\nprovider = "anthropic"\napi_model_id = "cl-1"\n'
+    '[[models]]\nname = "edge-model"\nprovider = "cloudflare"\napi_model_id = "ed-1"\n'
     '[[models]]\nname = "unpriced"\nprovider = "fake"\napi_model_id = "up-1"\n'
 )
 PRICES = ("[example-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n"
@@ -181,6 +184,54 @@ def test_secret_files_and_env(tmp_path, monkeypatch):
         key_store.save(tmp_path, "nope", KEY)
 
 
+def test_cloudflare_token_and_account_id_share_one_file(tmp_path, monkeypatch):
+    for variable in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    path = tmp_path / "secrets" / "cloudflare.json"
+    key_store.save(tmp_path, "cloudflare", "cf-token-1234", None)
+    info = key_store.inspect(tmp_path)["cloudflare"]
+    assert info["account"]["source"] == "missing" and info["configured"] is False
+    key_store.save(tmp_path, "cloudflare", "", "acct-id-98765")
+    assert json.loads(path.read_text()) == {"api_key": "cf-token-1234", "account_id": "acct-id-98765"}
+    key_store.save(tmp_path, "cloudflare", "cf-token-5678")
+    assert json.loads(path.read_text()) == {"api_key": "cf-token-5678", "account_id": "acct-id-98765"}
+    info = key_store.inspect(tmp_path)["cloudflare"]
+    assert info["configured"] is True and info["account"]["source"] == "file"
+    assert "acct-id-98765" not in json.dumps(key_store.inspect(tmp_path))
+    assert merged_env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "acct-id-98765"
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "from-env")
+    assert merged_env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "from-env"
+    assert key_store.inspect(tmp_path)["cloudflare"]["account"]["source"] == "env"
+    key_store.clear(tmp_path, "cloudflare")
+    assert not path.exists()
+    with pytest.raises(key_store.ApiError, match="account_id"):
+        key_store.save(tmp_path, "anthropic", KEY, "acct")
+    with pytest.raises(key_store.ApiError, match="account_id"):
+        key_store.save(tmp_path, "cloudflare", KEY, "a b")
+
+
+def test_empty_account_env_var_does_not_hide_a_saved_id(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    key_store.save(tmp_path, "cloudflare", KEY, "acct-id-98765")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "")
+    assert key_store.env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "acct-id-98765"
+    assert merged_env(tmp_path)["CLOUDFLARE_ACCOUNT_ID"] == "acct-id-98765"
+    assert key_store.inspect(tmp_path)["cloudflare"]["account"]["source"] == "file"
+
+
+def test_account_id_route(server, monkeypatch):
+    for variable in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    status, data = call(server, "POST", "/api/secrets", {"provider": "anthropic", "action": "save", "api_key": KEY, "account_id": "x"})
+    assert status == 400 and "account_id" in json.dumps(data)
+    status, _ = call(server, "POST", "/api/secrets", {"provider": "cloudflare", "action": "save", "api_key": KEY, "account_id": "acct-id-98765"})
+    assert status == 200
+    for path in ("/api/secrets", "/api/bundle"):
+        assert "acct-id-98765" not in json.dumps(call(server, "GET", path)[1])
+    _, bundle = call(server, "GET", "/api/bundle")
+    assert next(p for p in bundle["providers"] if p["name"] == "cloudflare")["key"]["account"]["source"] == "file"
+
+
 def test_empty_env_var_does_not_hide_a_saved_key(tmp_path, monkeypatch):
     key_store.save(tmp_path, "anthropic", KEY)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
@@ -217,9 +268,10 @@ def test_bundle_disabled_reasons_and_defaults(server):
     assert status == 200
     reasons = {m["name"]: m["disabled_reason"] for p in data["providers"] for m in p["models"]}
     assert reasons == {"example-model": None, "cloud-model": "no API key: add it under Models",
-                       "unpriced": "no price in config/prices.toml"}
+                       "unpriced": "no price in config/prices.toml",
+                       "edge-model": "no price in config/prices.toml"}
     assert data["release"] == "1.0.0" and data["releases"] == ["1.0.0"]
-    assert data["defaults"]["budget"] == BUDGET and data["defaults"]["attempts"] == 3
+    assert data["defaults"]["budget"] == {"per_request_usd": 2.0, "per_model_usd": 25.0, "per_experiment_usd": 50.0} and data["defaults"]["attempts"] == 3
 
 
 def test_bundle_needs_token(server):
@@ -241,6 +293,36 @@ def test_run_from_form_writes_no_config_file(server):
     assert (server.root / "results" / "t1" / "experiment.toml").read_text() == saved + "\n"
     # the form may also come under a `form` key, with the limit beside it
     assert call(server, "POST", "/api/estimate", {"form": FORM})[1]["status"] == "unchanged"
+
+
+def test_run_answers_once_the_branch_exists(server):
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    assert git(server.root, "rev-parse", "--verify", "-q", "refs/heads/results/t1").strip()
+    wait_job(server, "run:example-model")
+
+
+def test_resume_of_a_branch_only_on_origin_answers(server):
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    wait_job(server, "run:example-model")
+    git(server.root, "fetch", "-q", "origin", "+refs/heads/results/*:refs/remotes/origin/results/*")
+    git(server.root, "branch", "-D", "results/t1")
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    wait_job(server, "run:example-model")
+
+
+def test_run_that_stops_before_its_branch_reports_why(server):
+    (server.root / "config" / "prices.toml").rename(server.root / "config" / "prices.toml.away")
+    status, data = call(server, "POST", "/api/run", FORM)
+    assert status == 409 and data["error"].startswith("run stopped before creating results/t1: ")
+    assert "prices.toml" in data["error"]
+
+
+def test_form_refused_when_the_release_is_not_in_this_checkout(server):
+    folder = server.root / "releases" / "1.0.0"
+    folder.rename(folder.with_name("away"))
+    for path in ("/api/run", "/api/estimate", "/api/dry-run"):
+        status, data = call(server, "POST", path, FORM)
+        assert status == 409 and "release 1.0.0 is on main but not in this checkout" in data["error"]
 
 
 def test_statuses(server):
@@ -525,10 +607,11 @@ def test_full_run_through_api(server):
     assert "src.run.run" in cmds[0]["text"] and "--config -" in cmds[0]["text"] and "--estimate" in cmds[0]["text"]
     assert not (server.root / "results" / "t1").exists()  # an estimate writes nothing
     slow_fake(server)
-    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    assert call(server, "POST", "/api/run", dict(FORM, parallel=3))[0] == 200
     assert call(server, "POST", "/api/run", FORM)[0] == 409  # already running
     snap = snapshot_when_ready(server)
     assert snap["jobs"]["run:example-model"] == "running" and "in_progress" not in snap
+    assert snap["parallel"] == {"example-model": 3}  # the page infers that many attempts in flight
     assert snap["setups"] == ["no_model", "descriptive", "prescriptive"] and snap["attempts"] == 1
     wait_for(lambda: call(server, "GET", "/api/state/t1")[1]["records"])
     assert job_state(server, "run:example-model") == "running"  # records arrive live, not in a burst
@@ -538,6 +621,7 @@ def test_full_run_through_api(server):
     status, snap = call(server, "GET", "/api/state/t1")
     assert status == 200 and len(snap["records"]) == 9 and len(snap["inputs"]) == 3  # 3 inputs x 3 setups x 1
     assert len({(r["input_id"], r["setup"]) for r in snap["records"]}) == 9
+    assert all(r["created_at"] for r in snap["records"])  # the terminal orders snapshot-only attempts by it
     assert snap["jobs"]["run:example-model"] == "done" and snap["report"] is None
     assert not list((server.root / "results" / "t1").glob(".*tmp"))  # the atomic copy leaves no temp file
     row = next(r for r in call(server, "GET", "/api/bundle")[1]["experiments"] if r["id"] == "t1")
@@ -763,6 +847,7 @@ def spawned(monkeypatch):
         self.finish(job, 0)
 
     monkeypatch.setattr(jobs_module.Jobs, "_spawn", fake)
+    monkeypatch.setattr(app_module.App, "wait_for_branch", lambda self, experiment_id, names: None)  # no process, no branch
     return seen
 
 
@@ -1038,3 +1123,74 @@ def test_saved_config_without_kind_still_resumes_and_takes_a_new_budget(server):
     raised = dict(FORM, budget=dict(BUDGET, per_model_usd=9.0))
     assert call(server, "POST", "/api/run", raised)[1]["status"] == "budget_updated"
     wait_job(server, "run:example-model")
+
+
+ATTEMPT = "/api/attempt/t1?model=example-model&input=ID&setup=no_model&attempt=1"
+
+
+def test_attempt_rebuilds_the_prompt_and_returns_the_record(server):
+    start_state(server)
+    assert call(server, "GET", url(server, ATTEMPT))[0] == 404  # no experiment branch yet
+    template = (server.root / "releases" / "1.0.0" / "prompts" / "no_model" / "2x2.txt").read_text(encoding="utf-8")
+    put_raw(server, raw_response="R U", parsed_moves=["R", "U"])
+    status, data = call(server, "GET", url(server, ATTEMPT))
+    assert status == 200 and data["prompt"] == fill_template(template, server.first, "no_model")
+    assert data["raw_response"] == "R U" and data["record"]["parsed_moves"] == ["R", "U"]
+    status, data = call(server, "GET", url(server, ATTEMPT.replace("attempt=1", "attempt=2")))
+    assert status == 200 and data["raw_response"] is None and data["record"] is None and data["prompt"]
+
+
+def test_attempt_prompt_for_a_decision_model_holds_the_questions(server):
+    start_state(server)
+    config = {**CONFIG, "models": [{"name": "example-model", "provider": "fake_decision", "api_model_id": "ex-1"}]}
+    put_raw(server)
+    put_branch(server.root, "t1", {"results/t1/experiment.toml": dumps_config(config),
+                                   "results/t1/raw/example-model.jsonl": server.raw})
+    status, data = call(server, "GET", url(server, ATTEMPT))
+    assert status == 200
+    head, _, tail = data["prompt"].partition("\n--- questions\n")
+    assert head.endswith("Moves so far: none")
+    questions = json.loads(tail)["next_move"]["criteria"]
+    assert list(questions.values())[: len(get_engine("2x2").legal_moves())] == get_engine("2x2").legal_moves()
+
+
+def test_attempt_errors(server):
+    start_state(server)
+    put_raw(server)
+    assert call(server, "GET", url(server, ATTEMPT.replace("input=ID", "input=nope")))[0] == 404
+    assert call(server, "GET", url(server, ATTEMPT.replace("model=example-model", "model=other")))[0] == 404
+    assert call(server, "GET", url(server, ATTEMPT.replace("&input=ID", "")))[0] == 400
+    for bad in ("attempt=0", "attempt=x", "setup=bogus"):
+        name = bad.split("=")[0]
+        status, data = call(server, "GET", url(server, ATTEMPT.replace(f"{name}={'1' if name == 'attempt' else 'no_model'}", bad)))
+        assert status == 400 and name in data["error"], bad
+
+
+def test_run_parallel_argument(server, spawned):
+    on_branch(server, "feat")
+    py = sys.executable
+    base = [py, "-u", "-m", "src.run.run", "--experiment", "t1", "--config", "-", "--model", "example-model"]
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    assert spawned[-1] == base  # absent means one: no flag
+    stdin_plain = jobs_module.Jobs.stdins[-1]
+    assert call(server, "POST", "/api/run", dict(FORM, parallel=3))[0] == 200
+    assert spawned[-1] == [*base, "--parallel", "3"]
+    assert jobs_module.Jobs.stdins[-1] == stdin_plain  # parallel is not part of the config text
+    assert call(server, "POST", "/api/run", dict(FORM, parallel=2, limit=5))[0] == 200
+    assert spawned[-1] == [*base, "--limit", "5", "--parallel", "2"]
+    for bad in (0, 17, True, "4", 2.5, None):
+        status, data = call(server, "POST", "/api/run", dict(FORM, parallel=bad))
+        assert status == 400 and "parallel" in data["error"], bad
+    # estimate and dry-run ignore it
+    assert call(server, "POST", "/api/dry-run", dict(FORM, parallel=3))[0] == 200
+    assert "--parallel" not in spawned[-1]
+
+
+def test_jobs_remember_parallel_of_running_run_jobs(server):
+    jobs = server.app.jobs
+    (job,) = jobs.register("t1", ["run:example-model"])
+    assert jobs.parallels("t1") == {"example-model": 1}  # a job not started with --parallel counts as 1
+    job.parallel = 3
+    assert jobs.parallels("t1") == {"example-model": 3} and jobs.parallels("other") == {}
+    jobs.finish(job, 0)
+    assert jobs.parallels("t1") == {}

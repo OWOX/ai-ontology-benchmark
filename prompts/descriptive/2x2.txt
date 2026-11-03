@@ -12,6 +12,5 @@ Solve the cube. Here is its current state:
 
 {state}
 
-If the state cannot be reached from the solved state by legal moves, set mismatch to true.
-Reply with exactly this JSON object and nothing else: {"moves": [...], "mismatch": true|false}
-List the moves in the order they are applied, one move per string.
+If the state cannot be reached from the solved state by legal moves, reply with the single line MISMATCH and nothing else.
+Otherwise reply with the moves that solve it, in the order they are applied, one move per line, and nothing else.

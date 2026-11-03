@@ -21,6 +21,7 @@ from ui.gitdata import REMOTE_RESULTS, GitData
 from ui.puzzleinfo import build_puzzle
 
 NO_KEY = "no API key: add it under Models"
+NO_ACCOUNT = "no account id: add it under Models"
 CACHE_LIMIT = 16
 
 
@@ -107,11 +108,13 @@ class Bundles(BranchReaders):
         status = secrets.inspect(self.root)
         for provider in bundle["providers"]:
             info = status.get(provider["name"])
-            provider["key"] = {"source": info["source"], "tail": info["tail"]} if info else None
-            have = info is None or bool(env.get(provider["variable"])) or info["configured"]
+            provider["key"] = {"source": info["source"], "tail": info["tail"], "configured": info["configured"]} if info else None
+            if info and "account" in info:
+                provider["key"]["account"] = {"variable": info["account"]["variable"], "source": info["account"]["source"]}
+            have = info is None or info["configured"] or (bool(env.get(provider["variable"])) and "account" not in info)
             for model in provider["models"]:
                 if model["disabled_reason"] is None and not have:
-                    model["disabled_reason"] = NO_KEY
+                    model["disabled_reason"] = NO_ACCOUNT if info["source"] != "missing" else NO_KEY
         return bundle
 
     def _load_all(self, refs: dict[str, str], main: str) -> list[dict]:
@@ -152,7 +155,7 @@ class Bundles(BranchReaders):
         rows_cache: dict = {}  # attempt rows per (experiment, model file), shared by the puzzles of this build
         puzzles = [build_puzzle(self.git, main, link, release, manifest, name, inputs_by_release[release],
                                 experiments, rows_cache) for name in names]
-        return {"schema": 1, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
+        return {"schema": 2, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
                 "repo": base, "main_sha": main_sha, "defaults": DEFAULTS,
                 "providers": build_providers(catalogue, self._prices(), experiments), "puzzles": puzzles, "experiments": rows,
                 "about": {"markdown": self.git.show(main, "README.md"), "source": link("README.md")}}

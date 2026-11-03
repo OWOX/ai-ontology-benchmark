@@ -11,23 +11,29 @@ import argparse
 import hashlib
 import json
 import os
+import queue
 import signal
 import sys
+import threading
 import tomllib
 from collections import Counter
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.config import load_experiment_config, load_prices, parse_experiment_config
+from src.config import load_experiment_config, load_prices, max_moves, parse_experiment_config
+from src.evaluate.metrics import attempt_cost
 from src.release.release import assessment_sha256
 from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
-                            print_estimate, worst_case_request_cost)
-from src.run.models import InfrastructureError, call_model
+                            print_estimate, spent_by_model, worst_case_request_cost, worst_request)
+from src.run.decision import DecisionResult, run_decision_attempt
+from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model
 from src.run.progress import Progress
-from src.run.prompts import SETUPS, build_prompt, prompt_versions
+from src.run.prompts import (SETUPS, both_prompt_versions, build_prompt, decision_questions, decision_state,
+                             load_questions, prompt_versions)
 from src.run.raw import read_raw
+from src.puzzles.registry import get_engine
 from src.validator import validate
 
 
@@ -35,8 +41,10 @@ class RunError(Exception):
     """A checked error. The message names the file or field at fault."""
 
 
-def load_release(folder: Path) -> tuple[dict, list[dict]]:
-    """Check the release against its manifest and the working tree. Return (manifest, inputs)."""
+def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list[dict]]:
+    """Check the release against its manifest and the working tree. Return (manifest, inputs).
+    A release without decision_prompt_versions is checked as before, and is refused only when
+    needs_decision is true."""
     manifest_path = folder / "manifest.json"
     if not manifest_path.is_file():
         raise RunError(f"{manifest_path}: file not found")
@@ -47,6 +55,9 @@ def load_release(folder: Path) -> tuple[dict, list[dict]]:
     for field in ("files", "assessment_sha256", "prompt_versions", "input_set_id", "release_config"):
         if field not in manifest:
             raise RunError(f"{manifest_path}: field '{field}' is missing")
+    if needs_decision and "decision_prompt_versions" not in manifest:
+        raise RunError(f"{manifest_path}: field 'decision_prompt_versions' is missing; "
+                       "decision models need a release cut after they were added")
     if "seed" not in manifest["release_config"]:
         raise RunError(f"{manifest_path}: field 'release_config.seed' is missing")
     for name, digest in manifest["files"].items():
@@ -57,8 +68,15 @@ def load_release(folder: Path) -> tuple[dict, list[dict]]:
         raise RunError(f"{manifest_path}: field 'assessment_sha256' differs from the assessment files in the working tree")
     lines = (folder / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
     inputs = [json.loads(line) for line in lines]
-    if prompt_versions(folder / "prompts", inputs) != manifest["prompt_versions"]:
+    if "decision_prompt_versions" in manifest:
+        plain, decision = both_prompt_versions(folder / "prompts", inputs)
+    else:
+        plain, decision = prompt_versions(folder / "prompts", inputs), None
+    if plain != manifest["prompt_versions"]:
         raise RunError(f"{manifest_path}: field 'prompt_versions' differs from the prompts the working tree renders")
+    if decision is not None and decision != manifest["decision_prompt_versions"]:
+        raise RunError(
+            f"{manifest_path}: field 'decision_prompt_versions' differs from the prompts the working tree renders")
     return manifest, inputs
 
 
@@ -126,14 +144,21 @@ def call_with_retries(model: dict, prompt: str, config: dict, can_afford) -> tup
 
 
 def make_record(config, manifest, row, model, setup, number, prompt, versions,
-                reply, retry_in: int, retry_out: int) -> dict:
-    """Build the raw record of one attempt from the reply (None after an infrastructure failure)."""
-    if reply is None:
+                reply, retry_in: int, retry_out: int, decision: DecisionResult | None = None) -> dict:
+    """Build the raw record of one attempt from the reply (None after an infrastructure failure).
+    A decision model passes its DecisionResult instead, and the raw response is the array of its calls."""
+    if decision is not None:
+        text, stop, served = json.dumps(decision.calls), decision.stop_reason, decision.served_model
+        tokens_in, tokens_out, latency = decision.input_tokens, decision.output_tokens, decision.latency_s
+        retry_in, retry_out = decision.retry_input_tokens, decision.retry_output_tokens
+        if not decision.calls and stop == "infrastructure_failure":
+            text = ""
+    elif reply is None:
         text, stop, served, tokens_in, tokens_out, latency = "", "infrastructure_failure", "", 0, 0, None
     else:
         text, stop, served = reply.text, reply.stop_reason, reply.served_model
         tokens_in, tokens_out, latency = reply.input_tokens, reply.output_tokens, reply.latency_s
-    verdict = validate(row, text, stop)
+    verdict = validate(row, text, stop, decision=decision is not None)
     return {
         "experiment_id": config["experiment_id"], "release_version": config["release"],
         "input_id": row["input_id"], "input_set_id": manifest["input_set_id"],
@@ -146,6 +171,7 @@ def make_record(config, manifest, row, model, setup, number, prompt, versions,
         "input_tokens": tokens_in, "output_tokens": tokens_out,
         "retry_input_tokens": retry_in, "retry_output_tokens": retry_out,
         "latency_s": latency, "stop_reason": stop, "served_model": served,
+        "decision": decision is not None, "requested_model": model["api_model_id"],
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
@@ -187,7 +213,8 @@ def run(args: argparse.Namespace) -> int:
     if args.model and args.model not in names:
         raise RunError(f"{source}: field 'models' has no model {args.model!r}")
     folder = args.releases / config["release"]
-    manifest, inputs = load_release(folder)
+    needs_decision = any(m["provider"] in DECISION_PROVIDERS for m in config["models"])
+    manifest, inputs = load_release(folder, needs_decision)
     for name in config.get("puzzles", []):
         if name not in manifest["release_config"]["puzzles"]:
             raise RunError(f"{source}: field 'puzzles' names {name!r}, which release {config['release']} does not hold")
@@ -198,10 +225,16 @@ def run(args: argparse.Namespace) -> int:
     pending = list(pending_attempts(config, inputs, results / "raw", args.model))
     if args.limit is not None:
         pending = pending[: args.limit]
+    cap = max_moves(config, manifest["release_config"])
+    questions = load_questions(folder / "prompts") if any(
+        m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending) else None
     for row, model, setup, _ in pending:
-        check_request_budget(source, config, model, build_prompt(folder / "prompts", row, setup), prices)
+        prompt = build_prompt(folder / "prompts", row, setup)
+        if model["provider"] in DECISION_PROVIDERS:  # the longest request any call of the attempt sends
+            prompt = worst_request(prompt, get_engine(row["puzzle"]).legal_moves(), cap, questions)
+        check_request_budget(source, config, model, prompt, prices)
     if args.estimate:
-        print_estimate(config, pending, prices, folder / "prompts", results / "raw")
+        print_estimate(config, pending, prices, folder / "prompts", results / "raw", cap)
         return 0
     versions = manifest["prompt_versions"]
     branch = None
@@ -248,29 +281,190 @@ def finish(branch: ResultsBranch, experiment_id: str) -> None:
     branch.gc()
 
 
-def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress) -> None:
-    for left, (row, model, setup, number) in zip(range(len(pending), 0, -1), pending):
+class Flight:
+    """The worst-case cost each in-flight attempt of this process has reserved, from its submission
+    until its record is appended, and the cost of the records this process has appended, per model.
+    The lock guards both: workers read them, the main thread edits them."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.held: dict[int, tuple[str, float]] = {}  # sequence number -> (model name, cost)
+        self.settled: dict[str, float] = {}  # model name -> cost of the records appended so far
+
+    def reserve(self, seq: int, name: str, cost: float) -> None:
+        with self.lock:
+            self.held[seq] = (name, cost)
+
+    def release(self, seq: int, record_cost: float = 0.0) -> None:
+        """Drop a reservation and, in the same step, add the cost of the record it became."""
+        with self.lock:
+            held = self.held.pop(seq, None)
+            if held and record_cost:
+                self.settled[held[0]] = self.settled.get(held[0], 0.0) + record_cost
+
+    def view(self, seq: int, earlier_only: bool) -> tuple[dict[str, float], dict[str, float]]:
+        """Return (reserved, settled) per model, read together. Reserved is the cost of the other
+        in-flight attempts. An attempt's first check counts only those submitted before it, so the
+        attempts started together are admitted in loop order and the last of them is the one a
+        budget refuses."""
+        reserved: dict[str, float] = {}
+        with self.lock:
+            for other, (name, cost) in self.held.items():
+                if other != seq and (other < seq or not earlier_only):
+                    reserved[name] = reserved.get(name, 0.0) + cost
+            return reserved, dict(self.settled)
+
+
+class Attempt:
+    """One attempt on its way to a record. call() is the only part that may run in a worker thread:
+    it talks to the API and nothing else. The main thread builds, writes, and commits the record."""
+
+    def __init__(self, seq, left, row, model, setup, number, play_context) -> None:
+        self.seq, self.left, self.row, self.model, self.setup, self.number = seq, left, row, model, setup, number
+        self.config, self.prices, self.results, self.flight, self.cap, self.questions, templates = play_context
+        self.prompt = build_prompt(templates, row, setup)
+        self.is_decision = model["provider"] in DECISION_PROVIDERS
+        self.legal = get_engine(row["puzzle"]).legal_moves() if self.is_decision else []
+        self.price = self.prices[model["name"]]
+        self.worst = worst_case_request_cost(
+            worst_request(self.prompt, self.legal, self.cap, self.questions) if self.is_decision else self.prompt,
+            self.config["max_output_tokens"], self.price)
+        self.snapshot: dict = {}  # a decision attempt reads the spent cost once, before its first call
+        self.checks = 0
+        self.result = self.reply = self.stop = self.error = None
+        self.retry_in = self.retry_out = 0
+        self.flight.reserve(seq, model["name"], self.worst)
+
+    def can_afford(self, retry_in: int, retry_out: int) -> None:
+        paid = (retry_in * self.price["price_input_per_mtok"] + retry_out * self.price["price_output_per_mtok"]) / 1e6
+        name = self.model["name"]
+        # Reservations and settled costs first, then the files: a record appended in between is then
+        # counted once or twice, never missed.
+        reserved, settled = self.flight.view(self.seq, earlier_only=self.checks == 0)
+        self.checks += 1
+        if self.is_decision and "spent" not in self.snapshot:
+            self.snapshot["settled"] = settled
+            self.snapshot["spent"] = spent_by_model(self.config, self.prices, self.results / "raw")
+        spent = self.snapshot.get("spent")
+        if spent is None:
+            spent = spent_by_model(self.config, self.prices, self.results / "raw")
+        else:  # the snapshot is stale: add what other attempts of this process recorded since
+            then = self.snapshot["settled"]
+            spent = {n: cost + settled.get(n, 0.0) - then.get(n, 0.0) for n, cost in spent.items()}
+        spent = {n: cost + reserved.get(n, 0.0) for n, cost in spent.items()}
+        check_spend(self.config, self.prices, self.results / "raw", name, self.worst + paid, self.left, spent)
+        self.flight.reserve(self.seq, name, self.worst + paid)  # what it has paid is not in any file yet
+
+    def call(self) -> None:
+        if self.is_decision:
+            self.result = run_decision_attempt(self.model, self.prompt, self.legal, self.questions,
+                                               self.cap, self.config["retry_cap"], self.can_afford)
+            self.retry_in, self.retry_out = self.result.retry_input_tokens, self.result.retry_output_tokens
+            self.stop = self.result.budget_stop
+        else:
+            self.reply, self.retry_in, self.retry_out, self.stop = call_with_retries(
+                self.model, self.prompt, self.config, self.can_afford)
+
+
+def dry_run(config, folder, pending, questions) -> None:
+    for row, model, setup, number in pending:
         prompt = build_prompt(folder / "prompts", row, setup)
-        if args.dry_run:
-            print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}\n{prompt}")
-            continue
-        worst = worst_case_request_cost(prompt, config["max_output_tokens"], prices[model["name"]])
-        price = prices[model["name"]]
+        print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}")
+        if model["provider"] in DECISION_PROVIDERS:
+            asked = decision_questions(questions, get_engine(row["puzzle"]).legal_moves())
+            print(f"{decision_state(prompt, [])}\n--- questions\n{json.dumps(asked, indent=2)}")
+        else:
+            print(prompt)
 
-        def can_afford(retry_in: int, retry_out: int) -> None:
-            paid = (retry_in * price["price_input_per_mtok"] + retry_out * price["price_output_per_mtok"]) / 1e6
-            check_spend(config, prices, results / "raw", model["name"], worst + paid, left)
 
-        reply, retry_in, retry_out, stop = call_with_retries(model, prompt, config, can_afford)
-        record = make_record(config, manifest, row, model, setup, number, prompt, versions,
-                             reply, retry_in, retry_out)
+def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress) -> None:
+    cap = max_moves(config, manifest["release_config"])
+    questions = load_questions(folder / "prompts") if any(
+        m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending) else None  # once per run
+    if args.dry_run:
+        dry_run(config, folder, pending, questions)
+        return
+    flight = Flight()
+
+    def attempts():
+        for seq, (left, (row, model, setup, number)) in enumerate(zip(range(len(pending), 0, -1), pending)):
+            yield Attempt(seq, left, row, model, setup, number,
+                          (config, prices, results, flight, cap, questions, folder / "prompts"))
+
+    def record_attempt(attempt: Attempt):
+        """Main thread only: build, write, count, show, and commit the record. Return a budget stop or None."""
+        row, model, setup, number = attempt.row, attempt.model, attempt.setup, attempt.number
+        record = make_record(config, manifest, row, model, setup, number, attempt.prompt,
+                             manifest["decision_prompt_versions"] if attempt.is_decision else versions,
+                             attempt.reply, attempt.retry_in, attempt.retry_out, attempt.result)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
+        # after the append, so the cost is never in neither place
+        flight.release(attempt.seq, attempt_cost(record, prices[model['name']]))
         outcomes[record["outcome"]] += 1
         progress.update(record)
         safe_commit(branch, f"Results: experiment {config['experiment_id']}, {model['name']} "
                             f"{row['input_id']} {setup} attempt {number}")
-        if stop:
-            raise stop
+        return attempt.stop
+
+    if args.parallel == 1:
+        for attempt in attempts():
+            attempt.call()
+            stop = record_attempt(attempt)
+            if stop:
+                raise stop
+        return
+    play_parallel(args.parallel, len(pending), attempts(), record_attempt, flight)
+
+
+def play_parallel(size: int, total: int, attempts, record_attempt, flight: Flight) -> None:
+    """Keep up to `size` attempts in flight. Daemon workers run only Attempt.call(); this thread takes
+    each finished attempt in completion order. After a BudgetError nothing new starts, the attempts
+    in flight finish and are written, and then the first BudgetError is raised, with the attempts left
+    recounted as the `total` less the records written. An interrupt leaves at once; the daemon
+    workers cannot hold the process open and their attempts get no record."""
+    jobs: queue.Queue = queue.Queue()
+    done: queue.Queue = queue.Queue()
+
+    def work() -> None:
+        while True:
+            attempt = jobs.get()
+            if attempt is None:
+                return
+            try:
+                attempt.call()
+            except BaseException as error:  # handed to the main thread, which decides and re-raises
+                attempt.error = error
+            done.put(attempt)
+
+    for _ in range(size):
+        threading.Thread(target=work, daemon=True).start()
+    in_flight, written, budget_stop = 0, 0, None
+    try:
+        while True:
+            while budget_stop is None and in_flight < size:
+                attempt = next(attempts, None)
+                if attempt is None:
+                    break
+                jobs.put(attempt)
+                in_flight += 1
+            if in_flight == 0:
+                break
+            attempt = done.get()
+            in_flight -= 1
+            if isinstance(attempt.error, BudgetError):
+                flight.release(attempt.seq)
+                budget_stop = budget_stop or attempt.error
+            elif attempt.error is not None:
+                raise attempt.error
+            else:
+                stop = record_attempt(attempt)  # always runs: an attempt in flight keeps its record
+                written += 1
+                budget_stop = budget_stop or stop
+    finally:
+        for _ in range(size):
+            jobs.put(None)
+    if budget_stop:
+        raise budget_stop.recounted(total - written)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -278,6 +472,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--experiment", required=True, help="experiment id, the config file stem")
     parser.add_argument("--model", help="run only this AI model")
     parser.add_argument("--limit", type=int, help="stop after this many new attempts")
+    parser.add_argument("--parallel", type=int, default=1, help="attempts in flight at once (at least 1)")
     parser.add_argument("--dry-run", action="store_true", help="print prompts, write nothing")
     parser.add_argument("--estimate", action="store_true", help="print attempts and worst-case cost")
     parser.add_argument("--no-commit", action="store_true", help="do not commit to results/<id> (for tests)")
@@ -287,6 +482,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prices", default="config/prices.toml", type=Path)
     parser.add_argument("--results", default="results", type=Path)
     args = parser.parse_args(argv)
+    if args.parallel < 1:
+        print(f"error: --parallel must be at least 1, got {args.parallel}", file=sys.stderr)
+        return 1
 
     def terminate(signum, frame):
         raise SystemExit(128 + signum)  # unwinds through run's finally, then exits non-zero

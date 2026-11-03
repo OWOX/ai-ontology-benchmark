@@ -41,8 +41,8 @@ Every term below means the same thing in code, configs, records, reports, and do
 
 1. **Release.** A frozen bundle in `releases/<release version>/` that holds everything an AI model sees and everything that judges it: the input set, the prompt templates, and the assessment. Each release has a git tag `release-<release version>`.
 2. **Release version.** `MAJOR.MINOR.PATCH`. A new input set bumps MAJOR. A prompt change with the same input set bumps MINOR. An assessment fix bumps PATCH.
-3. **Mirror.** A patch release is a mirror of the release before it: its input set and every prompt version are identical, and only the assessment differs. Raw records made under one release are scored under any of its mirrors without calling an AI model again.
-4. **Assessment.** The code that judges attempts and computes metrics: the validator, the engines, and `evaluate`. The code that only formats the experiment report isn't part of it. A release pins the assessment as one hash over those files.
+3. **Mirror.** A patch release is a mirror of the release before it: its input set and every prompt version are identical, and only the assessment differs. A patch release may also add `decision_prompt_versions` to a release that lacked them, because no earlier raw record used them. Raw records made under one release are scored under any of its mirrors without calling an AI model again.
+4. **Assessment.** The code that judges attempts and computes metrics: the validator, the engines, `evaluate`, the decision loop, and the code that builds its states. The code that only formats the experiment report isn't part of it. A release pins the assessment as one hash over those files.
 5. **Experiment.** One `run` of every AI model in an experiment config over one release, and the reports computed from it.
 6. **Experiment id.** The name of an experiment config file, without the extension. Every raw record carries it.
 7. **Experiment report.** The Markdown file `results/<experiment id>/<release version>.md`. It starts with the release it was scored under, and it links to the release's inputs and prompts instead of copying them.
@@ -54,41 +54,46 @@ Every term below means the same thing in code, configs, records, reports, and do
 3. **`run`.** Sends every input of one release to every AI model under every setup, validates each attempt, and appends one raw record per attempt. It never changes a release.
 4. **`evaluate`.** Re-validates every attempt of one experiment from its raw response under one release, then computes the metrics into reports. It never edits raw records.
 5. **Validator.** The deterministic code that turns a raw response into parsed moves, flags, a move count, and an outcome. `run` calls it before writing each raw record, and `evaluate` calls it again. If a validator fix changes an outcome, the reports follow the outcome from `evaluate`, and the raw record stays as written. No AI model judges another AI model.
+6. **Parallel requests.** The number of attempts `run` keeps in flight at once in one process, set with `--parallel`. It changes how fast an experiment runs and never what any attempt sends or records.
 
 ## Setups
 
 1. **AI model.** The language model being tested. Which ones are tested comes from config.
 2. **System-1 model.** An AI model that answers directly, without a separate reasoning step before the answer.
-3. **System-2 model.** An AI model trained to reason in tokens before it answers. It stays a system-2 model when an experiment runs it with reasoning switched off. Which kind an AI model is comes from the `kind` field of its entry in config.
-4. **Ontology model.** The rules of the system the AI model works in. For a puzzle, that means its pieces, its legal moves, and what each move does.
-5. **Setup.** How the ontology model goes into the prompt. There are three setups, and every input goes through all three.
-6. **No model.** The setup where the prompt asks the AI model to solve the puzzle and gives no rules.
-7. **Descriptive model.** The setup where the prompt explains the rules: what the puzzle is, how its moves work, and what the notation means. The AI model chooses moves on its own.
-8. **Prescriptive model.** The setup where the prompt lists the puzzle's move group, exactly as `legal_moves()` returns it, and the AI model must pick every move from that list. Only the prompt states the list. The output schema doesn't enforce it, so a move off the list is still possible, and it is an impossible move.
-9. **Prompt.** The full text sent to the AI model for one attempt. It contains the rendered state and never the scramble, because reversing the scramble solves the puzzle. It is the same for every AI model under the same setup and input.
-10. **Prompt version.** The version of the prompt text for one setup and puzzle in a release: the first 12 hex characters of one sha256 over every prompt built for that setup and puzzle, in input order. A change to the template, to `render()`, or to `legal_moves()` gives a new version.
+3. **Decision model.** An AI model that chooses among options defined in the request and never generates text. It answers through a per-move loop of [calls](#attempts-and-outcomes), so it can't return an impossible move. Its options are the [decision options](#setups).
+4. **System-2 model.** An AI model trained to reason in tokens before it answers. It stays a system-2 model when an experiment runs it with reasoning switched off. Which kind an AI model is comes from the `kind` field of its entry in config.
+5. **Ontology model.** The rules of the system the AI model works in. For a puzzle, that means its pieces, its legal moves, and what each move does.
+6. **Setup.** How the ontology model goes into the prompt. There are three setups, and every input goes through all three.
+7. **No model.** The setup where the prompt asks the AI model to solve the puzzle and gives no rules.
+8. **Descriptive model.** The setup where the prompt explains the rules: what the puzzle is, how its moves work, and what the notation means. The AI model chooses moves on its own.
+9. **Prescriptive model.** The setup where the prompt lists the puzzle's move group, exactly as `legal_moves()` returns it, and the AI model must pick every move from that list. Only the prompt states the list. The output schema doesn't enforce it, so a move off the list is still possible, and it is an impossible move.
+10. **Prompt.** The full text sent to the AI model for one attempt. It contains the rendered state and never the scramble, because reversing the scramble solves the puzzle. It is the same for every AI model under the same setup and input.
+11. **Prompt version.** The version of the prompt text for one setup and puzzle in a release: the first 12 hex characters of one sha256 over every prompt built for that setup and puzzle, in input order. A change to the template, to `render()`, or to `legal_moves()` gives a new version.
+12. **Decision options.** The options of a decision model's move question: one per legal move, with id `move_<n>`, where `<n>` is the move's position in `legal_moves()` from 1, plus `done`, which says the moves so far solve the puzzle, and `mismatch`, which says the state can't be reached from the solved state by legal moves. Choosing `done` or `mismatch` ends the attempt. The request holds one question, `next_move`, a choice among the options.
+13. **Decision prompt version.** The version of what a decision model is sent for one setup and puzzle in a release: the first 12 hex characters of one sha256 over the bytes of `prompts/decision/questions.txt`, then, for every input in order, its state as the decision model first receives it (the prompt, then `Moves so far: none`) and its request's questions object as JSON with sorted keys. A change to the template, to `render()`, to `legal_moves()`, to the questions file, or to how the state or the request is built gives a new version. It changes no [prompt version](#setups).
 
 ## Attempts and outcomes
 
-1. **Attempt.** One request to one AI model, under one setup, on one input. Each input gets as many attempts per AI model and setup as config says.
+1. **Attempt.** One or more requests to one AI model, under one setup, on one input. A decision model makes one request per move. Each input gets as many attempts per AI model and setup as config says.
 2. **Attempt number.** The position of an attempt among the attempts for the same input, AI model, and setup, starting at 1.
 3. **Raw record.** The stored result of one attempt in `results/<experiment id>/raw/`. It is never edited.
-4. **Raw response.** The full text the API returned for an attempt, stored as received.
+4. **Raw response.** The full text the API returned for an attempt, stored as received. For a decision model, it is the JSON array of the answers of every completed call, in order.
 5. **Report.** The experiment report and a CSV of its metrics, computed by `evaluate` from raw records, one release, and config.
-6. **Parsed moves.** The list of moves read from the AI model's JSON output, in the order given.
-7. **Malformed output.** A response the validator can't use: it doesn't parse as the required JSON, it was cut off at the token limit, or the AI model or a content filter refused to answer. A content-filter refusal counts here even when the API returns it as an error, and it is never retried.
-8. **Infrastructure failure.** A network error, timeout, or rate limit. `run` retries it up to the retry cap. When the cap is reached, the raw response is empty.
+6. **Parsed moves.** The list of moves read from the AI model's output, one per line, in the order given. For a decision model, the moves behind each call's `next_move` choice, in call order, before the first `done` or `mismatch`.
+7. **Malformed output.** A response the validator can't use: it has no lines left once blank lines are dropped (for a decision model, it doesn't parse as the array of answers, where every call holds a `next_move` choice the call offered), it was cut off at the token limit, or the AI model or a content filter refused to answer. A content-filter refusal counts here even when the API returns it as an error, and it is never retried. Prose instead of moves is not malformed output: each line that is not a legal move is an impossible move, so the attempt is a hallucination.
+8. **Infrastructure failure.** A network error, timeout, or rate limit. `run` retries it up to the retry cap. When the cap is reached, the raw response is empty, except that a decision-model attempt keeps the calls that completed, and the retry cap counts across all its calls.
 9. **Retry cap.** The maximum number of retries for one attempt. A config parameter.
-10. **Mismatch flag.** The flag in the AI model's JSON output that says the input describes a puzzle that can't be reached from the solved state by legal moves. Off for outcomes `malformed_output` and `infrastructure_failure`.
+10. **Mismatch flag.** The flag set when the AI model's output is the single line `MISMATCH`, which says the input describes a puzzle that can't be reached from the solved state by legal moves. For a decision model, it is on when the call that ended the attempt chose `mismatch`. Off for outcomes `malformed_output` and `infrastructure_failure`.
 11. **Hallucination flag.** True when the parsed moves contain at least one impossible move. False for outcomes `malformed_output` and `infrastructure_failure`, which have no parsed moves.
 12. **Solved.** The validator applied every parsed move to the input state in order, every move was legal, and `is_solved()` is true for the final state. An empty move list is never solved, because no input starts solved.
 13. **Expected result.** For a valid input, the puzzle ends solved and the mismatch flag is off. For an invalid input, the mismatch flag is on. Moves returned with the flag on are still checked for impossible moves.
 14. **Outcome.** The one result the validator gives each attempt, checked in this order:
-    1. `infrastructure_failure`: the retry cap was reached, so there is no response to judge.
+    1. `infrastructure_failure`: the retry cap was reached, so there is no complete response to judge.
     2. `malformed_output`: malformed output.
     3. `hallucination`: the hallucination flag is true. The attempt fails, even if the final state happens to be solved.
     4. `success`: the expected result is reached.
     5. `failure`: every move was legal, but the expected result is missed. That means a valid input left unsolved or flagged, or an invalid input left unflagged.
+15. **Call.** One request inside an attempt. An attempt by a [decision model](#setups) is a loop of calls, one per move, and every other attempt is one call plus its retries. Retries of a call count against the [retry cap](#attempts-and-outcomes) of the attempt.
 
 ## Recorded values
 
@@ -96,11 +101,14 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 
 1. **Move count.** The number of parsed moves, in the half-turn metric. Each impossible move counts as one. Empty for outcomes `infrastructure_failure` and `malformed_output`.
 2. **Half-turn metric.** The way moves are counted: any turn of one part, including a half turn such as `R2`, counts as one move. How whole-puzzle rotations and wide moves count is still [open](../AGENTS.md#open).
-3. **Input tokens and output tokens.** The token counts the API reports for the call that produced the raw response, stored as returned. Zero for outcome `infrastructure_failure`. For Google, output tokens are `candidates_token_count + thoughts_token_count`, both as returned, because Gemini bills thoughts as output. The other providers' output counts already include reasoning tokens.
+3. **Input tokens and output tokens.** The token counts the API reports for the call that produced the raw response, stored as returned. For a decision model, the sums over its completed calls. Zero for outcome `infrastructure_failure`, except that a decision model with completed calls keeps their sums, so cost counts them. For Google, output tokens are `candidates_token_count + thoughts_token_count`, both as returned, because Gemini bills thoughts as output. The other providers' output counts already include reasoning tokens.
 4. **Retry input tokens and retry output tokens.** The token counts the API reports for every call in the attempt that failed, retried or not, summed and stored as returned. Zero when no call failed or the API reported no counts.
-5. **Latency.** The time from sending the request to receiving the full response, for the call that produced the raw response. Empty for outcome `infrastructure_failure`.
-6. **Stop reason.** How the call that produced the raw response ended: `ok`, `truncated`, `refused`, or `infrastructure_failure`. The validator needs it, because a truncated or refused response can look like valid JSON.
-7. **Served model.** The AI model id the API reported for the call, stored as returned. Empty for outcome `infrastructure_failure`. It shows when a model alias pointed at a different model than expected.
+5. **Latency.** The time from sending the request to receiving the full response, for the call that produced the raw response. For a decision model, the sum over its completed calls. Empty for outcome `infrastructure_failure`, except that a decision model with completed calls keeps their sum.
+6. **Stop reason.** How the call that produced the raw response ended (for a decision model, the last call of the attempt): `ok`, `truncated`, `refused`, or `infrastructure_failure`. The validator needs it, because a truncated or refused response can look like valid JSON.
+7. **Served model.** The AI model id the API reported for the call, stored as returned. For a decision model, the distinct values over its calls, in first-seen order, joined with `,`. Empty when the API reports none for a call, and never filled in with the id the request asked for. Empty for outcome `infrastructure_failure`, except that a decision model with completed calls keeps its calls' values. It shows when a model alias pointed at a different model than expected.
+8. **Decision flag.** True when the attempt was made by a [decision model](#setups), false otherwise. Scoring reads it from the raw record to choose how the raw response is parsed. A record written before the field existed falls back to the model's provider in the experiment config.
+9. **Requested model.** The `api_model_id` the request asked for, recorded for every provider and every outcome, including `infrastructure_failure`. Compare it with the served model to see when an alias pointed elsewhere.
+10. **Max moves.** The cap on the moves in one [decision-model](#setups) attempt. The attempt ends when its moves reach it. A config parameter, default twice the largest scramble depth in the release.
 
 ## Baseline and prices
 
@@ -108,11 +116,11 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 2. **Reference length.** The number of moves `reference_length()` returns for a valid input's state, in the half-turn metric. Never zero, because no input starts solved. It is the reference solver's count, not the optimal distance, so it can exceed the scramble depth when the reference solver isn't optimal. Invalid inputs have no reference length.
 3. **Token price.** The price per input token and per output token for each AI model, kept in config.
 4. **Cost.** For one raw record, its input and retry input tokens times the input token price, plus its output and retry output tokens times the output token price, in USD.
-5. **Worst-case request cost.** The most one request can cost: the prompt's characters divided by 4, rounded up, as input tokens, plus `max_output_tokens` as output tokens, at the AI model's token prices.
+5. **Worst-case request cost.** The most one request can cost, per call for a decision model, whose request then holds the state with `max_moves` moves and the questions object: the request's characters divided by 4, rounded up, as input tokens, plus `max_output_tokens` as output tokens, at the AI model's token prices.
 6. **Budget.** A cost limit in USD in the experiment config. There are three:
-   1. **Request budget.** No worst-case request cost may exceed it. Default 0.50 USD.
-   2. **Model budget.** The cost of one AI model's raw records in one experiment may not exceed it. Default 5.00 USD.
-   3. **Experiment budget.** The cost of all raw records in one experiment may not exceed it. Default 10.00 USD.
+   1. **Request budget.** No worst-case request cost may exceed it. Default 2.00 USD.
+   2. **Model budget.** The cost of one AI model's raw records in one experiment may not exceed it. Default 25.00 USD.
+   3. **Experiment budget.** The cost of all raw records in one experiment may not exceed it. Default 50.00 USD.
 
 ## Metrics
 

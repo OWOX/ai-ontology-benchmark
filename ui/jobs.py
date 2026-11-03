@@ -24,6 +24,7 @@ class Job:
         self.state, self.code = "running", None
         self.proc: subprocess.Popen | None = None
         self.stopped = self.budget = False
+        self.parallel = 1  # `run --parallel N`, 1 for a job not started with it
 
 
 class Jobs:
@@ -43,6 +44,12 @@ class Jobs:
         with self.lock:
             return {j.name: j.state for j in self.jobs.values() if j.experiment_id == experiment_id}
 
+    def parallels(self, experiment_id: str) -> dict:
+        """The `--parallel` value of each running run job of the experiment, by AI model name."""
+        with self.lock:
+            return {j.name[len("run:"):]: j.parallel for j in self.jobs.values()
+                    if j.experiment_id == experiment_id and j.state == "running" and j.name.startswith("run:")}
+
     def ids(self) -> set[str]:
         """Experiment ids with any job registered in this server, alive or over."""
         with self.lock:
@@ -55,6 +62,12 @@ class Jobs:
 
     def alive(self, experiment_id: str) -> bool:
         return "running" in self.states(experiment_id).values()
+
+    def last_stderr(self, experiment_id: str, name: str) -> str | None:
+        """The last stderr line a job of the experiment wrote, while it is still in the log."""
+        with self.lock:
+            return next((line["text"] for line in reversed(self.log) if line["id"] == experiment_id
+                         and line["job"] == name and line["stream"] == "stderr"), None)
 
     def log_since(self, after: int) -> dict:
         with self.lock:
@@ -90,10 +103,12 @@ class Jobs:
         return made
 
     def start(self, experiment_id: str, items: list[tuple[str, list[str]]], blocked_by: tuple = (),
-              exclusive: bool = False, stdin: str | None = None) -> None:
+              exclusive: bool = False, stdin: str | None = None, parallel: int = 1) -> None:
         """Start one subprocess job per (name, `python -m` arguments). All register together.
-        `stdin` is written to each process and closed, so a config can go in without a file."""
+        `stdin` is written to each process and closed, so a config can go in without a file.
+        `parallel` is remembered on each job, so the page can tell how many attempts are in flight."""
         for job, (_, module_args) in zip(self.register(experiment_id, [n for n, _ in items], blocked_by, exclusive=exclusive), items):
+            job.parallel = parallel
             self._spawn(job, [sys.executable, "-u", "-m", *module_args], stdin)
 
     def _spawn(self, job: Job, argv: list[str], stdin: str | None = None) -> None:

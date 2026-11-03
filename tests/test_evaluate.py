@@ -53,8 +53,9 @@ def raw(input_id, number, response, outcome, latency=1.0, retry=(0, 0), setup="n
     return record
 
 
-def answer(moves, mismatch=False):
-    return json.dumps({"moves": moves, "mismatch": mismatch})
+def answer(moves):
+    """The line format: the moves one per line, or the single line MISMATCH for an empty list."""
+    return "\n".join(moves) if moves else "MISMATCH"
 
 
 def twelve_records() -> list[dict]:
@@ -64,13 +65,13 @@ def twelve_records() -> list[dict]:
         raw(v1, 2, answer(["R", "U", "U'"]), "success", 3.0),
         raw(v1, 3, answer(["X"]), "hallucination", 2.0, retry=(2, 1)),
         raw(v2, 1, answer(["U"]), "success", 2.0),
-        raw(v2, 2, answer([]), "failure", 4.0),
-        raw(v2, 3, answer(["U"], True), "failure", 6.0),
-        raw(i1, 1, answer([], True), "success"),
-        raw(i1, 2, "oops", "malformed_output"),
-        raw(i1, 3, answer(["X"], True), "hallucination"),
-        raw(i2, 1, answer([], True), "success"),
-        raw(i2, 2, answer([]), "failure"),
+        raw(v2, 2, answer(["R"]), "failure", 4.0),
+        raw(v2, 3, answer([]), "failure", 6.0),
+        raw(i1, 1, answer([]), "success"),
+        raw(i1, 2, " \n", "malformed_output"),
+        raw(i1, 3, answer(["X"]), "hallucination"),
+        raw(i2, 1, answer([]), "success"),
+        raw(i2, 2, answer(["R"]), "failure"),
         raw(i2, 3, answer(["X"]), "hallucination"),
     ]
 
@@ -115,7 +116,7 @@ def test_hand_worked_metrics(release_dir):
     assert invalid["success_rate"] == pytest.approx(2 / 6)
     assert invalid["hallucination_rate"] == pytest.approx(2 / 6)
     assert invalid["malformed_output_rate"] == pytest.approx(1 / 6)
-    assert invalid["mismatch_detection_rate"] == pytest.approx(3 / 6)
+    assert invalid["mismatch_detection_rate"] == pytest.approx(2 / 6)
     assert (invalid["false_mismatch_rate"], invalid["efficiency"]) == ("n/a", "n/a")
     assert invalid["consistency"] == pytest.approx(1 / 3)
     assert invalid["cost_per_success"] == pytest.approx(0.12 / 2)
@@ -139,7 +140,7 @@ def test_infrastructure_failures_change_only_counts_tokens_and_cost(release_dir)
 
 
 def test_no_successes_gives_no_cost_per_success(release_dir):
-    records = [raw("2x2-d1-001", 1, answer([]), "failure")]
+    records = [raw("2x2-d1-001", 1, answer(["U"]), "failure")]
     _, metrics, _ = compute(records, release_dir, PRICES)
     assert metrics[0]["cost_per_success"] == "n/a" and metrics[0]["efficiency"] == "n/a"
 
@@ -297,3 +298,32 @@ def test_config_model_without_price_refused_and_nothing_written(repo, monkeypatc
     assert "prices.toml" in err and "'Z'" in err
     for name in ("prices.toml", "1.0.0.md", "1.0.0.metrics.csv"):
         assert not (repo / "results/exp" / name).exists()
+
+
+def test_decision_model_records_are_parsed_as_arrays(release_dir):
+    legal = get_engine("2x2").legal_moves()
+    state, scramble = get_engine("2x2").scramble(1, 1)
+    inverse = {"": "'", "'": "", "2": "2"}
+    solve = scramble[0][0] + inverse[scramble[0][1:]]
+    calls = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}}},
+             {"answers": {"next_move": {"choice": "done"}}}]
+    record = raw("2x2-d1-001", 1, json.dumps(calls), "success", model="M")
+    attempts, _, _ = compute([record], release_dir, PRICES, decision_models={"M"})
+    assert attempts[0]["outcome"] == "success"
+    attempts, _, _ = compute([record], release_dir, PRICES)
+    assert attempts[0]["outcome"] == "hallucination"  # read as lines, the JSON is an impossible move
+
+
+def test_scoring_uses_the_records_decision_flag_over_the_config_rule(release_dir):
+    legal = get_engine("2x2").legal_moves()
+    state, scramble = get_engine("2x2").scramble(1, 1)
+    inverse = {"": "'", "'": "", "2": "2"}
+    solve = scramble[0][0] + inverse[scramble[0][1:]]
+    calls = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}}},
+             {"answers": {"next_move": {"choice": "done"}}}]
+    flagged = raw("2x2-d1-001", 1, json.dumps(calls), "success", model="M", decision=True)
+    attempts, _, _ = compute([flagged], release_dir, PRICES, decision_models=set())
+    assert attempts[0]["outcome"] == "success"
+    unflagged = raw("2x2-d1-001", 1, json.dumps(calls), "success", model="M", decision=False)
+    attempts, _, _ = compute([unflagged], release_dir, PRICES, decision_models={"M"})
+    assert attempts[0]["outcome"] == "hallucination"  # read as lines, the JSON is an impossible move

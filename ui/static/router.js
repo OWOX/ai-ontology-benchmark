@@ -7,7 +7,7 @@
   const meta = document.querySelector('meta[name="ui-token"]');
   const MENU = [["models", "Models"], ["puzzles", "Puzzles"], ["experiments", "Experiments"], ["about", "About"]];
   const pages = {};
-  const st = { bundle: null, seq: 0, params: null, jobs: [], listeners: [], lineListeners: [], logAfter: 0 };
+  const st = { bundle: null, seq: 0, params: null, jobs: [], listeners: [], lineListeners: [], logAfter: 0, lines: [] };
 
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -53,7 +53,7 @@
       // `bundle:last` remembers the newest release returned; it stands in when the hash names none.
       const key = "bundle:" + (release || store.get("bundle:last") || "");
       const cached = key === "bundle:" ? null : store.get(key);
-      if (cached && cached.schema !== 1) store.drop(key);
+      if (cached && cached.schema !== 2) store.drop(key);
       else if (cached && onCached) onCached(cached);
       const q = new URLSearchParams();
       if (release) q.set("release", release);
@@ -78,7 +78,11 @@
     onJobs(fn) { return listen(st.listeners, fn); },
     onLines(fn) { return listen(st.lineListeners, fn); },
     get jobs() { return st.jobs; },
+    // Every log line received so far (at most 5,000, like the server), so a page can draw the history on mount.
+    get lines() { return st.lines; },
     get bundleNow() { return st.bundle; },
+    // Gives a `.tip-src` element the status dot's tooltip panel: the `.tip-fixed` sibling after it, placed at each open.
+    tipOn(src) { for (const ev of ["mouseenter", "focus"]) src.addEventListener(ev, () => placeTip(src, src.nextElementSibling)); },
   };
 
   function parse() {
@@ -92,29 +96,51 @@
     return { name, top, parts: rest, query, release: query.release || "" };
   }
 
+  // Menu links always lead to the newest release: with no release select, a `?release=` picked up from one
+  // link would otherwise stick to every page.
   function menuHref(name) {
-    return "#/" + name + (st.params && st.params.release ? "?release=" + encodeURIComponent(st.params.release) : "");
+    return "#/" + name;
   }
 
   function drawMenu() {
     const b = st.bundle;
     if (!b) return;
-    const sel = $("release");
-    const keep = st.params.release || b.release;
-    sel.replaceChildren(...b.releases.map((v) => Object.assign(document.createElement("option"), { value: v, textContent: v })));
-    sel.value = keep;
-    const warn = b.providers.some((p) => p.name !== "fake" && p.key && p.key.source === "missing");
     const current = st.params.top;
     $("links").replaceChildren(...MENU.map(([name, label]) => {
-      const a = Object.assign(document.createElement("a"), { href: menuHref(name), textContent: label + (name === "models" && warn ? " ⚠️" : "") });
+      const a = Object.assign(document.createElement("a"), { href: menuHref(name), textContent: label });
       if (name === current) a.className = "current";
       return a;
     }));
-    const when = b.fetched_at ? new Date(b.fetched_at).toLocaleString() : "never";
-    const status = $("fetch-status");
-    status.textContent = b.fetch_error ? `GitHub not reached, showing data from ${when}` : `fetched ${when}`;
-    status.title = b.fetch_error || "";
+    st.fetch = { at: b.fetched_at, error: b.fetch_error };
+    drawConn();
   }
+
+  // One dot beside the title: server state by colour, and a tooltip panel in plain sentences.
+  function drawConn() {
+    const el = $("conn"), tip = $("conn-tip"), f = st.fetch || {};
+    const when = f.at ? new Date(f.at).toLocaleString() : "";
+    const err = String(f.error || "").replace(/\.$/, "");
+    const server = { live: "The server is live.", down: "The server is not reachable. Reconnecting." }[st.server] || "Connecting to the server.";
+    const fetched = f.error
+      ? (when ? `GitHub was not reached, so this shows data from ${when}. Error: ${err}.` : `GitHub was not reached and there is no data yet. Error: ${err}.`)
+      : when ? `Data was fetched from GitHub on ${when}.` : "Nothing has been fetched yet.";
+    const b = st.bundle, newest = b && b.releases && b.releases[0];
+    const release = !b ? "" : !newest || newest === b.release ? `Release ${b.release}, the newest.` : `Release ${b.release}. The newest is ${newest}.`;
+    const text = [server, fetched, release].filter(Boolean).join(" ");
+    const cls = "conn tip-src" + (st.server === "down" ? " bad" : st.server === "live" ? (f.error ? " warn" : " ok") : "");
+    // The log poll calls this every few seconds. Writing only on change keeps an open panel steady.
+    if (el.className !== cls) el.className = cls;
+    if (tip.textContent !== text) tip.textContent = text;
+  }
+
+  // The panel is fixed so the menu's overflow cannot clip it. It is placed at each open, because the menu can scroll.
+  function placeTip(src, tip) {
+    const r = src.getBoundingClientRect();
+    const left = Math.max(12, Math.min(r.left - 6, window.innerWidth - 12 - tip.offsetWidth));
+    tip.style.left = left + "px";
+    tip.style.top = (r.bottom + 6) + "px";
+  }
+  UI.tipOn($("conn"));
 
   function draw(b, force) {
     // A reload that brings nothing new keeps the page, so typed fields survive.
@@ -123,6 +149,7 @@
     st.drawn = sig;
     st.bundle = b;
     drawMenu();
+    $("termbox").hidden = st.params.name !== "about";
     const page = pages[st.params.name];
     const main = $("main");
     if (!page) { main.replaceChildren(); return; }
@@ -155,11 +182,12 @@
   }
 
   async function pollLog() {
-    const conn = $("conn");
     try {
       const data = await UI.api("/api/log?after=" + st.logAfter);
-      conn.textContent = "live"; conn.className = "conn ok";
+      st.server = "live"; drawConn();
       for (const ev of data.lines) {
+        st.lines.push(ev);
+        if (st.lines.length > 5000) st.lines.shift();
         termLine(ev);
         for (const fn of st.lineListeners.slice()) { try { fn(ev); } catch (e) { console.error(e); } }
       }
@@ -171,7 +199,7 @@
       for (const fn of st.listeners.slice()) { try { fn(st.jobs, ended); } catch (e) { console.error(e); } }
       if (ended.length) UI.reload(false);
     } catch (e) {
-      conn.textContent = "reconnecting"; conn.className = "conn bad";
+      st.server = "down"; drawConn();
     }
     setTimeout(pollLog, st.jobs.some((j) => j.state === "running") ? 1000 : 5000);
   }
@@ -188,13 +216,8 @@
     if (atBottom) term.scrollTop = term.scrollHeight;
   }
 
-  $("release").addEventListener("change", () => {
-    const p = parse();
-    const q = new URLSearchParams(p.query);
-    q.set("release", $("release").value);
-    UI.go("#/" + [p.top].concat(p.parts).join("/") + "?" + q);
-  });
   $("refresh").addEventListener("click", () => UI.reload(true));
+  $("new-exp").addEventListener("click", () => UI.go(menuHref("new")));
   $("btn-clear").addEventListener("click", () => $("terminal").replaceChildren());
   window.addEventListener("hashchange", route);
   document.addEventListener("DOMContentLoaded", () => { route(); pollLog(); });

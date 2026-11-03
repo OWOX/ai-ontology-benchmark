@@ -1,16 +1,10 @@
 # Model catalogue for the UI (python -m ui.server). Each entry has the same shape as a
 # [[models]] entry in an experiment config, and the UI copies it unchanged.
+# The providers cover LLM APIs and the decision-model APIs (typesafe, cloudflare).
 # kind is system-1 or system-2, see docs/definitions.md#setups.
 # Every model needs a row in config/prices.toml, or the UI shows it disabled.
 # params is empty: since 2026-10-21 Anthropic rejects temperature, top_p, and top_k, and the
 # reasoning models of the other providers fix their own sampling.
-
-[[models]]
-name = "example-model"
-provider = "fake"
-api_model_id = "example-model-2026-01-01"
-kind = "system-2"
-params = { temperature = 1.0 }
 
 [[models]]
 name = "claude-opus-5-5"
@@ -73,4 +67,26 @@ name = "gemini-3.5-flash-lite"
 provider = "google"
 api_model_id = "gemini-3.5-flash-lite"
 kind = "system-2"
+params = {}
+
+# The alias TypeSafe's API reference uses. Each raw record's served model shows the version behind it.
+[[models]]
+name = "jev"
+provider = "typesafe"
+api_model_id = "jev-latest"
+kind = "system-1"
+params = {}
+
+[[models]]
+name = "clef"
+provider = "cloudflare"
+api_model_id = "@cf/cloudflare/clef"
+kind = "system-1"
+params = {}
+
+[[models]]
+name = "clef-flash"
+provider = "cloudflare"
+api_model_id = "@cf/cloudflare/clef-flash"
+kind = "system-1"
 params = {}

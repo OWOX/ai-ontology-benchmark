@@ -13,6 +13,7 @@ from src.run.run import make_record
 from test_release import git, repo  # noqa: F401
 from test_ui import PRICES, ui_repo  # noqa: F401  (ui_repo is a fixture)
 from ui import expdata
+from ui.catalogue import build_providers
 from ui import secrets as key_store
 from ui.bundle import Bundles, is_mirror
 from ui.common import ApiError
@@ -71,9 +72,9 @@ EXP_TOML = ('release = "1.0.0"\nattempts = 1\nretry_cap = 1\nmax_output_tokens =
             '[[models]]\nname = "example-model"\nprovider = "fake"\napi_model_id = "ex-1"\n')
 MANIFEST = {"input_set_id": "1", "release_config": {"seed": 7}}
 VERSIONS = {s: {"2x2": "v"} for s in ("no_model", "descriptive", "prescriptive")}
-SUCCESS = '{"moves": [], "mismatch": true}'
-HALLUCINATION = '{"moves": ["u"], "mismatch": false}'
-FAILURE = '{"moves": [], "mismatch": false}'
+SUCCESS = "MISMATCH"
+HALLUCINATION = "u"
+FAILURE = "U"
 
 
 class Reply:
@@ -85,7 +86,7 @@ class Reply:
 def record(input_row, setup, attempt, reply, model="example-model"):
     """A raw record as `run` writes it; `reply` is text, or None for an infrastructure failure."""
     config = {"experiment_id": "x", "release": "1.0.0"}
-    made = make_record(config, MANIFEST, input_row, {"name": model}, setup, attempt, "", VERSIONS,
+    made = make_record(config, MANIFEST, input_row, {"name": model, "api_model_id": "ex-1"}, setup, attempt, "", VERSIONS,
                        None if reply is None else Reply(reply), 3, 2)
     made["created_at"] = "2026-10-25T00:00:00Z"
     return made
@@ -132,7 +133,7 @@ def samples(ui_repo):
               (ui_repo / "releases" / "1.0.0" / "inputs.jsonl").read_text(encoding="utf-8").splitlines()]
     valid = next(r for r in inputs if r["validity"] == "valid")
     invalid = next(r for r in inputs if r.get("source_input_id") == valid["input_id"])
-    records = [record(valid, "no_model", 1, HALLUCINATION), record(valid, "descriptive", 1, "nope"),
+    records = [record(valid, "no_model", 1, HALLUCINATION), record(valid, "descriptive", 1, ""),
                record(invalid, "no_model", 1, SUCCESS), record(invalid, "prescriptive", 1, FAILURE)]
     return valid, invalid, records
 
@@ -300,7 +301,7 @@ def test_bundle_reads_refs_only(ui_repo, samples):
     assert exp_ids(bundles.get(None, True, set(), {}, set())) == []
     push_results(ui_repo, "e", files_for(records))
     bundle = bundles.get(None, True, set(), {}, set())
-    assert exp_ids(bundle) == ["e"] and bundle["schema"] == 1 and bundle["release"] == "1.0.0"
+    assert exp_ids(bundle) == ["e"] and bundle["schema"] == 2 and bundle["release"] == "1.0.0"
     assert [r["validity"] for r in bundle["experiments"]] == ["all", "valid", "invalid"]
     assert bundle["defaults"]["attempts"] == 3
     with pytest.raises(ApiError) as caught:
@@ -347,10 +348,27 @@ def test_key_status_not_cached(ui_repo):
     key, model = cloud(bundles.get(None, False, set(), {}, set()))
     assert key["source"] == "file" and key["tail"] == "1234" and model["disabled_reason"] is None
     bundle = bundles.get(None, False, set(), {}, set())
-    assert [p["name"] for p in bundle["providers"]] == ["anthropic", "openai", "google", "fake"]
+    assert [p["name"] for p in bundle["providers"]] == ["anthropic", "cloudflare", "fake"]
     assert next(p for p in bundle["providers"] if p["name"] == "fake")["key"] is None
+    assert all(p["models"] for p in bundle["providers"])
     unpriced = next(m for p in bundle["providers"] for m in p["models"] if m["name"] == "unpriced")
     assert unpriced["disabled_reason"] == "no price in config/prices.toml" and unpriced["price"] is None
+
+
+def test_cloudflare_reason_names_what_is_missing(ui_repo, monkeypatch):
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    bundles = make_bundles(ui_repo)
+
+    def reason():
+        provider = {"name": "cloudflare", "variable": "CLOUDFLARE_API_TOKEN", "models": [{"disabled_reason": None}]}
+        return bundles._fill_keys({"providers": [provider]}, dict(os.environ))["providers"][0]["models"][0]["disabled_reason"]
+
+    assert reason() == "no API key: add it under Models"
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "t")
+    assert reason() == "no account id: add it under Models"
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "a")
+    assert reason() is None
 
 
 def test_model_matching(ui_repo, samples):
@@ -379,7 +397,7 @@ def test_kind_shown_but_ignored_by_differs_from_catalogue(ui_repo, samples):
     bundles = make_bundles(ui_repo)
     bundle = bundles.get(None, True, set(), {}, set())
     kinds = {m["name"]: m["kind"] for p in bundle["providers"] for m in p["models"]}
-    assert kinds == {"example-model": "system-2", "cloud-model": None, "unpriced": None}
+    assert kinds == {"example-model": "system-2", "cloud-model": None, "unpriced": None, "edge-model": None}
     differs = {r["id"]: r["differs_from_catalogue"] for r in bundle["experiments"]}
     assert differs == {"k": False, "p": False}
     assert bundles.experiment("k", set(), set())["model_entries"][0]["kind"] == "system-1"
@@ -388,7 +406,7 @@ def test_kind_shown_but_ignored_by_differs_from_catalogue(ui_repo, samples):
 
 def test_impossible_seen(ui_repo, samples):
     valid, _, _ = samples
-    reply = '{"moves": ["u", "x", "u"], "mismatch": false}'
+    reply = "u\nx\nu"
     push_results(ui_repo, "e", files_for([record(valid, "no_model", 1, reply)]))
     puzzle = make_bundles(ui_repo).get(None, True, set(), {}, set())["puzzles"][0]
     assert [(m["move"], m["count"]) for m in puzzle["impossible_seen"]] == [("u", 2), ("x", 1)]
@@ -546,3 +564,28 @@ def test_malformed_branch_isolated(ui_repo, samples, kind):
     assert good and all(r["error"] is None for r in good) and any(r["attempts"] for r in good)
     detail = bundles.experiment("e", set(), set())
     assert detail["error"] and "results/e" in detail["error"]
+
+
+def test_provider_without_catalogue_models_is_left_out():
+    from ui.catalogue import PROVIDER_ORDER
+    catalogue = {"m": {"name": "m", "provider": "typesafe", "api_model_id": "x"}}
+    assert PROVIDER_ORDER[3:5] == ("typesafe", "cloudflare")
+    assert [p["name"] for p in build_providers(catalogue, {}, [])] == ["typesafe"]
+
+
+def test_decision_model_attempts_are_scored_not_malformed(ui_repo, samples):
+    _, invalid, _ = samples
+    calls = json.dumps([{"answers": {"next_move": {"choice": "mismatch"}}}])
+    toml = EXP_TOML.replace('provider = "fake"', 'provider = "fake_decision"')
+    old = record(invalid, "no_model", 1, calls)
+    del old["decision"], old["requested_model"]  # a record written before the fields existed
+    files = {"results/e/experiment.toml": toml, "results/e/raw/example-model.jsonl": jsonl([old])}
+    exp, inputs = open_experiment(ui_repo, "e", files)
+    rows = expdata.attempt_rows(exp, inputs)
+    assert [r["outcome"] for r in rows] == ["success"]
+
+    flagged = record(invalid, "no_model", 1, calls) | {"decision": True}
+    # The config says this model is not a decision model, and the record's own flag wins.
+    files = {"results/e2/experiment.toml": EXP_TOML, "results/e2/raw/example-model.jsonl": jsonl([flagged])}
+    exp, inputs = open_experiment(ui_repo, "e2", files)
+    assert [r["outcome"] for r in expdata.attempt_rows(exp, inputs)] == ["success"]

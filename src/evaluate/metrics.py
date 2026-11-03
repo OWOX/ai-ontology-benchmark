@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src.puzzles.registry import ENGINES, get_engine
 from src.run.prompts import SETUPS
+from src.run.raw import is_decision_record
 from src.validator import validate
 
 NA = "n/a"
@@ -135,7 +136,7 @@ def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float, r
     }
 
 
-def make_attempt_rows(raw_records, inputs, prices, cache) -> list[dict]:
+def make_attempt_rows(raw_records, inputs, prices, cache, decision_models=frozenset()) -> list[dict]:
     by_id = {row["input_id"]: (number, row) for number, row in enumerate(inputs, start=1)}
     rows = []
     for raw in raw_records:
@@ -145,7 +146,8 @@ def make_attempt_rows(raw_records, inputs, prices, cache) -> list[dict]:
         if raw["model"] not in prices:
             raise EvalError(f"prices: no prices for model {raw['model']!r}")
         line, source = by_id[raw["input_id"]]
-        verdict = validate(source, raw["raw_response"], raw["stop_reason"])
+        verdict = validate(source, raw["raw_response"], raw["stop_reason"],
+                           decision=is_decision_record(raw, decision_models))
         cost = attempt_cost(raw, prices[raw["model"]])
         reference = None
         if verdict.outcome == "success" and source["validity"] == "valid":
@@ -183,11 +185,11 @@ def sorted_keys(groups: dict, sort_key, order: list[str]) -> list[tuple]:
 
 
 def compute(raw_records: list[dict], release_dir: Path, prices: dict,
-            models: list[str] | None = None) -> tuple:
+            models: list[str] | None = None, decision_models=frozenset()) -> tuple:
     """Return (attempt_rows, metric_rows, summary_rows). `models` fixes the AI model sort order."""
     lines = (Path(release_dir) / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
     inputs = [json.loads(line) for line in lines]
-    rows = make_attempt_rows(raw_records, inputs, prices, {})
+    rows = make_attempt_rows(raw_records, inputs, prices, {}, decision_models)
     order = models or sorted({r["model"] for r in rows})
     decorated = [(attempt_sort_key(r, order), r) for r in rows]
     decorated.sort(key=itemgetter(0))

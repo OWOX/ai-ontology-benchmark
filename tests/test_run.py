@@ -3,14 +3,21 @@
 test_release), then calls run's main() in-process from inside that repo with the fake provider.
 """
 
+import csv
 import io
 import json
 import sys
+import threading
+import time
 
 import pytest
 
-from src.run import models, run as run_module
+from src.evaluate import evaluate as evaluate_module
+from src.puzzles.registry import get_engine
+from src.run import budget as budget_module, models, run as run_module
 from src.run.models import InfrastructureError, Reply
+from src.run.budget import worst_request, worst_state
+from src.run.prompts import build_prompt, load_questions
 from src.run.raw import read_raw
 from test_release import git, release_ok, repo  # noqa: F401  (repo is a fixture)
 
@@ -26,7 +33,7 @@ FIELDS = {
     "validity", "setup", "prompt_version", "model", "seed", "input_seed", "attempt_number",
     "raw_response", "parsed_moves", "outcome", "hallucination", "mismatch", "move_count",
     "input_tokens", "output_tokens", "retry_input_tokens", "retry_output_tokens", "latency_s",
-    "stop_reason", "served_model", "created_at",
+    "stop_reason", "served_model", "decision", "requested_model", "created_at",
 }
 
 
@@ -98,18 +105,19 @@ def test_infrastructure_failure_after_cap(exp):
     assert row["stop_reason"] == "infrastructure_failure" and row["latency_s"] is None
     assert row["retry_input_tokens"] == 28 and row["retry_output_tokens"] == 8
     assert (row["input_tokens"], row["output_tokens"], row["served_model"]) == (0, 0, "")
+    assert row["decision"] is False and row["requested_model"] == "a-1"
     assert len(models.FAKE_REPLIES) == 1  # 4 calls made
 
 
 def test_retry_then_success_sums_retry_tokens(exp):
-    models.FAKE_REPLIES[:] = [InfrastructureError("x", 5, 1), Reply("{}", "ok", "s", 10, 3, 0.5)]
+    models.FAKE_REPLIES[:] = [InfrastructureError("x", 5, 1), Reply("U", "ok", "s", 10, 3, 0.5)]
     go("--model", "A", "--limit", "1")
     (row,) = records(exp, "A")
     assert (row["retry_input_tokens"], row["retry_output_tokens"], row["input_tokens"]) == (5, 1, 10)
 
 
 def test_malformed_output_not_retried(exp):
-    models.FAKE_REPLIES[:] = [Reply("not json", "ok", "s", 1, 1, 0.1), Reply("x", "ok", "s", 1, 1, 0.1)]
+    models.FAKE_REPLIES[:] = [Reply("", "ok", "s", 1, 1, 0.1), Reply("x", "ok", "s", 1, 1, 0.1)]
     go("--model", "A", "--limit", "1")
     (row,) = records(exp, "A")
     assert row["outcome"] == "malformed_output" and len(models.FAKE_REPLIES) == 1
@@ -156,6 +164,7 @@ def test_record_fields(exp):
     go("--limit", "3")
     for row in records(exp, "A"):
         assert set(row) == FIELDS
+        assert row["decision"] is False and row["requested_model"] == "a-1"
     assert row["release_version"] == "1.0.0" and row["seed"] == 7 and row["input_set_id"] == "1"
 
 
@@ -216,13 +225,49 @@ def test_missing_manifest_field_refused(exp, capsys, field):
     assert len(models.FAKE_REPLIES) == 1 and not (exp / "results/exp").exists()
 
 
+def drop_manifest_field(repo, field):
+    path = repo / "releases/1.0.0/manifest.json"
+    path.chmod(0o644)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    del manifest[field]
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_old_release_without_decision_versions_still_runs_llms(exp):
+    drop_manifest_field(exp, "decision_prompt_versions")
+    models.FAKE_REPLIES[:] = [Reply("U", "ok", "s", 1, 1, 0.1)] * 200
+    assert go() == 0
+    assert records(exp, "A")
+
+
+def test_old_release_refuses_a_decision_model(exp, capsys):
+    drop_manifest_field(exp, "decision_prompt_versions")
+    config = exp / "config" / "experiments" / "exp.toml"
+    config.write_text(EXPERIMENT + '[[models]]\nname = "D"\nprovider = "fake_decision"\napi_model_id = "d-1"\n',
+                      encoding="utf-8")
+    assert go() == 1
+    err = capsys.readouterr().err
+    assert "manifest.json" in err and "decision_prompt_versions" in err and "cut after" in err
+    assert not (exp / "results/exp").exists()
+
+
+def test_changed_decision_versions_refused(exp, capsys):
+    path = exp / "releases/1.0.0/manifest.json"
+    path.chmod(0o644)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["decision_prompt_versions"]["no_model"]["2x2"] = "0" * 12
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert go() == 1
+    assert "decision_prompt_versions" in capsys.readouterr().err
+
+
 # Budgets. Price 0 for input and 100 USD per million output tokens, with max_output_tokens = 100,
 # make every worst-case request cost 0.01 USD, and a reply of 100 output tokens cost 0.01 USD.
 CENT_PRICES = "".join(f"[{n}]\nprice_input_per_mtok = 0.0\nprice_output_per_mtok = 100.0\n" for n in "AB")
 
 
 def cent_replies():
-    return [Reply('{"moves": [], "mismatch": false}', "ok", "s", 0, 100, 0.1) for _ in range(200)]
+    return [Reply("U", "ok", "s", 0, 100, 0.1) for _ in range(200)]
 
 
 def with_budget(repo, **limits):
@@ -304,7 +349,7 @@ def test_estimate_shows_spent_against_budgets(exp, capsys):
     assert go("--estimate") == 0
     out = capsys.readouterr().out
     assert "spent $0.0300 of per_model_usd 1.0" in out
-    assert "spent $0.0300 of per_experiment_usd 10.0" in out
+    assert "spent $0.0300 of per_experiment_usd 50.0" in out
 
 
 def test_budget_checked_before_each_retry(exp, capsys):
@@ -447,8 +492,8 @@ def test_outside_a_git_work_tree_refused_before_any_call(exp, tmp_path_factory, 
 
 # Progress. Plain lines when stdout is not a terminal (capsys), a rich display on a terminal.
 
-def reply(moves="[]", mismatch="false", tokens=(10, 4)):
-    return Reply('{"moves": %s, "mismatch": %s}' % (moves, mismatch), "ok", "s", *tokens, 0.1)
+def reply(text="U", tokens=(10, 4)):
+    return Reply(text, "ok", "s", *tokens, 0.1)
 
 
 def progress_lines(out):
@@ -456,7 +501,7 @@ def progress_lines(out):
 
 
 def test_plain_progress_line_per_attempt(exp, capsys):
-    models.FAKE_REPLIES[:] = [reply(), reply('["X"]'), Reply("not json", "ok", "s", 10, 4, 0.1)]
+    models.FAKE_REPLIES[:] = [reply(), reply("X"), Reply("", "ok", "s", 10, 4, 0.1)]
     assert go("--model", "A", "--limit", "3", "--no-commit") == 0
     first, second, third = progress_lines(capsys.readouterr().out)
     assert first.startswith("[1/3] A 2x2 ") and " no_model #1 failure | in 10 out 4 | $0.0000 | " in first
@@ -662,3 +707,380 @@ def test_broken_stdin_config_refused_before_any_write(exp, monkeypatch, capsys):
     assert stdin_run(exp, monkeypatch, 'release = "1.0.0"\n') == 1
     assert "<stdin>" in capsys.readouterr().err
     assert not (exp / "results").exists()
+
+
+# Decision models. One model, one attempt per setup, driven by models.FAKE_DECISION_REPLIES.
+
+DECISION_EXPERIMENT = (
+    'release = "1.0.0"\nattempts = 1\nretry_cap = 3\nmax_output_tokens = 100\n'
+    '[[models]]\nname = "D"\nprovider = "fake_decision"\napi_model_id = "d-1"\n'
+)
+
+
+def decision_exp(repo, monkeypatch, config=DECISION_EXPERIMENT, prices="[D]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n"):
+    (repo / "config" / "experiments" / "exp.toml").write_text(config, encoding="utf-8")
+    (repo / "config" / "prices.toml").write_text(prices, encoding="utf-8")
+    monkeypatch.setattr(models, "FAKE_DECISION_REPLIES", [])
+    return models.FAKE_DECISION_REPLIES
+
+
+def d_reply(choice, tokens=(10, 0), model="d-served", latency=0.25):
+    call = {"answers": {"next_move": {"type": "choice", "choice": choice}},
+            "usage": {"input_tokens": tokens[0], "output_tokens": tokens[1]}, "model": model}
+    return models.DecisionReply(call, tokens[0], tokens[1], model, latency)
+
+
+def solving_replies(repo):
+    """The replies that undo the first input's scramble, then say done."""
+    first = json.loads((repo / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert first["validity"] == "valid"
+    legal = get_engine(first["puzzle"]).legal_moves()
+    undo = [m[:-1] if m.endswith("'") else m if m.endswith("2") else m + "'" for m in reversed(first["scramble"])]
+    return [d_reply(f"move_{legal.index(m) + 1}") for m in undo] + [d_reply("done")]
+
+
+def test_decision_model_end_to_end(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    solved = solving_replies(exp)
+    fake[:] = [*solved, models.DecisionReply({}, 3, 0, "d-served", 0.1),
+               *[InfrastructureError("x", 5, 1) for _ in range(4)]]
+    assert go("--limit", "3") == 0
+    solved_row, malformed_row, failed_row = records(exp, "D")
+    assert solved_row["outcome"] == "success" and solved_row["hallucination"] is False
+    assert len(json.loads(solved_row["raw_response"])) == len(solved)
+    assert solved_row["input_tokens"] == 10 * len(solved) and solved_row["served_model"] == "d-served"
+    assert solved_row["latency_s"] == pytest.approx(0.25 * len(solved)) and solved_row["stop_reason"] == "ok"
+    assert solved_row["prompt_version"] == json.loads(
+        (exp / "releases/1.0.0/manifest.json").read_text(encoding="utf-8"))["decision_prompt_versions"]["no_model"]["2x2"]
+    assert malformed_row["outcome"] == "malformed_output" and json.loads(malformed_row["raw_response"]) == [{}]
+    assert failed_row["outcome"] == "infrastructure_failure" and failed_row["raw_response"] == ""
+    assert (failed_row["retry_input_tokens"], failed_row["retry_output_tokens"]) == (20, 4)
+    assert failed_row["latency_s"] is None and failed_row["served_model"] == "" and failed_row["input_tokens"] == 0
+    assert set(solved_row) == FIELDS
+    for decision_row in (solved_row, malformed_row, failed_row):
+        assert decision_row["decision"] is True and decision_row["requested_model"] == "d-1"
+    assert evaluate_module.main(["--experiment", "exp"]) == 0
+    with open(exp / "results/exp/1.0.0.metrics.csv", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    by_setup = {r["setup"]: r for r in rows if r["model"] == "D"}
+    assert by_setup["no_model"]["success_rate"] == "1.0000" and by_setup["no_model"]["hallucination_rate"] == "0.0000"
+    assert by_setup["descriptive"]["malformed_output_rate"] == "1.0000"
+    assert by_setup["prescriptive"]["infrastructure_failure_count"] == "1"
+    assert by_setup["prescriptive"]["success_rate_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
+
+
+def test_decision_reply_without_a_model_keeps_served_empty_and_requests_the_entry_id(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    fake[:] = [d_reply("done", model="")]
+    assert go("--limit", "1") == 0
+    (row,) = records(exp, "D")
+    assert row["served_model"] == "" and row["requested_model"] == "d-1" and row["decision"] is True
+
+
+def test_decision_mismatch_choice_ends_the_attempt_and_sets_the_flag(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    fake[:] = [d_reply("move_1"), d_reply("mismatch"), d_reply("done")]
+    assert go("--limit", "1") == 0
+    (row,) = records(exp, "D")
+    assert row["mismatch"] is True and len(json.loads(row["raw_response"])) == 2 and len(fake) == 1
+
+
+def test_decision_infrastructure_failure_keeps_the_completed_calls(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    fake[:] = [d_reply("move_1", tokens=(7, 1)), *[InfrastructureError("x", 2, 0) for _ in range(4)]]
+    assert go("--limit", "1") == 0
+    (row,) = records(exp, "D")
+    assert row["outcome"] == "infrastructure_failure" and row["stop_reason"] == "infrastructure_failure"
+    assert len(json.loads(row["raw_response"])) == 1 and (row["input_tokens"], row["output_tokens"]) == (7, 1)
+    assert row["retry_input_tokens"] == 8 and row["served_model"] == "d-served"
+
+
+def test_decision_budget_stop_mid_attempt_writes_the_record_then_stops(exp, monkeypatch, capsys):
+    prices = "[D]\nprice_input_per_mtok = 0.0\nprice_output_per_mtok = 100.0\n"
+    fake = decision_exp(exp, monkeypatch, DECISION_EXPERIMENT + "[budget]\nper_model_usd = 0.015\n", prices)
+    fake[:] = [d_reply("move_1", tokens=(0, 0)), InfrastructureError("x", 0, 100), d_reply("done")]
+    assert go("--limit", "2") == 1
+    (row,) = records(exp, "D")  # the second attempt is never started
+    assert row["outcome"] == "infrastructure_failure" and len(json.loads(row["raw_response"])) == 1
+    assert row["retry_output_tokens"] == 100 and len(fake) == 1
+    assert capsys.readouterr().err.strip().splitlines()[-1].startswith("error: budget reached:")
+
+
+def test_decision_budget_counts_the_completed_calls_of_the_attempt(exp, monkeypatch):
+    # 100 output tokens cost 0.01 USD, as does the worst case of one call: room for two calls only.
+    prices = "[D]\nprice_input_per_mtok = 0.0\nprice_output_per_mtok = 100.0\n"
+    fake = decision_exp(exp, monkeypatch, DECISION_EXPERIMENT + "[budget]\nper_model_usd = 0.025\n", prices)
+    fake[:] = [d_reply("move_1", tokens=(0, 100)), d_reply("move_1", tokens=(0, 100)), d_reply("done")]
+    assert go("--limit", "1") == 1
+    (row,) = records(exp, "D")
+    assert len(json.loads(row["raw_response"])) == 2 and row["output_tokens"] == 200
+    assert row["outcome"] == "infrastructure_failure" and len(fake) == 1
+
+
+def test_decision_dry_run_prints_the_first_state_and_questions(exp, monkeypatch, capsys):
+    fake = decision_exp(exp, monkeypatch)
+    fake[:] = [d_reply("done")]
+    assert go("--dry-run", "--limit", "1") == 0
+    out = capsys.readouterr().out
+    assert "Moves so far: none" in out and "--- questions" in out and '"move_1"' in out
+    assert len(fake) == 1 and not (exp / "results").exists()
+
+
+def test_decision_estimate_is_cap_calls_of_the_longest_state(exp, monkeypatch, capsys):
+    decision_exp(exp, monkeypatch)
+    rows = [json.loads(line) for line in (exp / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    for cap, text in ((6, DECISION_EXPERIMENT),  # default: twice the largest scramble depth, 3
+                      (1, DECISION_EXPERIMENT.replace("[[models]]", "max_moves = 1\n[[models]]", 1))):
+        (exp / "config" / "experiments" / "exp.toml").write_text(text, encoding="utf-8")
+        assert go("--estimate") == 0
+        line = capsys.readouterr().out.splitlines()[0]
+        expected = 0.0
+        for row in rows:
+            for setup in run_module.SETUPS:
+                state = worst_request(build_prompt(exp / "releases/1.0.0/prompts", row, setup),
+                                      get_engine(row["puzzle"]).legal_moves(), cap,
+                                      load_questions(exp / "releases/1.0.0/prompts"))
+                expected += cap * (-(-len(state) // 4) * 1.0 + 100 * 2.0) / 1e6
+        assert f"worst case ${expected:.4f}" in line
+
+
+def test_decision_request_budget_counts_the_questions(exp, monkeypatch, capsys):
+    folder = exp / "releases/1.0.0/prompts"
+    rows = [json.loads(line) for line in (exp / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    states = [-(-len(worst_state(build_prompt(folder, r, s), get_engine(r["puzzle"]).legal_moves(), 6)) // 4)
+              for r in rows for s in run_module.SETUPS]
+    # Input tokens cost 1 USD each and output tokens nothing: the limit fits every state, not state plus questions.
+    decision_exp(exp, monkeypatch, DECISION_EXPERIMENT + f"[budget]\nper_request_usd = {max(states)}\n",
+                 "[D]\nprice_input_per_mtok = 1000000.0\nprice_output_per_mtok = 0.0\n")
+    assert go() == 1
+    assert "per_request_usd" in capsys.readouterr().err
+
+
+def test_decision_attempt_reads_spent_cost_once(exp, monkeypatch):
+    fake = decision_exp(exp, monkeypatch)
+    solved = solving_replies(exp)
+    fake[:] = list(solved)
+    reads = []
+    real = run_module.spent_by_model
+    monkeypatch.setattr(run_module, "spent_by_model", lambda *a: reads.append(1) or real(*a))
+    monkeypatch.setattr(budget_module, "spent_by_model", lambda *a: reads.append(1) or real(*a))
+    assert go("--limit", "1") == 0
+    assert len(json.loads(records(exp, "D")[0]["raw_response"])) == len(solved) > 1
+    assert len(reads) == 1
+
+
+# Parallel requests. The fake provider is wrapped at run's call_model, so each test controls timing.
+
+class Gate:
+    """Wraps call_model: counts calls in flight, notes the first arrivals, and holds them until `hold` have arrived."""
+
+    def __init__(self, monkeypatch, hold=0, sleep=0.0, block_after=None, block_for=5.0):
+        self.real, self.lock, self.hold, self.sleep = run_module.call_model, threading.Lock(), hold, sleep
+        self.block_after, self.block_for = block_after, block_for
+        self.arrived, self.now, self.peak, self.calls = [], 0, 0, 0
+        self.full, self.release = threading.Event(), threading.Event()
+        monkeypatch.setattr(run_module, "call_model", self)
+
+    def __call__(self, model, prompt, max_output_tokens):
+        with self.lock:
+            self.calls += 1
+            number = self.calls
+            self.now += 1
+            self.peak = max(self.peak, self.now)
+            if len(self.arrived) < self.hold:
+                self.arrived.append((model["name"], prompt))
+                if len(self.arrived) == self.hold:
+                    self.full.set()
+        try:
+            if number <= self.hold:
+                self.full.wait(5)
+            if self.block_after is not None and number > self.block_after:
+                if self.release.wait(self.block_for):
+                    return Reply("x", "ok", "s", 1, 1, 0.1)  # released after the test: touch nothing shared
+            time.sleep(self.sleep)
+            return self.real(model, prompt, max_output_tokens)
+        finally:
+            with self.lock:
+                self.now -= 1
+
+
+def test_parallel_writes_the_same_records_as_serial(exp, tmp_path):
+    assert go("--parallel", "1", "--no-commit", "--results", str(tmp_path / "one")) == 0
+    assert go("--parallel", "4", "--no-commit", "--results", str(tmp_path / "four")) == 0
+
+    def keyed(folder, name):
+        rows = [json.loads(line) for line in (folder / "exp/raw" / f"{name}.jsonl").read_text().splitlines()]
+        return {(r["input_id"], r["setup"], r["model"], r["attempt_number"]): stable([r])[0] for r in rows}
+
+    for name in "AB":
+        assert keyed(tmp_path / "one", name) == keyed(tmp_path / "four", name)
+        assert len(keyed(tmp_path / "four", name)) == input_count(exp) * 6
+
+
+def test_the_fake_sees_at_most_n_calls_and_n_at_once(exp, monkeypatch):
+    gate = Gate(monkeypatch, hold=3, sleep=0.01)
+    assert go("--parallel", "3", "--no-commit") == 0
+    assert gate.peak == 3
+
+
+def test_in_flight_attempts_are_the_first_pending_in_loop_order(exp, monkeypatch):
+    gate = Gate(monkeypatch, hold=4)
+    manifest, inputs = run_module.load_release(exp / "releases/1.0.0")
+    config = run_module.load_experiment_config(exp / "config/experiments/exp.toml")
+    expected = [(m["name"], build_prompt(exp / "releases/1.0.0/prompts", row, setup))
+                for row, m, setup, _ in list(run_module.pending_attempts(config, inputs, exp / "results/exp/raw", None))[:4]]
+    assert go("--parallel", "4", "--no-commit", "--limit", "8") == 0
+    assert sorted(gate.arrived) == sorted(expected)
+
+
+def test_a_finished_attempt_is_replaced_by_the_next_pending_in_loop_order(exp, monkeypatch):
+    real, lock, order = run_module.call_model, threading.Lock(), []
+    two_arrived, third_arrived, free_first, free_rest = (threading.Event() for _ in range(4))
+
+    def call(model, prompt, max_output_tokens):
+        with lock:
+            order.append((model["name"], prompt))
+            number = len(order)
+        if number == 2:
+            two_arrived.set()
+        if number == 3:
+            third_arrived.set()
+        if number == 1:
+            free_first.wait(5)  # the first attempt finishes while the second is still in flight
+        elif number == 2:
+            free_rest.wait(5)
+        return real(model, prompt, max_output_tokens)
+
+    third_started_alone = []
+
+    def release():
+        two_arrived.wait(5)
+        free_first.set()
+        # a batched scheduler waits for the second attempt too, so this times out and the test fails
+        third_started_alone.append(third_arrived.wait(5))
+        free_rest.set()
+
+    manifest, inputs = run_module.load_release(exp / "releases/1.0.0")
+    config = run_module.load_experiment_config(exp / "config/experiments/exp.toml")
+    expected = [(m["name"], build_prompt(exp / "releases/1.0.0/prompts", row, setup))
+                for row, m, setup, _ in list(run_module.pending_attempts(config, inputs, exp / "results/exp/raw", None))[:3]]
+    monkeypatch.setattr(run_module, "call_model", call)
+    helper = threading.Thread(target=release, daemon=True)
+    helper.start()
+    assert go("--parallel", "2", "--no-commit", "--limit", "6") == 0
+    helper.join(5)
+    assert third_started_alone == [True]
+    assert sorted(order[:2]) == sorted(expected[:2])
+    assert order[2] == expected[2]
+
+
+def test_parallel_budget_never_passes_the_model_budget(exp, capsys, monkeypatch):
+    with_budget(exp, per_model_usd=0.035)
+    gate = Gate(monkeypatch, hold=2)  # the first two calls wait for each other, so they really overlap
+    assert go("--parallel", "4", "--model", "A") == 1
+    assert gate.peak >= 2
+    assert len(records(exp, "A")) == 3
+    assert "per_model_usd 0.035 for model A" in capsys.readouterr().err
+
+
+def test_a_budget_stop_writes_the_attempts_in_flight_first(exp, capsys, monkeypatch):
+    with_budget(exp, per_model_usd=0.035)
+    Gate(monkeypatch, sleep=0.1)
+    assert go("--parallel", "4", "--model", "A") == 1
+    assert len(records(exp, "A")) == 3
+    assert len(git(exp, "show", f"{BRANCH}:results/exp/raw/A.jsonl").splitlines()) == 3
+    lines = capsys.readouterr().err.strip().splitlines()
+    assert lines[-1].startswith("error: budget reached:")
+
+
+def test_a_parallel_budget_stop_counts_the_attempts_that_have_no_record():
+    from src.run.budget import BudgetError
+
+    class Stub:
+        def __init__(self, seq, refused):
+            self.seq, self.refused, self.error, self.stop = seq, refused, None, None
+
+        def call(self):
+            if self.refused:
+                raise BudgetError("budget reached: per_model_usd 1 for model A (spent 1.0000, next request up to 0.0100)", 9)
+
+    stubs = iter(Stub(seq, seq == 1) for seq in range(4))  # attempts 0, 2, and 3 finish; 1 is refused
+    with pytest.raises(BudgetError, match=r"next request up to 0\.0100\); 7 attempts left$"):
+        run_module.play_parallel(4, 10, stubs, lambda attempt: None, run_module.Flight())
+
+
+def test_an_interrupt_with_attempts_in_flight_commits_and_returns_promptly(exp, monkeypatch):
+    gate = Gate(monkeypatch, block_after=3, block_for=10.0)
+
+    def stop():
+        raise KeyboardInterrupt
+
+    interrupt_on_third_record(monkeypatch, stop)
+    started = time.monotonic()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            go("--parallel", "4", "--model", "A")
+        assert time.monotonic() - started < 5
+        assert len(records(exp, "A")) == 2
+        assert len(git(exp, "show", f"{BRANCH}:results/exp/raw/A.jsonl").splitlines()) == 2
+    finally:
+        gate.release.set()
+
+
+def test_parallel_below_one_is_refused(exp, capsys):
+    assert go("--parallel", "0") == 1
+    assert "--parallel" in capsys.readouterr().err
+    assert not (exp / "results").exists()
+
+
+def bare_attempt(flight, results, seq, decision, budget):
+    """An Attempt with only what can_afford reads, so a budget scenario can be played step by step."""
+    attempt = object.__new__(run_module.Attempt)
+    attempt.seq, attempt.flight, attempt.results, attempt.model = seq, flight, results, {"name": "A"}
+    attempt.config = {"budget": {"per_model_usd": budget, "per_experiment_usd": 100.0}, "models": [{"name": "A"}]}
+    attempt.prices = {"A": {"price_input_per_mtok": 0.0, "price_output_per_mtok": 100.0}}
+    attempt.price, attempt.is_decision, attempt.worst, attempt.left = attempt.prices["A"], decision, 0.01, 1
+    attempt.checks, attempt.snapshot = 0, {}
+    flight.reserve(seq, "A", 0.01)
+    return attempt
+
+
+def test_a_decision_attempt_counts_records_other_attempts_write_after_its_snapshot(tmp_path):
+    from src.run.budget import BudgetError
+    flight = run_module.Flight()
+    first, second = (bare_attempt(flight, tmp_path, n, True, 0.035) for n in (0, 1))
+    first.can_afford(0, 0)  # snapshot taken: nothing spent
+    second.can_afford(0, 0)
+    flight.release(1, 0.03)  # the second attempt records 0.03 and its reservation goes
+    with pytest.raises(BudgetError, match="per_model_usd"):
+        first.can_afford(0, 0)  # 0.03 recorded + 0.01 next is above 0.035
+
+
+def test_a_reservation_grows_with_the_tokens_its_attempt_has_paid(tmp_path):
+    from src.run.budget import BudgetError
+    flight = run_module.Flight()
+    first = bare_attempt(flight, tmp_path, 0, False, 0.025)
+    first.can_afford(0, 0)
+    first.can_afford(0, 100)  # a failed call has paid 0.01 of output tokens: reserved 0.02
+    second = bare_attempt(flight, tmp_path, 1, False, 0.025)
+    with pytest.raises(BudgetError, match="per_model_usd"):
+        second.can_afford(0, 0)  # 0.02 + 0.01 is above 0.025
+
+
+def test_a_worker_failure_that_is_not_an_exception_ends_the_run(exp, monkeypatch):
+    def boom(model, prompt, max_output_tokens):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run_module, "call_model", boom)
+    outcome = []
+
+    def target():
+        try:
+            go("--parallel", "2", "--model", "A", "--no-commit")
+        except BaseException as error:
+            outcome.append(error)
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(10)
+    assert not thread.is_alive() and isinstance(outcome[0], KeyboardInterrupt)

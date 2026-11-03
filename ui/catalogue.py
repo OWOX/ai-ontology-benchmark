@@ -3,7 +3,7 @@
 
 from src.run.models import KEY_VARIABLES
 
-PROVIDER_ORDER = ("anthropic", "openai", "google", "fake")
+PROVIDER_ORDER = ("anthropic", "openai", "google", "typesafe", "cloudflare", "fake", "fake_decision")
 NO_PRICE = "no price in config/prices.toml"
 
 
@@ -35,6 +35,8 @@ def build_providers(catalogue: dict[str, dict], prices: dict, experiments: list[
                                      "output_per_mtok": price["price_output_per_mtok"]} if ok else None,
                            "disabled_reason": None if ok else NO_PRICE,
                            "experiments": sorted(set(used.get((name, e["api_model_id"]), [])))})
+        if not models:
+            continue
         out.append({"name": name, "variable": KEY_VARIABLES.get(name), "key": None, "models": models})
     return out
 

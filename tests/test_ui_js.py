@@ -27,3 +27,29 @@ def test_markdown_renderer():
 def test_named_net_follows_the_net_order():
     run = subprocess.run([NODE, "tests/js/cube.test.mjs"], cwd=ROOT, capture_output=True, text=True)
     assert run.returncode == 0, run.stderr + run.stdout
+
+
+def test_terminal_pattern_reads_runs_progress_line():
+    """The terminal turns a run progress line into an attempt block with a regex of its own: keep the two in step."""
+    import json
+    import re
+
+    from src.run.progress import Progress
+    price = {"price_input_per_mtok": 1.0, "price_output_per_mtok": 2.0}
+    record = {"model": "m-1", "puzzle": "3x3", "input_id": "3x3-d5-002-x", "setup": "no_model", "attempt_number": 2,
+              "outcome": "hallucination", "input_tokens": 5, "output_tokens": 6, "retry_input_tokens": 0,
+              "retry_output_tokens": 0, "validity": "invalid", "mismatch": True}
+    progress = Progress({"models": [{"name": "m-1"}]}, {"m-1": price}, {("m-1", "3x3"): 4}, [])
+    progress.count(record)
+    line = progress.plain_line(record)
+    source = (ROOT / "ui" / "static" / "terminal.js").read_text(encoding="utf-8")
+    pattern = re.search(r"const RUN_LINE = /(.*)/;", source).group(1)
+    script = f"const m = new RegExp({json.dumps(pattern)}).exec({json.dumps(line)}); console.log(JSON.stringify(m && m.slice(1)));"
+    run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout) == ["m-1", "3x3", "3x3-d5-002-x", "no_model", "2", "hallucination"]
+
+
+def test_in_flight_attempts_are_the_first_n_without_a_record():
+    run = subprocess.run([NODE, "tests/js/progress.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout

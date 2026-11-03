@@ -9,7 +9,7 @@ import pytest
 from src.generate.generate import build_inputs
 from src.puzzles.cube import CubeEngine
 from src.puzzles.registry import get_engine
-from src.run.prompts import SETUPS, build_prompt, prompt_versions
+from src.run.prompts import SETUPS, build_prompt, fill_template, prompt_versions
 
 CONFIG = {
     "seed": 3,
@@ -33,6 +33,13 @@ def test_repeated_calls_are_identical(templates):
         assert build_prompt(templates, INPUTS[0], setup) == build_prompt(templates, INPUTS[0], setup)
 
 
+def test_fill_template_equals_build_prompt(templates):
+    for row in INPUTS:
+        for setup in SETUPS:
+            text = (templates / setup / f"{row['puzzle']}.txt").read_text(encoding="utf-8")
+            assert fill_template(text, row, setup) == build_prompt(templates, row, setup)
+
+
 def test_prompt_never_contains_scramble(templates):
     for row in INPUTS:
         for setup in SETUPS:
@@ -43,15 +50,19 @@ def test_prescriptive_lists_legal_moves(templates):
     for row in INPUTS:
         text = build_prompt(templates, row, "prescriptive")
         assert " ".join(get_engine(row["puzzle"]).legal_moves()) in text
-        assert "{" not in text.replace('{"moves": [...], "mismatch": true|false}', "")
+        assert "{" not in text
 
 
-def test_templates_ask_for_json_and_are_not_placeholders(templates):
+def test_templates_ask_for_lines_and_are_not_placeholders(templates):
     for setup in SETUPS:
         for puzzle in ("2x2", "3x3"):
             text = (templates / setup / f"{puzzle}.txt").read_text()
             assert "PLACEHOLDER" not in text
-            assert '{"moves": [...], "mismatch": true|false}' in text
+            assert text.endswith(
+                "If the state cannot be reached from the solved state by legal moves, reply with the single line "
+                "MISMATCH and nothing else.\nOtherwise reply with the moves that solve it, in the order they are "
+                "applied, one move per line, and nothing else.\n")
+            assert "JSON" not in text
 
 
 def test_changing_a_template_changes_only_its_version(templates):
@@ -124,3 +135,91 @@ def test_prescriptive_template_without_legal_moves_refused(templates):
         build_prompt(templates, INPUTS[0], "prescriptive")
     with pytest.raises(ValueError, match="legal_moves"):
         prompt_versions(templates, INPUTS)
+
+
+def test_decision_state():
+    from src.run.prompts import decision_state
+    assert decision_state("P", []) == "P\n\nMoves so far: none"
+    assert decision_state("P", ["R", "U'"]) == "P\n\nMoves so far: R U'"
+
+
+def test_decision_questions_ids():
+    from src.run.prompts import decision_questions
+    q = decision_questions({"next_move": "n", "done": "d", "mismatch": "m"}, ["R", "U'"])
+    assert q["next_move"] == {
+        "type": "choice", "instructions": "n",
+        "criteria": {"move_1": "R", "move_2": "U'", "done": "d", "mismatch": "m"},
+    }
+    assert list(q) == ["next_move"]
+
+
+def test_load_questions_reads_the_repo_file(templates):
+    from src.run.prompts import load_questions
+    q = load_questions(templates)
+    assert set(q) == {"next_move", "done", "mismatch"}
+    assert q["done"] == "The moves so far solve the puzzle."
+
+
+def test_load_questions_missing_key(tmp_path):
+    from src.run.prompts import load_questions
+    (tmp_path / "decision").mkdir()
+    (tmp_path / "decision" / "questions.txt").write_text("next_move: n\ndone: d\n")
+    with pytest.raises(ValueError, match="mismatch"):
+        load_questions(tmp_path)
+
+
+def test_load_questions_missing_file(tmp_path):
+    from src.run.prompts import load_questions
+    with pytest.raises(ValueError, match="questions.txt"):
+        load_questions(tmp_path)
+
+
+def test_decision_versions_change_with_questions(templates):
+    from src.run.prompts import decision_prompt_versions
+    before = decision_prompt_versions(templates, INPUTS)
+    llm_before = prompt_versions(templates, INPUTS)
+    path = templates / "decision" / "questions.txt"
+    path.write_text(path.read_text().replace("Pick done", "Choose done", 1))
+    after = decision_prompt_versions(templates, INPUTS)
+    assert set(after) == set(SETUPS)
+    for setup in SETUPS:
+        for puzzle in ("2x2", "3x3"):
+            assert len(after[setup][puzzle]) == 12
+            assert before[setup][puzzle] != after[setup][puzzle]
+    assert prompt_versions(templates, INPUTS) == llm_before
+
+
+def test_decision_versions_change_with_a_template(templates):
+    from src.run.prompts import decision_prompt_versions
+    before = decision_prompt_versions(templates, INPUTS)
+    path = templates / "descriptive" / "3x3.txt"
+    path.write_text(path.read_text().replace("Here", "Hers", 1))
+    after = decision_prompt_versions(templates, INPUTS)
+    for setup in SETUPS:
+        for puzzle in ("2x2", "3x3"):
+            assert (before[setup][puzzle] == after[setup][puzzle]) == ((setup, puzzle) != ("descriptive", "3x3"))
+
+
+def test_decision_versions_follow_what_is_sent(templates, monkeypatch):
+    from src.run import prompts
+    before = prompts.decision_prompt_versions(templates, INPUTS)
+    llm_before = prompt_versions(templates, INPUTS)
+    original = prompts.decision_state
+    monkeypatch.setattr(prompts, "decision_state", lambda p, moves: original(p, moves).replace("Moves so far", "Moves"))
+    assert prompts.decision_prompt_versions(templates, INPUTS) != before
+    assert prompt_versions(templates, INPUTS) == llm_before
+    monkeypatch.setattr(prompts, "decision_state", original)
+    assert prompts.decision_prompt_versions(templates, INPUTS) == before
+    structure = prompts.decision_questions
+    monkeypatch.setattr(prompts, "decision_questions",
+                        lambda q, legal: {**structure(q, legal), "mismatch": {"type": "other"}})
+    assert prompts.decision_prompt_versions(templates, INPUTS) != before
+    assert prompt_versions(templates, INPUTS) == llm_before
+
+
+def test_parse_questions_reads_text_and_names_the_source():
+    from src.run.prompts import parse_questions
+    text = "next_move: pick one\ndone: solved\nmismatch: unreachable\n"
+    assert parse_questions(text, "here") == {"next_move": "pick one", "done": "solved", "mismatch": "unreachable"}
+    with pytest.raises(ValueError, match="here.*mismatch"):
+        parse_questions("next_move: a\ndone: b\n", "here")

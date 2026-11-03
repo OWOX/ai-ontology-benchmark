@@ -3,11 +3,8 @@
 ## Goals
 
 1. Measure how an ontology model affects the hallucination rate.
-2. Measure without bias and make the result easy to reproduce:
-   1. No person and no AI model grades the answers. A deterministic validator does.
-   2. Every AI model and every setup gets byte-identical, frozen inputs.
-   3. Anyone can rerun the scoring from the stored raw responses without calling an AI model again.
-3. Make the cost of accuracy measurable. How many tokens and how many dollars does each AI model and setup spend for one success? Which AI model gives answers without hallucinations at the lowest [cost per success](docs/definitions.md#metrics)? An ontology model makes the prompt longer, so it pays off only if it saves more than it adds.
+2. Make the measurement without bias and the result easily reproducible.
+3. Make the cost of accuracy measurable.
 
 ## Approach
 

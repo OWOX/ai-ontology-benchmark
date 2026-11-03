@@ -80,11 +80,11 @@ Cost spent, at the prices above (USD):
 | AI model | Setup | Attempt | Outcome | Moves | Mismatch | Input tokens (excl. retries) | Output tokens (excl. retries) | Latency (s) |
 |---|---|---|---|---|---|---|---|---|
 | M | no_model | 1 | success | R | false | 10 | 5 | 1.50 |
-| M | no_model | 2 | failure |  | false | 10 | 5 | 2.00 |
+| M | no_model | 2 | failure | U | false | 10 | 5 | 2.00 |
 | M | descriptive | 1 | success | R | false | 10 | 5 | 1.50 |
-| M | descriptive | 2 | failure |  | false | 10 | 5 | 2.00 |
+| M | descriptive | 2 | failure | U | false | 10 | 5 | 2.00 |
 | M | prescriptive | 1 | success | R | false | 10 | 5 | 1.50 |
-| M | prescriptive | 2 | failure |  | false | 10 | 5 | 2.00 |
+| M | prescriptive | 2 | failure | U | false | 10 | 5 | 2.00 |
 
 ### [2x2-d1-001-x](../../releases/1.0.0/inputs.jsonl#L2) (invalid, depth 1)
 

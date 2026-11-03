@@ -120,6 +120,61 @@ def test_minor_after_template_edit(repo):
     assert "(../1.0.0/README.md)" in readme
 
 
+def test_manifest_and_readme_hold_decision_prompt_versions(repo):
+    release_ok(repo, "major")
+    manifest = manifest_of(repo, "1.0.0")
+    assert set(manifest["decision_prompt_versions"]) == {"no_model", "descriptive", "prescriptive"}
+    assert manifest["decision_prompt_versions"] != manifest["prompt_versions"]
+    assert "prompts/decision/questions.txt" in manifest["files"]
+    readme = (repo / "releases/1.0.0/README.md").read_text(encoding="utf-8")
+    assert "## Decision prompt versions" in readme
+
+
+def test_minor_after_questions_edit_only(repo):
+    release_ok(repo, "major")
+    edit(repo, "prompts/decision/questions.txt", "Pick done", "Choose done")
+    commit_all(repo, "questions")
+    release_ok(repo, "minor")
+    old, new = manifest_of(repo, "1.0.0"), manifest_of(repo, "1.1.0")
+    assert new["prompt_versions"] == old["prompt_versions"]
+    assert new["decision_prompt_versions"] != old["decision_prompt_versions"]
+
+
+def test_patch_after_questions_edit_fails(repo):
+    release_ok(repo, "major")
+    edit(repo, "prompts/decision/questions.txt", "Pick done", "Choose done")
+    edit_validator(repo)
+    result = run_release(repo, "patch")
+    assert result.returncode == 1
+    assert "prompt" in result.stderr
+    assert not (repo / "releases/1.0.1").exists()
+
+
+def strip_decision_field(repo, version):
+    path = repo / "releases" / version / "manifest.json"
+    path.chmod(0o644)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    del manifest["decision_prompt_versions"]
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    commit_all(repo, "old manifest")
+
+
+def test_patch_against_old_manifest_without_decision_versions(repo):
+    release_ok(repo, "major")
+    strip_decision_field(repo, "1.0.0")
+    edit_validator(repo)
+    release_ok(repo, "patch")
+    new = manifest_of(repo, "1.0.1")
+    assert new["prompt_versions"] == manifest_of(repo, "1.0.0")["prompt_versions"]
+    assert "decision_prompt_versions" in new
+
+
+def test_minor_against_old_manifest_without_decision_versions(repo):
+    release_ok(repo, "major")
+    strip_decision_field(repo, "1.0.0")
+    release_ok(repo, "minor")
+
+
 def test_minor_without_change_fails(repo):
     release_ok(repo, "major")
     result = run_release(repo, "minor")
@@ -139,6 +194,16 @@ def test_patch_after_validator_edit(repo):
         repo / "releases/1.1.0/inputs.jsonl").read_bytes()
     assert new["prompt_versions"] == old["prompt_versions"]
     assert new["assessment_sha256"] != old["assessment_sha256"]
+
+
+@pytest.mark.parametrize("name", ["decision.py", "prompts.py"])
+def test_patch_after_decision_code_edit(repo, name):
+    release_ok(repo, "major")
+    path = repo / "src" / "run" / name
+    path.write_text(path.read_text(encoding="utf-8") + "\n# fix\n", encoding="utf-8")
+    commit_all(repo, "decision code")
+    release_ok(repo, "patch")
+    assert manifest_of(repo, "1.0.1")["assessment_sha256"] != manifest_of(repo, "1.0.0")["assessment_sha256"]
 
 
 def test_patch_after_render_change_fails(repo):
@@ -227,3 +292,13 @@ def test_failing_commit_leaves_nothing_behind(repo):
     assert git(repo, "status", "--porcelain") == ""
     hook.unlink()
     release_ok(repo, "major")
+
+
+def test_assessment_hash_matches_the_newest_release_manifest():
+    """The assessment files on this branch must still match the frozen release, or run refuses to start."""
+    from src.release.release import assessment_sha256
+    root = Path(__file__).resolve().parent.parent
+    newest = max((p for p in (root / "releases").iterdir() if (p / "manifest.json").is_file()),
+                 key=lambda p: tuple(int(n) for n in p.name.split(".")))
+    manifest = json.loads((newest / "manifest.json").read_text(encoding="utf-8"))
+    assert assessment_sha256() == manifest["assessment_sha256"]

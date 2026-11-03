@@ -6,23 +6,29 @@
 <meta name="ui-token" content="{{UI_TOKEN}}">
 <title>AI Ontology Hallucination Research</title>
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
 </head>
 <body>
 <div class="shell">
   <nav class="menu" aria-label="Pages">
-    <h1>AI Ontology Hallucination Research</h1>
-    <div class="release-pick">
-      <select id="release" aria-label="Release"></select>
-      <button id="refresh" type="button" class="small" title="Fetch from GitHub again" aria-label="Refresh">&#x21bb;</button>
-    </div>
+    <h1 aria-label="AI Ontology Hallucination Research">AI Ontology Hallucination <span class="nowrap">Research<span class="conn-wrap"><span id="conn" class="conn tip-src" role="img" tabindex="0" aria-label="Status" aria-describedby="conn-tip"></span><span id="conn-tip" class="tip-fixed" role="tooltip"></span></span></span></h1>
+    <button id="new-exp" type="button" class="primary">New Experiment</button>
     <div id="links" class="links"></div>
-    <p id="fetch-status" class="muted small"></p>
     <p id="fetch-error" class="msg err small" role="status"></p>
-    <span id="conn" class="conn" title="Server">connecting</span>
+    <div class="menu-foot">
+      <div class="foot-row">
+        <div id="theme" class="theme-pick" role="group" aria-label="Theme">
+          <button type="button" data-theme="light" aria-pressed="false">Light</button>
+          <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+          <button type="button" data-theme="system" aria-pressed="false">System</button>
+        </div>
+        <button id="refresh" type="button" class="small" title="Fetch from GitHub again" aria-label="Refresh">&#x21bb;</button>
+      </div>
+    </div>
   </nav>
   <div class="page">
     <main id="main"></main>
-    <details class="termbox" id="termbox">
+    <details class="termbox" id="termbox" hidden>
       <summary>Terminal</summary>
       <div class="term-bar"><strong>Jobs</strong><button id="btn-clear" type="button" class="small">Clear</button></div>
       <pre id="terminal" class="terminal" tabindex="0"></pre>
@@ -35,6 +41,7 @@
 <script src="/static/progressview.js"></script>
 <script src="/static/progress.js"></script>
 <script src="/static/cubepanel.js"></script>
+<script src="/static/terminal.js"></script>
 <script src="/static/expmetrics.js"></script>
 <script src="/static/pages/puzzles.js"></script>
 <script src="/static/pages/inputs.js"></script>
