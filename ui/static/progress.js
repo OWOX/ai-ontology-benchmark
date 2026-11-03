@@ -1,8 +1,8 @@
 // Spec: docs/specs/ui.md (Progress, Arc colours, Polling)
 // The Plan of the Experiment page: a legend and a tree of foldable nodes (puzzle, AI model, input with its ring, attempt),
 // the job banners, and the data the Cube panel and the terminal read. Reads GET /api/state/<id>; writes only its DOM.
-// Interface: Progress.mount(el, experimentId, opts) -> {refresh(), destroy(), snapshot(), panelNode, records(), pending(),
-// inputs(), totals()} and Progress.COLORS, Progress.OUTCOMES. opts: onSnapshot(snap) after every applied snapshot,
+// Interface: Progress.mount(el, experimentId, opts) -> {refresh(), destroy(), snapshot(), panelNode, records(), pending() ->
+// {model: [key]}, inputs(), totals()} and Progress.COLORS, Progress.OUTCOMES. opts: onSnapshot(snap) after every applied snapshot,
 // onStep(step) on a click of a node, arc, or leaf, bannerEl for the banners. Mounting again replaces the previous mount.
 (function () {
   const h = UI.el;
@@ -25,7 +25,7 @@
                 loading: false, runSig: "" };
     const running = (m) => S.jobs["run:" + m] === "running";
     const panel = CubePanel({
-      id, input: (i) => S.inputs.get(i), pending: (m) => S.pending[m] || null,
+      id, input: (i) => S.inputs.get(i), pending: (m) => (S.pending[m] || [])[0] || null,
       hasRecord: (m, i, s, a) => S.records.has(key(m, i, s, a)),
     });
     const status = h("p", { class: "muted small", text: "Loading progress." });
@@ -66,14 +66,13 @@
       }
       return [sum, per * S.snap.models.length];
     };
-    const holdsPending = (n) => Object.entries(S.pending).some(([m, k]) => {
-      if (!k) return false;
+    const holdsPending = (n) => Object.entries(S.pending).some(([m, keys]) => keys.some((k) => {
       const input = S.inputs.get(k.split("|")[1]);
       if (input.puzzle !== n.puzzle) return false;
       if (n.kind === "p") return true;
       if (m !== n.model) return false;
       return n.kind === "m" || input.input_id === n.input.input_id;
-    });
+    }));
     const MARKS = { done: "✓", run: "●", todo: "○" };
 
     function refreshNode(n) {
@@ -115,7 +114,7 @@
 
     function arcState(k, model) {
       const rec = S.records.get(k);
-      return rec ? rec.outcome : S.pending[model] === k ? "in_progress" : "pending";
+      return rec ? rec.outcome : (S.pending[model] || []).includes(k) ? "in_progress" : "pending";
     }
 
     function paint(k) {
@@ -230,16 +229,7 @@
       paint(k);
     }
 
-    // The attempt a running model is on: the first without a record, in run's loop order. An inference.
-    function firstPending(model) {
-      for (const input of S.snap.inputs) for (const setup of S.snap.setups) {
-        for (let a = 1; a <= S.snap.attempts; a++) {
-          const k = key(model, input.input_id, setup, a);
-          if (!S.records.has(k)) return k;
-        }
-      }
-      return null;
-    }
+    const inFlight = (model) => Progress.inFlight(S.snap, model, (S.snap.parallel || {})[model] || 1, (k) => S.records.has(k));
 
     const drawBanners = () => banners.replaceChildren(...ProgressView.banners(S.jobs,
       Object.fromEntries(Object.keys(S.jobs).map((j) => [j, S.lastErr[id + "\u0000" + j]]))));
@@ -247,10 +237,11 @@
     // The node holding each in-flight attempt opens itself unless the user folded it by hand. An input node that
     // opened itself and no longer holds the in-flight attempt folds again, unless the user touched it.
     function followPending() {
-      for (const [m, k] of Object.entries(S.pending)) {
-        if (!k) continue;
-        const input = S.inputs.get(k.split("|")[1]);
-        reveal(input.puzzle, m, input.input_id, true);
+      for (const [m, keys] of Object.entries(S.pending)) {
+        for (const k of keys) {
+          const input = S.inputs.get(k.split("|")[1]);
+          reveal(input.puzzle, m, input.input_id, true);
+        }
       }
       for (const id of [...S.autoOpened]) {
         const n = S.nodes.get(id);
@@ -275,10 +266,10 @@
       for (const r of snap.records) add(r);
       if (rebuild) { S.fresh = []; panel.reset(snap.models, running); }  // records already there are not replayed
       for (const m of snap.models) {
-        const prev = S.pending[m];
-        S.pending[m] = running(m) ? firstPending(m) : null;
-        if (prev) paint(prev);
-        if (S.pending[m]) paint(S.pending[m]);
+        const prev = S.pending[m] || [];
+        S.pending[m] = running(m) ? inFlight(m) : [];
+        for (const k of prev) paint(k);
+        for (const k of S.pending[m]) paint(k);
       }
       followPending();
       refreshNodes();
@@ -334,5 +325,20 @@
     return ctl;
   }
 
-  window.Progress = { COLORS, OUTCOMES, mount };
+  // The attempts a running model has in flight: the first `parallel` attempts without a record, in run's loop order
+  // (input in release order, then setup, then attempt number). An inference, as `run` doesn't report them.
+  function inFlight(snap, model, parallel, hasRecord) {
+    const out = [];
+    for (const input of snap.inputs) for (const setup of snap.setups) {
+      for (let a = 1; a <= snap.attempts; a++) {
+        const k = key(model, input.input_id, setup, a);
+        if (hasRecord(k)) continue;
+        out.push(k);
+        if (out.length >= parallel) return out;
+      }
+    }
+    return out;
+  }
+
+  window.Progress = { COLORS, OUTCOMES, mount, inFlight };
 })();

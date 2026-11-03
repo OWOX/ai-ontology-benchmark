@@ -48,3 +48,8 @@ def test_terminal_pattern_reads_runs_progress_line():
     run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     assert json.loads(run.stdout) == ["m-1", "3x3", "3x3-d5-002-x", "no_model", "2", "hallucination"]
+
+
+def test_in_flight_attempts_are_the_first_n_without_a_record():
+    run = subprocess.run([NODE, "tests/js/progress.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout
