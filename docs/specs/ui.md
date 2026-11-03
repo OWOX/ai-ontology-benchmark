@@ -248,7 +248,7 @@ Markdown is rendered by `markdown.js`, a small renderer for headings, paragraphs
 
 ### Terminal
 
-The foot terminal: a folded "Terminal" box with the job log from `GET /api/log` and a Clear button. It sits at the foot of the page, a sibling of `#main` and not inside the actions, and shows on the New Experiment and About pages. It is hidden on the others. It shows every job's log, for all experiments and project jobs. The UI keeps collecting log lines while it is hidden, so the history is there when it is shown. The Experiment page has its own terminal ([Experiment](#experiment)), so this one is hidden there.
+The foot terminal: a folded "Terminal" box with the job log from `GET /api/log` and a Clear button. It sits at the foot of the page, a sibling of `#main` and not inside the actions, and shows on the About page only. It is hidden on the others, New Experiment included. It shows every job's log, for all experiments and project jobs. The UI keeps collecting log lines while it is hidden, so the history is there when it is shown. The Experiment page has its own terminal ([Experiment](#experiment)), so this one is hidden there.
 
 `router.js` keeps every log line it receives, at most 5,000 like the server, and exposes them as `UI.lines`, so a page can draw the history when it mounts.
 

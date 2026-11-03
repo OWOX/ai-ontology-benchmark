@@ -263,6 +263,9 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .provider > .provider-head { font-size: 18px; }
 .model-col .reason { font-weight: 400; margin-bottom: 4px; }
 .newexp .grid input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--field); color: inherit; }
+.job-result { margin-top: 10px; }
+.job-result h4 { margin: 0 0 4px; font-size: 13px; }
+.job-result .terminal { height: 200px; border-radius: var(--radius); }
 
 /* Experiment workspace: progress bar, two columns, plan tree, and the terminal */
 .pbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }

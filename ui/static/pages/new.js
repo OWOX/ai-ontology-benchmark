@@ -146,6 +146,7 @@
         const run = (j) => j.startsWith("run:"), busy = (j) => run(j) || j === "evaluate";
         ref.run.disabled = starting || mine(id, busy);
         ref.estimate.disabled = mine(id, (j) => j === "estimate");
+      ref.result = h("div", { class: "job-result" });
         ref.dry.disabled = mine(id, (j) => j === "dry-run");
       }
 
@@ -212,15 +213,32 @@
           if (path === "run") { starting = true; controls(); say(`Starting the run and creating results/${form.id}…`); }
           const r = await UI.api("/api/" + path, { method: "POST", body }).finally(() => { starting = false; if (!dead) controls(); });
           if (dead) return;
+      // The output of Estimate or Dry run: that job's log lines for this experiment id, from the log history and
+      // then as they arrive. Text only. A later press of either button starts the block afresh.
+      function showResult(label, job, id, after) {
+        if (ref.off) ref.off();
+        const box = h("pre", { class: "terminal", role: "log", "aria-label": `${label} output` });
+        ref.result.replaceChildren(h("h4", { text: `${label} output` }), box);
+        const add = (ev) => {
+          if (ev.id !== id || ev.job !== job || ev.seq <= after) return;
+          const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
+          const line = h("span", { class: ev.stream === "cmd" ? "cmd" : ev.stream === "stderr" ? "err" : "" });
+          line.append((ev.stream === "cmd" ? "$ " : "") + ev.text + "\n");
+          box.append(line);
+          if (atBottom) box.scrollTop = box.scrollHeight;
+        };
+        UI.lines.forEach(add);
+        ref.off = UI.onLines(add);
+      }
+
           if (path === "run") {
             // The branch exists by now, so the experiment's page can be opened and reloaded safely.
+        const after = UI.lines.length ? UI.lines[UI.lines.length - 1].seq : 0;
             UI.go("#/experiments/" + encodeURIComponent(form.id) + (bundle.release ? "?release=" + encodeURIComponent(bundle.release) : ""));
             return;
           }
-          say(`${label} started. Experiment ${r.status}. See the terminal below.`, "ok");
-          const term = document.getElementById("termbox");
-          term.open = true;
-          term.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          say(`${label} started. Experiment ${r.status}.`, "ok");
+          showResult(label, path, form.id, after);
         } catch (e) { say(e.message, "err"); }
       }
 
@@ -269,7 +287,7 @@
           h("section", { class: "step" }, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
           h("section", { class: "step" }, h("h3", { text: "AI models" }), modelList(bundle, choose)),
           h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(),
-            h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run), msg));
+            h("div", { class: "actions" }, ref.estimate, ref.dry, ref.run), msg, ref.result));
         controls();
       }
 
@@ -279,7 +297,7 @@
       cleanup = () => {
         cleanup = null;
         dead = true;
-        offJobs(); window.removeEventListener("hashchange", onHash);
+        offJobs(); if (ref.off) ref.off(); window.removeEventListener("hashchange", onHash);
       };
 
       paint();
