@@ -49,6 +49,7 @@ This study tests the question in closed systems where correctness isn't a matter
 4. [Related work](docs/related-work.md): other papers on the same problems, and the gap this study fills.
 5. [Script specs](docs/specs/README.md): inputs, outputs, and tests for every script, and the commands that run the project.
 6. [AGENTS.md](AGENTS.md): rules for coding agents, including the invariants that keep results reproducible.
+7. [One-page summary](docs/onepager.pdf) (PDF): the goals, approach, expected outcomes, and authors on one page.
 
 ## Structure
 
@@ -72,7 +73,7 @@ ui/                local web page to browse, run, and commit experiments (ui/sta
 prompts/           working templates: no_model, descriptive, prescriptive
 releases/          one read-only folder per release version
 results/           one folder per experiment: raw records and one report per release
-docs/              definitions, methodology, specs, puzzles, assumptions, related work
+docs/              definitions, methodology, specs, puzzles, assumptions, related work, one-page summary PDF
 LICENSE            Apache 2.0 licence text
 LICENSE-CC-BY-4.0  CC BY 4.0 licence text
 NOTICE             copyright and attribution for reused code
