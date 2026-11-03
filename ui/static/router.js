@@ -177,7 +177,8 @@
     $("fetch-error").textContent = "";
     try {
       const b = await UI.bundle(release, refresh, (c) => { if (mine === st.seq) draw(c); });
-      if (mine === st.seq) draw(b);
+      // ↻ redraws the page even when the bundle brings nothing new, so the page loads its own data again.
+      if (mine === st.seq) draw(b, refresh);
     } catch (e) {
       if (mine === st.seq) showFetchError(e);
     } finally {
