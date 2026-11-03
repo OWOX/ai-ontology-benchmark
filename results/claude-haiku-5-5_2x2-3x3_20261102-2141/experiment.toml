@@ -1,0 +1,16 @@
+release = "1.2.0"
+puzzles = ["2x2", "3x3"]
+attempts = 3
+retry_cap = 3
+max_output_tokens = 4096
+
+[[models]]
+name = "claude-haiku-5-5"
+provider = "anthropic"
+api_model_id = "claude-haiku-5-5"
+kind = "system-2"
+
+[budget]
+per_request_usd = 0.5
+per_model_usd = 5.0
+per_experiment_usd = 10.0
