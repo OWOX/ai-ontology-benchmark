@@ -143,10 +143,12 @@ All tests use the `fake` provider and temporary folders.
 38. `--parallel 4` writes the same set of records as `--parallel 1`, compared by input id, setup, AI model, and attempt number, apart from `created_at` and `latency_s`.
 39. The fake never sees more than N calls at once, and does see N at once when enough attempts are pending.
 40. While N attempts are in flight, they are the first N pending attempts in loop order.
-41. With `--parallel 4`, fake replies costing 0.01 USD, a worst-case request cost of 0.01 USD, and `per_model_usd = 0.035`, there are never more than 3 records, and `run` exits with code 1 naming the model budget.
+41. With `--parallel 4`, fake replies costing 0.01 USD, a worst-case request cost of 0.01 USD, and `per_model_usd = 0.035`, there are never more than 3 records, and `run` exits with code 1 naming the model budget. The first two calls are gated to overlap, and the test asserts that at least two were in flight together.
 42. A budget stop with attempts in flight writes their records before the error, and the error is the last stderr line.
 43. An interrupt with attempts in flight commits the records written and returns promptly, well before the fake's blocked calls would finish.
 44. `--parallel 0` exits with code 1 naming `--parallel`.
 45. A decision attempt counts the records other attempts of the process write after its spent-cost reading, so it cannot pass a budget that way.
 46. A reservation grows with the tokens its attempt has paid, so another attempt's check counts them.
 47. A `BaseException` in a worker is raised in the main thread and ends the run instead of hanging it.
+48. A parallel budget stop reports the attempts to run less the records written, not the refused attempt's own count: with 10 attempts, one refused and three recorded, it says 7 attempts left.
+49. With `--parallel 2`, when the first attempt finishes while the second is still in flight, the next call is the third pending attempt in loop order, started without waiting for the second.
