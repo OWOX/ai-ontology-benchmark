@@ -620,6 +620,7 @@ def test_full_run_through_api(server):
     status, snap = call(server, "GET", "/api/state/t1")
     assert status == 200 and len(snap["records"]) == 9 and len(snap["inputs"]) == 3  # 3 inputs x 3 setups x 1
     assert len({(r["input_id"], r["setup"]) for r in snap["records"]}) == 9
+    assert all(r["created_at"] for r in snap["records"])  # the terminal orders snapshot-only attempts by it
     assert snap["jobs"]["run:example-model"] == "done" and snap["report"] is None
     assert not list((server.root / "results" / "t1").glob(".*tmp"))  # the atomic copy leaves no temp file
     row = next(r for r in call(server, "GET", "/api/bundle")[1]["experiments"] if r["id"] == "t1")
