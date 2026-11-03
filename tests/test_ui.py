@@ -607,10 +607,11 @@ def test_full_run_through_api(server):
     assert "src.run.run" in cmds[0]["text"] and "--config -" in cmds[0]["text"] and "--estimate" in cmds[0]["text"]
     assert not (server.root / "results" / "t1").exists()  # an estimate writes nothing
     slow_fake(server)
-    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    assert call(server, "POST", "/api/run", dict(FORM, parallel=3))[0] == 200
     assert call(server, "POST", "/api/run", FORM)[0] == 409  # already running
     snap = snapshot_when_ready(server)
     assert snap["jobs"]["run:example-model"] == "running" and "in_progress" not in snap
+    assert snap["parallel"] == {"example-model": 3}  # the page infers that many attempts in flight
     assert snap["setups"] == ["no_model", "descriptive", "prescriptive"] and snap["attempts"] == 1
     wait_for(lambda: call(server, "GET", "/api/state/t1")[1]["records"])
     assert job_state(server, "run:example-model") == "running"  # records arrive live, not in a burst
@@ -1163,3 +1164,33 @@ def test_attempt_errors(server):
         name = bad.split("=")[0]
         status, data = call(server, "GET", url(server, ATTEMPT.replace(f"{name}={'1' if name == 'attempt' else 'no_model'}", bad)))
         assert status == 400 and name in data["error"], bad
+
+
+def test_run_parallel_argument(server, spawned):
+    on_branch(server, "feat")
+    py = sys.executable
+    base = [py, "-u", "-m", "src.run.run", "--experiment", "t1", "--config", "-", "--model", "example-model"]
+    assert call(server, "POST", "/api/run", FORM)[0] == 200
+    assert spawned[-1] == base  # absent means one: no flag
+    stdin_plain = jobs_module.Jobs.stdins[-1]
+    assert call(server, "POST", "/api/run", dict(FORM, parallel=3))[0] == 200
+    assert spawned[-1] == [*base, "--parallel", "3"]
+    assert jobs_module.Jobs.stdins[-1] == stdin_plain  # parallel is not part of the config text
+    assert call(server, "POST", "/api/run", dict(FORM, parallel=2, limit=5))[0] == 200
+    assert spawned[-1] == [*base, "--limit", "5", "--parallel", "2"]
+    for bad in (0, 17, True, "4", 2.5, None):
+        status, data = call(server, "POST", "/api/run", dict(FORM, parallel=bad))
+        assert status == 400 and "parallel" in data["error"], bad
+    # estimate and dry-run ignore it
+    assert call(server, "POST", "/api/dry-run", dict(FORM, parallel=3))[0] == 200
+    assert "--parallel" not in spawned[-1]
+
+
+def test_jobs_remember_parallel_of_running_run_jobs(server):
+    jobs = server.app.jobs
+    (job,) = jobs.register("t1", ["run:example-model"])
+    assert jobs.parallels("t1") == {"example-model": 1}  # a job not started with --parallel counts as 1
+    job.parallel = 3
+    assert jobs.parallels("t1") == {"example-model": 3} and jobs.parallels("other") == {}
+    jobs.finish(job, 0)
+    assert jobs.parallels("t1") == {}
