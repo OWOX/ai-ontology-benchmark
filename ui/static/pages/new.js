@@ -172,7 +172,7 @@
         try {
           const r = await UI.api("/api/default-id?" + q);
           if (mine_ !== idSeq || S.touched || S.branch || dead) return;
-          S.id = r.id;
+          S.id = r.id; dropStaleResult();
           if (ref.id) ref.id.value = S.id;
           if (ref.note) ref.note.textContent = branchNote();
           controls();
@@ -233,6 +233,14 @@
         ref.off = UI.onLines(add);
       }
 
+      // The output belongs to one experiment id: it goes when the id changes, by typing, a new suggestion, or a loaded branch.
+      function dropStaleResult() {
+        if (!S.result || S.result.id === S.id.trim()) return;
+        S.result = null;
+        if (ref.off) { ref.off(); ref.off = null; }
+        if (ref.result) { ref.result.remove(); ref.result = null; }
+      }
+
       async function send(path, label) {
         say("");
         const after = UI.lines.length ? UI.lines[UI.lines.length - 1].seq : 0;
@@ -274,6 +282,7 @@
             S.id = ref.id.value.trim(); S.touched = true;
             if (S.branch && S.id !== S.branch) S.branch = "";
           }
+          dropStaleResult();
           ref.note.textContent = branchNote();
           controls();
         });
@@ -288,6 +297,7 @@
 
       function paint() {
         ref.result = null;
+        dropStaleResult();
         for (const [key, text, fn] of [["estimate", "Estimate", () => send("estimate", "Estimate")],
           ["dry", "Dry run", () => send("dry-run", "Dry run")], ["run", "Run", () => send("run", "Run")]]) {
           ref[key] = h("button", { type: "button", text, class: key === "run" ? "primary" : "" });
