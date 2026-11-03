@@ -18,7 +18,15 @@ TOLERANCE = 1e-9  # keeps float rounding from stopping a run that sits exactly o
 
 
 class BudgetError(Exception):
-    """A checked error. The message names the file, model, or budget at fault."""
+    """A checked error. The message names the file, model, or budget at fault. A budget stop also
+    carries the attempts left, which `run` recounts when it stops with attempts in flight."""
+
+    def __init__(self, message: str, attempts_left: int | None = None) -> None:
+        self.reason, self.attempts_left = message, attempts_left
+        super().__init__(message if attempts_left is None else f"{message}; {attempts_left} attempts left")
+
+    def recounted(self, attempts_left: int) -> "BudgetError":
+        return BudgetError(self.reason, attempts_left)
 
 
 def worst_state(prompt: str, legal: list[str], cap: int) -> str:
@@ -69,16 +77,15 @@ def check_spend(config: dict, prices: dict, raw_dir: Path, model_name: str,
     if spent is None:
         spent = spent_by_model(config, prices, raw_dir)
     budget = config["budget"]
-    left = f"{attempts_left} attempts left"
     if spent[model_name] + next_cost > budget["per_model_usd"] + TOLERANCE:
         raise BudgetError(
             f"budget reached: per_model_usd {budget['per_model_usd']} for model {model_name} "
-            f"(spent {spent[model_name]:.4f}, next request up to {next_cost:.4f}); {left}")
+            f"(spent {spent[model_name]:.4f}, next request up to {next_cost:.4f})", attempts_left)
     total = sum(spent.values())
     if total + next_cost > budget["per_experiment_usd"] + TOLERANCE:
         raise BudgetError(
             f"budget reached: per_experiment_usd {budget['per_experiment_usd']} "
-            f"(spent {total:.4f}, next request up to {next_cost:.4f}); {left}")
+            f"(spent {total:.4f}, next request up to {next_cost:.4f})", attempts_left)
 
 
 def print_estimate(config: dict, pending: list, prices: dict, templates: Path, raw_dir: Path,

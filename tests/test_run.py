@@ -7,6 +7,8 @@ import csv
 import io
 import json
 import sys
+import threading
+import time
 
 import pytest
 
@@ -873,7 +875,6 @@ class Gate:
     """Wraps call_model: counts calls in flight, notes the first arrivals, and holds them until `hold` have arrived."""
 
     def __init__(self, monkeypatch, hold=0, sleep=0.0, block_after=None, block_for=5.0):
-        import threading
         self.real, self.lock, self.hold, self.sleep = run_module.call_model, threading.Lock(), hold, sleep
         self.block_after, self.block_for = block_after, block_for
         self.arrived, self.now, self.peak, self.calls = [], 0, 0, 0
@@ -901,9 +902,6 @@ class Gate:
         finally:
             with self.lock:
                 self.now -= 1
-
-
-import time  # noqa: E402
 
 
 def test_parallel_writes_the_same_records_as_serial(exp, tmp_path):
@@ -935,9 +933,52 @@ def test_in_flight_attempts_are_the_first_pending_in_loop_order(exp, monkeypatch
     assert sorted(gate.arrived) == sorted(expected)
 
 
+def test_a_finished_attempt_is_replaced_by_the_next_pending_in_loop_order(exp, monkeypatch):
+    real, lock, order = run_module.call_model, threading.Lock(), []
+    two_arrived, third_arrived, free_first, free_rest = (threading.Event() for _ in range(4))
+
+    def call(model, prompt, max_output_tokens):
+        with lock:
+            order.append((model["name"], prompt))
+            number = len(order)
+        if number == 2:
+            two_arrived.set()
+        if number == 3:
+            third_arrived.set()
+        if number == 1:
+            free_first.wait(5)  # the first attempt finishes while the second is still in flight
+        elif number == 2:
+            free_rest.wait(5)
+        return real(model, prompt, max_output_tokens)
+
+    third_started_alone = []
+
+    def release():
+        two_arrived.wait(5)
+        free_first.set()
+        # a batched scheduler waits for the second attempt too, so this times out and the test fails
+        third_started_alone.append(third_arrived.wait(5))
+        free_rest.set()
+
+    manifest, inputs = run_module.load_release(exp / "releases/1.0.0")
+    config = run_module.load_experiment_config(exp / "config/experiments/exp.toml")
+    expected = [(m["name"], build_prompt(exp / "releases/1.0.0/prompts", row, setup))
+                for row, m, setup, _ in list(run_module.pending_attempts(config, inputs, exp / "results/exp/raw", None))[:3]]
+    monkeypatch.setattr(run_module, "call_model", call)
+    helper = threading.Thread(target=release, daemon=True)
+    helper.start()
+    assert go("--parallel", "2", "--no-commit", "--limit", "6") == 0
+    helper.join(5)
+    assert third_started_alone == [True]
+    assert sorted(order[:2]) == sorted(expected[:2])
+    assert order[2] == expected[2]
+
+
 def test_parallel_budget_never_passes_the_model_budget(exp, capsys, monkeypatch):
     with_budget(exp, per_model_usd=0.035)
+    gate = Gate(monkeypatch, hold=2)  # the first two calls wait for each other, so they really overlap
     assert go("--parallel", "4", "--model", "A") == 1
+    assert gate.peak >= 2
     assert len(records(exp, "A")) == 3
     assert "per_model_usd 0.035 for model A" in capsys.readouterr().err
 
@@ -950,6 +991,22 @@ def test_a_budget_stop_writes_the_attempts_in_flight_first(exp, capsys, monkeypa
     assert len(git(exp, "show", f"{BRANCH}:results/exp/raw/A.jsonl").splitlines()) == 3
     lines = capsys.readouterr().err.strip().splitlines()
     assert lines[-1].startswith("error: budget reached:")
+
+
+def test_a_parallel_budget_stop_counts_the_attempts_that_have_no_record():
+    from src.run.budget import BudgetError
+
+    class Stub:
+        def __init__(self, seq, refused):
+            self.seq, self.refused, self.error, self.stop = seq, refused, None, None
+
+        def call(self):
+            if self.refused:
+                raise BudgetError("budget reached: per_model_usd 1 for model A (spent 1.0000, next request up to 0.0100)", 9)
+
+    stubs = iter(Stub(seq, seq == 1) for seq in range(4))  # attempts 0, 2, and 3 finish; 1 is refused
+    with pytest.raises(BudgetError, match=r"next request up to 0\.0100\); 7 attempts left$"):
+        run_module.play_parallel(4, 10, stubs, lambda attempt: None, run_module.Flight())
 
 
 def test_an_interrupt_with_attempts_in_flight_commits_and_returns_promptly(exp, monkeypatch):
@@ -1011,8 +1068,6 @@ def test_a_reservation_grows_with_the_tokens_its_attempt_has_paid(tmp_path):
 
 
 def test_a_worker_failure_that_is_not_an_exception_ends_the_run(exp, monkeypatch):
-    import threading
-
     def boom(model, prompt, max_output_tokens):
         raise KeyboardInterrupt
 

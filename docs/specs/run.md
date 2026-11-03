@@ -83,7 +83,7 @@ With `--parallel N` above 1, `run` keeps up to N attempts in flight. With 1 it r
 2. In-flight set. Attempts are submitted in loop order, and a new one starts as each finishes. The attempts in flight are always the first N attempts without a record, in loop order. The [UI](ui.md) relies on this.
 3. Completion order. Records are appended as attempts finish, so with N above 1 the order of lines in a raw file can differ from loop order. Resume keys on input id, setup, AI model, and attempt number, so it does not matter.
 4. Reservations. An attempt reserves its worst-case request cost from its submission until its record is appended, under a lock, and after each passed check the reservation grows to the worst case plus what the attempt has paid so far. The cost of each appended record is added to a per-model total of this process in the same step as its reservation is dropped. Its first budget check adds the reservations of the attempts submitted before it, so attempts started together are admitted in loop order and a budget refuses the last of them. Its later checks (a retry, or the next call of a decision model) add the reservations of all other in-flight attempts.
-5. Budget stop. After a `BudgetError` no new attempt starts. The attempts in flight finish and their records are written and committed as usual, and then the first `BudgetError` is raised, so the `error: budget reached:` line stays the last stderr line.
+5. Budget stop. After a `BudgetError` no new attempt starts. The attempts in flight finish and their records are written and committed as usual, and then the first `BudgetError` is raised, so the `error: budget reached:` line stays the last stderr line. Its attempts-left count is recounted at that point as the attempts to run less the records this process wrote, so attempts that finished after the refused one are not counted. With 1 it is the refused attempt and every attempt after it, as before.
 6. Interrupt. Ctrl-C or SIGTERM stops `run` at once and does not wait for in-flight calls. Their attempts get no record, and a resume runs them again. The `finally` in `run()` still commits and pushes what was written. The workers are daemon threads, so none keeps the process alive after `run()` returns.
 7. Anything other than `InfrastructureError` raised in a worker, including a `BaseException` (a bug, an unexpected SDK error), is raised in the main thread and ends the run.
 
@@ -143,10 +143,12 @@ All tests use the `fake` provider and temporary folders.
 38. `--parallel 4` writes the same set of records as `--parallel 1`, compared by input id, setup, AI model, and attempt number, apart from `created_at` and `latency_s`.
 39. The fake never sees more than N calls at once, and does see N at once when enough attempts are pending.
 40. While N attempts are in flight, they are the first N pending attempts in loop order.
-41. With `--parallel 4`, fake replies costing 0.01 USD, a worst-case request cost of 0.01 USD, and `per_model_usd = 0.035`, there are never more than 3 records, and `run` exits with code 1 naming the model budget.
+41. With `--parallel 4`, fake replies costing 0.01 USD, a worst-case request cost of 0.01 USD, and `per_model_usd = 0.035`, there are never more than 3 records, and `run` exits with code 1 naming the model budget. The first two calls are gated to overlap, and the test asserts that at least two were in flight together.
 42. A budget stop with attempts in flight writes their records before the error, and the error is the last stderr line.
 43. An interrupt with attempts in flight commits the records written and returns promptly, well before the fake's blocked calls would finish.
 44. `--parallel 0` exits with code 1 naming `--parallel`.
 45. A decision attempt counts the records other attempts of the process write after its spent-cost reading, so it cannot pass a budget that way.
 46. A reservation grows with the tokens its attempt has paid, so another attempt's check counts them.
 47. A `BaseException` in a worker is raised in the main thread and ends the run instead of hanging it.
+48. A parallel budget stop reports the attempts to run less the records written, not the refused attempt's own count: with 10 attempts, one refused and three recorded, it says 7 attempts left.
+49. With `--parallel 2`, when the first attempt finishes while the second is still in flight, the next call is the third pending attempt in loop order, started without waiting for the second.

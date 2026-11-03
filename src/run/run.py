@@ -391,14 +391,15 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
             yield Attempt(seq, left, row, model, setup, number,
                           (config, prices, results, flight, cap, questions, folder / "prompts"))
 
-    def finish(attempt: Attempt):
+    def record_attempt(attempt: Attempt):
         """Main thread only: build, write, count, show, and commit the record. Return a budget stop or None."""
         row, model, setup, number = attempt.row, attempt.model, attempt.setup, attempt.number
         record = make_record(config, manifest, row, model, setup, number, attempt.prompt,
                              manifest["decision_prompt_versions"] if attempt.is_decision else versions,
                              attempt.reply, attempt.retry_in, attempt.retry_out, attempt.result)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
-        flight.release(attempt.seq, attempt_cost(record, prices[model['name']]))  # after the append, so the cost is never in neither place
+        # after the append, so the cost is never in neither place
+        flight.release(attempt.seq, attempt_cost(record, prices[model['name']]))
         outcomes[record["outcome"]] += 1
         progress.update(record)
         safe_commit(branch, f"Results: experiment {config['experiment_id']}, {model['name']} "
@@ -408,18 +409,19 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
     if args.parallel == 1:
         for attempt in attempts():
             attempt.call()
-            stop = finish(attempt)
+            stop = record_attempt(attempt)
             if stop:
                 raise stop
         return
-    play_parallel(args.parallel, attempts(), finish, flight)
+    play_parallel(args.parallel, len(pending), attempts(), record_attempt, flight)
 
 
-def play_parallel(size: int, attempts, finish, flight: Flight) -> None:
+def play_parallel(size: int, total: int, attempts, record_attempt, flight: Flight) -> None:
     """Keep up to `size` attempts in flight. Daemon workers run only Attempt.call(); this thread takes
     each finished attempt in completion order. After a BudgetError nothing new starts, the attempts
-    in flight finish and are written, and then the first BudgetError is raised. An interrupt leaves
-    at once; the daemon workers cannot hold the process open and their attempts get no record."""
+    in flight finish and are written, and then the first BudgetError is raised, with the attempts left
+    recounted as the `total` less the records written. An interrupt leaves at once; the daemon
+    workers cannot hold the process open and their attempts get no record."""
     jobs: queue.Queue = queue.Queue()
     done: queue.Queue = queue.Queue()
 
@@ -436,7 +438,7 @@ def play_parallel(size: int, attempts, finish, flight: Flight) -> None:
 
     for _ in range(size):
         threading.Thread(target=work, daemon=True).start()
-    in_flight, budget_stop = 0, None
+    in_flight, written, budget_stop = 0, 0, None
     try:
         while True:
             while budget_stop is None and in_flight < size:
@@ -455,13 +457,14 @@ def play_parallel(size: int, attempts, finish, flight: Flight) -> None:
             elif attempt.error is not None:
                 raise attempt.error
             else:
-                stop = finish(attempt)  # always runs: an attempt in flight keeps its record
+                stop = record_attempt(attempt)  # always runs: an attempt in flight keeps its record
+                written += 1
                 budget_stop = budget_stop or stop
     finally:
         for _ in range(size):
             jobs.put(None)
     if budget_stop:
-        raise budget_stop
+        raise budget_stop.recounted(total - written)
 
 
 def main(argv: list[str] | None = None) -> int:
