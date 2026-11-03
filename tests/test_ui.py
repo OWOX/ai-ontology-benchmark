@@ -43,7 +43,7 @@ MODELS = (
 )
 PRICES = ("[example-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n"
           "[cloud-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n")
-BUDGET = {"per_request_usd": 0.5, "per_model_usd": 25.0, "per_experiment_usd": 50.0}
+BUDGET = {"per_request_usd": 0.5, "per_model_usd": 5.0, "per_experiment_usd": 10.0}
 CONFIG = {"release": "1.0.0", "puzzles": ["2x2"], "attempts": 1, "retry_cap": 1, "max_output_tokens": 100,
           "models": [{"name": "example-model", "provider": "fake", "api_model_id": "ex-1",
                       "kind": "system-2", "params": {"temperature": 1.0}}], "budget": BUDGET}
@@ -270,7 +270,7 @@ def test_bundle_disabled_reasons_and_defaults(server):
                        "unpriced": "no price in config/prices.toml",
                        "edge-model": "no price in config/prices.toml"}
     assert data["release"] == "1.0.0" and data["releases"] == ["1.0.0"]
-    assert data["defaults"]["budget"] == {**BUDGET, "per_request_usd": 2.0} and data["defaults"]["attempts"] == 3
+    assert data["defaults"]["budget"] == {"per_request_usd": 2.0, "per_model_usd": 25.0, "per_experiment_usd": 50.0} and data["defaults"]["attempts"] == 3
 
 
 def test_bundle_needs_token(server):
