@@ -155,7 +155,7 @@
           resultsBox.replaceChildren(block("Summary", ExpMetrics.summary(d, bundle.experiments), false),
             block("Full metrics", ExpMetrics.full(d), false), block("Report", reportBox(d), false));
           actions.replaceChildren(...(d.local_results ? [block("Evaluate and commit",
-            h("div", {}, h("div", { class: "actions" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit), result), true)] : []));
+            h("div", {}, h("div", { class: "actions by-field" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit), result), true)] : []));
           controls();
         } catch (e) {
           if (!root.isConnected) return;
