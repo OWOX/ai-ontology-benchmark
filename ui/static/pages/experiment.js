@@ -160,12 +160,17 @@
         } catch (e) {
           if (!root.isConnected) return;
           // A run that has started but not yet committed its branch: wait for it rather than show "not found".
-          if (UI.jobs.some((j) => j.id === id && j.state === "running")) {
+          // The job states may be a poll behind (a page opened right after Run, or reloaded), so fetch them first.
+          await UI.pollNow();
+          if (!root.isConnected) return;
+          const runs = UI.jobs.filter((j) => j.id === id && j.job.startsWith("run:"));
+          if (runs.some((j) => j.state === "running")) {
             headBox.replaceChildren(h("h2", { text: id }), h("p", { class: "muted", text: `Waiting for the run to create results/${id}…` }));
             setTimeout(loadDetail, 2000);
             return;
           }
-          headBox.replaceChildren(h("h2", { text: id }), h("p", { class: "msg err", text: e.message }));
+          const text = runs.length ? `The run stopped before creating results/${id}. The terminal shows why.` : e.message;
+          headBox.replaceChildren(h("h2", { text: id }), h("p", { class: "msg err", text }));
         }
       }
 

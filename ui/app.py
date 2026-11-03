@@ -6,6 +6,7 @@ nothing here writes a config file. Key routes go to ui.secrets. Writes only thro
 
 import re
 import secrets
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -22,7 +23,7 @@ from ui.jobs import Jobs
 
 VERSION = re.compile(r"\d+\.\d+\.\d+")
 MAX_PARALLEL = 16  # the most `run --parallel` the form accepts
-BRANCH_WAIT_S = 30  # how long POST /api/run waits for `run` to create results/<id>
+BRANCH_POLL_S = 0.25  # how often the branch watcher looks for results/<id>
 
 
 class App:
@@ -78,26 +79,37 @@ class App:
         self.jobs.start(experiment_id, items, blocked_by=("evaluate",) if name == "run" else (), stdin=text,
                         parallel=parallel)
         if name == "run":
-            self.wait_for_branch(experiment_id, names)
+            self.watch_branch(experiment_id, names)
         return {"id": experiment_id, "status": status, "jobs": names}
 
-    def wait_for_branch(self, experiment_id: str, names: list[str]) -> None:
-        """Return once results/<id> exists, so the page it opens next can read it: a new experiment's comes from
-        `run`'s first commit, and a resumed one may exist only on origin until `run` commits a record. When every
-        run job ends first without any branch, the run failed before its first commit: report its last stderr line."""
-        git = self.bundles.git
+    def watch_branch(self, experiment_id: str, names: list[str]) -> None:
+        """Log the branch step as job `branch`, so the experiment's terminal shows it while the page waits for
+        results/<id>: a new experiment's comes from `run`'s first commit, and a resumed one may exist only on origin
+        until `run` commits a record. When every run job ends without any branch, the run failed before its first
+        commit: log its last stderr line."""
+        git, say = self.bundles.git, lambda stream, text: self.jobs.say(experiment_id, "branch", stream, text)
         exists = lambda: experiment_id in git.local_ids() or experiment_id in git.remote_ids()
-        deadline = time.monotonic() + BRANCH_WAIT_S
-        while time.monotonic() < deadline:
-            if exists():
-                return
-            states = self.jobs.states(experiment_id)
-            if not any(states.get(n) == "running" for n in names):
+        if exists():
+            say("stdout", f"results/{experiment_id} exists: resuming")
+            return
+        say("stdout", f"creating results/{experiment_id}…")
+
+        def watch() -> None:
+            while True:
                 if exists():
+                    say("stdout", f"results/{experiment_id} created")
                     return
-                line = next((t for t in (self.jobs.last_stderr(experiment_id, n) for n in names) if t), "no output")
-                raise ApiError(409, f"run stopped before creating results/{experiment_id}: {line}")
-            time.sleep(0.2)
+                states = self.jobs.states(experiment_id)
+                if not any(states.get(n) == "running" for n in names):
+                    if exists():
+                        say("stdout", f"results/{experiment_id} created")
+                        return
+                    line = next((t for t in (self.jobs.last_stderr(experiment_id, n) for n in names) if t), "no output")
+                    say("stderr", f"run stopped before creating results/{experiment_id}: {line}")
+                    return
+                time.sleep(BRANCH_POLL_S)
+
+        threading.Thread(target=watch, daemon=True).start()
 
     def project_job(self, name: str, args: list[str]) -> dict:
         """A job of no experiment. install, release, and push also refuse while any job is alive."""
