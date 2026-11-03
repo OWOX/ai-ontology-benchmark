@@ -951,10 +951,13 @@ def test_a_finished_attempt_is_replaced_by_the_next_pending_in_loop_order(exp, m
             free_rest.wait(5)
         return real(model, prompt, max_output_tokens)
 
+    third_started_alone = []
+
     def release():
         two_arrived.wait(5)
         free_first.set()
-        third_arrived.wait(5)
+        # a batched scheduler waits for the second attempt too, so this times out and the test fails
+        third_started_alone.append(third_arrived.wait(5))
         free_rest.set()
 
     manifest, inputs = run_module.load_release(exp / "releases/1.0.0")
@@ -966,6 +969,7 @@ def test_a_finished_attempt_is_replaced_by_the_next_pending_in_loop_order(exp, m
     helper.start()
     assert go("--parallel", "2", "--no-commit", "--limit", "6") == 0
     helper.join(5)
+    assert third_started_alone == [True]
     assert sorted(order[:2]) == sorted(expected[:2])
     assert order[2] == expected[2]
 
