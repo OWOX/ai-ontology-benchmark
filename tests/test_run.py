@@ -933,6 +933,43 @@ def test_in_flight_attempts_are_the_first_pending_in_loop_order(exp, monkeypatch
     assert sorted(gate.arrived) == sorted(expected)
 
 
+def test_a_finished_attempt_is_replaced_by_the_next_pending_in_loop_order(exp, monkeypatch):
+    real, lock, order = run_module.call_model, threading.Lock(), []
+    two_arrived, third_arrived, free_first, free_rest = (threading.Event() for _ in range(4))
+
+    def call(model, prompt, max_output_tokens):
+        with lock:
+            order.append((model["name"], prompt))
+            number = len(order)
+        if number == 2:
+            two_arrived.set()
+        if number == 3:
+            third_arrived.set()
+        if number == 1:
+            free_first.wait(5)  # the first attempt finishes while the second is still in flight
+        elif number == 2:
+            free_rest.wait(5)
+        return real(model, prompt, max_output_tokens)
+
+    def release():
+        two_arrived.wait(5)
+        free_first.set()
+        third_arrived.wait(5)
+        free_rest.set()
+
+    manifest, inputs = run_module.load_release(exp / "releases/1.0.0")
+    config = run_module.load_experiment_config(exp / "config/experiments/exp.toml")
+    expected = [(m["name"], build_prompt(exp / "releases/1.0.0/prompts", row, setup))
+                for row, m, setup, _ in list(run_module.pending_attempts(config, inputs, exp / "results/exp/raw", None))[:3]]
+    monkeypatch.setattr(run_module, "call_model", call)
+    helper = threading.Thread(target=release, daemon=True)
+    helper.start()
+    assert go("--parallel", "2", "--no-commit", "--limit", "6") == 0
+    helper.join(5)
+    assert sorted(order[:2]) == sorted(expected[:2])
+    assert order[2] == expected[2]
+
+
 def test_parallel_budget_never_passes_the_model_budget(exp, capsys, monkeypatch):
     with_budget(exp, per_model_usd=0.035)
     assert go("--parallel", "4", "--model", "A") == 1
