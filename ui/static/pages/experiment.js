@@ -105,7 +105,7 @@
       const id = decodeURIComponent(params.parts[0]);
       const root = h("div", { class: "exp-detail" });
       const headBox = h("div"), bannerBox = h("div"), settingsBody = h("div"), cubeBody = h("div"), planBody = h("div");
-      const resultsBox = h("div"), actions = h("section"), result = h("p", { class: "msg", role: "status" });
+      const resultsBox = h("div"), actions = h("div"), result = h("p", { class: "msg", role: "status" });
       const settingsBlock = block("Settings", settingsBody, true);
       const bar = ProgressView.bar(Progress.COLORS, Progress.OUTCOMES);
       const termBox = h("div", { class: "ws-right" });
@@ -114,13 +114,22 @@
           resultsBox, actions),
         termBox));
       el.append(root);
-      const state = { detail: null, ctl: null, off: null };
+      const state = { detail: null, ctl: null, off: null, term: null, touched: false };
+      settingsBlock.firstChild.addEventListener("click", () => { state.touched = true; });  // only a click by hand
       const evalRelease = h("select", { "aria-label": "Score under release" }, h("option", { value: "", text: "the experiment's release" }),
         ...bundle.releases.map((v) => h("option", { value: v, text: v })));
       const evaluate = h("button", { type: "button", text: "Evaluate" });
       const stop = h("button", { type: "button", class: "danger", text: "Stop" });
       const stopMsg = h("span", { class: "msg small", role: "status" });
       const commit = h("button", { type: "button", text: "Commit" });
+
+      // Settings fold while a run job is alive and open otherwise, until the user folds or unfolds it by hand.
+      // The job state can arrive after the page, so this runs again on every snapshot and job poll.
+      function autoSettings() {
+        if (state.touched || !state.detail) return;
+        const run = (j) => j.startsWith("run:");
+        settingsBlock.open = !(mine(id, run) || snapRunning(state.ctl && state.ctl.snapshot(), run));
+      }
 
       function controls() {
         const snap = state.ctl && state.ctl.snapshot();
@@ -140,14 +149,11 @@
           if (d.release && d.release !== bundle.release) { UI.go(`#/experiments/${encodeURIComponent(id)}?release=${encodeURIComponent(d.release)}`); return; }
           headBox.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, stopMsg));
           settingsBody.replaceChildren(...settings(d, bundle));
-          if (!state.settingsInit) {  // folded while a run job is alive, open otherwise; after that the user's fold stays
-            state.settingsInit = true;
-            settingsBlock.open = !(mine(id, (j) => j.startsWith("run:")) || snapRunning(state.ctl && state.ctl.snapshot(), (j) => j.startsWith("run:")));
-          }
+          autoSettings();
           resultsBox.replaceChildren(block("Summary", ExpMetrics.summary(d, bundle.experiments), false),
             block("Full metrics", ExpMetrics.full(d), false), block("Report", reportBox(d), false));
-          actions.replaceChildren(...(d.local_results ? [h("h3", { text: "Evaluate and commit" }),
-            h("div", { class: "actions" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit), result] : []));
+          actions.replaceChildren(...(d.local_results ? [block("Evaluate and commit",
+            h("div", {}, h("div", { class: "actions" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit), result), true)] : []));
           controls();
         } catch (e) {
           if (!root.isConnected) return;
@@ -178,16 +184,18 @@
       });
       commit.addEventListener("click", () => openCommit(id, result, loadDetail).catch((e) => { result.className = "msg err"; result.textContent = e.message; }));
 
-      const onSnapshot = () => { controls(); bar.update(state.ctl.totals()); state.term.sync(); };
-      const host = { records: () => state.ctl.records(), pending: () => state.ctl.pending(), inputs: () => state.ctl.inputs() };
+      const onSnapshot = () => { controls(); autoSettings(); bar.update(state.ctl.totals()); if (state.term) state.term.sync(); };
+      // The terminal replays the log history on mount, before the first snapshot: the host answers empty until then.
+      const host = { records: () => (state.ctl ? state.ctl.records() : new Map()), pending: () => (state.ctl ? state.ctl.pending() : {}),
+        inputs: () => (state.ctl ? state.ctl.inputs() : new Map()) };
+      state.ctl = Progress.mount(planBody, id, { onSnapshot, bannerEl: bannerBox, onStep: (step) => state.term && state.term.focus(step) });
       state.term = Terminal.mount(termBox, id, host);
-      state.ctl = Progress.mount(planBody, id, { onSnapshot, bannerEl: bannerBox, onStep: (step) => state.term.focus(step) });
       cubeBody.append(state.ctl.panelNode);
       bar.update(state.ctl.totals());
       state.off = UI.onJobs((jobs, ended) => {
         if (!root.isConnected) { state.off(); state.term.destroy(); return; }
         if (ended && ended.length) { loadDetail(); state.ctl.refresh(); }  // a finished evaluate brings the report
-        controls();
+        controls(); autoSettings();
       });
       loadDetail();
     },
