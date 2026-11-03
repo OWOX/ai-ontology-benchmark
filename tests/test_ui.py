@@ -1128,9 +1128,8 @@ ATTEMPT = "/api/attempt/t1?model=example-model&input=ID&setup=no_model&attempt=1
 
 def test_attempt_rebuilds_the_prompt_and_returns_the_record(server):
     start_state(server)
-    status, data = call(server, "GET", url(server, ATTEMPT))
+    assert call(server, "GET", url(server, ATTEMPT))[0] == 404  # no experiment branch yet
     template = (server.root / "releases" / "1.0.0" / "prompts" / "no_model" / "2x2.txt").read_text(encoding="utf-8")
-    assert status == 404  # no experiment branch yet
     put_raw(server, raw_response="R U", parsed_moves=["R", "U"])
     status, data = call(server, "GET", url(server, ATTEMPT))
     assert status == 200 and data["prompt"] == fill_template(template, server.first, "no_model")
@@ -1158,7 +1157,7 @@ def test_attempt_errors(server):
     put_raw(server)
     assert call(server, "GET", url(server, ATTEMPT.replace("input=ID", "input=nope")))[0] == 404
     assert call(server, "GET", url(server, ATTEMPT.replace("model=example-model", "model=other")))[0] == 404
-    assert call(server, "GET", ATTEMPT.replace("ID", "x").replace("&input=x", ""))[0] == 400
+    assert call(server, "GET", url(server, ATTEMPT.replace("&input=ID", "")))[0] == 400
     for bad in ("attempt=0", "attempt=x", "setup=bogus"):
         name = bad.split("=")[0]
         status, data = call(server, "GET", url(server, ATTEMPT.replace(f"{name}={'1' if name == 'attempt' else 'no_model'}", bad)))

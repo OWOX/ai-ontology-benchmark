@@ -5,12 +5,10 @@ branch, as in replay. Writes nothing.
 """
 
 import json
-import tempfile
-from pathlib import Path
 
 from src.puzzles.registry import get_engine
 from src.run.models import DECISION_PROVIDERS
-from src.run.prompts import decision_questions, decision_state, fill_template, load_questions
+from src.run.prompts import decision_questions, decision_state, fill_template, parse_questions
 from ui import expdata
 from ui.common import ApiError, check_id
 from ui.replay import parse_query
@@ -42,13 +40,10 @@ def attempt(bundles, experiment_id: str, live_ids: set[str], query: dict) -> dic
         text = git.show(git.main_ref(), f"{folder}/decision/questions.txt")
         if text is None:
             raise ApiError(404, f"release {release} has no decision questions file")
-        with tempfile.TemporaryDirectory() as tmp:  # load_questions reads a folder, so lay the text out as one
-            (Path(tmp) / "decision").mkdir()
-            (Path(tmp) / "decision" / "questions.txt").write_text(text, encoding="utf-8")
-            try:
-                questions = load_questions(Path(tmp))
-            except ValueError as error:
-                raise ApiError(404, f"release {release}: {error}") from None
+        try:
+            questions = parse_questions(text, f"releases/{release}/prompts/decision/questions.txt")
+        except ValueError as error:
+            raise ApiError(404, str(error)) from None
         asked = decision_questions(questions, get_engine(row["puzzle"]).legal_moves())
         prompt = f"{decision_state(prompt, [])}\n--- questions\n{json.dumps(asked, indent=2)}"
     record = next((r for r in exp["records"].get(model_name, []) if r.get("input_id") == input_id
