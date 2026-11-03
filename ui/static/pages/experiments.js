@@ -120,7 +120,7 @@
       const head = h("tr", {}, ...COLUMNS.filter(([k]) => !hidden.has(k)).map(([k, t]) => {
         const on = query.sort === k;
         const th = h("th", { class: "sortable", "aria-sort": on ? (query.dir === "desc" ? "descending" : "ascending") : "none" },
-          h("button", { type: "button", class: "linklike", text: t + (on ? (query.dir === "desc" ? " ▼" : " ▲") : "") }));
+          h("button", { type: "button", class: "linklike", text: t + (on ? (query.dir === "desc" ? "\u00a0▼" : "\u00a0▲") : "") }));
         th.firstChild.addEventListener("click", () => go({ sort: k, dir: on && query.dir !== "desc" ? "desc" : "" }));
         return th;
       }));
