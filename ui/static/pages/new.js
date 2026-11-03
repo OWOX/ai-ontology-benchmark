@@ -119,16 +119,21 @@
     }));
   }
 
+  // Two columns: the three budgets, then the rest.
   function numberFields() {
-    return h("div", { class: "grid" }, ...NUMBERS.map(([key, label]) => {
+    const field = ([key, label]) => {
       const input = h("input", { type: "text", inputmode: "decimal", "aria-label": label, value: String(S.vals[key]) });
       input.addEventListener("input", () => { S.vals[key] = input.value; });
       return h("label", {}, label, input);
-    }), (() => {
+    };
+    const limit = (() => {
       const input = h("input", { type: "text", inputmode: "numeric", "aria-label": "Limit per model", value: S.limit });
       input.addEventListener("input", () => { S.limit = input.value; });
       return h("label", {}, "Limit per model (optional): stops each AI model after N attempts", input);
-    })());
+    })();
+    const budgets = NUMBERS.filter(([k]) => k.endsWith("_usd")), rest = NUMBERS.filter(([k]) => !k.endsWith("_usd"));
+    return h("div", { class: "params-cols" }, h("div", { class: "grid" }, ...budgets.map(field)),
+      h("div", { class: "grid" }, ...rest.map(field), limit));
   }
 
   UI.registerPage("new", {
@@ -141,6 +146,7 @@
       let dead = false, starting = false;
 
       const msg = h("p", { class: "msg", role: "status" });
+      ref.result = h("div", { class: "job-result" });
       const say = (text, kind) => { msg.className = "msg" + (kind ? " " + kind : ""); msg.textContent = text; };
 
       function controls() {
@@ -149,7 +155,6 @@
         const run = (j) => j.startsWith("run:"), busy = (j) => run(j) || j === "evaluate";
         ref.run.disabled = starting || mine(id, busy);
         ref.estimate.disabled = mine(id, (j) => j === "estimate");
-      ref.result = h("div", { class: "job-result" });
         ref.dry.disabled = mine(id, (j) => j === "dry-run");
       }
 
@@ -208,14 +213,6 @@
         }
       }
 
-      async function send(path, label) {
-        say("");
-        try {
-          const form = readForm(bundle);
-          const body = path === "run" ? { form, limit: readLimit() } : { form };
-          if (path === "run") { starting = true; controls(); say(`Starting the run and creating results/${form.id}…`); }
-          const r = await UI.api("/api/" + path, { method: "POST", body }).finally(() => { starting = false; if (!dead) controls(); });
-          if (dead) return;
       // The output of Estimate or Dry run: that job's log lines for this experiment id, from the log history and
       // then as they arrive. Text only. A later press of either button starts the block afresh.
       function showResult(label, job, id, after) {
@@ -234,9 +231,17 @@
         ref.off = UI.onLines(add);
       }
 
+      async function send(path, label) {
+        say("");
+        const after = UI.lines.length ? UI.lines[UI.lines.length - 1].seq : 0;
+        try {
+          const form = readForm(bundle);
+          const body = path === "run" ? { form, limit: readLimit() } : { form };
+          if (path === "run") { starting = true; controls(); say(`Starting the run and creating results/${form.id}…`); }
+          const r = await UI.api("/api/" + path, { method: "POST", body }).finally(() => { starting = false; if (!dead) controls(); });
+          if (dead) return;
           if (path === "run") {
             // The branch exists by now, so the experiment's page can be opened and reloaded safely.
-        const after = UI.lines.length ? UI.lines[UI.lines.length - 1].seq : 0;
             UI.go("#/experiments/" + encodeURIComponent(form.id) + (bundle.release ? "?release=" + encodeURIComponent(bundle.release) : ""));
             return;
           }

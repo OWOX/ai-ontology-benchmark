@@ -81,6 +81,9 @@ button.small { padding: 2px 8px; font-size: 12px; }
 .reason { font-size: 12px; color: var(--danger); }
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
 .grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.params-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; align-items: start; }
+.params-cols > .grid { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 700px) { .params-cols { grid-template-columns: minmax(0, 1fr); } }
 .grid label.wide { grid-column: span 3; }
 .row { display: flex; gap: 6px; }
 .row input { flex: 1; }
@@ -260,12 +263,12 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .provider-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .provider-row .provider-head { margin-bottom: 0; }
 .key-warn { text-decoration: none; }
-.provider > .provider-head { font-size: 18px; }
-.model-col .reason { font-weight: 400; margin-bottom: 4px; }
-.newexp .grid input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--field); color: inherit; }
 .job-result { margin-top: 10px; }
 .job-result h4 { margin: 0 0 4px; font-size: 13px; }
 .job-result .terminal { height: 200px; border-radius: var(--radius); }
+.provider > .provider-head { font-size: 18px; }
+.model-col .reason { font-weight: 400; margin-bottom: 4px; }
+.newexp .grid input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--field); color: inherit; }
 
 /* Experiment workspace: progress bar, two columns, plan tree, and the terminal */
 .pbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }

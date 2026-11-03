@@ -22,9 +22,10 @@
 
   // The settings as the New Experiment form shows them, read-only: every puzzle and catalogue model, with the
   // experiment's own picked, and its parameters in disabled fields.
-  const PARAMS = [["Attempts per input and setup", (c) => c.attempts], ["Retry cap", (c) => c.retry_cap],
-    ["Max output tokens", (c) => c.max_output_tokens], ["Request budget (USD)", (c) => c.budget.per_request_usd],
-    ["Model budget (USD)", (c) => c.budget.per_model_usd], ["Experiment budget (USD)", (c) => c.budget.per_experiment_usd]];
+  // Two columns, as on New Experiment: the three budgets, then the rest.
+  const PARAMS = [[["Request budget (USD)", (c) => c.budget.per_request_usd], ["Model budget (USD)", (c) => c.budget.per_model_usd],
+    ["Experiment budget (USD)", (c) => c.budget.per_experiment_usd]],
+  [["Attempts per input and setup", (c) => c.attempts], ["Retry cap", (c) => c.retry_cap], ["Max output tokens", (c) => c.max_output_tokens]]];
 
   function settings(d, bundle) {
     const c = d.config;
@@ -51,10 +52,11 @@
           return label;
         }));
     });
-    const fields = PARAMS.map(([label, get]) => h("label", {}, label, h("input", { type: "text", disabled: "", value: String(get(c)) })));
+    const fields = PARAMS.map((col) => h("div", { class: "grid" },
+      ...col.map(([label, get]) => h("label", {}, label, h("input", { type: "text", disabled: "", value: String(get(c)) })))));
     return [h("section", { class: "step" }, h("h3", { text: "Puzzles" }), h("div", { class: "cards" }, ...cards)),
       h("section", { class: "step" }, h("h3", { text: "AI models" }), h("div", { class: "model-cols" }, ...cols)),
-      h("section", { class: "step" }, h("h3", { text: "Parameters" }), h("div", { class: "grid" }, ...fields))];
+      h("section", { class: "step" }, h("h3", { text: "Parameters" }), h("div", { class: "params-cols" }, ...fields))];
   }
 
   function reportBox(d) {
