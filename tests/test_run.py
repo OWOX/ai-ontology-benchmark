@@ -7,6 +7,8 @@ import csv
 import io
 import json
 import sys
+import threading
+import time
 
 import pytest
 
@@ -873,7 +875,6 @@ class Gate:
     """Wraps call_model: counts calls in flight, notes the first arrivals, and holds them until `hold` have arrived."""
 
     def __init__(self, monkeypatch, hold=0, sleep=0.0, block_after=None, block_for=5.0):
-        import threading
         self.real, self.lock, self.hold, self.sleep = run_module.call_model, threading.Lock(), hold, sleep
         self.block_after, self.block_for = block_after, block_for
         self.arrived, self.now, self.peak, self.calls = [], 0, 0, 0
@@ -901,9 +902,6 @@ class Gate:
         finally:
             with self.lock:
                 self.now -= 1
-
-
-import time  # noqa: E402
 
 
 def test_parallel_writes_the_same_records_as_serial(exp, tmp_path):
@@ -1027,8 +1025,6 @@ def test_a_reservation_grows_with_the_tokens_its_attempt_has_paid(tmp_path):
 
 
 def test_a_worker_failure_that_is_not_an_exception_ends_the_run(exp, monkeypatch):
-    import threading
-
     def boom(model, prompt, max_output_tokens):
         raise KeyboardInterrupt
 
