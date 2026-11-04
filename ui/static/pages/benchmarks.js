@@ -127,17 +127,14 @@
     return h("label", { class: "small" }, name + " ", s);
   }
 
-  // Which cell of a row is coloured, and the sentence for its tooltip.
+  // Which cells of a row are coloured on one side, each with the sentence for its tooltip.
   function verdict(row, side, sig) {
-    const v = row[side];
-    if (!v) return null;
-    if (sig !== "all") {
-      if (!row.tested || typeof v.p_holm !== "number" || !(v.p_holm < THRESHOLD[sig]) || !v.agrees) return null;
-    }
-    const other = side === "best" ? "Better" : "Worse";
-    if (!v.against) return { model: v.model, side, tip: `${side === "best" ? "Best" : "Worst"} in this row.` };
-    const p = typeof v.p_value === "number" ? `p = ${pval(v.p_value)}${typeof v.p_holm === "number" ? ` (Holm ${pval(v.p_holm)})` : ""}` : "no test";
-    return { model: v.model, side, tip: `${other} than ${v.against}: ${p}, ${v.inputs_paired} inputs paired.` };
+    return (row[side] || []).filter((v) => sig === "all"
+      || (row.tested && typeof v.p_holm === "number" && v.p_holm < THRESHOLD[sig] && v.agrees)).map((v) => {
+      if (!v.against) return { model: v.model, side, tip: `${side === "best" ? "Best" : "Worst"} in this row.` };
+      const p = typeof v.p_value === "number" ? `p = ${pval(v.p_value)}${typeof v.p_holm === "number" ? ` (Holm ${pval(v.p_holm)})` : ""}` : "no test";
+      return { model: v.model, side, tip: `${side === "best" ? "Better" : "Worse"} than ${v.against}: ${p}, ${v.inputs_paired} inputs paired.` };
+    });
   }
 
   function cellTip(metric, cell, mark) {
@@ -260,8 +257,7 @@
       const marksOf = (row) => {
         const out = {};
         for (const side of ["best", "worst"]) {
-          const v = verdict(row, side, c.sig);
-          if (v) out[v.model] = { cls: side === "best" ? "win" : "lose", verdict: v };
+          for (const v of verdict(row, side, c.sig)) out[v.model] = { cls: side === "best" ? "win" : "lose", verdict: v };
         }
         return out;
       };
