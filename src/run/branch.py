@@ -65,6 +65,36 @@ def stale_message(files: list[str], ref: str) -> str:
             f"(for example: git restore --source={ref} --worktree -- {results})")
 
 
+def branch_copy(experiment_id: str, results_dir: Path, fetch: bool) -> bytes | None:
+    """The bytes of experiment.toml on the results branch (local, then origin's), or None. Best effort:
+    no git work tree, no ref, or no file there all mean no copy. `fetch` first asks origin for the branch."""
+    env = {k: v for k, v in os.environ.items() if k not in GIT_VARIABLES} | {"GIT_TERMINAL_PROMPT": "0"}
+
+    def git(argv: list[str]):
+        try:
+            return subprocess.run(["git", *argv], env=env, capture_output=True, stdin=subprocess.DEVNULL,
+                                  timeout=NETWORK_TIMEOUT_S)
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+
+    top = git(["rev-parse", "--show-toplevel"])
+    if top is None or top.returncode != 0:
+        return None
+    root = Path(top.stdout.decode().strip()).resolve()
+    try:
+        path = f"{Path(results_dir).resolve().relative_to(root)}/experiment.toml"
+    except ValueError:
+        return None
+    branch = f"results/{experiment_id}"
+    if fetch:
+        git(["fetch", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}"])
+    for ref in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}"):
+        shown = git(["show", f"{ref}:{path}"])
+        if shown is not None and shown.returncode == 0:
+            return shown.stdout
+    return None
+
+
 class ResultsBranch:
     def __init__(self, config_path: Path | None, results_dir: Path, experiment_id: str):
         self.branch = f"results/{experiment_id}"
