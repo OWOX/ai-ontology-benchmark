@@ -78,12 +78,20 @@
     return "/api/benchmarks?" + q;
   }
 
-  async function load(path, stamp) {
+  // While a job runs, a run's local branch moves without a fetch, so the cache is bypassed (`fresh`).
+  const running = () => UI.jobs.some((j) => j.state === "running");
+  const POLL_MS = 10000;
+  let live = null;  // the listener and timer of the mounted page, undone when the page is drawn again or replaced
+  const unlive = () => { if (live) { clearInterval(live.timer); live.off(); live = null; } };
+
+  async function load(path, stamp, fresh) {
     const key = stamp + path;
-    if (!cache.has(key)) {
+    if (fresh || !cache.has(key)) {
       const data = await UI.api(path);
+      if (running()) return data;  // a live answer is stale within seconds, so it never reaches the cache
       if (cache.size >= 20) cache.delete(cache.keys().next().value);
       cache.set(key, data);
+      return data;
     }
     return cache.get(key);
   }
@@ -266,8 +274,11 @@
     for (const s of data.skipped || []) el.append(h("p", { class: "muted small", text: `${s.id}: ${s.error}` }));
   }
 
+  window.Benchmarks = { verdict, chosenModels };  // for tests/js/benchmarks.test.mjs
+
   UI.registerPage("benchmarks", {
     render(bundle, params, el) {
+      unlive();
       const c = choices(params, bundle);
       const stamp = String(bundle.fetched_at || "");
       const go = (changes) => {
@@ -303,30 +314,46 @@
       el.append(h("h2", { text: "Benchmarks" }));
       const body = h("div", {});
       el.append(body);
-      const cached = path && cache.get(stamp + path);
+      let busy = false;  // a request in flight, so slow polls never pile up
+      const cached = !running() && path && cache.get(stamp + path);
       if (cached) {
         opts = cached.options;
         // The path came from the options of an earlier response, so it holds only when this one agrees.
-        if (requestFor(c, opts) === path) { show(body, cached, c, toolbar()); return; }
+        if (requestFor(c, opts) === path) { show(body, cached, c, toolbar()); watch(); return; }
       }
       body.append(toolbar(), h("p", { class: "muted", text: "Loading…" }));
-      (async () => {
+      async function fetchAndShow(fresh, quiet) {
+        busy = true;
         try {
-          let data = path ? await load(path, stamp) : null;
+          let data = path ? await load(path, stamp, fresh) : null;
           // The provider and model choices need the options, which only a response holds.
           if (data && mine === seq) {
             opts = data.options;
             const again = requestFor(c, opts);
-            if (again !== path) data = again ? await load(again, stamp) : { ...data, rows: [], models: [], experiments: [] };
+            if (again !== path) data = again ? await load(again, stamp, fresh) : { ...data, rows: [], models: [], experiments: [] };
           } else if (!data && opts && mine === seq) {
             data = { options: opts, rows: [], models: [], experiments: [], skipped: [] };
           }
           if (mine !== seq || !body.isConnected) return;
           if (data) { opts = data.options; show(body, data, c, toolbar()); }
         } catch (e) {
-          if (mine === seq && body.isConnected) body.replaceChildren(toolbar(), h("p", { class: "msg err", text: e.message }));
+          if (mine === seq && body.isConnected && !quiet) body.replaceChildren(toolbar(), h("p", { class: "msg err", text: e.message }));
+        } finally {
+          busy = false;
         }
-      })();
+      }
+      // While a job runs, ask again every 10 seconds, and once more when a job ends. The page going away ends both.
+      function watch() {
+        const gone = () => mine !== seq || !body.isConnected;
+        const tick = () => { if (gone()) unlive(); else if (running() && !busy) fetchAndShow(true, true); };
+        const off = UI.onJobs((jobs, ended) => {
+          if (gone()) { unlive(); return; }
+          if (ended && ended.length) { cache.clear(); fetchAndShow(true, true); }
+        });
+        live = { off, timer: setInterval(tick, POLL_MS) };
+      }
+      watch();
+      fetchAndShow(running(), false);
     },
   });
 })();

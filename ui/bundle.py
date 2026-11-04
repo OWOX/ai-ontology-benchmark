@@ -25,7 +25,6 @@ from ui.puzzleinfo import build_puzzle
 NO_KEY = "no API key: add it under Models"
 NO_ACCOUNT = "no account id: add it under Models"
 CACHE_LIMIT = 16
-SCORED_LIMIT = 64  # experiments held scored for Benchmarks
 
 
 def is_mirror(release: str, other: str | None, manifests: dict[str, dict | None]) -> bool:
@@ -45,7 +44,7 @@ class Bundles(BranchReaders):
         self._lock = threading.Lock()
         self._cache: dict[tuple, dict] = {}
         self._bench_cache: dict[tuple, dict] = {}
-        self._scored_cache: dict[tuple, dict] = {}
+        self._scored_cache: dict[str, dict] = {}  # one entry per experiment id
 
     # --- small readers, all from main -------------------------------------------------------
 
@@ -123,15 +122,16 @@ class Bundles(BranchReaders):
         return bundle
 
     def _scored(self, experiment_id: str, ref: str, main_sha: str | None) -> dict:
-        """One experiment as loaded, with its scored attempt rows once they have been read. Kept per
-        (experiment id, ref sha, main sha), so a new filter reuses them. Called under the lock."""
-        key = (experiment_id, self.git.sha(ref), main_sha)
-        if key not in self._scored_cache:
-            if len(self._scored_cache) >= SCORED_LIMIT:
-                self._scored_cache.pop(next(iter(self._scored_cache)))
-            self._scored_cache[key] = {"exp": expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref()),
-                                       "rows": None}
-        return self._scored_cache[key]
+        """One experiment as loaded, with its scored attempt rows once they have been read. One entry per
+        experiment id, replaced when its ref sha or the main sha changes, so a new filter reuses it and
+        memory follows the number of experiments. Called under the lock."""
+        stamp = (self.git.sha(ref), main_sha)
+        held = self._scored_cache.get(experiment_id)
+        if held is None or held["stamp"] != stamp:
+            held = {"stamp": stamp, "rows": None,
+                    "exp": expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref())}
+            self._scored_cache[experiment_id] = held
+        return held
 
     def _load_all(self, refs: dict[str, str], main: str) -> list[dict]:
         loaded = (expdata.load_experiment(self.git, i, ref, main) for i, ref in sorted(refs.items()))

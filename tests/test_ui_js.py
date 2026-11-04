@@ -58,6 +58,11 @@ def test_in_flight_attempts_are_the_first_n_without_a_record():
     assert run.returncode == 0, run.stderr + run.stdout
 
 
+def test_benchmarks_colouring_gate_and_stale_models_fallback():
+    run = subprocess.run([NODE, "tests/js/benchmarks.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
 def test_estimate_patterns_read_runs_estimate_lines(exp, capsys):
     """New Experiment reads `run --estimate` into a table with regexes of its own: keep the two in step."""
     import json
