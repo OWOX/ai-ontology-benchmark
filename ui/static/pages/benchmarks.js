@@ -88,8 +88,10 @@
     const key = stamp + path;
     if (fresh || !cache.has(key)) {
       const data = await UI.api(path);
+      if (running()) return data;  // a live answer is stale within seconds, so it never reaches the cache
       if (cache.size >= 20) cache.delete(cache.keys().next().value);
       cache.set(key, data);
+      return data;
     }
     return cache.get(key);
   }
@@ -312,6 +314,7 @@
       el.append(h("h2", { text: "Benchmarks" }));
       const body = h("div", {});
       el.append(body);
+      let busy = false;  // a request in flight, so slow polls never pile up
       const cached = !running() && path && cache.get(stamp + path);
       if (cached) {
         opts = cached.options;
@@ -319,7 +322,8 @@
         if (requestFor(c, opts) === path) { show(body, cached, c, toolbar()); watch(); return; }
       }
       body.append(toolbar(), h("p", { class: "muted", text: "Loading…" }));
-      async function fetchAndShow(fresh) {
+      async function fetchAndShow(fresh, quiet) {
+        busy = true;
         try {
           let data = path ? await load(path, stamp, fresh) : null;
           // The provider and model choices need the options, which only a response holds.
@@ -333,21 +337,23 @@
           if (mine !== seq || !body.isConnected) return;
           if (data) { opts = data.options; show(body, data, c, toolbar()); }
         } catch (e) {
-          if (mine === seq && body.isConnected && !fresh) body.replaceChildren(toolbar(), h("p", { class: "msg err", text: e.message }));
+          if (mine === seq && body.isConnected && !quiet) body.replaceChildren(toolbar(), h("p", { class: "msg err", text: e.message }));
+        } finally {
+          busy = false;
         }
       }
       // While a job runs, ask again every 10 seconds, and once more when a job ends. The page going away ends both.
       function watch() {
         const gone = () => mine !== seq || !body.isConnected;
-        const tick = () => { if (gone()) unlive(); else if (running()) fetchAndShow(true); };
+        const tick = () => { if (gone()) unlive(); else if (running() && !busy) fetchAndShow(true, true); };
         const off = UI.onJobs((jobs, ended) => {
           if (gone()) { unlive(); return; }
-          if (ended && ended.length) fetchAndShow(true);
+          if (ended && ended.length) { cache.clear(); fetchAndShow(true, true); }
         });
         live = { off, timer: setInterval(tick, POLL_MS) };
       }
       watch();
-      fetchAndShow(running());
+      fetchAndShow(running(), false);
     },
   });
 })();
