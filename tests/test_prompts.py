@@ -8,7 +8,7 @@ import pytest
 
 from src.generate.generate import build_inputs
 from src.puzzles.cube import CubeEngine
-from src.puzzles.registry import get_engine
+from src.puzzles.registry import ENGINES, get_engine
 from src.run.prompts import SETUPS, build_prompt, fill_template, prompt_versions
 
 CONFIG = {
@@ -223,3 +223,13 @@ def test_parse_questions_reads_text_and_names_the_source():
     assert parse_questions(text, "here") == {"next_move": "pick one", "done": "solved", "mismatch": "unreachable"}
     with pytest.raises(ValueError, match="here.*mismatch"):
         parse_questions("next_move: a\ndone: b\n", "here")
+
+
+def test_every_puzzle_has_a_template_under_each_setup():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / "prompts"
+    for setup in SETUPS:
+        for puzzle in ENGINES:
+            text = (root / setup / f"{puzzle}.txt").read_text(encoding="utf-8")
+            assert "{state}" in text
+            assert ("{legal_moves}" in text) == (setup == "prescriptive")
