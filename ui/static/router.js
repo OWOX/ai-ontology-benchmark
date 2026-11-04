@@ -5,7 +5,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const meta = document.querySelector('meta[name="ui-token"]');
-  const MENU = [["models", "Models"], ["puzzles", "Puzzles"], ["experiments", "Experiments"], ["about", "About"]];
+  const MENU = [["benchmarks", "Benchmarks"], ["models", "Models"], ["puzzles", "Puzzles"], ["experiments", "Experiments"], ["about", "About"]];
   const pages = {};
   const st = { bundle: null, seq: 0, params: null, jobs: [], listeners: [], lineListeners: [], logAfter: 0, lines: [] };
 

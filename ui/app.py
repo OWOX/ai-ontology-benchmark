@@ -162,6 +162,10 @@ class App:
             release = query.get("release", [None])[0]
             return self.bundles.get(release, query.get("refresh", ["0"])[0] == "1", live, merged_env(self.root),
                                     self.jobs.running_ids())
+        if parts == ["api", "benchmarks"]:
+            lists = {k: [n for n in query.get(k, [""])[0].split(",") if n]
+                     for k in ("releases", "models", "puzzles", "setups")}
+            return self.bundles.benchmarks({**lists, "validity": query.get("validity", [""])[0]}, live)
         if parts == ["api", "inputs"]:
             return self.bundles.inputs(query.get("release", [""])[0], query.get("puzzle", [""])[0])
         if parts == ["api", "branches"]:

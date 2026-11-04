@@ -1209,3 +1209,10 @@ def test_jobs_remember_parallel_of_running_run_jobs(server):
     assert jobs.parallels("t1") == {"example-model": 3} and jobs.parallels("other") == {}
     jobs.finish(job, 0)
     assert jobs.parallels("t1") == {}
+
+
+def test_benchmarks_route(server):
+    status, data = call(server, "GET", "/api/benchmarks?releases=1.0.0&models=,nope&validity=valid")
+    assert status == 200 and data["releases"] == ["1.0.0"] and data["rows"] == [] and data["models"] == []
+    status, data = call(server, "GET", "/api/benchmarks?puzzles=7x7")
+    assert status == 400 and "'puzzles'" in data["error"]
