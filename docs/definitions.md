@@ -128,7 +128,7 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 
 `evaluate` computes every metric. No metric is stored in raw records. Reports split each metric by puzzle, setup, AI model, scramble depth, and validity label, except the paired setup test, which pools scramble depths. Attempts with outcome `infrastructure_failure` are left out of every rate, consistency, and latency, and counted on their own, so the denominators never change silently. They still count in tokens per attempt and cost per success, because their failed calls cost money.
 
-Every rate is reported with its denominator `n` and a 95% Wilson score interval, because a rate from a few dozen attempts can move by more than ten points by chance.
+Every rate is reported with its denominator `n`, the number of inputs behind it, and a 95% bootstrap interval over inputs: inputs are drawn with replacement 2000 times, each draw keeps all attempts of the inputs drawn, and the interval is the 2.5th and 97.5th percentile of the rate over the draws. Attempts on one input aren't independent, so resampling attempts would make the interval too narrow. The draws come from a fixed seed, so the same raw records always give the same interval. The interval is n/a when fewer than 2 inputs are behind the rate.
 
 1. **Success rate.** The share of attempts, on valid and invalid inputs, with outcome `success`. Reported separately for valid and invalid inputs, never pooled.
 2. **Hallucination rate.** The share of attempts with outcome `hallucination`. n/a for decision models, which can't return an impossible move.

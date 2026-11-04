@@ -58,11 +58,22 @@ def p_text(value: object) -> str:
 
 
 def rate_cell(row: dict, name: str) -> str:
-    """Show a rate as `0.42 (0.30–0.55) n=60`."""
+    """Show a rate as `0.42 (0.30–0.55) n=60, 20 inputs`, or `0.42 (n/a) n=60, 1 inputs` with no interval."""
+    counts = f"n={row[name + '_n']}, {row[name + '_inputs']} inputs"
     if row[name] == NA:
-        return f"{NA} n={row[name + '_n']}"
+        return f"{NA} {counts}"
     low, high = row[name + "_low"], row[name + "_high"]
-    return f"{row[name]:.2f} ({low:.2f}–{high:.2f}) n={row[name + '_n']}"
+    if low == NA:
+        return f"{row[name]:.2f} ({NA}) {counts}"
+    return f"{row[name]:.2f} ({low:.2f}–{high:.2f}) {counts}"
+
+
+def balanced_cell(row: dict) -> str:
+    """Show balanced accuracy as `0.75 (0.50–1.00)`, or just `0.75` with no interval."""
+    low, high = row["balanced_accuracy_low"], row["balanced_accuracy_high"]
+    if row["balanced_accuracy"] == NA or low == NA:
+        return number(row["balanced_accuracy"], 2)
+    return f"{row['balanced_accuracy']:.2f} ({low:.2f}–{high:.2f})"
 
 
 def value_cell(row: dict, name: str) -> str:
@@ -216,7 +227,7 @@ def detection_section(definitions_link: str, config: dict, detection_rows) -> li
                     body.append([puzzle, r["setup"],
                                  f"{number(r['detection_rate'], 2)} n={r['detection_n']}",
                                  f"{number(r['false_mismatch_rate'], 2)} n={r['false_mismatch_n']}",
-                                 number(r["balanced_accuracy"], 2)])
+                                 balanced_cell(r)])
             body.append([puzzle, "always MISMATCH (baseline)", "1.00", "1.00", "0.50"])
         out += [f"### {model['name']}", ""] + table(header, body)
     return out

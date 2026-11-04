@@ -3,8 +3,10 @@
 the attempts. Reads the release's inputs.jsonl and writes nothing. It is part of the assessment.
 """
 
+import hashlib
 import json
 import math
+import random
 from collections import Counter, defaultdict
 from fractions import Fraction
 from itertools import combinations
@@ -17,7 +19,9 @@ from src.run.raw import is_decision_record
 from src.validator import validate
 
 NA = "n/a"
-Z = 1.96  # 95% confidence
+Z = 1.96  # 95% confidence, used by `wilson`, which only the UI display path still calls
+BOOTSTRAP_DRAWS = 2000
+BOOTSTRAP_SEED = "bootstrap-v1"
 PAIRED_METRICS = ("success_rate", "hallucination_rate", "mismatch_detection_rate")
 ALPHA = 0.05
 PAIRED_COLUMNS = (
@@ -44,35 +48,84 @@ def mean(values: list) -> object:
     return sum(values) / len(values) if values else NA
 
 
-def rate_columns(row: dict, name: str, hits: int, n: int) -> None:
-    row[name], row[name + "_low"], row[name + "_high"] = wilson(hits, n)
-    row[name + "_n"] = n
+def bootstrap_rng(key: str) -> random.Random:
+    """A generator seeded from the key alone, so the result never depends on group order."""
+    digest = hashlib.sha256(f"{BOOTSTRAP_SEED}|{key}".encode("utf-8")).digest()
+    return random.Random(int.from_bytes(digest, "big"))
+
+
+def percentiles(draws: list[float]) -> tuple:
+    """Nearest-rank 2.5th and 97.5th percentiles of the draw rates."""
+    draws = sorted(draws)
+    return draws[int(0.025 * len(draws))], draws[int(0.975 * len(draws)) - 1]
+
+
+def bootstrap_interval(cells: list[tuple[int, int]], key: str) -> tuple:
+    """Return (rate, low, high) for one rate. `cells` holds one (hits, attempts) pair per input, in a
+    stable order. Inputs are drawn with replacement, keeping all their attempts."""
+    hits = sum(h for h, _ in cells)
+    attempts = sum(a for _, a in cells)
+    if attempts == 0:
+        return NA, NA, NA
+    rate = hits / attempts
+    if len(cells) < 2:
+        return rate, NA, NA
+    if hits == 0 or hits == attempts:
+        return rate, rate, rate  # every draw gives the same rate
+    rng = bootstrap_rng(key)
+    count = len(cells)
+    draws = []
+    for _ in range(BOOTSTRAP_DRAWS):
+        picked = [cells[i] for i in rng.choices(range(count), k=count)]
+        total = sum(a for _, a in picked)
+        draws.append(sum(h for h, _ in picked) / total if total else 0.0)
+    low, high = percentiles(draws)
+    return rate, low, high
+
+
+def input_cells(rows: list[dict], hit) -> list[tuple[int, int]]:
+    """One (hits, attempts) pair per input, sorted by input id."""
+    per_input = defaultdict(lambda: [0, 0])
+    for r in rows:
+        cell = per_input[r["input_id"]]
+        cell[0] += bool(hit(r))
+        cell[1] += 1
+    return [tuple(per_input[i]) for i in sorted(per_input)]
+
+
+def rate_columns(row: dict, name: str, cells: list[tuple[int, int]], key: str) -> None:
+    row[name], row[name + "_low"], row[name + "_high"] = bootstrap_interval(cells, f"{key}|{name}")
+    row[name + "_n"] = sum(a for _, a in cells)
+    row[name + "_inputs"] = len(cells)
 
 
 def count_outcome(rows: list[dict], outcome: str) -> int:
     return sum(1 for r in rows if r["outcome"] == outcome)
 
 
-def rates(rows: list[dict], validity: str) -> dict:
-    """Rates over the attempts that are not infrastructure failures (`rows` holds only those)."""
-    n = len(rows)
-    flagged = sum(r["mismatch"] for r in rows)
+def rates(rows: list[dict], validity: str, key: str) -> dict:
+    """Rates over the attempts that are not infrastructure failures (`rows` holds only those).
+    `key` names the group, and seeds each rate's bootstrap."""
     out: dict = {}
-    rate_columns(out, "success_rate", count_outcome(rows, "success"), n)
-    if rows and all(r["decision"] for r in rows):
-        rate_columns(out, "hallucination_rate", 0, 0)  # a decision model can't return an impossible move
-    else:
-        rate_columns(out, "hallucination_rate", count_outcome(rows, "hallucination"), n)
-    if validity == "invalid":
-        rate_columns(out, "mismatch_detection_rate", flagged, n)
-        rate_columns(out, "false_mismatch_rate", 0, 0)
-    else:
-        rate_columns(out, "mismatch_detection_rate", 0, 0)
-        rate_columns(out, "false_mismatch_rate", flagged, n)
-    rate_columns(out, "malformed_output_rate", count_outcome(rows, "malformed_output"), n)
-    rate_columns(out, "truncated_rate", count_outcome(rows, "truncated"), n)
-    rate_columns(out, "abstention_rate", count_outcome(rows, "abstention"), n)
-    rate_columns(out, "format_error_rate", count_outcome(rows, "format_error"), n)
+
+    def add(name: str, hit, use_rows: list | None = None) -> None:
+        use = rows if use_rows is None else use_rows
+        rate_columns(out, name, input_cells(use, hit), key)
+
+    def outcome_is(outcome: str):
+        return lambda r: r["outcome"] == outcome
+
+    add("success_rate", outcome_is("success"))
+    # a decision model can't return an impossible move
+    decision = bool(rows) and all(r["decision"] for r in rows)
+    add("hallucination_rate", outcome_is("hallucination"), [] if decision else rows)
+    flagged = lambda r: r["mismatch"]
+    add("mismatch_detection_rate", flagged, rows if validity == "invalid" else [])
+    add("false_mismatch_rate", flagged, [] if validity == "invalid" else rows)
+    add("malformed_output_rate", outcome_is("malformed_output"))
+    add("truncated_rate", outcome_is("truncated"))
+    add("abstention_rate", outcome_is("abstention"))
+    add("format_error_rate", outcome_is("format_error"))
     return out
 
 
@@ -89,12 +142,12 @@ def consistency(rows: list[dict]) -> object:
     return mean(shares)
 
 
-def group_metrics(rows: list[dict], validity: str, full: bool) -> dict:
+def group_metrics(rows: list[dict], validity: str, full: bool, key: str) -> dict:
     """Metrics for one group of attempt rows. `full` adds the columns the summary leaves out."""
     done = [r for r in rows if r["outcome"] != "infrastructure_failure"]
     successes = count_outcome(rows, "success")
     out = {"attempts": len(rows), "infrastructure_failure_count": len(rows) - len(done)}
-    out.update(rates(done, validity))
+    out.update(rates(done, validity, key))
     out["cost_per_success"] = sum(r["cost"] for r in rows) / successes if successes else NA
     if full:
         out["consistency"] = consistency(done)
@@ -194,12 +247,12 @@ def compute(raw_records: list[dict], release_dir: Path, prices: dict,
     metric_rows = []
     for key in sorted_keys(groups, metric_sort_key, order):
         row = dict(zip(KEY, key))
-        row.update(group_metrics(groups[key], key[4], True))
+        row.update(group_metrics(groups[key], key[4], True, "|".join(map(str, key))))
         metric_rows.append(row)
     summary_rows = []
     for key in sorted_keys(pooled, summary_sort_key, order):
         row = dict(zip(("model", "setup", "validity"), key))
-        row.update(group_metrics(pooled[key], key[2], False))
+        row.update(group_metrics(pooled[key], key[2], False, "summary|" + "|".join(key)))
         summary_rows.append(row)
     return rows, metric_rows, summary_rows
 
@@ -285,8 +338,22 @@ def paired_tests(attempt_rows: list[dict], models: list[str] | None = None) -> l
 
 
 def interval_for_balanced_accuracy(rows: list[dict]) -> tuple:
-    """Return (low, high) for the balanced accuracy of one group. Not computed yet: n/a."""
-    return NA, NA
+    """Return (low, high) for the balanced accuracy of one group by a stratified bootstrap over
+    inputs: valid and invalid inputs are drawn separately. n/a when either side has under 2 inputs."""
+    valid = input_cells([r for r in rows if r["validity"] == "valid"], lambda r: r["mismatch"])
+    invalid = input_cells([r for r in rows if r["validity"] == "invalid"], lambda r: r["mismatch"])
+    if len(valid) < 2 or len(invalid) < 2:
+        return NA, NA
+    first = rows[0]
+    rng = bootstrap_rng(f"{first['model']}|{first['puzzle']}|{first['setup']}|balanced_accuracy")
+    draws = []
+    for _ in range(BOOTSTRAP_DRAWS):
+        v = [valid[i] for i in rng.choices(range(len(valid)), k=len(valid))]
+        x = [invalid[i] for i in rng.choices(range(len(invalid)), k=len(invalid))]
+        false_mismatch = sum(h for h, _ in v) / sum(a for _, a in v)
+        detection = sum(h for h, _ in x) / sum(a for _, a in x)
+        draws.append((detection + 1 - false_mismatch) / 2)
+    return percentiles(draws)
 
 
 def detection_rows(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:

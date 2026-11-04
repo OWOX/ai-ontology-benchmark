@@ -17,7 +17,8 @@
     const v = row[name], n = ` n=${row[name + "_n"]}`;
     if (typeof v !== "number") return "n/a" + n;
     const lo = row[name + "_low"], hi = row[name + "_high"];
-    return `${pct(v)} (${(lo * 100).toFixed(1)}–${(hi * 100).toFixed(1)})${n}${mark}`;
+    const span = typeof lo === "number" && typeof hi === "number" ? `${(lo * 100).toFixed(1)}–${(hi * 100).toFixed(1)}` : "n/a";
+    return `${pct(v)} (${span})${n}${mark}`;
   }
 
   function table(head, rows) {

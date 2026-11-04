@@ -117,22 +117,22 @@ def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
         return []
 
 
-def all_scope_rates(done: list[dict]) -> dict:
+def all_scope_rates(done: list[dict], key: str) -> dict:
     """Pooled over valid and invalid: detection over the invalid rows, false mismatch over the valid ones."""
-    out = rates(done, "valid")
-    invalid = rates([r for r in done if r["validity"] == "invalid"], "invalid")
-    valid = rates([r for r in done if r["validity"] == "valid"], "valid")
+    out = rates(done, "valid", key)
+    invalid = rates([r for r in done if r["validity"] == "invalid"], "invalid", key)
+    valid = rates([r for r in done if r["validity"] == "valid"], "valid", key)
     out.update({k: v for k, v in invalid.items() if k.startswith("mismatch_detection_rate")})
     out.update({k: v for k, v in valid.items() if k.startswith("false_mismatch_rate")})
     return out
 
 
-def scope_rates(rows: list[dict], scope: str) -> dict:
+def scope_rates(rows: list[dict], scope: str, key: str) -> dict:
     if scope != "all":
-        return group_metrics(rows, scope, False)
+        return group_metrics(rows, scope, False, key)
     done = [r for r in rows if r["outcome"] != "infrastructure_failure"]
     out = {"attempts": len(rows), "infrastructure_failure_count": len(rows) - len(done)}
-    return out | all_scope_rates(done)
+    return out | all_scope_rates(done, key)
 
 
 def cell(value: object) -> object:
@@ -183,7 +183,7 @@ def numbers(exp: dict, model: str, puzzle: str, scope: str, part: list[dict]) ->
         stats = {"attempts": total(pick, "attempts"),
                  "infrastructure_failure_count": total(pick, "infrastructure_failure_count")} | pooled_rates(pick)
     else:
-        stats = scope_rates(part, scope)
+        stats = scope_rates(part, scope, f"ui|{model}|{puzzle}|{scope}")
     tokens = sum(r["input_tokens"] + r["output_tokens"] + r["retry_input_tokens"]
                  + r["retry_output_tokens"] for r in part)
     priced = model in exp["prices"]
@@ -211,9 +211,9 @@ def _detail_metrics(exp: dict, inputs: list[dict]) -> tuple[list[dict], list[dic
     for r in rows:
         groups[tuple(r[k] for k in KEY)].append(r)
         pooled[(r["model"], r["setup"], r["validity"])].append(r)
-    metric_rows = [dict(zip(KEY, key)) | group_metrics(groups[key], key[4], True)
+    metric_rows = [dict(zip(KEY, key)) | group_metrics(groups[key], key[4], True, "|".join(map(str, key)))
                    for key in sorted_keys(groups, metric_sort_key, order)]
-    summary_rows = [dict(zip(("model", "setup", "validity"), key)) | group_metrics(pooled[key], key[2], False)
+    summary_rows = [dict(zip(("model", "setup", "validity"), key)) | group_metrics(pooled[key], key[2], False, "summary|" + "|".join(key))
                     for key in sorted_keys(pooled, summary_sort_key, order)]
     return metric_rows, summary_rows, "computed"
 

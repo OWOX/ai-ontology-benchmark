@@ -263,6 +263,8 @@ def test_summary_from_csv_equals_compute(ui_repo, samples, tmp_path):
     assert computed[2] == "computed" and len(computed[1]) == len(from_csv[1]) > 0
     for mine, theirs in zip(from_csv[1], computed[1]):
         for key, value in theirs.items():
+            if key.endswith(("_low", "_high")):
+                continue  # pooled CSV rows keep a Wilson interval for display, so they differ by design
             if isinstance(value, float):
                 assert mine[key] == pytest.approx(value, abs=1e-4 if key == "cost_per_success" else 1e-9)
             else:

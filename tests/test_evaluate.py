@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import compute, detection_rows, holm, paired_tests, sign_test, wilson
+from src.evaluate.metrics import bootstrap_interval, compute, detection_rows, holm, paired_tests, sign_test
 from src.puzzles.registry import get_engine
 from src.run import models, run as run_module
 from test_release import commit_all, edit, release_ok, repo  # noqa: F401  (repo is a fixture)
@@ -90,10 +90,43 @@ def metric(rows, validity):
     return row
 
 
-def test_wilson_seven_of_ten():
-    rate, low, high = wilson(7, 10)
-    assert (rate, round(low, 3), round(high, 3)) == (0.7, 0.397, 0.892)
-    assert wilson(0, 0) == ("n/a", "n/a", "n/a")
+def test_bootstrap_is_deterministic():
+    cells = [(1, 3), (0, 3), (3, 3), (2, 3)]
+    a = bootstrap_interval(cells, "g|success_rate")
+    assert a == bootstrap_interval(cells, "g|success_rate")
+    assert a[0] == 0.5 and 0.0 <= a[1] <= 0.5 <= a[2] <= 1.0
+
+
+def test_bootstrap_one_input_has_no_interval():
+    assert bootstrap_interval([(2, 3)], "k") == (2 / 3, "n/a", "n/a")
+
+
+def test_bootstrap_empty():
+    assert bootstrap_interval([], "k") == ("n/a", "n/a", "n/a")
+
+
+def test_bootstrap_all_hits():
+    assert bootstrap_interval([(3, 3)] * 10, "k") == (1.0, 1.0, 1.0)
+
+
+def test_clustered_interval_is_wider_than_independent():
+    clustered = bootstrap_interval([(3, 3)] * 5 + [(0, 3)] * 5, "k")
+    independent = bootstrap_interval([(1, 1)] * 15 + [(0, 1)] * 15, "k")
+    assert clustered[2] - clustered[1] > independent[2] - independent[1]
+
+
+def test_balanced_accuracy_interval_is_stratified_and_deterministic():
+    rows = ([_row(f"v{i}", "valid", mismatch=i == 1) for i in range(1, 5)]
+            + [_row(f"x{i}", "invalid", mismatch=i != 4) for i in range(1, 5)])
+    [row] = detection_rows(rows, ["m"])
+    assert row == detection_rows(rows, ["m"])[0]
+    assert 0.0 <= row["balanced_accuracy_low"] <= 0.75 <= row["balanced_accuracy_high"] <= 1.0
+
+
+def test_balanced_accuracy_interval_needs_two_inputs_per_side():
+    rows = [_row("v1", "valid", False), _row("x1", "invalid", True), _row("x2", "invalid", True)]
+    row = detection_rows(rows, ["m"])[0]
+    assert row["balanced_accuracy"] == 1.0 and row["balanced_accuracy_low"] == "n/a"
 
 
 def test_hand_worked_metrics(release_dir):
@@ -119,8 +152,8 @@ def test_hand_worked_metrics(release_dir):
     assert invalid["false_mismatch_rate"] == "n/a"
     assert invalid["consistency"] == pytest.approx(1 / 3)
     assert invalid["cost_per_success"] == pytest.approx(0.12 / 2)
-    low, high = invalid["success_rate_low"], invalid["success_rate_high"]
-    assert (round(low, 3), round(high, 3)) == (round(wilson(2, 6)[1], 3), round(wilson(2, 6)[2], 3))
+    assert invalid["success_rate_low"] <= 2 / 6 <= invalid["success_rate_high"]
+    assert invalid["success_rate_inputs"] == 2 and valid["success_rate_inputs"] == 2
     assert [(r["validity"], r["success_rate_n"]) for r in summary] == [("valid", 6), ("invalid", 6)]
 
 
@@ -389,6 +422,7 @@ def test_assessment_mismatch_refused(repo, monkeypatch, capsys):
     assert "assessment_sha256" in capsys.readouterr().err
     assert not (repo / "results/exp/1.0.0.md").exists() and not (repo / "results/exp/prices.toml").exists()
     assert not (repo / "results/exp/1.0.0.paired.csv").exists()
+    assert not (repo / "results/exp/1.0.0.detection.csv").exists()
 
 
 def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
@@ -398,6 +432,9 @@ def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
     assert go() == 0
     first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv", "1.0.0.detection.csv", "prices.toml")}
     assert go() == 0
+    header = (repo / "results/exp/1.0.0.detection.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert header == ("model,puzzle,setup,detection_rate,detection_n,false_mismatch_rate,false_mismatch_n,"
+                      "balanced_accuracy,balanced_accuracy_low,balanced_accuracy_high")
     assert first == {n: (repo / "results/exp" / n).read_bytes() for n in first}
     assert raw_before == {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}
     (repo / "config/prices.toml").write_text(PRICE_FILE.format(price=9.0), encoding="utf-8")
