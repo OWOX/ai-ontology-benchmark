@@ -270,6 +270,14 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .job-result { margin-top: 10px; }
 .job-result h4 { margin: 0 0 4px; font-size: 13px; }
 .job-result .terminal { height: 200px; border-radius: var(--radius); }
+.job-result .terminal.short { height: auto; max-height: 200px; }
+.estimate { margin-bottom: 8px; overflow-x: auto; }
+.estimate p { margin: 4px 0 0; }
+.estimate-table { border-collapse: collapse; font-size: 13px; background: var(--field); }
+.estimate-table th, .estimate-table td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; white-space: nowrap; }
+.estimate-table thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.estimate-table .n { text-align: right; font-variant-numeric: tabular-nums; }
+.estimate-table .over { color: var(--danger); }
 .provider > .provider-head { font-size: 18px; }
 .model-col .reason { font-weight: 400; margin-bottom: 4px; }
 .newexp .grid input { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--field); color: inherit; }

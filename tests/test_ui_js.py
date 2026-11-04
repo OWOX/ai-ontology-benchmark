@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from test_release import repo  # noqa: F401  (a fixture of exp)
+from test_run import exp  # noqa: F401  (a fixture)
+
 ROOT = Path(__file__).resolve().parent.parent
 NODE = shutil.which("node")
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -53,3 +56,21 @@ def test_terminal_pattern_reads_runs_progress_line():
 def test_in_flight_attempts_are_the_first_n_without_a_record():
     run = subprocess.run([NODE, "tests/js/progress.test.mjs"], cwd=ROOT, capture_output=True, text=True)
     assert run.returncode == 0, run.stderr + run.stdout
+
+
+def test_estimate_patterns_read_runs_estimate_lines(exp, capsys):
+    """New Experiment reads `run --estimate` into a table with regexes of its own: keep the two in step."""
+    import json
+    import re
+
+    from test_run import go
+    assert go("--estimate") == 0
+    lines = capsys.readouterr().out.splitlines()
+    source = (ROOT / "ui" / "static" / "pages" / "new.js").read_text(encoding="utf-8")
+    patterns = {name: re.search(rf"const {name} = /(.*)/;", source).group(1) for name in ("ESTIMATE_MODEL", "ESTIMATE_TOTAL")}
+    script = (f"const p = {json.dumps(patterns)}, lines = {json.dumps(lines)};"
+              "console.log(JSON.stringify(lines.map((l) => [new RegExp(p.ESTIMATE_MODEL).test(l), new RegExp(p.ESTIMATE_TOTAL).test(l)])));")
+    run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    matched = json.loads(run.stdout)
+    assert len(lines) >= 2 and all(m == [True, False] for m in matched[:-1]) and matched[-1] == [False, True], lines
