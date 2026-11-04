@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 from src.config import load_experiment_config, load_prices
-from src.evaluate.metrics import EvalError, compute, CORRUPTION_COLUMNS, corruption_rows, detection_rows, paired_tests
+from src.evaluate.metrics import EvalError, compute, CORRUPTION_COLUMNS, DETECTION_COLUMNS, corruption_rows, detection_rows, paired_tests
 from src.evaluate.report import write_report
 from src.release.release import parse_version
 from src.run.models import DECISION_PROVIDERS
@@ -120,7 +120,7 @@ def evaluate(args: argparse.Namespace) -> None:
     paired_rows = paired_tests(attempt_rows, names)
     paired_content = csv_text(paired_rows, exact=("p_value", "p_holm"))
     detection = detection_rows(attempt_rows, names)
-    detection_content = csv_text(detection)
+    detection_content = csv_text(detection, columns=DETECTION_COLUMNS)
     corruption = corruption_rows(attempt_rows, names)
     corruption_content = csv_text(corruption, columns=CORRUPTION_COLUMNS)
     # Every check is done. Write the outputs last, the prices copy after the others.

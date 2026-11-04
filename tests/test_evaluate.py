@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import bootstrap_interval, compute, corruption_rows, corruption_type, detection_rows, holm, paired_tests, sign_test
+from src.evaluate.metrics import CORRUPTION_COLUMNS, DETECTION_COLUMNS, bootstrap_interval, compute, corruption_rows, corruption_type, detection_rows, holm, paired_tests, sign_test
 from src.puzzles.registry import get_engine
 from src.run import models, run as run_module
 from test_release import commit_all, edit, release_ok, repo  # noqa: F401  (repo is a fixture)
@@ -622,3 +622,20 @@ def test_corruption_rows_split_by_type():
     assert [(r["corruption_type"], r["detection_rate"], r["detection_rate_n"], r["detection_rate_inputs"])
             for r in result] == [("twisted corner", 0.5, 2, 2), ("swapped edges", 0.5, 2, 1)]
     assert result == corruption_rows(rows, ["m"])
+
+
+def test_all_infrastructure_failures_evaluate_with_header_only_csvs(repo, monkeypatch):
+    release_ok(repo, "major")
+    prepare(repo, monkeypatch)
+    for path in (repo / "results/exp/raw").iterdir():
+        lines = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            record = json.loads(line)
+            record.update(outcome="infrastructure_failure", stop_reason="infrastructure_failure",
+                          raw_response="", parsed_moves=[], hallucination=False, mismatch=False)
+            lines.append(json.dumps(record))
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    assert go() == 0
+    for name, header in (("detection", ",".join(DETECTION_COLUMNS)),
+                         ("corruption", ",".join(CORRUPTION_COLUMNS))):
+        assert (repo / f"results/exp/1.0.0.{name}.csv").read_text(encoding="utf-8") == header + "\n"

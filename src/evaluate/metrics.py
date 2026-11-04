@@ -356,6 +356,10 @@ def interval_for_balanced_accuracy(rows: list[dict]) -> tuple:
     return percentiles(draws)
 
 
+DETECTION_COLUMNS = ("model", "puzzle", "setup", "detection_rate", "detection_n", "false_mismatch_rate",
+                     "false_mismatch_n", "balanced_accuracy", "balanced_accuracy_low", "balanced_accuracy_high")
+
+
 def detection_rows(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
     """Return one mismatch detection row per AI model, puzzle, and setup, pooled over depths."""
     order = models or sorted({r["model"] for r in attempt_rows})
