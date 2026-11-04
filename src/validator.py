@@ -55,17 +55,49 @@ def _lines(raw_response: str) -> list[str]:
     return [line for line in lines if line.strip()]
 
 
-def _read_lines(lines: list[str], engine) -> tuple[list[str], bool]:
-    """Return (parsed moves, whether the layout is exactly one bare move per line)."""
-    moves, layout_ok = [], True
+# A list marker at the start of a token: `1.`, `1)`, `-`, `*`, or a bullet.
+LIST_MARKER = re.compile(r"^(?:\d+[.)]|[-*\u2022])")
+# Characters stripped from both ends of a token, for classification only. The prime ' is not one of
+# them, because it is part of a move.
+DECORATION = "`*_.)(\""
+
+
+def _strip_token(token: str) -> str:
+    """Strip a list marker and surrounding decoration from one token, for classification only."""
+    token = LIST_MARKER.sub("", token)
+    while True:
+        stripped = token.strip(DECORATION)
+        if len(stripped) >= 2 and stripped[0] == stripped[-1] == '"':
+            stripped = stripped[1:-1]
+        if stripped == token:
+            return token
+        token = stripped
+
+
+def _decorated_tokens(line: str) -> list[str]:
+    """The tokens of a line split on whitespace and commas and stripped, with empty ones dropped."""
+    return [t for t in (_strip_token(t) for t in line.replace(",", " ").split()) if t]
+
+
+def _read_lines(lines: list[str], engine) -> tuple[list[str], bool, bool]:
+    """Return (parsed moves, whether the layout is exactly one bare move per line, whether a
+    MISMATCH line was seen). A move line is bare tokens that are all move tokens. A decorated move
+    line has them only once list markers and decoration are stripped, and a decorated MISMATCH line
+    has MISMATCH as its only stripped token. Both count as an answer in the wrong layout."""
+    moves, layout_ok, mismatch_line = [], True, False
     for line in lines:
         tokens = line.split()
         if tokens and all(engine.is_move_token(t) for t in tokens):
             moves += tokens
             layout_ok = layout_ok and tokens == [line]
-        else:
-            layout_ok = False
-    return moves, layout_ok
+            continue
+        layout_ok = False
+        decorated = _decorated_tokens(line)
+        if decorated and all(engine.is_move_token(t) for t in decorated):
+            moves += decorated
+        elif decorated == ["MISMATCH"]:
+            mismatch_line = True
+    return moves, layout_ok, mismatch_line
 
 
 def read_decision_call(call: object, legal: list[str]) -> str | None:
@@ -140,8 +172,8 @@ def validate(input: dict, raw_response: str, stop_reason: str, decision: bool = 
     engine = get_engine(input["puzzle"])
     if lines == ["MISMATCH"]:
         return _judge(input, engine, [], True, False)
-    moves, layout_ok = _read_lines(lines, engine)
-    if not moves and "MISMATCH" not in lines:
+    moves, layout_ok, mismatch_line = _read_lines(lines, engine)
+    if not moves and not mismatch_line:
         return _no_moves("abstention", False)
     legal = engine.legal_moves()
     if any(m not in legal for m in moves):

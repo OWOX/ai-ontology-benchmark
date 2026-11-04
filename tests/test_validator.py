@@ -42,7 +42,7 @@ CASES = {
     "mismatch among moves": (VALID, reply(SOLVE + [MISMATCH]), "ok", SOLVE, False, False, 3, "format_error"),
     "trailing space": (VALID, reply(["R "]), "ok", ["R"], False, False, 1, "format_error"),
     "leading space": (VALID, reply([" R"]), "ok", ["R"], False, False, 1, "format_error"),
-    "trailing dot": (VALID, reply(["R."]), "ok", [], False, False, None, "abstention"),
+    "trailing dot": (VALID, reply(["R."]), "ok", ["R"], False, False, 1, "format_error"),
     "prime sign": (VALID, reply(["R′"]), "ok", [], False, False, None, "abstention"),
     "lower case": (VALID, reply(["r"]), "ok", ["r"], True, False, 1, "hallucination"),
     "wide move": (VALID, reply(["Rw"]), "ok", ["Rw"], True, False, 1, "hallucination"),
@@ -233,3 +233,43 @@ def test_decision_hallucination_is_none():
     assert validate(INVALID, "not json", "ok", decision=True).hallucination is None
     assert validate(ONE_VALID, calls(ONE_SOLVE, "done"), "ok", decision=True).hallucination is None
     assert validate(ONE_VALID, calls("done"), "ok", decision=True).hallucination is None
+
+
+DECORATED = {
+    "numbered list": ("1. R\n2. U", ["R", "U"], "format_error"),
+    "numbered with paren": ("1) R\n2) U'", ["R", "U'"], "format_error"),
+    "bullets": ("- R\n* U\n\u2022 F2", ["R", "U", "F2"], "format_error"),
+    "backticked move": ("`R`", ["R"], "format_error"),
+    "commas": ("R, U, F", ["R", "U", "F"], "format_error"),
+    "quoted move": ('"R"', ["R"], "format_error"),
+    "bold move": ("**R**", ["R"], "format_error"),
+    "illegal in a numbered list": ("1. M", ["M"], "hallucination"),
+    "illegal among commas": ("R, M", ["R", "M"], "hallucination"),
+    "mismatch with a full stop": ("MISMATCH.", [], "format_error"),
+    "bold mismatch": ("**MISMATCH**", [], "format_error"),
+    "mismatch with trailing space": ("MISMATCH ", [], "format_error"),
+    "backticked mismatch": ("`MISMATCH`", [], "format_error"),
+}
+
+
+@pytest.mark.parametrize("name", list(DECORATED))
+def test_decorated_layouts(name):
+    response, moves, outcome = DECORATED[name]
+    for input in (VALID, INVALID):
+        v = validate(input, response, "ok")
+        assert (v.outcome, v.parsed_moves, v.mismatch) == (outcome, moves, False)
+        assert v.hallucination is (outcome == "hallucination")
+        assert v.move_count == len(moves)
+
+
+def test_prose_stays_abstention_and_a_lone_mismatch_stays_a_verdict():
+    assert validate(VALID, "I can't solve this.", "ok").outcome == "abstention"
+    assert validate(VALID, "R2 would not help here.", "ok").outcome == "abstention"
+    assert validate(VALID, "1. I cannot do this", "ok").outcome == "abstention"
+    v = validate(INVALID, "MISMATCH", "ok")
+    assert (v.outcome, v.mismatch) == ("success", True)
+
+
+def test_decorated_mismatch_beside_moves_is_format_error():
+    v = validate(VALID, "1. R\n**MISMATCH**", "ok")
+    assert (v.outcome, v.parsed_moves, v.mismatch) == ("format_error", ["R"], False)
