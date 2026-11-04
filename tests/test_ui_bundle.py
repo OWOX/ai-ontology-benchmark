@@ -793,7 +793,7 @@ def test_benchmarks_mirror_release_is_read_once(ui_repo, samples, monkeypatch):
     assert out["experiments"] == ["m"] and out["skipped"] == [] and calls == ["m"]
     calls.clear()
     out = bundles.benchmarks(bench_query(releases=["1.0.0", "1.0.1"]), set())
-    assert out["experiments"] == ["m"] and calls == ["m"]
+    assert out["experiments"] == ["m"] and calls == []  # the loaded experiment is reused, not read again
 
 
 def two_model_rows(a_solves, b_solves, inputs, attempts=2):
@@ -824,3 +824,16 @@ def test_best_favoured_on_most_inputs_agrees():
         r["outcome"] = "hallucination" if r["outcome"] == "success" else "failure"
     row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "hallucination_rate")
     assert row["best"]["model"] == "a" and row["best"]["agrees"] is True
+
+
+def test_benchmarks_new_filters_reuse_scored_rows(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    loads, scored = [], []
+    real_load, real_rows = expdata.load_experiment, expdata.attempt_rows
+    monkeypatch.setattr(expdata, "load_experiment", lambda *a, **k: loads.append(a[1]) or real_load(*a, **k))
+    monkeypatch.setattr(expdata, "attempt_rows", lambda *a, **k: scored.append(a[0]["id"]) or real_rows(*a, **k))
+    bundles = make_bundles(ui_repo)
+    bundles.benchmarks(bench_query(), set())
+    out = bundles.benchmarks(bench_query(setups=["no_model"], validity="valid"), set())
+    assert loads == ["e"] and scored == ["e"] and out["experiments"] == ["e"]

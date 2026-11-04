@@ -25,6 +25,7 @@ from ui.puzzleinfo import build_puzzle
 NO_KEY = "no API key: add it under Models"
 NO_ACCOUNT = "no account id: add it under Models"
 CACHE_LIMIT = 16
+SCORED_LIMIT = 64  # experiments held scored for Benchmarks
 
 
 def is_mirror(release: str, other: str | None, manifests: dict[str, dict | None]) -> bool:
@@ -44,6 +45,7 @@ class Bundles(BranchReaders):
         self._lock = threading.Lock()
         self._cache: dict[tuple, dict] = {}
         self._bench_cache: dict[tuple, dict] = {}
+        self._scored_cache: dict[tuple, dict] = {}
 
     # --- small readers, all from main -------------------------------------------------------
 
@@ -119,6 +121,17 @@ class Bundles(BranchReaders):
                 if model["disabled_reason"] is None and not have:
                     model["disabled_reason"] = NO_ACCOUNT if info["source"] != "missing" else NO_KEY
         return bundle
+
+    def _scored(self, experiment_id: str, ref: str, main_sha: str | None) -> dict:
+        """One experiment as loaded, with its scored attempt rows once they have been read. Kept per
+        (experiment id, ref sha, main sha), so a new filter reuses them. Called under the lock."""
+        key = (experiment_id, self.git.sha(ref), main_sha)
+        if key not in self._scored_cache:
+            if len(self._scored_cache) >= SCORED_LIMIT:
+                self._scored_cache.pop(next(iter(self._scored_cache)))
+            self._scored_cache[key] = {"exp": expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref()),
+                                       "rows": None}
+        return self._scored_cache[key]
 
     def _load_all(self, refs: dict[str, str], main: str) -> list[dict]:
         loaded = (expdata.load_experiment(self.git, i, ref, main) for i, ref in sorted(refs.items()))
@@ -204,21 +217,29 @@ class Bundles(BranchReaders):
         manifests = {v: self._manifest(v) for v in self.releases()}
         inputs_by_release: dict[str, list[dict]] = {}
         attempts, skipped, read, entries = [], [], [], {}
-        for exp in self._load_all(refs, main):
+        main_sha = self.git.sha(main)
+        for i, ref in sorted(refs.items()):
+            held = self._scored(i, ref, main_sha)
+            exp = held["exp"]
             config = exp["config"]
+            if config is None and (exp["error"] or "").endswith("file not found"):
+                continue
             if config is not None and not any(is_mirror(r, config["release"], manifests) for r in chosen):
                 continue
             if config is not None and not exp["error"]:
-                if config["release"] not in inputs_by_release:
-                    inputs_by_release[config["release"]] = expdata.read_inputs(self.git, main, config["release"])
-                rows = expdata.attempt_rows(exp, inputs_by_release[config["release"]])
+                if held["rows"] is None:
+                    if config["release"] not in inputs_by_release:
+                        inputs_by_release[config["release"]] = expdata.read_inputs(self.git, main, config["release"])
+                    rows = expdata.attempt_rows(exp, inputs_by_release[config["release"]])
+                    set_id = (manifests.get(config["release"]) or {}).get("input_set_id")
+                    for row in rows:
+                        row["input_set_id"] = set_id
+                        row["priced"] = row["model"] in exp["prices"]
+                    held["rows"] = rows
+                rows = held["rows"]
             if config is None or exp["error"]:
                 skipped.append({"id": exp["id"], "error": exp["error"]})
                 continue
-            set_id = (manifests.get(config["release"]) or {}).get("input_set_id")
-            for row in rows:
-                row["input_set_id"] = set_id
-                row["priced"] = row["model"] in exp["prices"]
             attempts += rows
             read.append(exp["id"])
             for m in config["models"]:
