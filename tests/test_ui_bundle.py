@@ -670,13 +670,14 @@ def test_benchmarks_two_models_share_one_test(ui_repo):
     assert [m["name"] for m in out["models"]] == ["cloud-model", "example-model"]  # provider order: anthropic, fake
     assert {p["name"] for p in out["options"]["providers"]} == {"anthropic", "fake"}
     row = next(r for r in out["rows"] if r["metric"] == "hallucination_rate")
-    assert row["tested"] and row["best"]["model"] == "cloud-model" and row["worst"]["model"] == "example-model"
-    assert row["best"]["against"] == "example-model" and row["worst"]["against"] == "cloud-model"
-    assert row["best"]["inputs_paired"] == len(inputs)
-    assert row["best"]["p_value"] == row["worst"]["p_value"] == sign_test(len(inputs), 0)
-    assert row["best"]["p_holm"] == row["best"]["p_value"] == row["worst"]["p_holm"]
+    best, worst = row["best"][0], row["worst"][0]
+    assert row["tested"] and best["model"] == "cloud-model" and worst["model"] == "example-model"
+    assert best["against"] == "example-model" and worst["against"] == "cloud-model"
+    assert best["inputs_paired"] == len(inputs)
+    assert best["p_value"] == worst["p_value"] == sign_test(len(inputs), 0)
+    assert best["p_holm"] == best["p_value"] == worst["p_holm"]
     eff = next(r for r in out["rows"] if r["metric"] == "efficiency")
-    assert eff["tested"] is False and "p_value" not in (eff["best"] or {})
+    assert eff["tested"] is False and all("p_value" not in b for b in eff["best"] or [])
 
 
 def test_benchmarks_filters_narrow_models_not_options(ui_repo):
@@ -743,12 +744,17 @@ def test_ties_and_holm_over_distinct_tests():
             + [synthetic("c", i, "failure") for i in ids])
     row = next(r for r in bm.build_rows(rows, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
     p_ab, p_bc = sign_test(4, 0), sign_test(4, 0)
-    assert (row["best"]["model"], row["best"]["against"]) == ("a", "b")
-    assert (row["worst"]["model"], row["worst"]["against"]) == ("c", "b")
-    assert row["best"]["p_value"] == p_ab and row["best"]["p_holm"] == holm([p_ab, p_bc])[0]
+    assert [(b["model"], b["against"]) for b in row["best"]] == [("a", "b")]
+    assert [(w["model"], w["against"]) for w in row["worst"]] == [("c", "b")]
+    assert row["best"][0]["p_value"] == p_ab and row["best"][0]["p_holm"] == holm([p_ab, p_bc])[0]
     tied = [synthetic("a", "i0", "success"), synthetic("b", "i0", "success"), synthetic("c", "i0", "failure")]
     row = next(r for r in bm.build_rows(tied, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
-    assert row["best"] is None and row["worst"]["model"] == "c"
+    assert [(b["model"], b["against"]) for b in row["best"]] == [("a", "c"), ("b", "c")]
+    assert [(w["model"], w["against"]) for w in row["worst"]] == [("c", "b")]
+    assert row["best"][0]["p_holm"] == row["worst"][0]["p_holm"] == holm([sign_test(1, 0), sign_test(1, 0)])[0]
+    every = [synthetic(m, "i0", "success") for m in ("a", "b", "c")]
+    row = next(r for r in bm.build_rows(every, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    assert row["best"] is None and row["worst"] is None
 
 
 def test_unpriced_model_has_no_cost_per_success():
@@ -844,20 +850,20 @@ def test_best_disagreeing_with_sign_test_does_not_agree():
     # A solves 2/2 on 28 inputs, B 1/2 on the other 49: A leads the pooled rate, B is higher on 49 inputs.
     rows = two_model_rows(lambda n: 2 if n < 28 else 0, lambda n: 0 if n < 28 else 1, 77)
     row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "success_rate")
-    assert row["best"]["model"] == "a" and row["best"]["p_holm"] < 0.05
-    assert row["best"]["agrees"] is False and row["worst"]["agrees"] is False
+    assert row["best"][0]["model"] == "a" and row["best"][0]["p_holm"] < 0.05
+    assert row["best"][0]["agrees"] is False and row["worst"][0]["agrees"] is False
 
 
 def test_best_favoured_on_most_inputs_agrees():
     from ui import benchmarks as bm
     rows = two_model_rows(lambda n: 2, lambda n: 0, 10)
     row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "success_rate")
-    assert row["best"]["agrees"] is True and row["worst"]["agrees"] is True
+    assert row["best"][0]["agrees"] is True and row["worst"][0]["agrees"] is True
     rows = two_model_rows(lambda n: 0, lambda n: 2, 10)  # hallucinations: lower is better
     for r in rows:
         r["outcome"] = "hallucination" if r["outcome"] == "success" else "failure"
     row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "hallucination_rate")
-    assert row["best"]["model"] == "a" and row["best"]["agrees"] is True
+    assert row["best"][0]["model"] == "a" and row["best"][0]["agrees"] is True
 
 
 def test_benchmarks_new_filters_reuse_scored_rows(ui_repo, samples, monkeypatch):

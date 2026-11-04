@@ -109,13 +109,16 @@ def ranking(cells_by_model: dict[str, dict], metric: str) -> list[str]:
     return [m for m, _ in valued]
 
 
-def pick(order: list[str], values: dict[str, float], end: int) -> tuple[str, str] | None:
-    """The best (`end` 0) or worst (`end` -1) model and the next one in, or None on a tie or too few."""
+def pick(order: list[str], values: dict[str, float], end: int) -> list[tuple[str, str]] | None:
+    """The best (`end` 0) or worst (`end` -1) models, every one tied at that end, each paired with the first model
+    past the tie. None when there are too few or the whole row ties."""
     if len(order) < 2:
         return None
-    step = 1 if end == 0 else -1
-    model, other = order[end], order[end + step]
-    return None if values[model] == values[other] else (model, other)
+    seq = order if end == 0 else order[::-1]
+    group = [m for m in seq if values[m] == values[seq[0]]]
+    if len(group) == len(seq):
+        return None
+    return [(m, seq[len(group)]) for m in group]
 
 
 def row_for(puzzle: str, metric: str, cells_by_model: dict[str, dict], by_model: dict[str, list[dict]]) -> dict:
@@ -126,23 +129,26 @@ def row_for(puzzle: str, metric: str, cells_by_model: dict[str, dict], by_model:
     out = {"puzzle": puzzle, "metric": metric, "direction": direction(metric), "tested": tested,
            "cells": cells_by_model, "best": None, "worst": None}
     if not tested:
-        for side, found in picks.items():
-            out[side] = {"model": found[0]} if found else None
+        for side, pairs in picks.items():
+            out[side] = [{"model": found[0]} for found in pairs] if pairs else None
         return out
     tests: dict[frozenset, dict] = {}
-    for found in picks.values():
-        if found and frozenset(found) not in tests:
-            tests[frozenset(found)] = {**paired_model_test(by_model[found[0]], by_model[found[1]], metric),
-                                       "order": found}
+    for pairs in picks.values():
+        for found in pairs or []:
+            if frozenset(found) not in tests:
+                tests[frozenset(found)] = {**paired_model_test(by_model[found[0]], by_model[found[1]], metric),
+                                           "order": found}
     family = [t for t in tests.values() if t["p_value"] is not None]
     for t, adjusted in zip(family, holm([t["p_value"] for t in family])):
         t["p_holm"] = adjusted
-    for side, found in picks.items():
-        if found:
-            test = tests[frozenset(found)]
-            out[side] = {"model": found[0], "against": found[1], "inputs_paired": test["inputs_paired"],
-                         "p_value": test["p_value"], "p_holm": test.get("p_holm"),
-                         "agrees": agrees(side, found, metric, test)}
+    for side, pairs in picks.items():
+        if pairs:
+            out[side] = []
+            for found in pairs:
+                test = tests[frozenset(found)]
+                out[side].append({"model": found[0], "against": found[1], "inputs_paired": test["inputs_paired"],
+                                  "p_value": test["p_value"], "p_holm": test.get("p_holm"),
+                                  "agrees": agrees(side, found, metric, test)})
     return out
 
 
