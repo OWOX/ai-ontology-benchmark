@@ -112,10 +112,11 @@ def evaluate(args: argparse.Namespace) -> None:
     if not metric_rows:
         raise EvalError(f"{results / 'raw'}: no raw records")
     csv_content = csv_text(metric_rows)
-    paired_content = csv_text(paired_tests(attempt_rows, names))
+    paired_rows = paired_tests(attempt_rows, names)
+    paired_content = csv_text(paired_rows)
     # Every check is done. Write the outputs last, the prices copy after the others.
     write_report(results / f"{version}.md", args.experiment, config, release_dir, prices,
-                 attempt_rows, metric_rows, summary_rows, torn)
+                 attempt_rows, metric_rows, summary_rows, torn, paired_rows=paired_rows)
     (results / f"{version}.metrics.csv").write_text(csv_content, encoding="utf-8", newline="")
     (results / f"{version}.paired.csv").write_text(paired_content, encoding="utf-8", newline="")
     if not saved_prices.exists():

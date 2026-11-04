@@ -348,6 +348,7 @@ def test_assessment_mismatch_refused(repo, monkeypatch, capsys):
     assert go() == 1
     assert "assessment_sha256" in capsys.readouterr().err
     assert not (repo / "results/exp/1.0.0.md").exists() and not (repo / "results/exp/prices.toml").exists()
+    assert not (repo / "results/exp/1.0.0.paired.csv").exists()
 
 
 def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
@@ -355,7 +356,7 @@ def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
     prepare(repo, monkeypatch)
     raw_before = {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}
     assert go() == 0
-    first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "prices.toml")}
+    first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv", "prices.toml")}
     assert go() == 0
     assert first == {n: (repo / "results/exp" / n).read_bytes() for n in first}
     assert raw_before == {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}
@@ -413,6 +414,7 @@ def test_duplicate_attempt_refused(repo, monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "A.jsonl" in err and "more than once" in err
     assert not (repo / "results/exp/1.0.0.md").exists()
+    assert not (repo / "results/exp/1.0.0.paired.csv").exists()
 
 
 def test_config_model_without_price_refused_and_nothing_written(repo, monkeypatch, capsys):
@@ -425,7 +427,7 @@ def test_config_model_without_price_refused_and_nothing_written(repo, monkeypatc
     assert go() == 1
     err = capsys.readouterr().err
     assert "prices.toml" in err and "'Z'" in err
-    for name in ("prices.toml", "1.0.0.md", "1.0.0.metrics.csv"):
+    for name in ("prices.toml", "1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv"):
         assert not (repo / "results/exp" / name).exists()
 
 
