@@ -1,48 +1,48 @@
 # Getting started
 
-The minimum steps to run an [experiment](definitions.md#releases-and-experiments) from the terminal and get its report. Every option is in the [run](specs/run.md) and [evaluate](specs/evaluate.md) specs.
+The minimum steps to run an [experiment](definitions.md#releases-and-experiments) from the terminal and get its report. Every option is in the [run](specs/run.md) and [evaluate](specs/evaluate.md) specs. Run every command from the repo root with `.venv` active.
 
 ## 1. Install
 
-You need Python 3.11 or later and git. From the repo root:
+You need Python 3.11 or later and git.
 
 ```
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[test]'
+pytest
 ```
 
-## 2. Copy a config template
+Tests never call a real AI model API.
 
-Pick the template for your provider in `config/templates/`: `anthropic`, `openai`, `google`, or `fake`. The `fake` one needs no API key and costs nothing, so it checks the steps end to end. The file name you copy to is the experiment id.
+## 2. Copy an example config
+
+`config/templates/` holds one experiment config per provider: `anthropic`, `openai`, `google`, and `fake`. Copy one to `config/experiments/`. The file name you copy to is the experiment id, and it names the branch `results/<experiment id>` that everyone sees, so make it unique, for example `claude-haiku-5-5_2x2_20261103-1200`.
 
 ```
-cp config/templates/anthropic.toml config/experiments/my-test.toml
+cp config/templates/anthropic.toml config/experiments/claude-haiku-5-5_2x2_20261103-1200.toml
 export ANTHROPIC_API_KEY=...
 ```
 
-The other providers read `OPENAI_API_KEY` and `GOOGLE_API_KEY`. Set `release` in the copy to the newest folder in `releases/`.
+The other providers read `OPENAI_API_KEY` and `GOOGLE_API_KEY`. Set the key before you run, because `--estimate` doesn't check it. Set `release` in the copy to the newest folder in `releases/`.
+
+The `fake` config needs no key and spends nothing, because the fake provider reports zero tokens. `--estimate` still prices it as a real model. Add `--no-commit` to every `run` command with it, so the smoke test stays out of git.
 
 ## 3. Check the cost and run
 
 ```
-python -m src.run.run --experiment my-test --estimate
-python -m src.run.run --experiment my-test --limit 3
-python -m src.run.run --experiment my-test
+python -m src.run.run --experiment <experiment id> --estimate
+python -m src.run.run --experiment <experiment id> --limit 3
+python -m src.run.run --experiment <experiment id>
 ```
 
-`--estimate` prints the worst-case cost against each [budget](definitions.md#baseline-and-prices) and calls nothing. `--limit 3` runs three attempts as a smoke test. The last command runs the rest and skips attempts already recorded. `run` commits each attempt to the branch `results/my-test` and pushes it to `origin` at the end.
+`--estimate` prints the worst-case cost against each [budget](definitions.md#baseline-and-prices) and calls nothing. `--limit 3` runs three attempts as a smoke test. The last command runs the rest and skips attempts already recorded. `run` commits each attempt to the branch `results/<experiment id>` and pushes it to `origin` at the end.
 
 ## 4. Score
 
 ```
-python -m src.evaluate.evaluate --experiment my-test
+python -m src.evaluate.evaluate --experiment <experiment id>
+python -m src.run.run --experiment <experiment id>
 ```
 
-The report is `results/my-test/<release>.md`.
-
-## Run the tests
-
-```
-pytest
-```
+`evaluate` writes the report to `results/<experiment id>/<release>.md` in the work tree only. Running `run` again, with no attempts left, commits the report to the results branch and pushes it.

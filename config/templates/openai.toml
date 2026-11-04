@@ -12,3 +12,4 @@ puzzles = ["2x2"]
 name = "gpt-6-luna"
 provider = "openai"
 api_model_id = "gpt-6-luna"
+kind = "system-2"

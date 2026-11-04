@@ -12,3 +12,4 @@ puzzles = ["2x2"]
 name = "claude-haiku-5-5"
 provider = "anthropic"
 api_model_id = "claude-haiku-5-5"
+kind = "system-2"

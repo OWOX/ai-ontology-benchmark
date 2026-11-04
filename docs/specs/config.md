@@ -4,7 +4,7 @@ Files: `config/release.toml`, `config/experiments/<experiment id>.toml`, `config
 
 ## Purpose
 
-Hold every study parameter in three kinds of file, and refuse a config with a missing or wrong value before any work starts.
+Hold every study parameter in three kinds of file, plus example configs to copy, and refuse a config with a missing or wrong value before any work starts.
 
 ## Inputs
 
