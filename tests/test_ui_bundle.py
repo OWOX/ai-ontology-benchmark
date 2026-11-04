@@ -799,6 +799,7 @@ def test_benchmarks_moved_experiment_ref_is_scored_again(ui_repo, samples, monke
     bundles.git.fetch(force=True)
     second = bundles.benchmarks(bench_query(), set())
     assert second != first and second["experiments"] == ["e"]
+    assert len(bundles._scored_cache) == 1  # the new entry replaced the old one
     assert loads == ["e", "e"] and scored == ["e", "e"]  # read and scored again, not served from the old entry
     n = lambda out: sum(c["n"] for r in out["rows"] if r["metric"] == "success_rate" for c in r["cells"].values())
     assert n(second) == n(first) + 1
@@ -870,3 +871,17 @@ def test_benchmarks_new_filters_reuse_scored_rows(ui_repo, samples, monkeypatch)
     bundles.benchmarks(bench_query(), set())
     out = bundles.benchmarks(bench_query(setups=["no_model"], validity="valid"), set())
     assert loads == ["e"] and scored == ["e"] and out["experiments"] == ["e"]
+
+
+def test_scored_cache_holds_one_entry_per_experiment(ui_repo, monkeypatch):
+    shas = {}
+    monkeypatch.setattr(expdata, "load_experiment", lambda git, i, ref, main: {"id": i})
+    bundles = make_bundles(ui_repo)
+    monkeypatch.setattr(bundles.git, "sha", lambda ref: shas.get(ref, "s0"))
+    held = {i: bundles._scored(i, f"ref/{i}", "m0") for i in (f"x{n}" for n in range(70))}  # more than the old cap
+    assert len(bundles._scored_cache) == 70
+    assert all(bundles._scored(i, f"ref/{i}", "m0") is v for i, v in held.items())  # nothing dropped
+    shas["ref/x0"] = "s1"
+    assert bundles._scored("x0", "ref/x0", "m0") is not held["x0"]  # its ref moved
+    assert bundles._scored("x1", "ref/x1", "m1") is not held["x1"]  # main moved
+    assert len(bundles._scored_cache) == 70
