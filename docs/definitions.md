@@ -5,25 +5,27 @@ Every term below means the same thing in code, configs, records, reports, and do
 ## Puzzles
 
 1. **Twisty puzzle.** A puzzle whose parts turn around fixed axes, so that each turn moves pieces to new positions.
-2. **Puzzle.** A twisty puzzle covered by the study, implemented as one engine. The current puzzles are the 2x2, 3x3, and 5x5 cubes, an octahedral puzzle, and a tetrahedral puzzle. The exact octahedral and tetrahedral puzzles are still [open](../AGENTS.md#open).
+2. **Puzzle.** A twisty puzzle covered by the study, implemented as one engine. The current puzzles are the 2x2, 3x3, 4x4, and 5x5 cubes, an octahedral puzzle, and a tetrahedral puzzle. The exact octahedral and tetrahedral puzzles are still [open](../AGENTS.md#open).
 3. **Shape.** The solid a puzzle is built on. The cubes are cubes, the octahedral puzzle is an octahedron with 8 faces, and the tetrahedral puzzle is a tetrahedron with 4 faces. The shape fixes the number of faces and colours.
-4. **Cube.** A puzzle with the shape of a cube and six coloured faces. An NxN cube has N layers along each axis: 2x2, 3x3, or 5x5.
+4. **Cube.** A puzzle with the shape of a cube and six coloured faces. An NxN cube has N layers along each axis: 2x2, 3x3, 4x4, or 5x5.
 5. **Engine.** The code for one puzzle. It implements the [puzzle engine interface](../AGENTS.md#puzzle-engine-interface) and is the only place that knows the puzzle's rules.
 6. **Registry.** The list that maps each puzzle name to its engine. Adding a puzzle adds one entry.
 7. **State.** The arrangement of colours on every face of a puzzle at one moment.
 8. **Solved state.** A state where every face shows a single colour. The orientation of the whole puzzle doesn't matter, so a 2x2 turned upside down is still solved. `is_solved()` checks colours this way and never compares with `solved_state()`.
-9. **Move.** One turn of one part of the puzzle, written in the puzzle's standard notation. Whether whole-puzzle rotations and wide moves are moves is still [open](../AGENTS.md#open).
-10. **Notation.** The standard way to write moves for a puzzle, the one AI models already know from their training data. For the 3x3 cube that is Singmaster notation, for example `R`, `U'`, and `F2`.
-11. **Move group.** The full list of moves a puzzle allows, as returned by its engine's `legal_moves()`. It is the only definition of a puzzle's moves. Whether it includes whole-puzzle rotations, slice moves, and wide moves is still [open](../AGENTS.md#open) for each puzzle.
-12. **Legal move.** A string that exactly matches a move in the puzzle's move group. There is no normalization, so `r` doesn't match `R`, `′` doesn't match `'`, and a move with surrounding spaces doesn't match at all.
-13. **Impossible move.** Any move an AI model returns that isn't a legal move for that puzzle. A move that exists on another puzzle but not on this one is impossible here, as is anything that isn't a move at all.
-14. **Scramble.** A sequence of legal moves, chosen from the input seed and applied to the solved state. Two consecutive moves never turn the same part of the puzzle, so no move cancels or merges with the one before it. Each engine defines which moves turn the same part. `generate` rejects any scramble that leaves the puzzle solved, checked with `is_solved()`.
-15. **Scramble depth.** The number of moves in a scramble. Config lists one or more depths, and every input records its own. Depth is an upper bound on the optimal distance to solved, not a measure of it, because a scramble can happen to end close to solved.
-16. **Scramble count.** The number of scrambles `generate` makes for each puzzle and scramble depth. A config parameter.
-17. **Seed.** The number in config that makes the random choices in `generate` repeatable. The same config, including the seed, always produces the same input set.
-18. **Input seed.** The seed for one input, which `generate` derives from the seed and the input's position in the input set. Every scramble and corruption uses its input's seed, so no two inputs share their random choices.
-19. **Rendered state.** The text form of a state that goes into the prompt, produced by the engine's `render()`. It is the same under every setup.
-20. **Corruption.** The change the engine's `corrupt()` applies to a valid state to make an invalid one. Every invalid input records its corruption.
+9. **Face turn.** A quarter or half turn of one outer layer of a cube, written as the face letter alone or followed by `'` or `2`, for example `R`, `U'`, and `F2`.
+10. **Move.** One turn of one part of the puzzle, written in the puzzle's standard notation. On the cubes, a move is a [face turn](#puzzles) or, on the 4x4 and 5x5, a [wide turn](#puzzles). The cube move groups contain no slice moves and no whole-cube rotations. Whether whole-puzzle rotations, slice moves, and wide moves are moves on the octahedral and tetrahedral puzzles is still [open](../AGENTS.md#open).
+11. **Wide turn.** One turn of the two outer layers on one side of a cube together, in the same direction as the [face turn](#puzzles) of that side, written as the face letter followed by `w`, for example `Rw`. It takes the same `'` and `2` endings: `Rw'` and `Rw2`. Only the 4x4 and 5x5 have wide turns.
+12. **Notation.** The standard way to write moves for a puzzle, the one AI models already know from their training data. For the 3x3 cube that is Singmaster notation, for example `R`, `U'`, and `F2`. The 4x4 and 5x5 use WCA notation, which adds the wide turns, for example `Rw`, `Uw'`, and `Fw2`.
+13. **Move group.** The full list of moves a puzzle allows, as returned by its engine's `legal_moves()`. It is the only definition of a puzzle's moves. The cube move groups are decided, with no slice moves and no whole-cube rotations: [face turns](#puzzles) on the 2x2 and 3x3, and face turns and [wide turns](#puzzles) on the 4x4 and 5x5. The octahedral and tetrahedral move groups are still [open](../AGENTS.md#open).
+14. **Legal move.** A string that exactly matches a move in the puzzle's move group. There is no normalization, so `r` doesn't match `R`, `′` doesn't match `'`, and a move with surrounding spaces doesn't match at all.
+15. **Impossible move.** Any move an AI model returns that isn't a legal move for that puzzle. A move that exists on another puzzle but not on this one is impossible here, as is anything that isn't a move at all.
+16. **Scramble.** A sequence of legal moves, chosen from the input seed and applied to the solved state. Two consecutive moves never turn the same part of the puzzle, so no move cancels or merges with the one before it. Each engine defines which moves turn the same part. `generate` rejects any scramble that leaves the puzzle solved, checked with `is_solved()`.
+17. **Scramble depth.** The number of moves in a scramble. Config lists one or more depths, and every input records its own. Depth is an upper bound on the optimal distance to solved, not a measure of it, because a scramble can happen to end close to solved.
+18. **Scramble count.** The number of scrambles `generate` makes for each puzzle and scramble depth. A config parameter.
+19. **Seed.** The number in config that makes the random choices in `generate` repeatable. The same config, including the seed, always produces the same input set.
+20. **Input seed.** The seed for one input, which `generate` derives from the seed and the input's position in the input set. Every scramble and corruption uses its input's seed, so no two inputs share their random choices.
+21. **Rendered state.** The text form of a state that goes into the prompt, produced by the engine's `render()`. It is the same under every setup.
+22. **Corruption.** The change the engine's `corrupt()` applies to a valid state to make an invalid one. Every invalid input records its corruption.
 
 ## Inputs
 
@@ -100,7 +102,7 @@ Every term below means the same thing in code, configs, records, reports, and do
 Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invariants) lists every field of a raw record.
 
 1. **Move count.** The number of parsed moves, in the half-turn metric. Each impossible move counts as one. Empty for outcomes `infrastructure_failure` and `malformed_output`.
-2. **Half-turn metric.** The way moves are counted: any turn of one part, including a half turn such as `R2`, counts as one move. How whole-puzzle rotations and wide moves count is still [open](../AGENTS.md#open).
+2. **Half-turn metric.** The way moves are counted: any turn of one part, including a half turn such as `R2`, counts as one move. A wide turn counts as one move. The cubes have no whole-puzzle rotations or slice moves. How they count on the octahedral and tetrahedral puzzles is still [open](../AGENTS.md#open).
 3. **Input tokens and output tokens.** The token counts the API reports for the call that produced the raw response, stored as returned. For a decision model, the sums over its completed calls. Zero for outcome `infrastructure_failure`, except that a decision model with completed calls keeps their sums, so cost counts them. For Google, output tokens are `candidates_token_count + thoughts_token_count`, both as returned, because Gemini bills thoughts as output. The other providers' output counts already include reasoning tokens.
 4. **Retry input tokens and retry output tokens.** The token counts the API reports for every call in the attempt that failed, retried or not, summed and stored as returned. Zero when no call failed or the API reported no counts.
 5. **Latency.** The time from sending the request to receiving the full response, for the call that produced the raw response. For a decision model, the sum over its completed calls. Empty for outcome `infrastructure_failure`, except that a decision model with completed calls keeps their sum.

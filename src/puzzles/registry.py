@@ -4,10 +4,12 @@
 from src.puzzles.cube import CubeEngine
 from src.puzzles.engine import Engine
 
-# The only list of puzzles in the code. 5x5 is added when open item 5 is settled.
+# The only list of puzzles in the code.
 ENGINES: dict[str, Engine] = {
     "2x2": CubeEngine(2),
     "3x3": CubeEngine(3),
+    "4x4": CubeEngine(4),
+    "5x5": CubeEngine(5),
 }
 
 
