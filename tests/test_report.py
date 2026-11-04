@@ -58,14 +58,14 @@ def tree(tmp_path):
     return tmp_path, inputs
 
 
-def build(tree, changed_outcome=False, paired_rows=(), with_paired=False, detection=(), corruption=()) -> str:
+def build(tree, changed_outcome=False, paired_rows=(), with_paired=False, detection=(), corruption=(), config=CONFIG) -> str:
     root, _ = tree
     release, path = root / "releases" / "1.0.0", root / "results" / "exp" / "1.0.0.md"
     rows = compute(records(changed_outcome), release, PRICES, ["M"])
     if with_paired:
         paired_rows = paired_tests(rows[0], ["M"])
         detection = detection_rows(rows[0], ["M"])
-    write_report(path, "exp", CONFIG, release, PRICES, *rows, torn_lines=2, paired_rows=paired_rows,
+    write_report(path, "exp", config, release, PRICES, *rows, torn_lines=2, paired_rows=paired_rows,
                  detection_rows=detection, corruption_rows=corruption)
     return path.read_text(encoding="utf-8")
 
@@ -222,8 +222,4 @@ def test_detection_by_corruption_type_sits_after_mismatch_detection(tree):
 
 def test_experiment_section_names_the_reasoning_effort(tree):
     assert "Reasoning effort: provider default." in build(tree)
-    CONFIG["reasoning_effort"] = "medium"
-    try:
-        assert "Reasoning effort: medium." in build(tree)
-    finally:
-        del CONFIG["reasoning_effort"]
+    assert "Reasoning effort: medium." in build(tree, config=dict(CONFIG, reasoning_effort="medium"))

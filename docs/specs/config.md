@@ -67,7 +67,7 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
 The checks:
 
 1. Every field shown is present and has the type shown.
-2. `seed`, `scramble_count`, `attempts`, `max_output_tokens`, and every scramble depth are at least 1. `retry_cap` is at least 0. `max_moves`, if present, is an integer of at least 1. `reasoning_effort`, if present, is `low`, `medium`, or `high`. `max_moves(config, release_config)` returns it, or twice the largest scramble depth in the release when it is absent.
+2. `seed`, `scramble_count`, `attempts`, `max_output_tokens`, and every scramble depth are at least 1. `retry_cap` is at least 0. `max_moves`, if present, is an integer of at least 1. `max_moves(config, release_config)` returns it, or twice the largest scramble depth in the release when it is absent. `reasoning_effort`, if present, is `low`, `medium`, or `high`.
 3. `valid_invalid_split` is between 0 and 1.
 4. Every puzzle is a name in the [registry](registry.md).
 5. `release` is `latest` or matches `MAJOR.MINOR.PATCH`. [run](run.md) resolves `latest` to a version on the first run, so raw records, `results/<experiment id>/experiment.toml`, and reports always hold a version.

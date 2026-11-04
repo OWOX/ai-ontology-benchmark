@@ -79,3 +79,17 @@ def test_estimate_patterns_read_runs_estimate_lines(exp, capsys):
     assert run.returncode == 0, run.stderr
     matched = json.loads(run.stdout)
     assert len(lines) >= 2 and all(m == [True, False] for m in matched[:-1]) and matched[-1] == [False, True], lines
+
+
+def test_new_experiment_fills_the_reasoning_effort_a_stale_cached_bundle_lacks():
+    import json
+    import re
+    source = (ROOT / "ui" / "static" / "pages" / "new.js").read_text(encoding="utf-8")
+    body = re.search(r"  function fillEffort\(vals, defaults\) \{.*?\n  \}\n", source, re.S).group(0)
+    script = (body + "const out = [];"
+              "for (const [vals, d] of [[{}, {}], [{}, {reasoning_effort: 'high'}], [{reasoning_effort: ''}, {reasoning_effort: 'medium'}],"
+              " [{reasoning_effort: 'low'}, {reasoning_effort: 'medium'}]]) { fillEffort(vals, d); out.push(vals.reasoning_effort); }"
+              "console.log(JSON.stringify(out));")
+    run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout) == ["medium", "high", "", "low"]

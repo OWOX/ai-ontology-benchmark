@@ -1219,3 +1219,12 @@ def test_reasoning_effort_defaults_to_medium_and_reaches_the_run_config(server):
     assert tomllib.loads(saved)["reasoning_effort"] == "high"
     status, data = call(server, "POST", "/api/estimate", {**FORM, "reasoning_effort": "max"})
     assert status == 400 and "reasoning_effort" in data["error"]
+
+
+def test_null_reasoning_effort_resumes_a_branch_saved_without_one(server):
+    assert call(server, "POST", "/api/run", FORM)[1]["status"] == "created"  # FORM has no reasoning_effort
+    wait_job(server, "run:example-model")
+    saved = git(server.root, "show", "refs/heads/results/t1:results/t1/experiment.toml")
+    assert "reasoning_effort" not in saved
+    assert call(server, "POST", "/api/run", {**FORM, "reasoning_effort": None})[1]["status"] == "unchanged"
+    wait_job(server, "run:example-model")

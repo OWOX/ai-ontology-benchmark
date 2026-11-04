@@ -295,7 +295,7 @@ def test_params_cannot_set_effort(key):
         parse_experiment_config(EFFORT_BASE + f'params = {{{key} = "high"}}\n', "e", "x")
 
 
-def test_every_committed_experiment_config_still_parses():
+def test_experiment_configs_in_the_work_tree_still_parse():
     paths = sorted(Path("results").glob("*/experiment.toml")) + sorted(Path("config/experiments").glob("*.toml"))
     assert paths
     for path in paths:

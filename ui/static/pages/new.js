@@ -22,6 +22,13 @@
 
   const mine = (id, pred) => UI.jobs.some((j) => j.id === id && j.state === "running" && pred(j.job));
 
+  // A bundle cached in the browser from before the field existed has no default, and the fresh bundle of the same
+  // release never calls reset() again. So the effort is filled here whenever it is unset: "" is a loaded experiment
+  // saved without one and stays "provider default".
+  function fillEffort(vals, defaults) {
+    if (vals.reasoning_effort === undefined) vals.reasoning_effort = (defaults && defaults.reasoning_effort) || "medium";
+  }
+
   function reset(bundle) {
     const d = bundle.defaults;
     Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", parallel: "4", result: null,
@@ -170,6 +177,7 @@
     render(bundle, params, el) {
       if (cleanup) cleanup();
       if (S.release !== bundle.release) reset(bundle);
+      fillEffort(S.vals, bundle.defaults);
       const formBox = h("div");
       el.append(h("div", { class: "newexp" }, formBox));
       const ref = {};
