@@ -7,7 +7,7 @@ so it lives outside the assessment. Reads attempt rows, writes nothing.
 from collections import defaultdict
 from fractions import Fraction
 
-from src.evaluate.metrics import consistency, holm, mean, rates, sign_test
+from src.evaluate.metrics import consistency, holm, is_hit, mean, rates, sign_test
 from ui.expdata import all_scope_rates
 from ui.expdata import cell as na_to_none
 
@@ -39,10 +39,9 @@ def consistency_of(done: list[dict]) -> object:
     return consistency(keyed)
 
 
-def efficiency_of(done: list[dict]) -> object:
-    ratios = [r["move_count"] / r["reference_length"] for r in done
-              if r["outcome"] == "success" and r["validity"] == "valid" and r["reference_length"]]
-    return mean(ratios)
+def efficiency_ratios(done: list[dict]) -> list[float]:
+    return [r["move_count"] / r["reference_length"] for r in done
+            if r["outcome"] == "success" and r["validity"] == "valid" and r["reference_length"]]
 
 
 def cells(rows: list[dict], scope: str) -> dict[str, dict]:
@@ -50,7 +49,8 @@ def cells(rows: list[dict], scope: str) -> dict[str, dict]:
     done = [r for r in rows if r["outcome"] != "infrastructure_failure"]
     stats = pooled_rates(done, scope)
     out = {m: rate_cell(stats, m) for m in RATE_METRICS}
-    out["efficiency"] = {"value": na_to_none(efficiency_of(done)), "n": len(done)}
+    ratios = efficiency_ratios(done)
+    out["efficiency"] = {"value": na_to_none(mean(ratios)), "n": len(ratios)}
     out["consistency"] = {"value": na_to_none(consistency_of(done)), "n": len(done)}
     latencies = [r["latency_s"] for r in done if r["latency_s"] is not None]
     out["latency_per_attempt_s"] = {"value": na_to_none(mean(latencies)), "n": len(latencies)}
@@ -58,19 +58,19 @@ def cells(rows: list[dict], scope: str) -> dict[str, dict]:
               for r in rows]
     out["tokens_per_attempt"] = {"value": na_to_none(mean(tokens)), "n": len(rows)}
     successes = sum(r["outcome"] == "success" for r in rows)
-    out["cost_per_success"] = {"value": sum(r["cost"] for r in rows) / successes if successes else None,
+    priced = all(r.get("priced", True) for r in rows)  # an unpriced model's cost is 0, never a result
+    out["cost_per_success"] = {"value": sum(r["cost"] for r in rows) / successes if successes and priced else None,
                                "n": len(rows)}
     return out
 
 
 def hit(row: dict, metric: str) -> bool:
-    if metric in ("mismatch_detection_rate", "false_mismatch_rate"):
-        return bool(row["mismatch"])
-    return row["outcome"] == metric.removesuffix("_rate")
+    return bool(row["mismatch"]) if metric == "false_mismatch_rate" else is_hit(row, metric)
 
 
 def shares(rows: list[dict], metric: str) -> dict:
-    """The share of hits per input, leaving out infrastructure failures. Inputs pair on set id and input id."""
+    """Like `src.evaluate.metrics.input_shares`, but per input across setups and keyed by (input set id, input id).
+    Mismatch detection counts invalid rows only and false mismatch valid rows only."""
     counts = defaultdict(lambda: [0, 0])
     wanted = {"mismatch_detection_rate": "invalid", "false_mismatch_rate": "valid"}.get(metric)
     for r in rows:

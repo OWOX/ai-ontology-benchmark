@@ -43,6 +43,7 @@ class Bundles(BranchReaders):
         self.root, self.git = Path(root), git
         self._lock = threading.Lock()
         self._cache: dict[tuple, dict] = {}
+        self._bench_cache: dict[tuple, dict] = {}
 
     # --- small readers, all from main -------------------------------------------------------
 
@@ -182,11 +183,11 @@ class Bundles(BranchReaders):
             shas = tuple(sorted((i, self.git.sha(r)) for i, r in refs.items()))
             key = ("benchmarks", tuple(chosen), tuple(puzzles), tuple(setups), scope, tuple(sorted(models)),
                    main_sha, shas)
-            if key not in self._cache:
-                if len(self._cache) >= CACHE_LIMIT:
-                    self._cache.pop(next(iter(self._cache)))
-                self._cache[key] = self._benchmarks(chosen, puzzles, setups, scope, models, refs)
-            return self._cache[key]
+            if key not in self._bench_cache:
+                if len(self._bench_cache) >= CACHE_LIMIT:
+                    self._bench_cache.pop(next(iter(self._bench_cache)))
+                self._bench_cache[key] = self._benchmarks(chosen, puzzles, setups, scope, models, refs)
+            return self._bench_cache[key]
 
     @staticmethod
     def _choose(field: str, asked: list[str] | None, known: list[str], default: list[str]) -> list[str]:
@@ -217,13 +218,15 @@ class Bundles(BranchReaders):
             set_id = (manifests.get(config["release"]) or {}).get("input_set_id")
             for row in rows:
                 row["input_set_id"] = set_id
+                row["priced"] = row["model"] in exp["prices"]
             attempts += rows
             read.append(exp["id"])
             for m in config["models"]:
                 entries.setdefault(m["name"], m["provider"])
         providers = list(PROVIDER_ORDER) + sorted(set(entries.values()) - set(PROVIDER_ORDER))
         ordered = [n for p in providers for n, provider in entries.items() if provider == p]
-        shown = [n for n in ordered if not models or n in models]
+        known = [n for n in ordered if n in models]  # names that no experiment holds are ignored
+        shown = known or ordered
         held = {r["puzzle"] for r in attempts}
         attempts = [r for r in attempts if r["setup"] in setups]
         return {"releases": chosen,

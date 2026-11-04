@@ -602,12 +602,11 @@ def bench_query(**kwargs):
 
 def two_model_files(ui_repo, replies):
     """Experiment `e` with both models, one reply per (model, input, setup) from `replies(model, row, setup)`."""
-    from test_ui_bundle import record as make
     inputs = [json.loads(line) for line in
               (ui_repo / "releases" / "1.0.0" / "inputs.jsonl").read_text(encoding="utf-8").splitlines()]
     files = {"results/e/experiment.toml": OTHER_TOML}
     for model in ("example-model", "cloud-model"):
-        recs = [make(r, s, 1, replies(model, r, s), model=model) for r in inputs
+        recs = [record(r, s, 1, replies(model, r, s), model=model) for r in inputs
                 for s in ("no_model", "descriptive", "prescriptive")]
         files[f"results/e/raw/{model}.jsonl"] = jsonl(recs)
     return files, inputs
@@ -736,3 +735,62 @@ def test_ties_and_holm_over_distinct_tests():
     tied = [synthetic("a", "i0", "success"), synthetic("b", "i0", "success"), synthetic("c", "i0", "failure")]
     row = next(r for r in bm.build_rows(tied, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
     assert row["best"] is None and row["worst"]["model"] == "c"
+
+
+def test_unpriced_model_has_no_cost_per_success():
+    from ui import benchmarks as bm
+    rows = [dict(synthetic("a", "i1", "success"), priced=False), synthetic("b", "i1", "success")]
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "cost_per_success")
+    assert row["cells"]["a"]["value"] is None and row["cells"]["b"]["value"] == 0.5
+    assert row["best"] is None and row["worst"] is None
+
+
+def test_efficiency_n_counts_ratios():
+    from ui import benchmarks as bm
+    rows = [synthetic("a", "i1", "success"), synthetic("a", "i2", "failure")]
+    row = next(r for r in bm.build_rows(rows, ["a"], ["2x2"], "valid") if r["metric"] == "efficiency")
+    assert row["cells"]["a"] == {"value": 1.0, "n": 1}
+
+
+def test_benchmarks_only_unknown_models_means_no_filter(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    out = make_bundles(ui_repo).benchmarks(bench_query(models=["gone"]), set())
+    assert [m["name"] for m in out["models"]] == ["example-model"] and out["rows"]
+
+
+def test_benchmarks_moved_ref_gives_new_answer(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    first = bundles.benchmarks(bench_query(), set())
+    push_results(ui_repo, "f", files_as("f", files_for(records)))
+    bundles.git.fetch(force=True)
+    second = bundles.benchmarks(bench_query(), set())
+    assert first["experiments"] == ["e"] and second["experiments"] == ["e", "f"]
+    assert not bundles._cache  # separate from the bundle cache
+
+
+def test_benchmarks_mirror_release_is_read_once(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    release = ui_repo / "releases" / "1.0.1"
+    release.mkdir()
+    source = ui_repo / "releases" / "1.0.0"
+    (release / "inputs.jsonl").write_text((source / "inputs.jsonl").read_text(encoding="utf-8"), encoding="utf-8")
+    manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+    (release / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    git(ui_repo, "add", "releases/1.0.1")
+    git(ui_repo, "commit", "-q", "-m", "mirror")
+    git(ui_repo, "push", "-q", "origin", "HEAD:refs/heads/main")
+    files = files_for(records)
+    push_results(ui_repo, "m", {"results/m/experiment.toml": EXP_TOML.replace('"1.0.0"', '"1.0.1"'),
+                                "results/m/raw/example-model.jsonl": files["results/e/raw/example-model.jsonl"]})
+    calls = []
+    real = expdata.load_experiment
+    monkeypatch.setattr(expdata, "load_experiment", lambda *a, **k: calls.append(a[1]) or real(*a, **k))
+    bundles = make_bundles(ui_repo)
+    out = bundles.benchmarks(bench_query(releases=["1.0.0"]), set())
+    assert out["experiments"] == ["m"] and out["skipped"] == [] and calls == ["m"]
+    calls.clear()
+    out = bundles.benchmarks(bench_query(releases=["1.0.0", "1.0.1"]), set())
+    assert out["experiments"] == ["m"] and calls == ["m"]
