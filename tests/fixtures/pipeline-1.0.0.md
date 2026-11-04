@@ -78,6 +78,18 @@ Cost spent, at the prices above (USD):
 | 2x2 | prescriptive | 0.00 n=2 | 0.00 n=4 | 0.50 |
 | 2x2 | always MISMATCH (baseline) | 1.00 | 1.00 | 0.50 |
 
+## Detection by corruption type
+
+The detection rate on invalid inputs, split by the kind of corruption applied.
+
+### A
+
+| Puzzle | Setup | Corruption type | Detection rate |
+|---|---|---|---|
+| 2x2 | no_model | recoloured sticker | 0.00 (n/a) n=2, 1 input |
+| 2x2 | descriptive | recoloured sticker | 0.00 (n/a) n=2, 1 input |
+| 2x2 | prescriptive | recoloured sticker | 0.00 (n/a) n=2, 1 input |
+
 ## Setup comparison
 
 Each row is a [paired setup test](../../docs/definitions.md#metrics) of two setups on the same inputs.

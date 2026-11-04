@@ -234,6 +234,23 @@ def detection_section(definitions_link: str, config: dict, detection_rows) -> li
     return out
 
 
+def config_models(config: dict) -> list[str]:
+    return [m["name"] for m in config["models"]]
+
+
+def corruption_section(models: list[str], corruption_rows) -> list[str]:
+    """Mismatch detection split by corruption type: one table per AI model."""
+    out = ["## Detection by corruption type", "",
+           "The detection rate on invalid inputs, split by the kind of corruption applied.", ""]
+    header = ["Puzzle", "Setup", "Corruption type", "Detection rate"]
+    for model in models:
+        rows = [r for r in corruption_rows if r["model"] == model]
+        if rows:
+            body = [[r["puzzle"], r["setup"], r["corruption_type"], rate_cell(r, "detection_rate")] for r in rows]
+            out += [f"### {model}", ""] + table(header, body)
+    return out
+
+
 def metric_line(r: dict) -> list:
     """One row of a puzzle's metrics table."""
     line = [r["setup"], r["model"], r["scramble_depth"], r["validity"], r["attempts"],
@@ -295,7 +312,8 @@ def attempts_section(link, release_dir: Path, attempt_rows: list[dict]) -> list[
 
 
 def write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows,
-                 metric_rows, summary_rows, torn_lines: int = 0, paired_rows=(), detection_rows=()) -> None:
+                 metric_rows, summary_rows, torn_lines: int = 0, paired_rows=(), detection_rows=(),
+                 corruption_rows=()) -> None:
     path, release_dir = Path(path), Path(release_dir)
 
     def link(target: Path) -> str:
@@ -310,6 +328,8 @@ def write_report(path, experiment_id, experiment_config, release_dir, prices, at
     if detection_rows:
         definitions = link(release_dir.parent.parent / "docs" / "definitions.md")
         lines += detection_section(definitions, experiment_config, detection_rows)
+    if corruption_rows:
+        lines += corruption_section(config_models(experiment_config), corruption_rows)
     if paired_rows:
         definitions = link(release_dir.parent.parent / "docs" / "definitions.md")
         lines += comparison_section(definitions, experiment_config, paired_rows)

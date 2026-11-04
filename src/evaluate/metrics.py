@@ -180,7 +180,7 @@ def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float,
         "retry_input_tokens": raw["retry_input_tokens"],
         "retry_output_tokens": raw["retry_output_tokens"], "latency_s": raw["latency_s"],
         "served_model": raw["served_model"], "created_at": raw["created_at"], "cost": cost,
-        "decision": decision,
+        "decision": decision, "corruption": source.get("corruption"),
     }
 
 
@@ -380,4 +380,39 @@ def detection_rows(attempt_rows: list[dict], models: list[str] | None = None) ->
             "false_mismatch_rate": false_mismatch, "false_mismatch_n": len(valid),
             "balanced_accuracy": (detection + (1 - false_mismatch)) / 2 if both else NA,
             "balanced_accuracy_low": low, "balanced_accuracy_high": high})
+    return result
+
+
+CORRUPTION_TYPES = ("twisted corner", "flipped edge", "swapped corners", "swapped edges",
+                    "recoloured sticker")
+
+
+CORRUPTION_COLUMNS = ("model", "puzzle", "setup", "corruption_type", "detection_rate", "detection_rate_low",
+                      "detection_rate_high", "detection_rate_n", "detection_rate_inputs")
+
+
+def corruption_type(description: str) -> str:
+    """Return the corruption type: the first two words of a corruption description."""
+    return " ".join(description.split()[:2])
+
+
+def corruption_rows(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
+    """Return one detection row per AI model, puzzle, setup, and corruption type, over invalid inputs."""
+    order = models or sorted({r["model"] for r in attempt_rows})
+    groups = defaultdict(list)
+    for r in attempt_rows:
+        if r["validity"] == "invalid" and r["outcome"] != "infrastructure_failure" and r.get("corruption"):
+            groups[(r["model"], r["puzzle"], r["setup"], corruption_type(r["corruption"]))].append(r)
+
+    def sort_key(k):
+        kind = CORRUPTION_TYPES.index(k[3]) if k[3] in CORRUPTION_TYPES else len(CORRUPTION_TYPES)
+        return (model_rank(order, k[0]), list(ENGINES).index(k[1]), SETUPS.index(k[2]), kind, k[3])
+
+    result = []
+    for key in sorted(groups, key=sort_key):
+        model, puzzle, setup, kind = key
+        cells = input_cells(groups[key], lambda r: r["mismatch"])
+        row = {"model": model, "puzzle": puzzle, "setup": setup, "corruption_type": kind}
+        rate_columns(row, "detection_rate", cells, "|".join(key))
+        result.append(row)
     return result

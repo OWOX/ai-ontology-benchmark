@@ -58,7 +58,7 @@ def tree(tmp_path):
     return tmp_path, inputs
 
 
-def build(tree, changed_outcome=False, paired_rows=(), with_paired=False, detection=()) -> str:
+def build(tree, changed_outcome=False, paired_rows=(), with_paired=False, detection=(), corruption=()) -> str:
     root, _ = tree
     release, path = root / "releases" / "1.0.0", root / "results" / "exp" / "1.0.0.md"
     rows = compute(records(changed_outcome), release, PRICES, ["M"])
@@ -66,7 +66,7 @@ def build(tree, changed_outcome=False, paired_rows=(), with_paired=False, detect
         paired_rows = paired_tests(rows[0], ["M"])
         detection = detection_rows(rows[0], ["M"])
     write_report(path, "exp", CONFIG, release, PRICES, *rows, torn_lines=2, paired_rows=paired_rows,
-                 detection_rows=detection)
+                 detection_rows=detection, corruption_rows=corruption)
     return path.read_text(encoding="utf-8")
 
 
@@ -207,3 +207,14 @@ def test_mismatch_detection_absent_without_rows(tree):
 def test_mismatch_detection_shows_na(tree):
     text = build(tree, detection=[detection_row(detection_rate="n/a", detection_n=0, balanced_accuracy="n/a")])
     assert "| 2x2 | no_model | n/a n=0 | 0.25 n=4 | n/a |" in text
+
+
+def test_detection_by_corruption_type_sits_after_mismatch_detection(tree):
+    row = {"model": "M", "puzzle": "2x2", "setup": "no_model", "corruption_type": "twisted corner",
+           "detection_rate": 0.5, "detection_rate_low": 0.25, "detection_rate_high": 0.75,
+           "detection_rate_n": 4, "detection_rate_inputs": 2}
+    text = build(tree, detection=[detection_row()], corruption=[row])
+    assert text.index("## Mismatch detection") < text.index("## Detection by corruption type") < text.index("## Metrics")
+    assert "| Puzzle | Setup | Corruption type | Detection rate |" in text
+    assert "| 2x2 | no_model | twisted corner | 0.50 (0.25\u20130.75) n=4, 2 inputs |" in text
+    assert "## Detection by corruption type" not in build(tree)

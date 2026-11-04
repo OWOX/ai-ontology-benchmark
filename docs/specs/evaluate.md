@@ -42,10 +42,12 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
    1. Attempts with outcome `infrastructure_failure` are left out. Rows are sorted by AI model (the order of `models`), puzzle (registry order), and setup (`SETUPS` order).
    2. Detection is over invalid attempts, false mismatch over valid ones. A rate is `n/a` when its n is 0, and balanced accuracy is `n/a` when either rate is.
    3. `balanced_accuracy_low` and `balanced_accuracy_high` come from `interval_for_balanced_accuracy(rows)`: a stratified bootstrap with the same draws and percentiles, where each draw picks valid and invalid inputs separately, each side as many as it has, and takes the balanced accuracy of the draw. The key is `<model>|<puzzle>|<setup>|balanced_accuracy`. It returns `n/a` for both when either side has fewer than 2 inputs.
+5. `corruption_rows(attempt_rows, models=None)` in `metrics.py`, with `corruption_type(description)`, the first two words of a corruption description. One row per AI model, puzzle, setup, and corruption type over invalid attempts, with `detection_rate` (the share with the mismatch flag on) and its `_n`, `_inputs`, `_low`, and `_high` columns from `rate_columns`, key `<model>|<puzzle>|<setup>|<type>|detection_rate`. Each attempt row carries its input's `corruption`, so no `inputs` argument is needed. Attempts with outcome `infrastructure_failure` are left out. Rows are sorted by AI model, puzzle, setup, and type (`twisted corner`, `flipped edge`, `swapped corners`, `swapped edges`, `recoloured sticker`).
 5. `results/<ID>/<VERSION>.metrics.csv`: `metric_rows`, for analysis in other tools.
 6. `results/<ID>/<VERSION>.paired.csv`: `paired_rows`, with the same CSV conventions as the metrics CSV, except that `p_value` and `p_holm` are written with 6 significant digits (`{:.6g}`), so a small p-value is not rounded to zero.
 7. `results/<ID>/<VERSION>.detection.csv`: `detection_rows`, with the same CSV conventions as the metrics CSV.
-8. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
+8. `results/<ID>/<VERSION>.corruption.csv`: `corruption_rows`, with the same CSV conventions as the metrics CSV, and a header-only file when there are no rows.
+9. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
 
 Every metric follows its definition in [definitions.md](../definitions.md#metrics), including which attempts each one leaves out. A metric with no data is `n/a`.
 
@@ -72,3 +74,4 @@ Cost is `(input_tokens + retry_input_tokens) × price_input_per_mtok / 1,000,000
 17. `detection_rows`: 4 valid inputs with 1 flagged and 4 invalid inputs with 3 flagged give balanced accuracy 0.75, and an always-`MISMATCH` group gives 0.5.
 18. The balanced-accuracy interval is pinned to an exact (low, high) for 4 valid and 4 invalid inputs, is (1.0, 1.0) for 2 perfect inputs per side (an unstratified draw could leave a side empty), and is `n/a` when a side has fewer than 2 inputs.
 19. `bootstrap_interval` is pinned to an exact (low, high) for a fixed cells list and key. Reproducibility relies on Python's `random.Random` seeding and `choices`, whose output for a given seed has been stable since Python 3.6.
+20. `corruption_type` reads old descriptions, and `corruption_rows` splits two invalid inputs of different types into two rows.

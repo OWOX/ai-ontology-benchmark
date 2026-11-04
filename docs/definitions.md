@@ -24,7 +24,7 @@ Every term below means the same thing in code, configs, records, reports, and do
 18. **Seed.** The number in config that makes the random choices in `generate` repeatable. The same config, including the seed, always produces the same input set.
 19. **Input seed.** The seed for one input, which `generate` derives from the seed and the input's position in the input set. Every scramble and corruption uses its input's seed, so no two inputs share their random choices.
 20. **Rendered state.** The text form of a state that goes into the prompt, produced by the engine's `render()`. It is the same under every setup.
-21. **Corruption.** The change the engine's `corrupt()` applies to a valid state to make an invalid one. Every invalid input records its corruption.
+21. **Corruption.** The change the engine's `corrupt()` applies to a valid state to make an invalid one. Every invalid input records its corruption. Its description starts with its **corruption type**, two words naming the kind of change, followed by the pieces it changed: `twisted corner`, `flipped edge`, `swapped corners`, `swapped edges`, or `recoloured sticker`.
 
 ## Inputs
 

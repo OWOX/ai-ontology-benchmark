@@ -78,14 +78,16 @@ def test_corrupt_fails_and_scramble_passes_reachability(engine):
         with pytest.raises(ValidityMismatchError):
             engine.load_state({"state": bad, "validity": "valid"})
         assert engine.load_state({"state": bad, "validity": "invalid"}) == bad
-        assert description.startswith(("twisted corner ", "flipped edge "))
+        assert description.startswith(("twisted corner ", "flipped edge ", "swapped corners ",
+                                       "swapped edges ", "recoloured sticker "))
 
 
 def test_corrupt_descriptions_and_edge_choice():
     descriptions = {E3.corrupt(E3.solved_state(), s)[1] for s in range(200)}
     assert any(d.startswith("flipped edge") for d in descriptions)
     assert any(d == "twisted corner UFR clockwise" for d in descriptions)
-    assert all(E2.corrupt(E2.solved_state(), s)[1].startswith("twisted corner") for s in range(50))
+    assert all(E2.corrupt(E2.solved_state(), s)[1].startswith(("twisted corner", "recoloured sticker"))
+               for s in range(50))
 
 
 def test_load_state_label_mismatch():
@@ -138,3 +140,18 @@ def test_every_legal_move_is_a_move_token(puzzle):
 
 def test_engine_has_no_reference_length():
     assert not hasattr(get_engine("2x2"), "reference_length")
+
+
+@pytest.mark.parametrize("puzzle,types", [
+    ("2x2", {"twisted corner", "recoloured sticker"}),
+    ("3x3", {"twisted corner", "flipped edge", "swapped corners", "swapped edges", "recoloured sticker"})])
+def test_corruption_types_cover_and_stay_unreachable(puzzle, types):
+    engine = get_engine(puzzle)
+    state, _ = engine.scramble(1, 10)
+    seen = set()
+    for seed in range(400):
+        new, description = engine.corrupt(state, seed)
+        seen.add(" ".join(description.split()[:2]))
+        with pytest.raises(ValidityMismatchError):
+            engine.load_state({"state": new, "validity": "valid"})
+    assert seen == types

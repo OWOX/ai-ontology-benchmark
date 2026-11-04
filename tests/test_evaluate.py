@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import bootstrap_interval, compute, detection_rows, holm, paired_tests, sign_test
+from src.evaluate.metrics import bootstrap_interval, compute, corruption_rows, corruption_type, detection_rows, holm, paired_tests, sign_test
 from src.puzzles.registry import get_engine
 from src.run import models, run as run_module
 from test_release import commit_all, edit, release_ok, repo  # noqa: F401  (repo is a fixture)
@@ -444,7 +444,7 @@ def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
     prepare(repo, monkeypatch)
     raw_before = {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}
     assert go() == 0
-    first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv", "1.0.0.detection.csv", "prices.toml")}
+    first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv", "1.0.0.detection.csv", "1.0.0.corruption.csv", "prices.toml")}
     assert go() == 0
     header = (repo / "results/exp/1.0.0.detection.csv").read_text(encoding="utf-8").splitlines()[0]
     assert header == ("model,puzzle,setup,detection_rate,detection_n,false_mismatch_rate,false_mismatch_n,"
@@ -601,3 +601,24 @@ def test_old_records_rescore_without_error(release_dir):
                    hallucination=False)
     attempts, _, _ = compute([old, decision], release_dir, PRICES)
     assert [r["outcome"] for r in attempts] == ["truncated", "success"]
+
+
+def test_corruption_type_reads_old_descriptions():
+    assert corruption_type("twisted corner UFL clockwise") == "twisted corner"
+    assert corruption_type("flipped edge UF") == "flipped edge"
+
+
+def test_corruption_rows_split_by_type():
+    def row(input_id, corruption, mismatch, **over):
+        r = _row(input_id, "invalid", mismatch, **over)
+        r["corruption"] = corruption
+        return r
+    rows = [row("x1", "swapped edges UF UR", True), row("x1", "swapped edges UF UR", False),
+            row("x2", "twisted corner UFL clockwise", True),
+            row("x3", "twisted corner UFR anticlockwise", False),
+            row("x4", "twisted corner UFR clockwise", True, outcome="infrastructure_failure"),
+            _row("v1", "valid", True)]
+    result = corruption_rows(rows, ["m"])
+    assert [(r["corruption_type"], r["detection_rate"], r["detection_rate_n"], r["detection_rate_inputs"])
+            for r in result] == [("twisted corner", 0.5, 2, 2), ("swapped edges", 0.5, 2, 1)]
+    assert result == corruption_rows(rows, ["m"])

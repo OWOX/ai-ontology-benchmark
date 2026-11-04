@@ -168,6 +168,10 @@ def _is_reachable(n, state):
     return _parity(corners[0]) == _parity(edges[0])
 
 
+TYPES_2 = ("twisted corner", "recoloured sticker")
+TYPES_3 = ("twisted corner", "flipped edge", "swapped corners", "swapped edges", "recoloured sticker")
+
+
 class CubeEngine(Engine):
     """The engine for the 2x2 and 3x3 cubes."""
 
@@ -214,7 +218,24 @@ class CubeEngine(Engine):
 
     def corrupt(self, state: str, input_seed: int) -> tuple[str, str]:
         rng = random.Random(input_seed)
-        size = rng.choice((3,) if self.n == 2 else (3, 2))
+        kinds = TYPES_2 if self.n == 2 else TYPES_3
+        kind = rng.choice(kinds)
+        chars = list(state)
+        if kind == "recoloured sticker":
+            size = self.n * self.n
+            index = rng.choice([i for i in range(len(state)) if i % size != 4 or self.n == 2])
+            old = state[index]
+            colour = rng.choice([c for c in FACES if c != old])
+            chars[index] = colour
+            return "".join(chars), f"recoloured sticker {_face_of(self.n, index)}{index % size + 1} {old} to {colour}"
+        if kind in ("swapped corners", "swapped edges"):
+            size = 3 if kind == "swapped corners" else 2
+            first, second = rng.sample(_positions(self.n, size), 2)
+            for i, j in zip(first, second):
+                chars[i], chars[j] = state[j], state[i]
+            names = f"{_piece_name(self.n, first)} {_piece_name(self.n, second)}"
+            return "".join(chars), f"{kind} {names}"
+        size = 2 if kind == "flipped edge" else 3
         position = rng.choice(_positions(self.n, size))
         old = [state[i] for i in position]
         name = _piece_name(self.n, position)
@@ -224,7 +245,6 @@ class CubeEngine(Engine):
             new, description = [old[1], old[2], old[0]], f"twisted corner {name} clockwise"
         else:
             new, description = [old[2], old[0], old[1]], f"twisted corner {name} anticlockwise"
-        chars = list(state)
         for i, colour in zip(position, new):
             chars[i] = colour
         return "".join(chars), description

@@ -21,7 +21,7 @@ The nine interface methods:
 4. `apply_move(state, move)` returns the new state. It raises `IllegalMoveError` for any string not in `legal_moves()`.
 5. `is_solved(state)` returns true when all stickers on each face share one colour, whatever that colour is.
 6. `scramble(input_seed, depth)` returns `(state, moves)`. It picks moves with `random.Random(input_seed)`, never picks two moves in a row on the same face, and draws again if the result is solved.
-7. `corrupt(state, input_seed)` returns `(state, description)`. It twists one corner in place. On the 3x3 it may instead flip one edge, chosen by the input seed. The description names the piece and the change, for example `"twisted corner UFR clockwise"`.
+7. `corrupt(state, input_seed)` returns `(state, description)`. It picks a corruption type uniformly with `random.Random(input_seed)`, and the piece and direction follow from the same generator. The 2x2 uses `twisted corner` and `recoloured sticker` (a swap of two 2x2 corners stays reachable). The 3x3 also uses `flipped edge`, `swapped corners`, and `swapped edges`. A swap exchanges the sticker triples (or pairs) of two positions, so each piece keeps its orientation and the permutation parity breaks. A recolour changes one non-centre sticker to another colour, so a colour count differs from n*n. The description names the type, then the pieces and the change, for example `"twisted corner UFR clockwise"`, `"swapped edges UF UR"`, or `"recoloured sticker F3 R to U"`.
 8. `render(state)` returns a text net of the six faces, one face block per label, with the colour letters spaced out.
 9. `is_move_token(token)` returns true when `MOVE_TOKEN` matches the whole token: a face letter with an optional layer count and an optional `w`, or a lower-case face letter, a slice letter (`M`, `E`, or `S`), or a rotation letter (`x`, `y`, or `z`), then an optional `'`, `2`, or both. The layer count goes with face letters only. It is true for every legal move and for shapes the puzzle doesn't allow, such as `r` or `3Fw'`.
 
@@ -36,7 +36,7 @@ The 3x3 code may reuse Cube Bench's `sim/`. Anything copied goes into `NOTICE`, 
 3. A solved state turned as a whole cube, by applying the same rotation to all faces, still passes `is_solved()`.
 4. `apply_move(state, "r")`, `apply_move(state, "R ")`, and `apply_move(state, "R′")` each raise `IllegalMoveError`.
 5. `scramble()` with the same seed gives the same result twice. Over 1,000 seeds, no scramble has two consecutive moves on one face and none ends solved.
-6. Every `corrupt()` output fails the reachability check, and every scramble output passes it.
+6. Every `corrupt()` output fails the reachability check, every corruption type of the cube appears over 400 seeds, and every scramble output passes it.
 7. `load_state()` raises on a valid state labelled invalid, and on an invalid state labelled valid.
 8. `is_move_token()` is true for `R`, `U'`, `r`, `Rw2`, `3Fw'`, `M`, `x`, and `R2'`, and false for the empty string, `MISMATCH`, `2x2`, `R''`, `R3`, a token with a space, and `R’` with a typographic apostrophe. It is true for every move in `legal_moves()`.
 
