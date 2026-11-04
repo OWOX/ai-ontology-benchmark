@@ -1,6 +1,7 @@
 # Spec: docs/specs/cube.md
 """Tests for the cube engine. They read nothing and write nothing."""
 
+import hashlib
 import random
 from collections import deque
 
@@ -157,3 +158,50 @@ def test_ida_star_on_deep_scrambles():
     for seed in range(10):
         state, _ = E2.scramble(seed, 14)
         assert 1 <= E2.reference_length(state) <= 11
+
+
+def digest(text):
+    return hashlib.sha256(text.encode()).hexdigest()[:12]
+
+
+# Values computed from the engine before the 4x4 and 5x5 were added. Frozen releases
+# depend on the 2x2 and 3x3 staying exactly like this.
+SMALL_CUBE_PINS = {
+    2: {
+        "scrambles": {
+            1: ("R' L B' L B U' F' U' D' B F' D' L' F B R U' D' U B2", "979224845e08"),
+            2: ("U' R' U' F2 B' U2 L2 B D' B' R' F' L R L U L D' U2 D", "e72d46192e0f"),
+            3: ("F' L F2 U2 F2 B2 D F' L' D U' L U B2 L' F' R' D2 R F", "ac79fea8d32e"),
+        },
+        "corrupts": {(1, 1): ("twisted corner UBR clockwise", "adff17501505"),
+                     (1, 11): ("twisted corner DBL clockwise", "31cb9aa41b4f"),
+                     (2, 12): ("twisted corner DFR anticlockwise", "db4a97663e4d")},
+        "all_moves": "80cce0b2dc23", "render": "0900562d705c",
+    },
+    3: {
+        "scrambles": {
+            1: ("R' L B' L B U' F' U' D' B F' D' L' F B R U' D' U B2", "3420ed54bff4"),
+            2: ("U' R' U' F2 B' U2 L2 B D' B' R' F' L R L U L D' U2 D", "7663cc4c1189"),
+            3: ("F' L F2 U2 F2 B2 D F' L' D U' L U B2 L' F' R' D2 R F", "1f5eec3783b4"),
+        },
+        "corrupts": {(1, 1): ("twisted corner UBR clockwise", "628512d436d2"),
+                     (1, 11): ("flipped edge DF", "859c77130ebe"),
+                     (2, 12): ("flipped edge FR", "a3d68b6f4566")},
+        "all_moves": "f12a7a39061d", "render": "05c25137b7d2",
+    },
+}
+
+
+@pytest.mark.parametrize("n", [2, 3])
+def test_small_cubes_unchanged(n):
+    engine, pins = CubeEngine(n), SMALL_CUBE_PINS[n]
+    assert engine.legal_moves() == "U U' U2 R R' R2 F F' F2 D D' D2 L L' L2 B B' B2".split()
+    for seed, (moves, state_digest) in pins["scrambles"].items():
+        state, got = engine.scramble(seed, 20)
+        assert " ".join(got) == moves and digest(state) == state_digest
+    for (scramble_seed, corrupt_seed), (description, state_digest) in pins["corrupts"].items():
+        bad, got = engine.corrupt(engine.scramble(scramble_seed, 20)[0], corrupt_seed)
+        assert (got, digest(bad)) == (description, state_digest)
+    state, _ = engine.scramble(1, 20)
+    assert digest("".join(engine.apply_move(state, m) for m in engine.legal_moves())) == pins["all_moves"]
+    assert digest(engine.render(state)) == pins["render"]
