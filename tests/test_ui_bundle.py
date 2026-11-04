@@ -748,33 +748,33 @@ def test_ties_and_holm_over_distinct_tests():
     rows = ([synthetic("a", i, "success") for i in ids]
             + [synthetic("b", i, "success" if n < 4 else "failure") for n, i in enumerate(ids)]
             + [synthetic("c", i, "failure") for i in ids])
-    row = next(r for r in bm.build_rows(rows, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    row = next(r for r in bm.build_rows(rows, ["a", "b", "c"], ["2x2"], "valid", "") if r["metric"] == "success_rate")
     p_ab, p_bc = sign_test(4, 0), sign_test(4, 0)
     assert (row["best"]["model"], row["best"]["against"]) == ("a", "b")
     assert (row["worst"]["model"], row["worst"]["against"]) == ("c", "b")
     assert row["best"]["p_value"] == p_ab and row["best"]["p_holm"] == holm([p_ab, p_bc])[0]
     tied = [synthetic("a", "i0", "success"), synthetic("b", "i0", "success"), synthetic("c", "i0", "failure")]
-    row = next(r for r in bm.build_rows(tied, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    row = next(r for r in bm.build_rows(tied, ["a", "b", "c"], ["2x2"], "valid", "") if r["metric"] == "success_rate")
     assert row["best"] is None and row["worst"]["model"] == "c"
 
 
 def test_unpriced_model_has_no_cost_per_success():
     from ui import benchmarks as bm
     rows = [dict(synthetic("a", "i1", "success"), priced=False), synthetic("b", "i1", "success")]
-    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "cost_per_success")
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "cost_per_success")
     assert row["cells"]["a"]["value"] is None and row["cells"]["b"]["value"] == 0.5
     assert row["best"] is None and row["worst"] is None
 
 
 def metric_row(rows, models, metric, scope="valid"):
     from ui import benchmarks as bm
-    return next(r for r in bm.build_rows(rows, models, ["2x2"], scope) if r["metric"] == metric)
+    return next(r for r in bm.build_rows(rows, models, ["2x2"], scope, "") if r["metric"] == metric)
 
 
 def test_no_efficiency_and_eight_tested_rates():
     from ui import benchmarks as bm
     rows = [synthetic("a", "i1", "success"), synthetic("a", "i2", "truncated")]
-    built = bm.build_rows(rows, ["a"], ["2x2"], "valid")
+    built = bm.build_rows(rows, ["a"], ["2x2"], "valid", "")
     metrics = [r["metric"] for r in built]
     assert "efficiency" not in metrics
     assert {"truncated_rate", "abstention_rate", "format_error_rate"} <= set(metrics)
@@ -893,7 +893,7 @@ def test_best_disagreeing_with_sign_test_does_not_agree():
     from ui import benchmarks as bm
     # A solves 2/2 on 28 inputs, B 1/2 on the other 49: A leads the pooled rate, B is higher on 49 inputs.
     rows = two_model_rows(lambda n: 2 if n < 28 else 0, lambda n: 0 if n < 28 else 1, 77)
-    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "success_rate")
     assert row["best"]["model"] == "a" and row["best"]["p_holm"] < 0.05
     assert row["best"]["agrees"] is False and row["worst"]["agrees"] is False
 
@@ -901,12 +901,12 @@ def test_best_disagreeing_with_sign_test_does_not_agree():
 def test_best_favoured_on_most_inputs_agrees():
     from ui import benchmarks as bm
     rows = two_model_rows(lambda n: 2, lambda n: 0, 10)
-    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "success_rate")
     assert row["best"]["agrees"] is True and row["worst"]["agrees"] is True
     rows = two_model_rows(lambda n: 0, lambda n: 2, 10)  # hallucinations: lower is better
     for r in rows:
         r["outcome"] = "hallucination" if r["outcome"] == "success" else "failure"
-    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "hallucination_rate")
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "hallucination_rate")
     assert row["best"]["model"] == "a" and row["best"]["agrees"] is True
 
 

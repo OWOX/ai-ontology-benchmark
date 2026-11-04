@@ -8,7 +8,7 @@
   const METRICS = [
     ["success_rate", "Success rate"], ["hallucination_rate", "Hallucination rate"],
     ["mismatch_detection_rate", "Mismatch detection rate"], ["false_mismatch_rate", "False mismatch rate"],
-    ["malformed_output_rate", "Malformed output rate"], ["truncated_rate", "Truncated rate"],
+    ["malformed_output_rate", "Malformed output rate"], ["truncated_rate", "Truncation rate"],
     ["abstention_rate", "Abstention rate"], ["format_error_rate", "Format error rate"], ["consistency", "Consistency"],
     ["latency_per_attempt_s", "Latency per attempt"], ["tokens_per_attempt", "Tokens per attempt"],
     ["cost_per_success", "Cost per success"],
@@ -145,7 +145,7 @@
     const parts = [];
     if (mark) parts.push(mark.tip);
     if (RATES.includes(metric) && typeof cell.value === "number" && typeof cell.low === "number") {
-      parts.push(`95% interval ${pct(cell.low)} to ${pct(cell.high)}, n=${cell.n}, ${cell.inputs} inputs.`);
+      parts.push(`95% interval ${pct(cell.low)} to ${pct(cell.high)}, ${cell.n} attempts, ${cell.inputs} inputs.`);
     }
     return parts.join(" ");
   }

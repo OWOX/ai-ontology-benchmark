@@ -143,7 +143,7 @@ def row_for(puzzle: str, metric: str, cells_by_model: dict[str, dict], by_model:
 
 
 def build_rows(attempts: list[dict], models: list[str], puzzles: list[str], scope: str,
-               choice: str = "") -> list[dict]:
+               choice: str) -> list[dict]:
     """One row per puzzle and metric, for the puzzles with any attempt. `attempts` are already filtered. `choice`
     names the chosen releases and setups, and goes into each bootstrap key."""
     out = []

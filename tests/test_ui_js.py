@@ -1,5 +1,6 @@
 # Spec: docs/specs/ui.md (How to test)
 """Checks the page scripts with node: a syntax check of every ui/static/**/*.js and the markdown renderer's tests."""
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -98,3 +99,13 @@ def test_new_experiment_fills_the_reasoning_effort_a_stale_cached_bundle_lacks()
     run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     assert json.loads(run.stdout) == ["medium", "high", "", "low"]
+
+
+def test_experiments_default_columns_follow_the_spec():
+    source = (ROOT / "ui" / "static" / "pages" / "experiments.js").read_text()
+    columns = re.findall(r'\["(\w+)", "[^"]+"\]', source[source.index("const COLUMNS"):source.index("// Hidden when")])
+    hidden = re.search(r"DEFAULT_HIDDEN = \[(.*?)\]", source, re.S).group(1)
+    hidden = re.findall(r'"(\w+)"', hidden)
+    assert [c for c in columns if c not in hidden] == [
+        "id", "started_at", "model", "puzzle", "attempts", "success_rate", "hallucination_rate",
+        "mismatch_detection_rate", "cost_usd"]

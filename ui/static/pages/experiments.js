@@ -16,8 +16,8 @@
     ["total_tokens", "Total tokens"], ["cost_usd", "Cost"], ["report_version", "Report"],
   ];
   // Hidden when the hash has no `hide` key. `hide=none` in the hash shows every column.
-  const DEFAULT_HIDDEN = ["release", "false_mismatch_rate", "malformed_output_rate", "infrastructure_failures",
-    "total_tokens", "report_version"];
+  const DEFAULT_HIDDEN = ["release", "false_mismatch_rate", "malformed_output_rate", "truncated_rate",
+    "abstention_rate", "format_error_rate", "infrastructure_failures", "total_tokens", "report_version"];
 
   const num = (v) => (typeof v === "number" ? v.toLocaleString() : "n/a");
   const usd = (v) => (typeof v === "number" ? "$" + v.toFixed(2) : "n/a");
