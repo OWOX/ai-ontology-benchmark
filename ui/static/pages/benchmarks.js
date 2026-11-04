@@ -60,7 +60,8 @@
     if (!options) return c.models.length && !c.providers.length ? c.models : null;
     const providers = options.providers.filter((p) => !c.providers.length || c.providers.includes(p.name));
     const inProviders = providers.flatMap((p) => p.models);
-    const names = c.models.length ? inProviders.filter((m) => c.models.includes(m)) : inProviders;
+    const picked = inProviders.filter((m) => c.models.includes(m));
+    const names = picked.length ? picked : inProviders;  // a stale models= that names none of them is no filter
     const all = options.providers.flatMap((p) => p.models);
     return names.length === all.length ? null : names;
   }
