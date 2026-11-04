@@ -37,6 +37,8 @@ Every term below means the same thing in code, configs, records, reports, and do
 7. **Input set.** All inputs made by one `generate` call, under one config.
 8. **Input set id.** The id of an input set. It is the major number of the release that first holds the input set. Every input and every raw record carries it.
 9. **Frozen.** Written once and never changed again. A different input set needs a new major release.
+10. **Development input set.** Input set 1, in releases 1.x. Prompts were changed while its results were read, so its results show how the method was built and are not evidence for the research question.
+11. **Held-out input set.** The input set frozen in release 2.0.0 from a new seed, with the prompts and assessment as they stand when it is cut. Its results are the evidence for the research question.
 
 ## Releases and experiments
 

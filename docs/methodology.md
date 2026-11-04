@@ -20,6 +20,24 @@ The [setup](definitions.md#setups) is the experimental variable, alongside the A
 
 1. [`generate`](definitions.md#workflows) builds and freezes an input set once.
 2. [`run`](definitions.md#workflows) sends every input to every AI model under every setup, as many attempts as config says. The validator gives each attempt one [outcome](definitions.md#attempts-and-outcomes), and `run` appends one raw record per attempt.
-3. [`evaluate`](definitions.md#workflows) re-validates every attempt from its raw response and computes the [metrics](definitions.md#metrics) from raw records, frozen inputs, and config. No AI model takes part.
+3. [`evaluate`](definitions.md#workflows) re-validates every attempt from its raw response and computes the [metrics](definitions.md#metrics) from raw records, frozen inputs, and config, including the [balanced accuracy](definitions.md#metrics) and the mismatch detection rate by [corruption type](definitions.md#puzzles). No AI model takes part.
 
 Setups are compared with the [paired setup test](definitions.md#metrics) on the same inputs.
+
+## Development and held-out inputs
+
+Input set 1 (releases 1.x) is the [development input set](definitions.md#inputs). Prompts were changed while its results were read, so its results show how the method was built and are not evidence for the research question. Release 2.0.0 freezes a new input set from a new seed, the [held-out input set](definitions.md#inputs), with the prompts and the assessment as they stand when it is cut. Every AI model runs on it once. A prompt change after that is a new minor release, and its results are reported next to, never instead of, the earlier ones.
+
+## Sample size
+
+The [paired setup test](definitions.md#metrics) compares setups on the same inputs. With per-input outcomes treated as independent between setups (a conservative assumption, since a hard input tends to be hard under every setup), the exact sign test needs about this many valid inputs per AI model and puzzle for 80% power:
+
+| Rate under setup A | Rate under setup B | Inputs at α 0.05 | Inputs at α 0.0167 (Holm, worst case) |
+|---|---|---|---|
+| 0.50 | 0.60 | 410 | 540 |
+| 0.50 | 0.65 | 190 | 250 |
+| 0.50 | 0.70 | 110 | 140 |
+| 0.20 | 0.35 | 160 | 200 |
+| 0.10 | 0.25 | 120 | 150 |
+
+Input set 1 has 30 valid inputs per puzzle, which has about 10–25% power for a 15–20 point difference, so a null result on it says little. The held-out input set aims for at least 150 valid inputs per puzzle (a scramble count of 50 over three depths), enough to detect a 20-point difference. More attempts per input add little power, because the paired test uses the input as its unit, so the held-out run uses 1 attempt per input unless the budget allows more inputs.
