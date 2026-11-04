@@ -20,6 +20,7 @@ class Tally:
         self.cost = 0.0
         self.outcomes: Counter = Counter()
         self.valid = self.invalid = self.flagged_valid = self.flagged_invalid = 0
+        self.decision_counted = 0
 
     def add(self, record: dict, price: dict) -> None:
         self.attempts += 1
@@ -29,6 +30,7 @@ class Tally:
         self.outcomes[record["outcome"]] += 1
         if record["outcome"] == "infrastructure_failure":
             return  # left out of every rate
+        self.decision_counted += bool(record.get("decision"))
         if record["validity"] == "invalid":
             self.invalid += 1
             self.flagged_invalid += bool(record["mismatch"])
@@ -45,6 +47,12 @@ class Tally:
 
     def rate(self, outcome: str) -> str:
         return self.share(self.outcomes[outcome], self.counted)
+
+    def hallucination(self) -> str:
+        """The hallucination rate, or n/a when every counted record is a decision model's, which can't hallucinate."""
+        if self.counted and self.decision_counted == self.counted:
+            return NA
+        return self.rate("hallucination")
 
     def detection(self) -> str:
         return self.share(self.flagged_invalid, self.invalid)
@@ -107,7 +115,7 @@ class Progress:
         return (f"[{t.attempts}/{self.goal}] {record['model']} {record['puzzle']} {record['input_id']} "
                 f"{record['setup']} #{record['attempt_number']} {record['outcome']} | "
                 f"in {t.tokens_in} out {t.tokens_out} | ${t.cost:.4f} | "
-                f"success {t.rate('success')} hallucination {t.rate('hallucination')} "
+                f"success {t.rate('success')} hallucination {t.hallucination()} "
                 f"malformed {t.rate('malformed_output')} truncated {t.rate('truncated')} "
                 f"abstention {t.rate('abstention')} format error {t.rate('format_error')}")
 
@@ -152,7 +160,7 @@ class Progress:
             table.add_column(title, justify="left" if title == "AI model" else "right")
         for name, t in [*self.by_model.items(), ("total", self.total)]:
             table.add_row(name, str(t.attempts), str(t.tokens_in), str(t.tokens_out), f"{t.cost:.4f}",
-                          t.rate("success"), t.rate("hallucination"), t.rate("malformed_output"),
+                          t.rate("success"), t.hallucination(), t.rate("malformed_output"),
                           t.rate("truncated"), t.rate("abstention"), t.rate("format_error"),
                           t.detection(), t.false_mismatch(), str(t.outcomes["infrastructure_failure"]))
         table.caption = "* retry tokens included"

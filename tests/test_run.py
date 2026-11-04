@@ -1182,3 +1182,18 @@ def test_run_passes_the_experiment_reasoning_effort_to_the_model(exp, monkeypatc
 def test_infrastructure_error_log_is_one_line(capsys):
     models.log_infrastructure_error("A in-1", 1, InfrastructureError("first\r\nsecond\nthird"))
     assert capsys.readouterr().err == "infrastructure error: A in-1 call 1: first  second third\n"
+
+
+def test_live_hallucination_rate_is_na_for_decision_records():
+    from src.run.progress import Tally
+    base = {"input_tokens": 0, "retry_input_tokens": 0, "output_tokens": 0, "retry_output_tokens": 0,
+            "validity": "valid", "mismatch": False, "hallucination": False, "outcome": "success"}
+    price = {"price_input_per_mtok": 1.0, "price_output_per_mtok": 1.0}
+    decision_only, mixed, empty = Tally(), Tally(), Tally()
+    for record in (dict(base, decision=True), dict(base, decision=True, outcome="infrastructure_failure")):
+        decision_only.add(record, price)
+    for record in (dict(base, decision=True), dict(base, decision=False, outcome="hallucination")):
+        mixed.add(record, price)
+    assert decision_only.hallucination() == "n/a"
+    assert mixed.hallucination() == "50%"
+    assert empty.hallucination() == "n/a"
