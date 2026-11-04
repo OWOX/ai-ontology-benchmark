@@ -222,3 +222,82 @@ def test_small_cubes_unchanged(n):
     state, _ = engine.scramble(1, 20)
     assert digest("".join(engine.apply_move(state, m) for m in engine.legal_moves())) == pins["all_moves"]
     assert digest(engine.render(state)) == pins["render"]
+
+
+def swap_stickers(state, a, b):
+    chars = list(state)
+    chars[a], chars[b] = chars[b], chars[a]
+    return "".join(chars)
+
+
+@pytest.mark.parametrize("engine", BIG)
+def test_reachable_states_pass_the_check(engine):
+    seen, frontier = {engine.solved_state()}, [engine.solved_state()]
+    for _ in range(2):
+        frontier = [new for state in frontier for move in engine.legal_moves()
+                    if (new := engine.apply_move(state, move)) not in seen]
+        seen.update(frontier)
+    assert len(seen) > 1000
+    rng = random.Random(3)
+    for _ in range(200):
+        state = engine.solved_state()
+        for _ in range(60):
+            state = engine.apply_move(state, rng.choice(engine.legal_moves()))
+            seen.add(state)
+    for state in seen:
+        assert engine.load_state({"state": state, "validity": "valid"}) == state
+
+
+def test_4x4_parities_are_free_and_5x5_parities_are_not():
+    for engine in BIG:
+        swapped = engine.solved_state()
+        first, second = _positions(engine.n, 3)[:2]
+        for a, b in zip(first, second):
+            swapped = swap_stickers(swapped, a, b)
+        assert engine.is_solved(swapped) is False
+        label = "valid" if engine is E4 else "invalid"
+        assert engine.load_state({"state": swapped, "validity": label}) == swapped
+    # Two wings swapped is reachable on the 4x4, since a centre swap absorbs the parity.
+    (a1, a2), (b1, b2) = _wings(4)[:2]
+    swapped = swap_stickers(swap_stickers(E4.solved_state(), a1, b1), a2, b2)
+    assert E4.load_state({"state": swapped, "validity": "valid"}) == swapped
+
+
+def test_5x5_middle_edges_are_checked_apart_from_wings():
+    first, second = _positions(5, 2)[:2]
+    swapped = E5.solved_state()
+    for a, b in zip(first, second):
+        swapped = swap_stickers(swapped, a, b)
+    assert E5.load_state({"state": swapped, "validity": "invalid"}) == swapped
+
+
+@pytest.mark.parametrize("engine", BIG)
+def test_impossible_wings_and_centres_are_invalid(engine):
+    solved = engine.solved_state()
+    x, y = _wings(engine.n)[0]
+    flipped = swap_stickers(solved, x, y)
+    duplicated = solved[:x] + solved[_wings(engine.n)[1][0]] + solved[x + 1:]
+    centre = next(i for i in range(len(solved)) if i % engine.n ** 2 == engine.n + 1)
+    recoloured = solved[:centre] + "R" + solved[centre + 1:]
+    for bad in (flipped, duplicated, recoloured, solved[:-1], "X" + solved[1:]):
+        with pytest.raises(ValidityMismatchError):
+            engine.load_state({"state": bad, "validity": "valid"})
+        with pytest.raises(ValueError):
+            engine.reference_length(bad)
+
+
+@pytest.mark.parametrize("engine", BIG)
+def test_corrupt_descriptions_per_size(engine):
+    descriptions = {engine.corrupt(engine.solved_state(), s)[1] for s in range(900)}
+    assert "twisted corner UFR clockwise" in descriptions
+    wings = {d for d in descriptions if d.startswith("flipped wing ")}
+    assert len(wings) == 24 and "flipped wing UF near R" in wings and "flipped wing UF near L" in wings
+    assert any(d.startswith("flipped edge ") for d in descriptions) == (engine is E5)
+
+
+@pytest.mark.parametrize("engine", BIG)
+def test_reference_length_is_not_available_yet(engine):
+    with pytest.raises(NotImplementedError):
+        engine.reference_length(engine.scramble(1, 5)[0])
+    with pytest.raises(ValueError):
+        engine.reference_length(engine.corrupt(engine.solved_state(), 3)[0])
