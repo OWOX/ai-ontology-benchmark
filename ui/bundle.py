@@ -12,9 +12,11 @@ from pathlib import Path
 
 from src.config import RELEASE_PATTERN
 from src.release.release import parse_version
-from ui import expdata, secrets
+from src.puzzles.registry import ENGINES
+from src.run.prompts import SETUPS
+from ui import benchmarks, expdata, secrets
 from ui.branches import BranchReaders
-from ui.catalogue import build_providers, config_form
+from ui.catalogue import PROVIDER_ORDER, build_providers, config_form
 from ui.common import ApiError
 from ui.experiments import DEFAULTS
 from ui.gitdata import REMOTE_RESULTS, GitData
@@ -159,6 +161,79 @@ class Bundles(BranchReaders):
                 "repo": base, "main_sha": main_sha, "defaults": DEFAULTS,
                 "providers": build_providers(catalogue, self._prices(), experiments), "puzzles": puzzles, "experiments": rows,
                 "about": {"markdown": self.git.show(main, "README.md"), "source": link("README.md")}}
+
+    # --- benchmarks ------------------------------------------------------------------------
+
+    def benchmarks(self, query: dict[str, list[str] | None], live_ids: set[str]) -> dict:
+        """`query` holds the lists of GET /api/benchmarks (None or empty: the default) and `validity` (a string)."""
+        with self._lock:
+            if self.git.fetched_at is None:
+                self.git.fetch()
+            versions = self.releases()
+            chosen = self._choose("releases", query.get("releases"), versions, versions[:1])
+            puzzles = self._choose("puzzles", query.get("puzzles"), list(ENGINES), list(ENGINES))
+            setups = self._choose("setups", query.get("setups"), list(SETUPS), list(SETUPS))
+            scope = query.get("validity") or "all"
+            if scope not in expdata.SCOPES:
+                raise ApiError(400, f"field 'validity' must be one of {', '.join(expdata.SCOPES)}")
+            models = list(query.get("models") or [])
+            refs = self.git.results_refs(live_ids)
+            main_sha = self.git.sha(self.git.main_ref())
+            shas = tuple(sorted((i, self.git.sha(r)) for i, r in refs.items()))
+            key = ("benchmarks", tuple(chosen), tuple(puzzles), tuple(setups), scope, tuple(sorted(models)),
+                   main_sha, shas)
+            if key not in self._cache:
+                if len(self._cache) >= CACHE_LIMIT:
+                    self._cache.pop(next(iter(self._cache)))
+                self._cache[key] = self._benchmarks(chosen, puzzles, setups, scope, models, refs)
+            return self._cache[key]
+
+    @staticmethod
+    def _choose(field: str, asked: list[str] | None, known: list[str], default: list[str]) -> list[str]:
+        if not asked:
+            return default
+        unknown = [a for a in asked if a not in known]
+        if unknown:
+            raise ApiError(400, f"field '{field}' has {unknown[0]!r}, which is not one of {', '.join(known) or '(none)'}")
+        return [k for k in known if k in asked]
+
+    def _benchmarks(self, chosen: list[str], puzzles: list[str], setups: list[str], scope: str,
+                    models: list[str], refs: dict[str, str]) -> dict:
+        main = self.git.main_ref()
+        manifests = {v: self._manifest(v) for v in self.releases()}
+        inputs_by_release: dict[str, list[dict]] = {}
+        attempts, skipped, read, entries = [], [], [], {}
+        for exp in self._load_all(refs, main):
+            config = exp["config"]
+            if config is not None and not any(is_mirror(r, config["release"], manifests) for r in chosen):
+                continue
+            if config is not None and not exp["error"]:
+                if config["release"] not in inputs_by_release:
+                    inputs_by_release[config["release"]] = expdata.read_inputs(self.git, main, config["release"])
+                rows = expdata.attempt_rows(exp, inputs_by_release[config["release"]])
+            if config is None or exp["error"]:
+                skipped.append({"id": exp["id"], "error": exp["error"]})
+                continue
+            set_id = (manifests.get(config["release"]) or {}).get("input_set_id")
+            for row in rows:
+                row["input_set_id"] = set_id
+            attempts += rows
+            read.append(exp["id"])
+            for m in config["models"]:
+                entries.setdefault(m["name"], m["provider"])
+        providers = list(PROVIDER_ORDER) + sorted(set(entries.values()) - set(PROVIDER_ORDER))
+        ordered = [n for p in providers for n, provider in entries.items() if provider == p]
+        shown = [n for n in ordered if not models or n in models]
+        held = {r["puzzle"] for r in attempts}
+        attempts = [r for r in attempts if r["setup"] in setups]
+        return {"releases": chosen,
+                "options": {"providers": [{"name": p, "models": [n for n in ordered if entries[n] == p]}
+                                          for p in providers if p in entries.values()],
+                            "puzzles": [p for p in ENGINES if p in held]},
+                "models": [{"name": n, "provider": entries[n]} for n in shown],
+                "experiments": read,
+                "rows": benchmarks.build_rows(attempts, shown, [p for p in puzzles if p in held], scope),
+                "skipped": skipped}
 
     # --- the other routes ------------------------------------------------------------------
 

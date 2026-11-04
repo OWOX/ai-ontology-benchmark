@@ -589,3 +589,150 @@ def test_decision_model_attempts_are_scored_not_malformed(ui_repo, samples):
     files = {"results/e2/experiment.toml": EXP_TOML, "results/e2/raw/example-model.jsonl": jsonl([flagged])}
     exp, inputs = open_experiment(ui_repo, "e2", files)
     assert [r["outcome"] for r in expdata.attempt_rows(exp, inputs)] == ["success"]
+
+
+# --- benchmarks -------------------------------------------------------------------------------
+
+OTHER_TOML = EXP_TOML + '[[models]]\nname = "cloud-model"\nprovider = "anthropic"\napi_model_id = "cl-1"\n'
+
+
+def bench_query(**kwargs):
+    return {k: kwargs.get(k) for k in ("releases", "models", "puzzles", "setups", "validity")}
+
+
+def two_model_files(ui_repo, replies):
+    """Experiment `e` with both models, one reply per (model, input, setup) from `replies(model, row, setup)`."""
+    from test_ui_bundle import record as make
+    inputs = [json.loads(line) for line in
+              (ui_repo / "releases" / "1.0.0" / "inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    files = {"results/e/experiment.toml": OTHER_TOML}
+    for model in ("example-model", "cloud-model"):
+        recs = [make(r, s, 1, replies(model, r, s), model=model) for r in inputs
+                for s in ("no_model", "descriptive", "prescriptive")]
+        files[f"results/e/raw/{model}.jsonl"] = jsonl(recs)
+    return files, inputs
+
+
+def test_benchmarks_pooled_rates_equal_metrics(ui_repo, samples):
+    from src.evaluate.metrics import rates
+    _, _, records = samples
+    exp, inputs = open_experiment(ui_repo, "e", files_for(records))
+    out = make_bundles(ui_repo).benchmarks(bench_query(), set())
+    done = [r for r in expdata.attempt_rows(exp, inputs) if r["outcome"] != "infrastructure_failure"]
+    expected = expdata.all_scope_rates(done)
+    cells = {r["metric"]: r["cells"]["example-model"] for r in out["rows"] if r["puzzle"] == "2x2"}
+    assert out["experiments"] == ["e"] and out["releases"] == ["1.0.0"] and out["skipped"] == []
+    for metric in ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
+                   "malformed_output_rate"):
+        assert cells[metric] == {"value": expected[metric], "low": expected[metric + "_low"],
+                                 "high": expected[metric + "_high"], "n": expected[metric + "_n"]}
+    invalid = out_for(ui_repo, validity="invalid")
+    only = rates([r for r in done if r["validity"] == "invalid"], "invalid")
+    assert invalid["success_rate"]["value"] == only["success_rate"]
+    assert invalid["efficiency"]["value"] is None and invalid["false_mismatch_rate"]["value"] is None
+    valid = out_for(ui_repo, validity="valid")
+    assert valid["mismatch_detection_rate"]["value"] is None and valid["mismatch_detection_rate"]["n"] == 0
+    assert [r["metric"] for r in out["rows"]][:3] == ["success_rate", "hallucination_rate", "mismatch_detection_rate"]
+    assert cells["tokens_per_attempt"] == {"value": 20, "n": 4}
+
+
+def out_for(ui_repo, **kwargs):
+    out = make_bundles(ui_repo).benchmarks(bench_query(**kwargs), set())
+    return {r["metric"]: r["cells"]["example-model"] for r in out["rows"]}
+
+
+def test_benchmarks_one_cell_has_no_best_and_worst(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    rows = make_bundles(ui_repo).benchmarks(bench_query(), set())["rows"]
+    assert all(r["best"] is None and r["worst"] is None for r in rows)
+
+
+def test_benchmarks_two_models_share_one_test(ui_repo):
+    from src.evaluate.metrics import sign_test
+    files, inputs = two_model_files(ui_repo, lambda model, row, setup:
+                                    HALLUCINATION if model == "example-model" else FAILURE)
+    push_results(ui_repo, "e", files)
+    out = make_bundles(ui_repo).benchmarks(bench_query(), set())
+    assert [m["name"] for m in out["models"]] == ["cloud-model", "example-model"]  # provider order: anthropic, fake
+    assert {p["name"] for p in out["options"]["providers"]} == {"anthropic", "fake"}
+    row = next(r for r in out["rows"] if r["metric"] == "hallucination_rate")
+    assert row["tested"] and row["best"]["model"] == "cloud-model" and row["worst"]["model"] == "example-model"
+    assert row["best"]["against"] == "example-model" and row["worst"]["against"] == "cloud-model"
+    assert row["best"]["inputs_paired"] == len(inputs)
+    assert row["best"]["p_value"] == row["worst"]["p_value"] == sign_test(len(inputs), 0)
+    assert row["best"]["p_holm"] == row["best"]["p_value"] == row["worst"]["p_holm"]
+    eff = next(r for r in out["rows"] if r["metric"] == "efficiency")
+    assert eff["tested"] is False and "p_value" not in (eff["best"] or {})
+
+
+def test_benchmarks_filters_narrow_models_not_options(ui_repo):
+    files, _ = two_model_files(ui_repo, lambda *a: FAILURE)
+    push_results(ui_repo, "e", files)
+    out = make_bundles(ui_repo).benchmarks(bench_query(models=["cloud-model", "gone"], setups=["no_model"]), set())
+    assert [m["name"] for m in out["models"]] == ["cloud-model"]
+    assert sorted(m for p in out["options"]["providers"] for m in p["models"]) == ["cloud-model", "example-model"]
+    assert all(set(r["cells"]) == {"cloud-model"} for r in out["rows"])
+
+
+@pytest.mark.parametrize("field,value", [("releases", ["9.9.9"]), ("puzzles", ["7x7"]), ("setups", ["x"]),
+                                         ("validity", "some")])
+def test_benchmarks_unknown_choice_is_400(ui_repo, field, value):
+    with pytest.raises(ApiError) as caught:
+        make_bundles(ui_repo).benchmarks(bench_query(**{field: value}), set())
+    assert caught.value.status == 400 and f"'{field}'" in caught.value.message
+
+
+def test_benchmarks_reads_once_and_caches(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    push_results(ui_repo, "f", files_as("f", files_for(records)))
+    calls = []
+    real = expdata.load_experiment
+    monkeypatch.setattr(expdata, "load_experiment", lambda *a, **k: calls.append(a[1]) or real(*a, **k))
+    bundles = make_bundles(ui_repo)
+    first = bundles.benchmarks(bench_query(), set())
+    assert bundles.benchmarks(bench_query(), set()) is first and sorted(calls) == ["e", "f"]
+    assert first["experiments"] == ["e", "f"]
+
+
+def test_benchmarks_broken_experiment_is_skipped(ui_repo, samples):
+    _, _, records = samples
+    bad = [dict(r) for r in records]
+    del bad[0]["raw_response"]
+    push_results(ui_repo, "e", files_for(records))
+    push_results(ui_repo, "f", files_as("f", files_for(bad)))
+    out = make_bundles(ui_repo).benchmarks(bench_query(), set())
+    assert out["experiments"] == ["e"] and [s["id"] for s in out["skipped"]] == ["f"] and out["skipped"][0]["error"]
+
+
+def synthetic(model, input_id, outcome, set_id="1", puzzle="2x2", validity="valid", mismatch=False, setup="no_model"):
+    return {"model": model, "input_id": input_id, "input_set_id": set_id, "puzzle": puzzle, "validity": validity,
+            "outcome": outcome, "mismatch": mismatch, "setup": setup, "reference_length": 3, "move_count": 3,
+            "latency_s": 1.0, "input_tokens": 1, "output_tokens": 1, "retry_input_tokens": 0,
+            "retry_output_tokens": 0, "cost": 0.5}
+
+
+def test_pairing_uses_input_set_id():
+    from ui import benchmarks as bm
+    a = [synthetic("a", "i1", "success"), synthetic("a", "i2", "failure")]
+    b = [synthetic("b", "i1", "failure", set_id="2"), synthetic("b", "i2", "failure")]
+    test = bm.paired_model_test(a, b, "success_rate")
+    assert test["inputs_paired"] == 1          # i1 under set 2 is another input
+
+
+def test_ties_and_holm_over_distinct_tests():
+    from src.evaluate.metrics import holm, sign_test
+    from ui import benchmarks as bm
+    ids = [f"i{n}" for n in range(8)]
+    rows = ([synthetic("a", i, "success") for i in ids]
+            + [synthetic("b", i, "success" if n < 4 else "failure") for n, i in enumerate(ids)]
+            + [synthetic("c", i, "failure") for i in ids])
+    row = next(r for r in bm.build_rows(rows, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    p_ab, p_bc = sign_test(4, 0), sign_test(4, 0)
+    assert (row["best"]["model"], row["best"]["against"]) == ("a", "b")
+    assert (row["worst"]["model"], row["worst"]["against"]) == ("c", "b")
+    assert row["best"]["p_value"] == p_ab and row["best"]["p_holm"] == holm([p_ab, p_bc])[0]
+    tied = [synthetic("a", "i0", "success"), synthetic("b", "i0", "success"), synthetic("c", "i0", "failure")]
+    row = next(r for r in bm.build_rows(tied, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    assert row["best"] is None and row["worst"]["model"] == "c"
