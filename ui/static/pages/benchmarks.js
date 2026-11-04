@@ -148,53 +148,58 @@
   }
   const svgText = (attrs, text) => { const t = svg("text", attrs); t.textContent = text; return t; };
 
-  // One small chart: a bar per AI model, neutral unless the row's winner or loser, a Wilson whisker on rates.
+  // The model name without its vendor part: the first `-` separated part. A name of one part stays whole.
+  const shortName = (name) => name.split("-").slice(1).join("-") || name;
+
+  // One small chart: a horizontal bar per AI model, grouped by provider, neutral unless the row's winner or loser,
+  // a Wilson whisker on rates. The value sits at the end of the bar. Its height follows the number of models.
   function chart(row, models, marks) {
     const rate = RATES.includes(row.metric);
-    const slot = 30, gap = 10, left = 62, top = 18, plot = 110, bottom = 84;
-    let x = left, prev = null;
+    const width = 360, left = 96, right = 58, top = 4, rowH = 19, barH = 12, gap = 8, axisH = rate ? 18 : 6;
+    const plot = width - left - right;
+    let y = top, prev = null;
     const spots = models.map((m) => {
-      if (prev !== null && prev !== m.provider) x += gap;
+      if (prev !== null && prev !== m.provider) y += gap;
       prev = m.provider;
-      const at = x;
-      x += slot;
+      const at = y;
+      y += rowH;
       return at;
     });
-    const width = x + 6, height = top + plot + bottom;
+    const height = y + axisH;
     const cells = models.map((m) => row.cells[m.name]);
     const values = cells.filter((c) => c && typeof c.value === "number").map((c) => c.value);
-    const high = rate ? 1 : Math.max(...values, 0) * 1.1 || 1;
-    const y = (v) => top + plot - (v / high) * plot;
+    const high = rate ? 1 : Math.max(...values, 0) || 1;
+    const x = (v) => left + (v / high) * plot;
     const root = svg("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
       "aria-label": `${row.puzzle}, ${LABEL[row.metric]}, one bar per AI model` });
     if (rate) {
       for (const v of [0, 0.5, 1]) {
-        root.append(svg("line", { class: v ? "grid-line" : "axis", x1: left, x2: width - 4, y1: y(v), y2: y(v) }),
-          svgText({ class: "tick", x: left - 4, y: y(v) + 3, "text-anchor": "end" }, pct(v, 0)));
+        root.append(svg("line", { class: v ? "grid-line" : "axis", x1: x(v), x2: x(v), y1: top, y2: y }),
+          svgText({ class: "tick", x: x(v), y: y + 12, "text-anchor": v === 0 ? "start" : v === 1 ? "end" : "middle" }, pct(v, 0)));
       }
     } else {
-      root.append(svg("line", { class: "axis", x1: left, x2: width - 4, y1: y(0), y2: y(0) }));
+      root.append(svg("line", { class: "axis", x1: left, x2: left, y1: top, y2: y }));
     }
     models.forEach((m, i) => {
       const cell = cells[i];
-      const cx = spots[i] + slot / 2;
-      root.append(svgText({ class: "name", transform: `rotate(-35 ${cx} ${top + plot + 10})`, x: cx, y: top + plot + 10,
-        "text-anchor": "end" }, m.name));
+      const mid = spots[i] + rowH / 2;
+      root.append(svgText({ class: "name", x: left - 6, y: mid + 3.5, "text-anchor": "end" }, shortName(m.name)));
+      root.lastChild.append(svg("title", {}, document.createTextNode(m.name)));
       if (!cell || typeof cell.value !== "number") return;
       const mark = marks[m.name];
-      const bar = svg("rect", { class: "bar" + (mark ? " " + mark.cls : ""), x: spots[i] + 4, width: slot - 8,
-        y: y(cell.value), height: Math.max(0, y(0) - y(cell.value)), rx: 2 });
+      const bar = svg("rect", { class: "bar" + (mark ? " " + mark.cls : ""), x: left, y: mid - barH / 2,
+        width: Math.max(0, x(cell.value) - left), height: barH, rx: 2 });
       const tip = `${m.name}: ${fmt(row.metric, cell.value)}. ${cellTip(row.metric, cell, mark && mark.verdict)}`;
       bar.append(svg("title", {}, document.createTextNode(tip)));
       root.append(bar);
-      let label = y(cell.value) - 3;
+      let end = x(cell.value);
       if (rate && typeof cell.low === "number") {
-        root.append(svg("line", { class: "whisker", x1: cx, x2: cx, y1: y(cell.low), y2: y(cell.high) }),
-          svg("line", { class: "whisker", x1: cx - 3, x2: cx + 3, y1: y(cell.low), y2: y(cell.low) }),
-          svg("line", { class: "whisker", x1: cx - 3, x2: cx + 3, y1: y(cell.high), y2: y(cell.high) }));
-        label = Math.min(label, y(cell.high) - 3);
+        root.append(svg("line", { class: "whisker", x1: x(cell.low), x2: x(cell.high), y1: mid, y2: mid }),
+          svg("line", { class: "whisker", x1: x(cell.low), x2: x(cell.low), y1: mid - 3, y2: mid + 3 }),
+          svg("line", { class: "whisker", x1: x(cell.high), x2: x(cell.high), y1: mid - 3, y2: mid + 3 }));
+        end = Math.max(end, x(cell.high));
       }
-      root.append(svgText({ class: "val", x: cx, y: Math.max(10, label), "text-anchor": "middle" },
+      root.append(svgText({ class: "val", x: end + 4, y: mid + 3.5, "text-anchor": "start" },
         rate ? pct(cell.value, 0) : fmt(row.metric, cell.value)));
     });
     return h("div", { class: "bench-chart" }, h("h4", { text: `${row.puzzle} · ${LABEL[row.metric]}` }), root);
@@ -209,7 +214,7 @@
     const head = [
       h("tr", {}, h("th", { rowspan: "2", colspan: "2", text: "Puzzle and metric" }),
         ...providers.map((p) => h("th", { class: "center", colspan: String(p.span), text: p.name }))),
-      h("tr", {}, ...models.map((m) => h("th", { text: m.name }))),
+      h("tr", {}, ...models.map((m) => h("th", { text: shortName(m.name), title: m.name }))),
     ];
     const body = [];
     for (const row of rows) {
