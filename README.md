@@ -60,6 +60,7 @@ Planned layout. Folders appear as the code is written.
 config/
   release.toml     seed, puzzles, scramble count and depths, and valid/invalid split
   experiments/     one file per experiment: release, AI models, attempts, and retry cap
+  templates/       one experiment config per provider to copy, see docs/getting-started.md
   prices.toml      token prices per AI model
   models.toml      model catalogue for the UI
 src/
