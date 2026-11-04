@@ -21,20 +21,23 @@ Steps, in order:
 
 1. If `stop_reason` is not one of the four values above, raise `ValueError`.
 2. If `stop_reason` is `infrastructure_failure`, return outcome `infrastructure_failure`.
-3. If `stop_reason` is `truncated` or `refused`, return `malformed_output`.
+3. If `stop_reason` is `truncated`, return `truncated`. If it is `refused`, return `malformed_output`.
 4. With `decision` false, read the lines as [invariant 9](../../AGENTS.md#invariants) says:
    1. Strip one surrounding Markdown code fence, if there is one.
-   2. Split on `\n` and remove one trailing `\r` from each line. Drop lines that are empty or only whitespace. No other line is stripped, because a line is compared to the move group by exact string match, so ` R` and `R.` are impossible moves.
+   2. Split on `\n` and remove one trailing `\r` from each line. Drop lines that are empty or only whitespace. No other line is stripped.
    3. No lines left: `malformed_output`, even for a puzzle with no engine, because the parse comes before the engine is looked up.
-   4. Exactly one line, and it is `MISMATCH`: no moves, mismatch flag on.
-   5. Otherwise every line is one parsed move and the mismatch flag is off. A `MISMATCH` line among other lines is an impossible move. Prose instead of moves is not malformed output: each of its lines is an impossible move, so the attempt is a `hallucination`.
+   4. Exactly one line, and it is `MISMATCH`: no moves, mismatch flag on. Go to step 7 below.
+   5. Otherwise the mismatch flag is off. A line is a **move line** when it splits on whitespace into one or more tokens and every token is a move token (`is_move_token()`). Every other line is a **prose line**. The parsed moves are the tokens of the move lines, in order.
+   6. No move line, and no line that is exactly `MISMATCH`: `abstention`, with no parsed moves and no move count. The AI model answered in prose.
 
    With `decision` true, see [the decision path](#decision-path) instead, which needs the engine first for the move options.
-5. Mark each move as legal only if it exactly equals a string in `legal_moves()`. If any move isn't, `hallucination` is true and the outcome is `hallucination`. The first impossible move is enough: the attempt fails whatever follows it or whether the final state would be solved, `run` stores the reply whole, and the attempt is never re-asked ([run](run.md#outputs) retries only infrastructure failures).
-6. Otherwise, apply every move to the input's state with `apply_move()`.
-7. Return `success` if the expected result is reached and `failure` if not. For a valid input, the expected result is solved with mismatch off. For an invalid input, it is mismatch on.
+5. Mark each parsed move as legal only if it exactly equals a string in `legal_moves()`. A move token that isn't legal is an impossible move. If any parsed move is impossible, `hallucination` is true and the outcome is `hallucination`, even beside prose lines. The first impossible move is enough: the attempt fails whatever follows it or whether the final state would be solved, `run` stores the reply whole, and the attempt is never re-asked ([run](run.md#outputs) retries only infrastructure failures).
+6. Otherwise, if the layout isn't exactly one bare move per line (there is a prose line, a move line with more than one token or with whitespace around its token, or a `MISMATCH` line beside other lines), the outcome is `format_error`.
+7. Otherwise, apply every move to the input's state with `apply_move()`. Return `success` if the expected result is reached and `failure` if not. For a valid input, the expected result is solved with mismatch off. For an invalid input, it is mismatch on.
 
-`move_count` is the length of `parsed_moves`, and empty for the first two outcomes. `mismatch` and `hallucination` are false for the first two outcomes.
+`move_count` is the length of `parsed_moves` for `hallucination`, `format_error`, `success`, and `failure`, and empty for the other outcomes. The mismatch flag is on only for the single line `MISMATCH` and is off for every other outcome. `hallucination` is true for outcome `hallucination` and false for every other outcome of a text model. For a decision model it is `None` (JSON `null`) for every outcome.
+
+`OUTCOMES`, exported from the validator, lists the outcomes in this check order: `infrastructure_failure`, `truncated`, `malformed_output`, `abstention`, `format_error`, `hallucination`, `success`, `failure`.
 
 ## Decision path
 
@@ -45,7 +48,7 @@ With `decision` true, `raw_response` is a JSON array, one element per completed 
 3. The parsed moves are the moves behind the `move_<n>` choices before the first `done` or `mismatch`. Calls after it are ignored.
 4. The mismatch flag is on if the first `done` or `mismatch` is `mismatch`.
 5. Each call is read by `read_decision_call(call, legal) -> str | None`, the move, `"done"`, or `"mismatch"`, which returns `None` for a malformed call. [run](run.md) uses the same function to stop its loop.
-6. Steps 5 to 7 are unchanged. The options are exactly the legal moves, `done`, and `mismatch`, so a decision model's hallucination rate is 0 by construction.
+6. The judging in step 7 is unchanged. The options are exactly the legal moves, `done`, and `mismatch`, so a decision model can't return an impossible move, and its hallucination flag is `None` for every outcome.
 
 ## How to test
 
@@ -57,21 +60,26 @@ One table-driven test, one row per case, each on a fixed 2x2 input:
 | valid | the solving moves with CRLF line endings | `success` |
 | valid | the solving moves with blank lines between them | `success` |
 | valid | `MISMATCH` | `failure` |
-| valid | a solving list with `MISMATCH` among the lines | `hallucination` |
+| valid | a solving list with `MISMATCH` among the lines | `format_error` |
 | valid | legal moves that don't solve it | `failure` |
-| valid | a solving list with `X` added at the end | `hallucination` |
-| valid | `R `, ` R`, `R.`, `R′`, `r`, `Rw` as a line | `hallucination` |
-| valid | prose such as `I think the answer is R` | `hallucination` |
+| valid | a solving list with `X` added at the end | `format_error` (`X` is prose) |
+| valid | `R `, ` R`, or the solving moves on one line | `format_error` |
+| valid | `R.` or `R′` as a line | `abstention` (not move tokens) |
+| valid | `r`, `Rw`, or `M` as a line | `hallucination` (move tokens that aren't legal) |
+| valid | `Solution:` then `Rw U` | `hallucination` |
+| valid | prose such as `I think the answer is R` | `abstention` |
 | invalid | `MISMATCH` | `success` |
 | invalid | `MISMATCH` inside a ```` ``` ```` fence | `success` |
-| invalid | `X` | `hallucination` |
+| invalid | `X` | `abstention` |
+| invalid | `MISMATCH` then an explanation | `format_error`, flag off |
 | invalid | legal moves | `failure` |
 | any | the solving moves inside a ```` ```text ```` fence | same as without the fence |
 | any | empty, or only blank lines | `malformed_output` |
-| any | the solving moves, `stop_reason="truncated"` | `malformed_output` |
+| any | the solving moves, `stop_reason="truncated"` | `truncated` |
+| any | empty, `stop_reason="refused"` | `malformed_output` |
 | any | empty, `stop_reason="infrastructure_failure"` | `infrastructure_failure` |
 | any | any response, `stop_reason="other"` | `ValueError` |
 
 Decision rows, each on a 2x2 input one move from solved: a solving move then `done` (`success`), `done` first (`failure`), `mismatch` in a later call (flag on), calls after `done` or `mismatch` ignored, an old probability field ignored, malformed arrays (bad JSON, `{}`, `[]`, a missing question, an unknown or out-of-range id, a raw move name), and `infrastructure_failure` with completed calls.
 
-Every row also checks `move_count`, `hallucination`, and `mismatch`.
+Every row also checks `move_count`, `hallucination`, and `mismatch`. A decision row checks that `hallucination` is `None`.

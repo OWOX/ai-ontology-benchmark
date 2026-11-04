@@ -63,16 +63,16 @@ def twelve_records() -> list[dict]:
     return [
         raw(v1, 1, answer(["R"]), "success", 1.0),
         raw(v1, 2, answer(["R", "U", "U'"]), "success", 3.0),
-        raw(v1, 3, answer(["X"]), "hallucination", 2.0, retry=(2, 1)),
+        raw(v1, 3, answer(["M"]), "hallucination", 2.0, retry=(2, 1)),
         raw(v2, 1, answer(["U"]), "success", 2.0),
         raw(v2, 2, answer(["R"]), "failure", 4.0),
         raw(v2, 3, answer([]), "failure", 6.0),
         raw(i1, 1, answer([]), "success"),
         raw(i1, 2, " \n", "malformed_output"),
-        raw(i1, 3, answer(["X"]), "hallucination"),
+        raw(i1, 3, answer(["M"]), "hallucination"),
         raw(i2, 1, answer([]), "success"),
         raw(i2, 2, answer(["R"]), "failure"),
-        raw(i2, 3, answer(["X"]), "hallucination"),
+        raw(i2, 3, answer(["M"]), "hallucination"),
     ]
 
 
@@ -445,7 +445,7 @@ def test_decision_model_records_are_parsed_as_arrays(release_dir):
     attempts, _, _ = compute([record], release_dir, PRICES, decision_models={"M"})
     assert attempts[0]["outcome"] == "success"
     attempts, _, _ = compute([record], release_dir, PRICES)
-    assert attempts[0]["outcome"] == "hallucination"  # read as lines, the JSON is an impossible move
+    assert attempts[0]["outcome"] == "abstention"  # read as lines, the JSON is prose
 
 
 def test_scoring_uses_the_records_decision_flag_over_the_config_rule(release_dir):
@@ -460,4 +460,4 @@ def test_scoring_uses_the_records_decision_flag_over_the_config_rule(release_dir
     assert attempts[0]["outcome"] == "success"
     unflagged = raw("2x2-d1-001", 1, json.dumps(calls), "success", model="M", decision=False)
     attempts, _, _ = compute([unflagged], release_dir, PRICES, decision_models={"M"})
-    assert attempts[0]["outcome"] == "hallucination"  # read as lines, the JSON is an impossible move
+    assert attempts[0]["outcome"] == "abstention"  # read as lines, the JSON is prose

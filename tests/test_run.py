@@ -502,7 +502,7 @@ def progress_lines(out):
 
 
 def test_plain_progress_line_per_attempt(exp, capsys):
-    models.FAKE_REPLIES[:] = [reply(), reply("X"), Reply("", "ok", "s", 10, 4, 0.1)]
+    models.FAKE_REPLIES[:] = [reply(), reply("M"), Reply("", "ok", "s", 10, 4, 0.1)]
     assert go("--model", "A", "--limit", "3", "--no-commit") == 0
     first, second, third = progress_lines(capsys.readouterr().out)
     assert first.startswith("[1/3] A 2x2 ") and " no_model #1 failure | in 10 out 4 | $0.0000 | " in first
@@ -747,7 +747,7 @@ def test_decision_model_end_to_end(exp, monkeypatch):
                *[InfrastructureError("x", 5, 1) for _ in range(4)]]
     assert go("--limit", "3") == 0
     solved_row, malformed_row, failed_row = records(exp, "D")
-    assert solved_row["outcome"] == "success" and solved_row["hallucination"] is False
+    assert solved_row["outcome"] == "success" and solved_row["hallucination"] is None
     assert len(json.loads(solved_row["raw_response"])) == len(solved)
     assert solved_row["input_tokens"] == 10 * len(solved) and solved_row["served_model"] == "d-served"
     assert solved_row["latency_s"] == pytest.approx(0.25 * len(solved)) and solved_row["stop_reason"] == "ok"

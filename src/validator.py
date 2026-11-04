@@ -14,47 +14,57 @@ STOP_REASONS = ("ok", "truncated", "refused", "infrastructure_failure")
 FENCE = re.compile(r"^\s*```[A-Za-z]*\s*\n(.*?)\n?\s*```\s*$", re.DOTALL)
 
 
+# In check order.
+OUTCOMES = ("infrastructure_failure", "truncated", "malformed_output", "abstention",
+            "format_error", "hallucination", "success", "failure")
+
 
 @dataclass(frozen=True)
 class Verdict:
     # Moves read from the AI model's output, in order. Empty when there is no usable output.
     # For a decision model they are its calls' next_move choices, in order.
     parsed_moves: list[str]
-    # True when at least one parsed move is an impossible move, i.e. not in legal_moves().
-    hallucination: bool
+    # True when at least one parsed move is an impossible move, i.e. a move token that is not in
+    # legal_moves(). None for every outcome of a decision model, which can't return one.
+    hallucination: bool | None
     # Whether the AI model picked up the wrong state: its own claim that the input can't be
     # reached from the solved state. Read from its output, not computed. False when there is
     # no usable output. For a decision model it is true when the call that ended the attempt
     # chose mismatch.
     mismatch: bool
-    # Number of parsed moves in the half-turn metric. None for infrastructure_failure and malformed_output.
+    # Number of parsed moves in the half-turn metric. None for infrastructure_failure, truncated,
+    # malformed_output, and abstention.
     move_count: int | None
-    # infrastructure_failure, malformed_output, hallucination, success, or failure.
+    # One of OUTCOMES.
     outcome: str
 
 
-def _no_moves(outcome: str) -> Verdict:
-    return Verdict(parsed_moves=[], hallucination=False, mismatch=False, move_count=None, outcome=outcome)
+def _no_moves(outcome: str, decision: bool) -> Verdict:
+    return Verdict(parsed_moves=[], hallucination=None if decision else False, mismatch=False,
+                   move_count=None, outcome=outcome)
 
 
-def _parse(raw_response: str) -> tuple[list[str], bool] | None:
-    """Return (moves, mismatch) from an LLM's lines, else None when no line is left.
-
-    One surrounding code fence is stripped. Each line loses one trailing \r. Empty and
-    whitespace-only lines are dropped, and no other line is stripped. The single line MISMATCH
-    means no moves and the mismatch flag on. Otherwise every line is a move.
-    """
+def _lines(raw_response: str) -> list[str]:
+    """One surrounding code fence stripped, one trailing \r per line dropped, blank lines dropped."""
     text = raw_response
     fenced = FENCE.match(text)
     if fenced:
         text = fenced.group(1)
     lines = [line.removesuffix("\r") for line in text.split("\n")]
-    lines = [line for line in lines if line.strip()]
-    if not lines:
-        return None
-    if lines == ["MISMATCH"]:
-        return [], True
-    return lines, False
+    return [line for line in lines if line.strip()]
+
+
+def _read_lines(lines: list[str], engine) -> tuple[list[str], bool]:
+    """Return (parsed moves, whether the layout is exactly one bare move per line)."""
+    moves, layout_ok = [], True
+    for line in lines:
+        tokens = line.split()
+        if tokens and all(engine.is_move_token(t) for t in tokens):
+            moves += tokens
+            layout_ok = layout_ok and tokens == [line]
+        else:
+            layout_ok = False
+    return moves, layout_ok
 
 
 def read_decision_call(call: object, legal: list[str]) -> str | None:
@@ -93,30 +103,8 @@ def _parse_decision(raw_response: str, legal: list[str]) -> tuple[list[str], boo
     return moves, False
 
 
-def validate(input: dict, raw_response: str, stop_reason: str, decision: bool = False) -> Verdict:
-    """Judge one raw response against its input and return the Verdict."""
-    if stop_reason not in STOP_REASONS:
-        raise ValueError(f"unknown stop_reason {stop_reason!r}; expected one of {', '.join(STOP_REASONS)}")
-    if stop_reason == "infrastructure_failure":
-        return _no_moves("infrastructure_failure")
-    if stop_reason in ("truncated", "refused"):
-        return _no_moves("malformed_output")
-    if decision:  # the options come from the engine, so it is needed before parsing
-        engine = get_engine(input["puzzle"])
-        legal = engine.legal_moves()
-        parsed = _parse_decision(raw_response, legal)
-    else:
-        parsed = _parse(raw_response)
-    if parsed is None:
-        return _no_moves("malformed_output")
-    if not decision:
-        engine = get_engine(input["puzzle"])
-        legal = engine.legal_moves()
-    moves, mismatch = parsed
-
-    if any(move not in legal for move in moves):
-        return Verdict(moves, True, mismatch, len(moves), "hallucination")
-
+def _judge(input: dict, engine, moves: list[str], mismatch: bool, hallucination: bool | None) -> Verdict:
+    """Apply legal moves to the input state and return success or failure."""
     state = input["state"]
     for move in moves:
         state = engine.apply_move(state, move)
@@ -125,4 +113,38 @@ def validate(input: dict, raw_response: str, stop_reason: str, decision: bool = 
         reached = engine.is_solved(state) and not mismatch
     else:
         reached = mismatch
-    return Verdict(moves, False, mismatch, len(moves), "success" if reached else "failure")
+    return Verdict(moves, hallucination, mismatch, len(moves), "success" if reached else "failure")
+
+
+def validate(input: dict, raw_response: str, stop_reason: str, decision: bool = False) -> Verdict:
+    """Judge one raw response against its input and return the Verdict."""
+    if stop_reason not in STOP_REASONS:
+        raise ValueError(f"unknown stop_reason {stop_reason!r}; expected one of {', '.join(STOP_REASONS)}")
+    if stop_reason == "infrastructure_failure":
+        return _no_moves("infrastructure_failure", decision)
+    if stop_reason == "truncated":
+        return _no_moves("truncated", decision)
+    if stop_reason == "refused":
+        return _no_moves("malformed_output", decision)
+    if decision:  # the options come from the engine, so it is needed before parsing
+        engine = get_engine(input["puzzle"])
+        parsed = _parse_decision(raw_response, engine.legal_moves())
+        if parsed is None:
+            return _no_moves("malformed_output", True)
+        moves, mismatch = parsed
+        return _judge(input, engine, moves, mismatch, None)
+    lines = _lines(raw_response)
+    if not lines:
+        return _no_moves("malformed_output", False)
+    engine = get_engine(input["puzzle"])
+    if lines == ["MISMATCH"]:
+        return _judge(input, engine, [], True, False)
+    moves, layout_ok = _read_lines(lines, engine)
+    if not moves and "MISMATCH" not in lines:
+        return _no_moves("abstention", False)
+    legal = engine.legal_moves()
+    if any(m not in legal for m in moves):
+        return Verdict(moves, True, False, len(moves), "hallucination")
+    if not layout_ok:
+        return Verdict(moves, False, False, len(moves), "format_error")
+    return _judge(input, engine, moves, False, False)
