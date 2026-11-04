@@ -25,7 +25,7 @@
   const pct = (v, d) => (v * 100).toFixed(d === undefined ? 1 : d) + "%";
   const FORMAT = {
     efficiency: (v) => v.toFixed(2), consistency: (v) => v.toFixed(2),
-    latency_per_attempt_s: (v) => v.toFixed(1) + " s", tokens_per_attempt: (v) => Math.round(v).toLocaleString(),
+    latency_per_attempt_s: (v) => v.toFixed(1) + " s", tokens_per_attempt: (v) => Math.round(v).toLocaleString("en-GB"),
     cost_per_success: (v) => "$" + v.toFixed(2),
   };
   const fmt = (metric, v) => (RATES.includes(metric) ? pct(v) : FORMAT[metric](v));
@@ -251,10 +251,11 @@
         }
         return out;
       };
-      el.append(h("div", { class: "bench-grid" }, ...rows.map((r) => chart(r, models, marksOf(r)))), table(rows, models, marksOf));
+      el.append(h("div", { class: "bench-grid" }, ...rows.filter((r) => models.some((m) => r.cells[m.name] && typeof r.cells[m.name].value === "number"))
+        .map((r) => chart(r, models, marksOf(r)))), table(rows, models, marksOf));
       if (c.sig !== "all" && rows.some((r) => !r.tested)) el.append(h("p", { class: "muted small", text: UNTESTED_NOTE }));
     }
-    el.append(h("p", { class: "muted small", text: `Computed from the raw records by the UI for display, over ${data.experiments.length} experiments. `
+    el.append(h("p", { class: "muted small", text: `Computed from the raw records by the UI for display, over ${data.experiments.length} experiment${data.experiments.length === 1 ? "" : "s"}. `
       + "Official numbers are in each experiment's report." }));
     for (const s of data.skipped || []) el.append(h("p", { class: "muted small", text: `${s.id}: ${s.error}` }));
   }
@@ -297,7 +298,11 @@
       const body = h("div", {});
       el.append(body);
       const cached = path && cache.get(stamp + path);
-      if (cached) { opts = cached.options; show(body, cached, c, toolbar()); return; }
+      if (cached) {
+        opts = cached.options;
+        // The path came from the options of an earlier response, so it holds only when this one agrees.
+        if (requestFor(c, opts) === path) { show(body, cached, c, toolbar()); return; }
+      }
       body.append(toolbar(), h("p", { class: "muted", text: "Loading…" }));
       (async () => {
         try {
@@ -306,7 +311,7 @@
           if (data && mine === seq) {
             opts = data.options;
             const again = requestFor(c, opts);
-            if (again !== path) data = again ? await load(again, stamp) : { ...data, rows: [], models: [] };
+            if (again !== path) data = again ? await load(again, stamp) : { ...data, rows: [], models: [], experiments: [] };
           } else if (!data && opts && mine === seq) {
             data = { options: opts, rows: [], models: [], experiments: [], skipped: [] };
           }
