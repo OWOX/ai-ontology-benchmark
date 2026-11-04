@@ -30,7 +30,15 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
       4. `input_tokens_per_attempt`, `output_tokens_per_attempt`, and `cost_per_success`.
    3. `summary_rows`: the same rates and their intervals, pooled over puzzles and depths, with one row per AI model, setup, and validity label. Valid and invalid inputs are never pooled together.
 2. `results/<ID>/<VERSION>.metrics.csv`: `metric_rows`, for analysis in other tools.
-3. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
+3. `paired_tests(attempt_rows) -> paired_rows` in `metrics.py`: the [paired setup test](../definitions.md#metrics), one row per AI model, puzzle, validity label, metric, and setup pair, with columns `model, puzzle, validity, metric, setup_a, setup_b, inputs_paired, a_higher, b_higher, mean_difference, p_value, p_holm, significant`.
+   1. `metric` is one of `success_rate`, `hallucination_rate`, and `mismatch_detection_rate` (invalid rows only).
+   2. Setup pairs follow `SETUPS` order: (no_model, descriptive), (no_model, prescriptive), (descriptive, prescriptive).
+   3. `mean_difference` is the mean over paired inputs of share_b − share_a.
+   4. Rows are sorted by AI model (config order), puzzle, validity (valid first), metric (the order above), and pair.
+   5. `significant` is `p_holm < 0.05`. When `inputs_paired` is 0, the p-value, Holm p-value, and significance cells are `n/a`, and the row is left out of the Holm family.
+   6. Holm: sort the family's p-values ascending. The adjusted p_(i) is the maximum over j ≤ i of min(1, (m − j + 1) × p_(j)), with m the family size.
+4. `results/<ID>/<VERSION>.paired.csv`: `paired_rows`, with the same CSV conventions as the metrics CSV.
+5. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
 
 Every metric follows its definition in [definitions.md](../definitions.md#metrics), including which attempts each one leaves out. A metric with no data is `n/a`. `efficiency` is also `n/a` where the engine's `reference_length()` raises `NotImplementedError`.
 
@@ -49,3 +57,8 @@ Cost is `(input_tokens + retry_input_tokens) × price_input_per_mtok / 1,000,000
 9. A torn line in the middle of a raw file, including one that ends in `}`, is skipped and counted. A duplicated attempt makes `evaluate` exit with code 1 and write nothing.
 10. A config model without a price makes it exit with code 1 and write nothing.
 11. Raw files are byte-identical before and after `evaluate`, and two runs give byte-identical output.
+12. Sign test: 8 against 2 discordant inputs gives p = 0.109375 (exact), 0 against 0 gives 1.0, and 10 against 0 gives 0.001953125.
+13. Holm on (0.01, 0.04, 0.03) gives (0.03, 0.06, 0.06).
+14. An input with attempts under only one setup, or only infrastructure failures under one setup, is not paired.
+15. Two attempts on one input count as one paired input. Shares of 0.5 and 1.0 make one discordant input.
+16. Valid inputs get no `mismatch_detection_rate` rows.
