@@ -133,7 +133,8 @@ def experiment_section(link, folder: Path, config: dict, prices: dict, rows: lis
     out += [
         f"Attempts per input, model and setup: {config['attempts']}. "
         f"Retry cap: {config['retry_cap']}. "
-        f"Maximum output tokens: {config['max_output_tokens']}.", "",
+        f"Maximum output tokens: {config['max_output_tokens']}. "
+        f"Reasoning effort: {config.get('reasoning_effort') or 'provider default'}.", "",
         f"First and last attempt: {first} to {last}.", "",
         f"Torn raw lines skipped: {torn}.", "",
         f"Token prices per million tokens, from [prices.toml]({link(folder / 'prices.toml')}):", "",

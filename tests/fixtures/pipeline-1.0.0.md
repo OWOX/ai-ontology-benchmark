@@ -16,7 +16,7 @@ Config: [experiment.toml](experiment.toml)
 |---|---|---|---|---|---|
 | A | fake | a-1 | not set | fake | provider defaults |
 
-Attempts per input, model and setup: 2. Retry cap: 3. Maximum output tokens: 100.
+Attempts per input, model and setup: 2. Retry cap: 3. Maximum output tokens: 100. Reasoning effort: provider default.
 
 
 Torn raw lines skipped: 0.

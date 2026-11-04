@@ -15,7 +15,7 @@ from ui.common import ApiError, check_id
 
 BUDGET_DEFAULTS = {"per_request_usd": DEFAULT_PER_REQUEST_USD, "per_model_usd": DEFAULT_PER_MODEL_USD,
                    "per_experiment_usd": DEFAULT_PER_EXPERIMENT_USD}
-DEFAULTS = {"attempts": 3, "retry_cap": 3, "max_output_tokens": 32000, "budget": BUDGET_DEFAULTS}
+DEFAULTS = {"attempts": 3, "retry_cap": 3, "max_output_tokens": 32000, "reasoning_effort": "medium", "budget": BUDGET_DEFAULTS}
 
 
 def default_id(models: list[str], puzzles: list[str], now: datetime) -> str:

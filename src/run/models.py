@@ -71,7 +71,7 @@ def _stream_error_is_transient(error) -> bool:
     return error.status_code == 200 and detail.get("type") in ANTHROPIC_TRANSIENT_STREAM_ERRORS
 
 
-def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply:
+def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
     import anthropic
     import httpx2
 
@@ -83,6 +83,7 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str) -> Re
             model=model["api_model_id"],
             max_tokens=max_output_tokens,
             messages=[{"role": "user", "content": prompt}],
+            **({"output_config": {"effort": effort}} if effort else {}),
             **model.get("params", {}),
         ) as stream:
             response = stream.get_final_message()
@@ -101,7 +102,7 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str) -> Re
                  response.usage.output_tokens, latency)
 
 
-def _openai(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply:
+def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
     import openai
 
     client = openai.OpenAI(api_key=key, max_retries=0)
@@ -111,6 +112,7 @@ def _openai(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply
             model=model["api_model_id"],
             max_completion_tokens=max_output_tokens,
             messages=[{"role": "user", "content": prompt}],
+            **({"reasoning_effort": effort} if effort else {}),
             **model.get("params", {}),
         )
     except openai.BadRequestError as error:
@@ -126,7 +128,7 @@ def _openai(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply
                  response.usage.prompt_tokens, response.usage.completion_tokens, latency)
 
 
-def _google(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply:
+def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
     import httpx
     from google import genai
     from google.genai import errors, types
@@ -139,7 +141,9 @@ def _google(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply
         response = client.models.generate_content(
             model=model["api_model_id"],
             contents=prompt,
-            config={"max_output_tokens": max_output_tokens, **model.get("params", {})},
+            config={"max_output_tokens": max_output_tokens,
+                    **({"thinking_config": {"thinking_level": effort.upper()}} if effort else {}),
+                    **model.get("params", {})},
         )
     except errors.APIError as error:
         if error.code == 429 or error.code >= 500:
@@ -295,8 +299,9 @@ def call_decision(model: dict, state: str, questions: dict) -> DecisionReply:
     return functions[provider](model, state, questions, key)
 
 
-def call_model(model: dict, prompt: str, max_output_tokens: int) -> Reply:
-    """Send the prompt to the model's provider and return the reply in the common shape."""
+def call_model(model: dict, prompt: str, max_output_tokens: int, reasoning_effort: str | None = None) -> Reply:
+    """Send the prompt to the model's provider and return the reply in the common shape. The reasoning
+    effort goes to the provider's own parameter, only for a system-2 model."""
     provider = model["provider"]
     if provider in DECISION_PROVIDERS:
         raise ValueError(f"provider {provider} is a decision-model provider: use call_decision")
@@ -307,4 +312,5 @@ def call_model(model: dict, prompt: str, max_output_tokens: int) -> Reply:
     if not key:
         raise ValueError(f"missing API key: set the env var {variable}")
     functions = {"anthropic": _anthropic, "openai": _openai, "google": _google}
-    return functions[provider](model, prompt, max_output_tokens, key)
+    effort = reasoning_effort if model.get("kind") == "system-2" else None
+    return functions[provider](model, prompt, max_output_tokens, key, effort)

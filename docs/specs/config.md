@@ -25,6 +25,7 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
    attempts = 3
    retry_cap = 3
    max_output_tokens = 32000
+   reasoning_effort = "medium"    # optional; low, medium, or high; sent to every system-2 model; absent means the provider default
    max_moves = 14                 # optional; decision models only; default is twice the largest scramble depth
    puzzles = ["2x2"]              # optional; default is every puzzle in the release
 
@@ -66,11 +67,11 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
 The checks:
 
 1. Every field shown is present and has the type shown.
-2. `seed`, `scramble_count`, `attempts`, `max_output_tokens`, and every scramble depth are at least 1. `retry_cap` is at least 0. `max_moves`, if present, is an integer of at least 1. `max_moves(config, release_config)` returns it, or twice the largest scramble depth in the release when it is absent.
+2. `seed`, `scramble_count`, `attempts`, `max_output_tokens`, and every scramble depth are at least 1. `retry_cap` is at least 0. `max_moves`, if present, is an integer of at least 1. `reasoning_effort`, if present, is `low`, `medium`, or `high`. `max_moves(config, release_config)` returns it, or twice the largest scramble depth in the release when it is absent.
 3. `valid_invalid_split` is between 0 and 1.
 4. Every puzzle is a name in the [registry](registry.md).
 5. `release` is `latest` or matches `MAJOR.MINOR.PATCH`. [run](run.md) resolves `latest` to a version on the first run, so raw records, `results/<experiment id>/experiment.toml`, and reports always hold a version.
-6. `models` has at least one entry, model names are unique, and `provider` is one of the seven listed. `typesafe` and `cloudflare` are [decision models](../definitions.md#setups), and `fake_decision` is the offline stand-in for them. `params` is a table, if present, and doesn't set any of these keys, which `models` and the run script set themselves: `model`, `model_id`, `api_model_id`, `prompt`, `messages`, `system`, `input`, `contents`, `max_tokens`, `max_output_tokens`, `max_completion_tokens`, `instructions`, `system_instruction`, `response_format`, `response_mime_type`, `response_schema`, `tools`, and `tool_choice`. That keeps the request the same shape for every AI model. `kind`, if present, is a string and is `system-1` or `system-2`.
+6. `models` has at least one entry, model names are unique, and `provider` is one of the seven listed. `typesafe` and `cloudflare` are [decision models](../definitions.md#setups), and `fake_decision` is the offline stand-in for them. `params` is a table, if present, and doesn't set any of these keys, which `models` and the run script set themselves: `model`, `model_id`, `api_model_id`, `prompt`, `messages`, `system`, `input`, `contents`, `max_tokens`, `max_output_tokens`, `max_completion_tokens`, `instructions`, `system_instruction`, `response_format`, `response_mime_type`, `response_schema`, `tools`, `tool_choice`, `reasoning_effort`, `output_config`, `thinking_config`, and `thinking`. That keeps the request the same shape for every AI model. `kind`, if present, is a string and is `system-1` or `system-2`.
 7. Every budget is a number above 0. They aren't checked against each other, so setting only `per_experiment_usd = 2` is valid, and a model budget above the experiment budget never binds. `load_experiment_config` returns `budget` with every default filled in.
 8. `puzzles`, if present in an experiment config, is a non-empty list of unique strings, each a name in the [registry](registry.md). When it is absent, the experiment covers every puzzle in the release, and `load_experiment_config` leaves the key out of the dict it returns. [run](run.md) checks the names against the release.
 9. The experiment id contains only letters, digits, `-`, and `_`, because it becomes a folder name.

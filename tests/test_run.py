@@ -882,7 +882,7 @@ class Gate:
         self.full, self.release = threading.Event(), threading.Event()
         monkeypatch.setattr(run_module, "call_model", self)
 
-    def __call__(self, model, prompt, max_output_tokens):
+    def __call__(self, model, prompt, max_output_tokens, reasoning_effort=None):
         with self.lock:
             self.calls += 1
             number = self.calls
@@ -899,7 +899,7 @@ class Gate:
                 if self.release.wait(self.block_for):
                     return Reply("x", "ok", "s", 1, 1, 0.1)  # released after the test: touch nothing shared
             time.sleep(self.sleep)
-            return self.real(model, prompt, max_output_tokens)
+            return self.real(model, prompt, max_output_tokens, reasoning_effort)
         finally:
             with self.lock:
                 self.now -= 1
@@ -938,7 +938,7 @@ def test_a_finished_attempt_is_replaced_by_the_next_pending_in_loop_order(exp, m
     real, lock, order = run_module.call_model, threading.Lock(), []
     two_arrived, third_arrived, free_first, free_rest = (threading.Event() for _ in range(4))
 
-    def call(model, prompt, max_output_tokens):
+    def call(model, prompt, max_output_tokens, reasoning_effort=None):
         with lock:
             order.append((model["name"], prompt))
             number = len(order)
@@ -950,7 +950,7 @@ def test_a_finished_attempt_is_replaced_by_the_next_pending_in_loop_order(exp, m
             free_first.wait(5)  # the first attempt finishes while the second is still in flight
         elif number == 2:
             free_rest.wait(5)
-        return real(model, prompt, max_output_tokens)
+        return real(model, prompt, max_output_tokens, reasoning_effort)
 
     third_started_alone = []
 
@@ -1069,7 +1069,7 @@ def test_a_reservation_grows_with_the_tokens_its_attempt_has_paid(tmp_path):
 
 
 def test_a_worker_failure_that_is_not_an_exception_ends_the_run(exp, monkeypatch):
-    def boom(model, prompt, max_output_tokens):
+    def boom(model, prompt, max_output_tokens, reasoning_effort=None):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(run_module, "call_model", boom)
@@ -1153,3 +1153,15 @@ def test_latest_line_that_does_not_match_once_refused(exp, capsys):
     err = capsys.readouterr().err
     assert "exp.toml" in err and "'release'" in err
     assert not (exp / "results/exp").exists()
+
+
+def test_run_passes_the_experiment_reasoning_effort_to_the_model(exp, monkeypatch):
+    seen = []
+
+    def call(model, prompt, max_output_tokens, reasoning_effort=None):
+        seen.append(reasoning_effort)
+        return Reply("U", "ok", "s", 1, 1, 0.1)
+
+    monkeypatch.setattr(run_module, "call_model", call)
+    assert stdin_run(exp, monkeypatch, 'reasoning_effort = "high"\n' + EXPERIMENT, "--limit", "1") == 0
+    assert seen and set(seen) == {"high"}

@@ -218,3 +218,12 @@ def test_detection_by_corruption_type_sits_after_mismatch_detection(tree):
     assert "| Puzzle | Setup | Corruption type | Detection rate |" in text
     assert "| 2x2 | no_model | twisted corner | 0.50 (0.25\u20130.75) n=4, 2 inputs |" in text
     assert "## Detection by corruption type" not in build(tree)
+
+
+def test_experiment_section_names_the_reasoning_effort(tree):
+    assert "Reasoning effort: provider default." in build(tree)
+    CONFIG["reasoning_effort"] = "medium"
+    try:
+        assert "Reasoning effort: medium." in build(tree)
+    finally:
+        del CONFIG["reasoning_effort"]

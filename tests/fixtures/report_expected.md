@@ -16,7 +16,7 @@ Config: [experiment.toml](experiment.toml)
 |---|---|---|---|---|---|
 | M | fake | m-1 | system-2 | m-1 | temperature=0.5 |
 
-Attempts per input, model and setup: 2. Retry cap: 1. Maximum output tokens: 100.
+Attempts per input, model and setup: 2. Retry cap: 1. Maximum output tokens: 100. Reasoning effort: provider default.
 
 First and last attempt: 2026-01-01T00:00:00Z to 2026-01-01T00:00:00Z.
 

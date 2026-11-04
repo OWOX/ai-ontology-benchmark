@@ -163,7 +163,7 @@ def call_with_retries(model: dict, prompt: str, config: dict, can_afford) -> tup
                 raise
             return None, retry_in, retry_out, stop
         try:
-            return call_model(model, prompt, config["max_output_tokens"]), retry_in, retry_out, None
+            return call_model(model, prompt, config["max_output_tokens"], config.get("reasoning_effort")), retry_in, retry_out, None
         except InfrastructureError as error:
             retry_in += error.input_tokens
             retry_out += error.output_tokens

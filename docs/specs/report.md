@@ -23,7 +23,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 3. **Experiment.** Linked to `experiment.toml`.
    1. A table of AI models with name, provider, API model id, kind (or "not set" when the config has none), every served model id seen in the raw records, and `params`, or "provider defaults" when there are none.
    2. When the config has `puzzles`, the line `Puzzles: 2x2, 3x3` with the names in config order. Without `puzzles`, the line is absent and the report is unchanged.
-   3. Attempts, retry cap, and maximum output tokens.
+   3. Attempts, retry cap, maximum output tokens, and the reasoning effort as `Reasoning effort: low.` (or `medium` or `high`), or `Reasoning effort: provider default.` when the config has none.
    4. First and last `created_at` across raw records.
    5. The line `Torn raw lines skipped: <n>.`
    6. The token prices used, linked to `prices.toml` in the experiment folder.

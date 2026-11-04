@@ -536,3 +536,28 @@ def test_typesafe_body_that_is_not_a_json_object_gives_an_empty_call(monkeypatch
     reply = models.call_decision(TYPESAFE_MODEL, "S", {"q": {"type": "noul", "instructions": "x"}})
     assert reply.call == {} and reply.served_model == ""
     assert reply.input_tokens == 0 and reply.output_tokens == 0 and reply.latency_s >= 0
+
+
+def test_reasoning_effort_reaches_each_providers_own_parameter(monkeypatch):
+    model = lambda provider: {**entry(provider), "kind": "system-2"}
+    create = install(monkeypatch, "anthropic", anthropic_response())
+    call_model(model("anthropic"), "p", 50, "medium")
+    assert create.call_args.kwargs["output_config"] == {"effort": "medium"}
+    create = install(monkeypatch, "openai", openai_response())
+    call_model(model("openai"), "p", 50, "medium")
+    assert create.call_args.kwargs["reasoning_effort"] == "medium"
+    create = install(monkeypatch, "google", google_response())
+    call_model(model("google"), "p", 50, "medium")
+    assert create.call_args.kwargs["config"]["thinking_config"] == {"thinking_level": "MEDIUM"}
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "google"])
+@pytest.mark.parametrize("kind, effort", [("system-2", None), ("system-1", "high"), (None, "high")])
+def test_no_effort_is_sent_without_one_or_for_a_system_1_model(monkeypatch, provider, kind, effort):
+    create = install(monkeypatch, provider, {"anthropic": anthropic_response, "openai": openai_response,
+                                             "google": google_response}[provider]())
+    model = {**entry(provider), **({"kind": kind} if kind else {})}
+    call_model(model, "p", 50, effort)
+    sent = create.call_args.kwargs
+    sent = {**sent, **sent.get("config", {})}
+    assert not {"output_config", "reasoning_effort", "thinking_config"} & set(sent)
