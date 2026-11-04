@@ -29,14 +29,15 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
       3. `efficiency` (valid rows only), `consistency`, and `latency_per_attempt_s`.
       4. `input_tokens_per_attempt`, `output_tokens_per_attempt`, and `cost_per_success`.
    3. `summary_rows`: the same rates and their intervals, pooled over puzzles and depths, with one row per AI model, setup, and validity label. Valid and invalid inputs are never pooled together.
-2. `results/<ID>/<VERSION>.metrics.csv`: `metric_rows`, for analysis in other tools.
-3. `paired_tests(attempt_rows) -> paired_rows` in `metrics.py`: the [paired setup test](../definitions.md#metrics), one row per AI model, puzzle, validity label, metric, and setup pair, with columns `model, puzzle, validity, metric, setup_a, setup_b, inputs_paired, a_higher, b_higher, mean_difference, p_value, p_holm, significant`.
-   1. `metric` is one of `success_rate`, `hallucination_rate`, and `mismatch_detection_rate` (invalid rows only).
-   2. Setup pairs follow `SETUPS` order: (no_model, descriptive), (no_model, prescriptive), (descriptive, prescriptive).
-   3. `mean_difference` is the mean over paired inputs of share_b − share_a.
-   4. Rows are sorted by AI model (config order), puzzle, validity (valid first), metric (the order above), and pair.
-   5. `significant` is `p_holm < 0.05`. When `inputs_paired` is 0, the p-value, Holm p-value, and significance cells are `n/a`, and the row is left out of the Holm family.
-   6. Holm: sort the family's p-values ascending. The adjusted p_(i) is the maximum over j ≤ i of min(1, (m − j + 1) × p_(j)), with m the family size.
+2. `paired_tests(attempt_rows, models=None) -> paired_rows` in `metrics.py`: the [paired setup test](../definitions.md#metrics), pooled over scramble depths and never over validity labels, one row per AI model, puzzle, validity label, metric, and setup pair, with columns `model, puzzle, validity, metric, setup_a, setup_b, inputs_paired, a_higher, b_higher, mean_difference, p_value, p_holm, significant`.
+   1. `models` is the list of AI model names in config order. It defaults to the names found in the rows, sorted, the same as `compute`.
+   2. `metric` is one of `success_rate`, `hallucination_rate`, and `mismatch_detection_rate` (invalid rows only).
+   3. Setup pairs follow `SETUPS` order: (no_model, descriptive), (no_model, prescriptive), (descriptive, prescriptive).
+   4. `mean_difference` is the mean over paired inputs of share_b − share_a.
+   5. Rows are sorted by AI model (the order of `models`), puzzle, validity (valid first), metric (the order above), and pair.
+   6. `significant` is `p_holm < 0.05`. When `inputs_paired` is 0, `mean_difference`, `p_value`, `p_holm`, and `significant` are `n/a`, and the row is left out of the Holm family.
+   7. Holm: sort the family's p-values ascending. The adjusted p_(i) is the maximum over j ≤ i of min(1, (m − j + 1) × p_(j)), with m the family size.
+3. `results/<ID>/<VERSION>.metrics.csv`: `metric_rows`, for analysis in other tools.
 4. `results/<ID>/<VERSION>.paired.csv`: `paired_rows`, with the same CSV conventions as the metrics CSV.
 5. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
 
