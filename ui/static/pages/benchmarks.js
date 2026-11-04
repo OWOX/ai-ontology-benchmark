@@ -266,6 +266,8 @@
     for (const s of data.skipped || []) el.append(h("p", { class: "muted small", text: `${s.id}: ${s.error}` }));
   }
 
+  window.Benchmarks = { verdict, chosenModels };  // for tests/js/benchmarks.test.mjs
+
   UI.registerPage("benchmarks", {
     render(bundle, params, el) {
       const c = choices(params, bundle);
