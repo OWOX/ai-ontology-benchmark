@@ -7,10 +7,13 @@ from collections import deque
 
 import pytest
 
-from src.puzzles.cube import CubeEngine
+from src.puzzles.cube import CubeEngine, _positions, _wings
 from src.puzzles.engine import IllegalMoveError, ValidityMismatchError
 
-E2, E3 = CubeEngine(2), CubeEngine(3)
+E2, E3, E4, E5 = CubeEngine(2), CubeEngine(3), CubeEngine(4), CubeEngine(5)
+BIG = [E4, E5]
+WIDE = "U U' U2 R R' R2 F F' F2 D D' D2 L L' L2 B B' B2 " \
+       "Uw Uw' Uw2 Rw Rw' Rw2 Fw Fw' Fw2 Dw Dw' Dw2 Lw Lw' Lw2 Bw Bw' Bw2"
 
 
 def apply_all(engine, state, moves):
@@ -22,6 +25,8 @@ def apply_all(engine, state, moves):
 def test_basic_shape():
     assert E2.solved_state() == "UUUURRRRFFFFDDDDLLLLBBBB"
     assert E3.legal_moves() == "U U' U2 R R' R2 F F' F2 D D' D2 L L' L2 B B' B2".split()
+    assert E4.legal_moves() == E5.legal_moves() == WIDE.split()
+    assert E4.solved_state() == "".join(f * 16 for f in "URFDLB")
     for size in (0, 1, 6):
         with pytest.raises(ValueError):
             CubeEngine(size)
@@ -35,25 +40,36 @@ def test_known_move_results():
     assert r[0:9] == "UUFUUFUUF" and r[18:27] == "FFDFFDFFD"
 
 
-@pytest.mark.parametrize("engine", [E2, E3])
+@pytest.mark.parametrize("engine", [E2, E3, E4, E5])
 def test_turns_return_to_start(engine):
     start, _ = engine.scramble(7, 12)
-    for face in "URFDLB":
-        assert apply_all(engine, start, [face] * 4) == start
-        assert apply_all(engine, start, [face + "2"] * 2) == start
-        assert apply_all(engine, start, [face, face + "'"]) == start
+    for turn in {m.rstrip("'2") for m in engine.legal_moves()}:
+        assert apply_all(engine, start, [turn] * 4) == start
+        assert apply_all(engine, start, [turn + "2"] * 2) == start
+        assert apply_all(engine, start, [turn, turn + "'"]) == start
+        assert apply_all(engine, start, [turn + "'"] * 2) == apply_all(engine, start, [turn + "2"])
 
 
-def test_sexy_move_has_order_six():
-    state = apply_all(E3, E3.solved_state(), ["R", "U", "R'", "U'"] * 6)
-    assert state == E3.solved_state()
-    assert apply_all(E3, E3.solved_state(), ["R", "U", "R'", "U'"]) != E3.solved_state()
+def test_wide_turn_stickers():
+    # Rw on a solved 4x4 turns the two right-hand layers: the front's right two columns go up.
+    assert E4.apply_move(E4.solved_state(), "Rw") == (
+        "UUFF" * 4 + "R" * 16 + "FFDD" * 4 + "DDBB" * 4 + "L" * 16 + "UUBB" * 4)
+    # The 5x5 wide turn takes the second layer but leaves the middle one.
+    rw = E5.apply_move(E5.solved_state(), "Rw")
+    assert rw[:25] == "UUUFF" * 5 and rw[25:50] == "R" * 25
+    assert E5.apply_move(E5.solved_state(), "Rw") != E5.apply_move(E5.solved_state(), "R")
 
 
-def test_whole_cube_turn_stays_solved():
-    assert E2.is_solved(apply_all(E2, E2.solved_state(), ["R", "L'"]))
-    recoloured = "".join(c * 9 for c in "FUBLDR")
-    assert E3.is_solved(recoloured) and not E3.is_solved(E3.apply_move(E3.solved_state(), "R"))
+def test_whole_cube_turns_stay_solved():
+    # On the 4x4, Rw and Lw' together turn every layer: a whole-cube rotation.
+    rotated = apply_all(E4, E4.solved_state(), ["Rw", "Lw'"])
+    assert rotated == "".join(c * 16 for c in "FRDBLU") and E4.is_solved(rotated)
+    # On the 5x5 they leave the middle layer behind, so the cube is no longer solved.
+    assert not E5.is_solved(apply_all(E5, E5.solved_state(), ["Rw", "Lw'"]))
+    for engine in BIG:
+        recoloured = "".join(c * engine.n ** 2 for c in "FUBLDR")
+        assert engine.is_solved(recoloured)
+        assert not engine.is_solved(engine.apply_move(engine.solved_state(), "Rw"))
 
 
 @pytest.mark.parametrize("move", ["r", "R ", "R′", "", "M", "R3", None])
@@ -62,7 +78,7 @@ def test_illegal_moves(move):
         E3.apply_move(E3.solved_state(), move)
 
 
-@pytest.mark.parametrize("engine", [E2, E3])
+@pytest.mark.parametrize("engine", [E2, E3, E4, E5])
 def test_scramble_properties(engine):
     assert engine.scramble(5, 8) == engine.scramble(5, 8)
     for seed in range(1000):
@@ -73,7 +89,7 @@ def test_scramble_properties(engine):
         assert apply_all(engine, engine.solved_state(), moves) == state
 
 
-@pytest.mark.parametrize("engine", [E2, E3])
+@pytest.mark.parametrize("engine", [E2, E3, E4, E5])
 def test_corrupt_fails_and_scramble_passes_reachability(engine):
     for seed in range(1000):
         state, _ = engine.scramble(seed, 1 + seed % 15)
@@ -82,7 +98,7 @@ def test_corrupt_fails_and_scramble_passes_reachability(engine):
         with pytest.raises(ValidityMismatchError):
             engine.load_state({"state": bad, "validity": "valid"})
         assert engine.load_state({"state": bad, "validity": "invalid"}) == bad
-        assert description.startswith(("twisted corner ", "flipped edge "))
+        assert description.startswith(("twisted corner ", "flipped edge ", "flipped wing "))
 
 
 def test_corrupt_descriptions_and_edge_choice():
