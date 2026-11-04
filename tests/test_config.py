@@ -296,7 +296,7 @@ def test_params_cannot_set_effort(key):
 
 
 def test_experiment_configs_in_the_work_tree_still_parse():
-    paths = sorted(Path("results").glob("*/experiment.toml")) + sorted(Path("config/experiments").glob("*.toml"))
-    assert paths
-    for path in paths:
+    configs = sorted(Path("config/experiments").glob("*.toml"))
+    assert configs  # never vacuous: the committed configs are always there
+    for path in configs + sorted(Path("results").glob("*/experiment.toml")):
         load_experiment_config(path)
