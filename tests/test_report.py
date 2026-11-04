@@ -58,23 +58,26 @@ def tree(tmp_path):
     return tmp_path, inputs
 
 
-def build(tree, changed_outcome=False, paired_rows=()) -> str:
+def build(tree, changed_outcome=False, paired_rows=(), with_paired=False) -> str:
     root, _ = tree
     release, path = root / "releases" / "1.0.0", root / "results" / "exp" / "1.0.0.md"
     rows = compute(records(changed_outcome), release, PRICES, ["M"])
+    if with_paired:
+        paired_rows = paired_tests(rows[0], ["M"])
     write_report(path, "exp", CONFIG, release, PRICES, *rows, torn_lines=2, paired_rows=paired_rows)
     return path.read_text(encoding="utf-8")
 
 
 def test_matches_stored_expected_report(tree):
-    text = build(tree, paired_rows=paired_tests(compute(records(), tree[0] / "releases" / "1.0.0", PRICES, ["M"])[0], ["M"]))
+    text = build(tree, with_paired=True)
     if os.environ.get("UPDATE_FIXTURES") == "1":
         EXPECTED.write_text(text, encoding="utf-8")
     assert text == EXPECTED.read_text(encoding="utf-8")
 
 
 def test_relative_links_point_at_existing_files(tree):
-    text = build(tree)
+    text = build(tree, with_paired=True)
+    assert "../../docs/definitions.md#metrics" in text
     folder = tree[0] / "results" / "exp"
     links = re.findall(r"\]\(([^)]+)\)", text)
     assert links
