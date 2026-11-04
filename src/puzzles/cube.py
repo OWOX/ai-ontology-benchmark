@@ -108,7 +108,7 @@ def _positions(n, size):
         if len(group) != size or (size == 2 and 0 not in position):
             continue
         if size == 2:
-            group.sort(key=lambda i: NAME_ORDER[_face_of(n, i)])
+            group = sorted(group, key=lambda i: NAME_ORDER[_face_of(n, i)])
         else:
             first = next(i for i in group if stickers[i][1][1] != 0)
             a, b = [i for i in group if i != first]
