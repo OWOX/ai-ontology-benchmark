@@ -43,6 +43,11 @@ def number(value: object, places: int) -> str:
     return NA if value == NA or value is None else f"{value:.{places}f}"
 
 
+def p_text(value: object) -> str:
+    """Show a p-value to 3 places, or `<0.001` when it is smaller."""
+    return f"<0.001" if isinstance(value, float) and value < 0.001 else number(value, 3)
+
+
 def rate_cell(row: dict, name: str) -> str:
     """Show a rate as `0.42 (0.30–0.55) n=60`."""
     if row[name] == NA:
@@ -178,8 +183,8 @@ def comparison_section(definitions_link: str, config: dict, paired_rows) -> list
         for puzzle in dict.fromkeys(r["puzzle"] for r in rows):
             body = [[r["validity"], r["metric"], f"{r['setup_a']} vs {r['setup_b']}",
                      r["inputs_paired"], r["a_higher"], r["b_higher"],
-                     number(r["mean_difference"], 2), number(r["p_value"], 3),
-                     number(r["p_holm"], 3), significant_text(r["significant"])]
+                     number(r["mean_difference"], 2), p_text(r["p_value"]),
+                     p_text(r["p_holm"]), significant_text(r["significant"])]
                     for r in rows if r["puzzle"] == puzzle]
             out += [f"#### {puzzle}", ""] + table(header, body)
     return out

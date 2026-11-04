@@ -196,6 +196,18 @@ def test_sign_test_exact_values():
     assert sign_test(5, 5) == 1.0
 
 
+def test_paired_csv_keeps_small_p_values():
+    attempts = [arow(f"i{n}", s, o) for n in range(20)
+                for s, o in (("no_model", "failure"), ("descriptive", "success"))]
+    rows = paired_tests(attempts)
+    row = pair_row(attempts)
+    assert row["p_value"] == pytest.approx(1.9073486e-06)
+    text = evaluate_module.csv_text(rows, exact=("p_value", "p_holm"))
+    line = dict(zip(text.splitlines()[0].split(","), text.splitlines()[1].split(",")))
+    assert float(line["p_value"]) == pytest.approx(1.9073486e-06, rel=1e-4)
+    assert line["mean_difference"] == "1.0000"
+
+
 def test_holm_adjusts_in_input_order():
     assert holm([0.01, 0.04, 0.03]) == pytest.approx([0.03, 0.06, 0.06])
     assert holm([]) == []

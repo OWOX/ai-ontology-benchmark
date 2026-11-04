@@ -78,13 +78,17 @@ def show_float(value: object) -> object:
     return f"{value:.4f}" if isinstance(value, float) else value
 
 
-def csv_text(metric_rows: list[dict]) -> str:
-    """Return a CSV of the rows (metrics or paired tests), floats with 4 decimal places."""
+def csv_text(metric_rows: list[dict], exact: tuple = ()) -> str:
+    """Return a CSV of the rows (metrics or paired tests), floats with 4 decimal places.
+
+    Floats in the `exact` columns are written with 6 significant digits instead.
+    """
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=list(metric_rows[0]), lineterminator="\n")
     writer.writeheader()
     for row in metric_rows:
-        writer.writerow({key: show_float(value) for key, value in row.items()})
+        writer.writerow({key: f"{value:.6g}" if key in exact and isinstance(value, float)
+                         else show_float(value) for key, value in row.items()})
     return buffer.getvalue()
 
 
@@ -113,7 +117,7 @@ def evaluate(args: argparse.Namespace) -> None:
         raise EvalError(f"{results / 'raw'}: no raw records")
     csv_content = csv_text(metric_rows)
     paired_rows = paired_tests(attempt_rows, names)
-    paired_content = csv_text(paired_rows)
+    paired_content = csv_text(paired_rows, exact=("p_value", "p_holm"))
     # Every check is done. Write the outputs last, the prices copy after the others.
     write_report(results / f"{version}.md", args.experiment, config, release_dir, prices,
                  attempt_rows, metric_rows, summary_rows, torn, paired_rows=paired_rows)

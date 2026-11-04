@@ -169,3 +169,10 @@ def test_setup_comparison_shows_yes_and_na(tree):
     text = build(tree, paired_rows=rows)
     assert "| 0.30 | 0.109 | 0.328 | yes |" in text
     assert "| 0 | 0 | 0 | n/a | n/a | n/a | n/a |" in text
+
+
+def test_setup_comparison_shows_small_p_as_less_than(tree):
+    text = build(tree, paired_rows=[paired(p_value=1.9e-06, p_holm=0.0005), paired(metric="x", p_value=0.001, p_holm=0.04)])
+    assert "| <0.001 | <0.001 | yes |" not in text
+    assert "| <0.001 | <0.001 |" in text
+    assert "| 0.001 | 0.040 |" in text
