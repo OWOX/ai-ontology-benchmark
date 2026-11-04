@@ -110,6 +110,18 @@ def test_infrastructure_failure_after_cap(exp):
     assert len(models.FAKE_REPLIES) == 1  # 4 calls made
 
 
+def test_infrastructure_errors_are_logged_to_stderr_only(exp, capsys):
+    models.FAKE_REPLIES[:] = [InfrastructureError("boom " + "z" * 400), InfrastructureError("again"),
+                              Reply("U", "ok", "s", 10, 3, 0.5)]
+    go("--model", "A", "--limit", "1")
+    captured = capsys.readouterr()
+    lines = [line for line in captured.err.splitlines() if line.startswith("infrastructure error:")]
+    assert len(lines) == 2 and len(lines[0]) <= 300
+    assert lines[0].startswith("infrastructure error: A ") and " no_model attempt 1 call 1: boom" in lines[0]
+    assert lines[1].endswith(" call 2: again")
+    assert "infrastructure error" not in captured.out
+
+
 def test_retry_then_success_sums_retry_tokens(exp):
     models.FAKE_REPLIES[:] = [InfrastructureError("x", 5, 1), Reply("U", "ok", "s", 10, 3, 0.5)]
     go("--model", "A", "--limit", "1")

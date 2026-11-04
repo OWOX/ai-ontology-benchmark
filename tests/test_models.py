@@ -561,3 +561,36 @@ def test_no_effort_is_sent_without_one_or_for_a_system_1_model(monkeypatch, prov
     sent = create.call_args.kwargs
     sent = {**sent, **sent.get("config", {})}
     assert not {"output_config", "reasoning_effort", "thinking_config"} & set(sent)
+
+
+# ---- timeouts and 408/409
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai"])
+def test_client_gets_an_explicit_timeout(monkeypatch, provider):
+    install(monkeypatch, provider, {"anthropic": anthropic_response, "openai": openai_response}[provider]())
+    call_model(entry(provider), "prompt", 50)
+    cls = {"anthropic": anthropic.Anthropic, "openai": openai.OpenAI}[provider]
+    timeout = cls.call_args.kwargs["timeout"]
+    assert models.REQUEST_TIMEOUT_S == 1800
+    assert (timeout.read, timeout.connect) == (1800, 30.0)
+
+
+def test_google_gets_an_explicit_timeout_in_milliseconds(monkeypatch):
+    install(monkeypatch, "google", google_response())
+    call_model(entry("google"), "prompt", 50)
+    assert genai.Client.call_args.kwargs["http_options"].timeout == 1_800_000
+
+
+@pytest.mark.parametrize("code", [408, 409])
+def test_openai_408_and_409_are_infrastructure(monkeypatch, code):
+    error = openai.APIStatusError("x", response=httpx2.Response(code, request=httpx2.Request("POST", "https://example.invalid")), body=None)
+    install(monkeypatch, "openai", error)
+    with pytest.raises(InfrastructureError):
+        call_model(entry("openai"), "prompt", 50)
+
+
+def test_openai_other_status_errors_propagate(monkeypatch):
+    error = openai.APIStatusError("x", response=httpx2.Response(401, request=httpx2.Request("POST", "https://example.invalid")), body=None)
+    install(monkeypatch, "openai", error)
+    with pytest.raises(openai.APIStatusError):
+        call_model(entry("openai"), "prompt", 50)

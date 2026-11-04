@@ -7,6 +7,7 @@ This is the only file that talks to an AI model API.
 """
 
 import os
+import sys
 import time
 from dataclasses import dataclass
 
@@ -16,6 +17,11 @@ KEY_VARIABLES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "
 ACCOUNT_VARIABLES = {"cloudflare": "CLOUDFLARE_ACCOUNT_ID"}
 # Providers of decision models, which are called with call_decision() instead of call_model().
 DECISION_PROVIDERS = ("typesafe", "cloudflare", "fake_decision")
+# The longest one request may take, in seconds, for every provider. A long reasoning reply can run
+# for many minutes, so it is generous, and it is set so that no SDK default decides it silently.
+REQUEST_TIMEOUT_S = 1800
+# The longest a connection may take to open, in seconds.
+CONNECT_TIMEOUT_S = 30.0
 # Google finish reasons that mean the answer was withheld.
 GOOGLE_REFUSALS = ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "RECITATION")
 
@@ -59,6 +65,12 @@ class RefusedError(Exception):
     """A content-filter refusal. Never retried. No decision-model SDK reports one today."""
 
 
+def log_infrastructure_error(label: str, call: int, error: Exception) -> None:
+    """Write why a call failed to stderr, never stdout, which carries the progress output the UI parses.
+    `label` names the attempt, `call` is the number of the request in it, from 1."""
+    print(f"infrastructure error: {label} call {call}: {error}"[:300], file=sys.stderr, flush=True)
+
+
 # Error types an SSE error event can carry that mean the service, not the request, failed.
 ANTHROPIC_TRANSIENT_STREAM_ERRORS = ("overloaded_error", "api_error", "rate_limit_error")
 
@@ -75,7 +87,8 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str, effor
     import anthropic
     import httpx2
 
-    client = anthropic.Anthropic(api_key=key, max_retries=0)
+    client = anthropic.Anthropic(api_key=key, max_retries=0,
+                                 timeout=httpx2.Timeout(REQUEST_TIMEOUT_S, connect=CONNECT_TIMEOUT_S))
     start = time.perf_counter()
     try:
         # Streamed, because the SDK refuses a non-streaming call with a large max_tokens.
@@ -103,9 +116,11 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str, effor
 
 
 def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+    import httpx2
     import openai
 
-    client = openai.OpenAI(api_key=key, max_retries=0)
+    client = openai.OpenAI(api_key=key, max_retries=0,
+                           timeout=httpx2.Timeout(REQUEST_TIMEOUT_S, connect=CONNECT_TIMEOUT_S))
     start = time.perf_counter()
     try:
         response = client.chat.completions.create(
@@ -121,6 +136,10 @@ def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: 
         raise
     except (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError) as error:
         raise InfrastructureError(f"openai: {error}") from error
+    except openai.APIStatusError as error:
+        if error.status_code in (408, 409):  # request timeout and conflict, both worth trying again
+            raise InfrastructureError(f"openai: {error}") from error
+        raise
     latency = time.perf_counter() - start
     choice = response.choices[0]
     stop_reason = {"length": "truncated", "content_filter": "refused"}.get(choice.finish_reason, "ok")
@@ -134,7 +153,8 @@ def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: 
     from google.genai import errors, types
 
     # attempts=1 means a single try, so the SDK never retries.
-    options = types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
+    options = types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1),
+                               timeout=REQUEST_TIMEOUT_S * 1000)  # milliseconds
     client = genai.Client(api_key=key, http_options=options)
     start = time.perf_counter()
     try:

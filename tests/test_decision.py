@@ -69,6 +69,14 @@ def test_two_infrastructure_errors_with_cap_one_stop(fake):
     assert (result.input_tokens, result.latency_s) == (10, 0.5) and len(fake) == 1
 
 
+def test_infrastructure_error_is_logged_with_the_request_number(fake, capsys):
+    fake[:] = [reply("move_1"), InfrastructureError("boom"), reply("done")]
+    decision.run_decision_attempt(MODEL, "P", LEGAL, QUESTIONS, 5, 2, lambda i, o: None, "m in-1 no_model attempt 1")
+    captured = capsys.readouterr()
+    assert captured.err == "infrastructure error: m in-1 no_model attempt 1 call 2: boom\n"
+    assert captured.out == ""
+
+
 def test_one_infrastructure_error_with_cap_one_continues(fake):
     fake[:] = [InfrastructureError("x", 3, 1), reply("move_1"), reply("done")]
     result = attempt(retry_cap=1)

@@ -23,9 +23,10 @@ Send one prompt to one AI model and return the reply in the same shape for every
 3. `stop_reason` is `ok` for a complete answer, `truncated` when the answer hit the token limit, and `refused` for a refusal, including a content-filter refusal the API returns as an error.
 4. `served_model` is the model id the API response reports, or `""` when it reports none (a Google response without `model_version`, or an OpenAI content-filter refusal, which has no response). It is never filled in from `api_model_id`. Token counts are copied from the API response as returned. For Google, `output_tokens` is `candidates_token_count + thoughts_token_count`, both as returned, because Gemini bills thoughts as output. The other providers' counts already include reasoning tokens.
 5. `latency_s` is the time from sending the request to receiving the full response.
-6. A network error, timeout, HTTP 429, or HTTP 5xx raises `InfrastructureError`. The exception carries any token counts the API reported.
+6. A network error, timeout, HTTP 429, or HTTP 5xx raises `InfrastructureError`. For `openai`, HTTP 408 and 409 do too. The exception carries any token counts the API reported.
 7. Provider `fake` makes no network call. It returns replies from a list given to it in tests, and raises `InfrastructureError` when the list says so. When the list is empty, it returns the default reply: text `U`, stop reason `ok`, served model `fake`, zero tokens, and zero latency.
-8. A missing API key raises `ValueError` that names the env var, before any request is sent.
+8. Every request has an explicit timeout, `REQUEST_TIMEOUT_S = 1800` seconds, so that no SDK default decides it: `httpx.Timeout(1800, connect=30)` for `anthropic` and `openai` (the installed SDKs take the `httpx2` class of that name), and `HttpOptions(timeout=1_800_000)` in milliseconds for `google`. A timeout is a connection error, so it is an `InfrastructureError`.
+9. A missing API key raises `ValueError` that names the env var, before any request is sent.
 
 ## Decision models
 
@@ -47,8 +48,9 @@ No test calls a real API.
    1. A normal reply gives `ok` and the served model id.
    2. A length stop gives `truncated`.
    3. A content-filter error gives `refused`.
-   4. A 429, a 500, and a timeout each raise `InfrastructureError`.
+   4. A 429, a 500, and a timeout each raise `InfrastructureError`. For `openai`, a 408 and a 409 do too, and a 401 is raised.
    5. The mock receives exactly one user message, no system prompt, and every key from `params`.
+   6. The client gets the explicit timeout.
 3. A missing env var raises `ValueError` with the variable's name.
 4. For each decision provider, with the SDK client replaced by a stub: the call shape and the reply kept exactly, HTTP 429 and 503 raising `InfrastructureError`, HTTP 400 propagating, a missing key or account id raising `ValueError`, and the fake popping in order.
 5. Replies that miss the schema: Jev with a missing `model` or `answers: null`, Jev with a body of `[1]` or text that is not JSON, and Cloudflare with a `result` that is a string, list, number, or null. Each returns normally, with the missing keys absent and `served_model` `""`.
