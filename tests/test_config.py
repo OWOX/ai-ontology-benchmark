@@ -2,10 +2,12 @@
 """Tests for the config loaders. They read the repo config and write temporary files only."""
 
 import tomllib
+from pathlib import Path
 
 import pytest
 
 from src.config import load_experiment_config, load_prices, load_release_config, parse_experiment_config
+from src.release.release import latest_version
 
 RELEASE = """seed = 1
 puzzles = ["2x2"]
@@ -41,6 +43,24 @@ def test_example_files_load():
     assert experiment["experiment_id"] == "example"
     assert experiment["models"][0]["provider"] == "fake"
     assert "example-model" in load_prices("config/prices.toml")
+
+
+def test_templates_load_and_name_a_release_and_prices():
+    prices = load_prices("config/prices.toml")
+    templates = sorted(Path("config/templates").glob("*.toml"))
+    assert templates
+    for path in templates:
+        experiment = load_experiment_config(path)
+        if experiment["release"] == "latest":
+            assert latest_version(Path("releases")), path
+        else:
+            assert Path("releases", experiment["release"]).is_dir(), path
+        assert all(model["name"] in prices for model in experiment["models"]), path
+
+
+def test_release_latest_loads(tmp_path):
+    text = bad(EXPERIMENT, "1.0.0", "latest")
+    assert load_experiment_config(write(tmp_path, text, "exp_1-a.toml"))["release"] == "latest"
 
 
 def test_valid_minimal_files_load(tmp_path):
@@ -89,6 +109,7 @@ EXPERIMENT_CASES = [
     ("puzzles", with_puzzles('["6x6"]')),
     ("release", bad(EXPERIMENT, 'release = "1.0.0"\n', "")),
     ("release", bad(EXPERIMENT, "1.0.0", "1.0")),
+    ("release", bad(EXPERIMENT, "1.0.0", "newest")),
     ("attempts", bad(EXPERIMENT, "attempts = 3", "attempts = 0")),
     ("attempts", bad(EXPERIMENT, "attempts = 3", "attempts = true")),
     ("retry_cap", bad(EXPERIMENT, "retry_cap = 0", "retry_cap = -1")),

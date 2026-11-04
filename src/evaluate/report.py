@@ -43,6 +43,11 @@ def number(value: object, places: int) -> str:
     return NA if value == NA or value is None else f"{value:.{places}f}"
 
 
+def p_text(value: object) -> str:
+    """Show a p-value to 3 places, or `<0.001` when it is smaller."""
+    return f"<0.001" if isinstance(value, float) and value < 0.001 else number(value, 3)
+
+
 def rate_cell(row: dict, name: str) -> str:
     """Show a rate as `0.42 (0.30–0.55) n=60`."""
     if row[name] == NA:
@@ -159,6 +164,32 @@ def summary_section(config: dict, summary_rows: list[dict]) -> list[str]:
     return out
 
 
+def significant_text(value: object) -> str:
+    return NA if value == NA else "yes" if value else "no"
+
+
+def comparison_section(definitions_link: str, config: dict, paired_rows) -> list[str]:
+    """The paired setup test: one table per AI model and puzzle."""
+    out = ["## Setup comparison", "",
+           f"Each row is a [paired setup test]({definitions_link}#metrics) of two setups on the "
+           "same inputs.", ""]
+    header = ["Validity", "Metric", "Setups", "Inputs paired", "A higher", "B higher",
+              "Mean difference", "p", "Holm p", "Significant"]
+    for model in config["models"]:
+        rows = [r for r in paired_rows if r["model"] == model["name"]]
+        if not rows:
+            continue
+        out += [f"### {model['name']}", ""]
+        for puzzle in dict.fromkeys(r["puzzle"] for r in rows):
+            body = [[r["validity"], r["metric"], f"{r['setup_a']} vs {r['setup_b']}",
+                     r["inputs_paired"], r["a_higher"], r["b_higher"],
+                     number(r["mean_difference"], 2), p_text(r["p_value"]),
+                     p_text(r["p_holm"]), significant_text(r["significant"])]
+                    for r in rows if r["puzzle"] == puzzle]
+            out += [f"#### {puzzle}", ""] + table(header, body)
+    return out
+
+
 def metric_line(r: dict) -> list:
     """One row of a puzzle's metrics table."""
     line = [r["setup"], r["model"], r["scramble_depth"], r["validity"], r["attempts"],
@@ -220,7 +251,7 @@ def attempts_section(link, release_dir: Path, attempt_rows: list[dict]) -> list[
 
 
 def write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows,
-                 metric_rows, summary_rows, torn_lines: int = 0) -> None:
+                 metric_rows, summary_rows, torn_lines: int = 0, paired_rows=()) -> None:
     path, release_dir = Path(path), Path(release_dir)
 
     def link(target: Path) -> str:
@@ -232,6 +263,9 @@ def write_report(path, experiment_id, experiment_config, release_dir, prices, at
     lines += experiment_section(link, path.parent, experiment_config, prices, attempt_rows,
                                 torn_lines)
     lines += summary_section(experiment_config, summary_rows)
+    if paired_rows:
+        definitions = link(release_dir.parent.parent / "docs" / "definitions.md")
+        lines += comparison_section(definitions, experiment_config, paired_rows)
     lines += metrics_section(metric_rows)
     lines += attempts_section(link, release_dir, attempt_rows)
     lines += ["## Raw responses", "",

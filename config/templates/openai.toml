@@ -1,0 +1,14 @@
+# Template for a first experiment, see docs/getting-started.md.
+# Copy it to config/experiments/<experiment id>.toml before running.
+# Needs OPENAI_API_KEY in the environment.
+release = "latest"
+attempts = 1
+retry_cap = 3
+max_output_tokens = 32000
+puzzles = ["2x2"]
+
+[[models]]
+name = "gpt-6-luna"
+provider = "openai"
+api_model_id = "gpt-6-luna"
+kind = "system-2"

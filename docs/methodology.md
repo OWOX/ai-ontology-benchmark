@@ -21,3 +21,5 @@ The [setup](definitions.md#setups) is the experimental variable, alongside the A
 1. [`generate`](definitions.md#workflows) builds and freezes an input set once.
 2. [`run`](definitions.md#workflows) sends every input to every AI model under every setup, as many attempts as config says. The validator gives each attempt one [outcome](definitions.md#attempts-and-outcomes), and `run` appends one raw record per attempt.
 3. [`evaluate`](definitions.md#workflows) re-validates every attempt from its raw response and computes the [metrics](definitions.md#metrics) from raw records, frozen inputs, and config. No AI model takes part.
+
+Setups are compared with the [paired setup test](definitions.md#metrics) on the same inputs.

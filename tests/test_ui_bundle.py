@@ -96,8 +96,9 @@ def jsonl(records):
     return "".join(json.dumps(r, sort_keys=True) + "\n" for r in records)
 
 
-def push_results(repo, experiment_id, files):
-    """Commit `files` on top of HEAD into refs/heads/results/<id> on origin, never touching the work tree."""
+def push_results(repo, experiment_id, files, force=False):
+    """Commit `files` on top of HEAD into refs/heads/results/<id> on origin, never touching the work tree.
+    `force` moves a branch that already exists."""
     index = repo / ".git" / f"index-{experiment_id}"
     env = dict(os.environ, GIT_INDEX_FILE=str(index))
 
@@ -114,7 +115,7 @@ def push_results(repo, experiment_id, files):
         commit = run("commit-tree", run("write-tree"), "-p", "HEAD", "-m", f"results {experiment_id}")
     finally:
         index.unlink(missing_ok=True)
-    run("push", "-q", "origin", f"{commit}:refs/heads/results/{experiment_id}")
+    run("push", "-q", "origin", f"{'+' if force else ''}{commit}:refs/heads/results/{experiment_id}")
 
 
 def open_experiment(ui_repo, experiment_id, files):
@@ -218,6 +219,19 @@ def test_torn_line_skipped(ui_repo, samples):
                                                  "results/e/raw/example-model.jsonl": torn})
     assert exp["skipped"] == 1 and exp["error"] is None
     assert len(expdata.attempt_rows(exp, inputs)) == 4
+
+
+def test_started_at_is_the_earliest_record(ui_repo, samples):
+    _, _, records = samples
+    records = [dict(r) for r in records]
+    records[1]["created_at"] = "2026-10-24T09:15:00Z"
+    exp, inputs = open_experiment(ui_repo, "e", files_for(records))
+    assert {r["started_at"] for r in expdata.experiment_rows(exp, inputs)} == {"2026-10-24T09:15:00Z"}
+    for r in records:
+        r["created_at"] = 7  # not a string: ignored, never a crash
+    exp, inputs = open_experiment(ui_repo, "f", files_as("f", files_for(records)))
+    rows = expdata.experiment_rows(exp, inputs)
+    assert rows and {r["started_at"] for r in rows} == {None}
 
 
 def test_broken_branch_gives_error_row(ui_repo):
@@ -589,3 +603,285 @@ def test_decision_model_attempts_are_scored_not_malformed(ui_repo, samples):
     files = {"results/e2/experiment.toml": EXP_TOML, "results/e2/raw/example-model.jsonl": jsonl([flagged])}
     exp, inputs = open_experiment(ui_repo, "e2", files)
     assert [r["outcome"] for r in expdata.attempt_rows(exp, inputs)] == ["success"]
+
+
+# --- benchmarks -------------------------------------------------------------------------------
+
+OTHER_TOML = EXP_TOML + '[[models]]\nname = "cloud-model"\nprovider = "anthropic"\napi_model_id = "cl-1"\n'
+
+
+def bench_query(**kwargs):
+    return {k: kwargs.get(k) for k in ("releases", "models", "puzzles", "setups", "validity")}
+
+
+def two_model_files(ui_repo, replies):
+    """Experiment `e` with both models, one reply per (model, input, setup) from `replies(model, row, setup)`."""
+    inputs = [json.loads(line) for line in
+              (ui_repo / "releases" / "1.0.0" / "inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    files = {"results/e/experiment.toml": OTHER_TOML}
+    for model in ("example-model", "cloud-model"):
+        recs = [record(r, s, 1, replies(model, r, s), model=model) for r in inputs
+                for s in ("no_model", "descriptive", "prescriptive")]
+        files[f"results/e/raw/{model}.jsonl"] = jsonl(recs)
+    return files, inputs
+
+
+def test_benchmarks_pooled_rates_equal_metrics(ui_repo, samples):
+    from src.evaluate.metrics import rates
+    _, _, records = samples
+    exp, inputs = open_experiment(ui_repo, "e", files_for(records))
+    out = make_bundles(ui_repo).benchmarks(bench_query(), set())
+    done = [r for r in expdata.attempt_rows(exp, inputs) if r["outcome"] != "infrastructure_failure"]
+    expected = expdata.all_scope_rates(done)
+    cells = {r["metric"]: r["cells"]["example-model"] for r in out["rows"] if r["puzzle"] == "2x2"}
+    assert out["experiments"] == ["e"] and out["releases"] == ["1.0.0"] and out["skipped"] == []
+    for metric in ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
+                   "malformed_output_rate"):
+        assert cells[metric] == {"value": expected[metric], "low": expected[metric + "_low"],
+                                 "high": expected[metric + "_high"], "n": expected[metric + "_n"]}
+    invalid = out_for(ui_repo, validity="invalid")
+    only = rates([r for r in done if r["validity"] == "invalid"], "invalid")
+    assert invalid["success_rate"]["value"] == only["success_rate"]
+    assert invalid["efficiency"]["value"] is None and invalid["false_mismatch_rate"]["value"] is None
+    valid = out_for(ui_repo, validity="valid")
+    assert valid["mismatch_detection_rate"]["value"] is None and valid["mismatch_detection_rate"]["n"] == 0
+    assert [r["metric"] for r in out["rows"]][:3] == ["success_rate", "hallucination_rate", "mismatch_detection_rate"]
+    assert cells["tokens_per_attempt"] == {"value": 20, "n": 4}
+
+
+def out_for(ui_repo, **kwargs):
+    out = make_bundles(ui_repo).benchmarks(bench_query(**kwargs), set())
+    return {r["metric"]: r["cells"]["example-model"] for r in out["rows"]}
+
+
+def test_benchmarks_one_cell_has_no_best_and_worst(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    rows = make_bundles(ui_repo).benchmarks(bench_query(), set())["rows"]
+    assert all(r["best"] is None and r["worst"] is None for r in rows)
+
+
+def test_benchmarks_two_models_share_one_test(ui_repo):
+    from src.evaluate.metrics import sign_test
+    files, inputs = two_model_files(ui_repo, lambda model, row, setup:
+                                    HALLUCINATION if model == "example-model" else FAILURE)
+    push_results(ui_repo, "e", files)
+    out = make_bundles(ui_repo).benchmarks(bench_query(), set())
+    assert [m["name"] for m in out["models"]] == ["cloud-model", "example-model"]  # provider order: anthropic, fake
+    assert {p["name"] for p in out["options"]["providers"]} == {"anthropic", "fake"}
+    row = next(r for r in out["rows"] if r["metric"] == "hallucination_rate")
+    assert row["tested"] and row["best"]["model"] == "cloud-model" and row["worst"]["model"] == "example-model"
+    assert row["best"]["against"] == "example-model" and row["worst"]["against"] == "cloud-model"
+    assert row["best"]["inputs_paired"] == len(inputs)
+    assert row["best"]["p_value"] == row["worst"]["p_value"] == sign_test(len(inputs), 0)
+    assert row["best"]["p_holm"] == row["best"]["p_value"] == row["worst"]["p_holm"]
+    eff = next(r for r in out["rows"] if r["metric"] == "efficiency")
+    assert eff["tested"] is False and "p_value" not in (eff["best"] or {})
+
+
+def test_benchmarks_filters_narrow_models_not_options(ui_repo):
+    files, _ = two_model_files(ui_repo, lambda *a: FAILURE)
+    push_results(ui_repo, "e", files)
+    out = make_bundles(ui_repo).benchmarks(bench_query(models=["cloud-model", "gone"], setups=["no_model"]), set())
+    assert [m["name"] for m in out["models"]] == ["cloud-model"]
+    assert sorted(m for p in out["options"]["providers"] for m in p["models"]) == ["cloud-model", "example-model"]
+    assert all(set(r["cells"]) == {"cloud-model"} for r in out["rows"])
+
+
+@pytest.mark.parametrize("field,value", [("releases", ["9.9.9"]), ("puzzles", ["7x7"]), ("setups", ["x"]),
+                                         ("validity", "some")])
+def test_benchmarks_unknown_choice_is_400(ui_repo, field, value):
+    with pytest.raises(ApiError) as caught:
+        make_bundles(ui_repo).benchmarks(bench_query(**{field: value}), set())
+    assert caught.value.status == 400 and f"'{field}'" in caught.value.message
+
+
+def test_benchmarks_reads_once_and_caches(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    push_results(ui_repo, "f", files_as("f", files_for(records)))
+    calls = []
+    real = expdata.load_experiment
+    monkeypatch.setattr(expdata, "load_experiment", lambda *a, **k: calls.append(a[1]) or real(*a, **k))
+    bundles = make_bundles(ui_repo)
+    first = bundles.benchmarks(bench_query(), set())
+    assert bundles.benchmarks(bench_query(), set()) is first and sorted(calls) == ["e", "f"]
+    assert first["experiments"] == ["e", "f"]
+
+
+def test_benchmarks_broken_experiment_is_skipped(ui_repo, samples):
+    _, _, records = samples
+    bad = [dict(r) for r in records]
+    del bad[0]["raw_response"]
+    push_results(ui_repo, "e", files_for(records))
+    push_results(ui_repo, "f", files_as("f", files_for(bad)))
+    out = make_bundles(ui_repo).benchmarks(bench_query(), set())
+    assert out["experiments"] == ["e"] and [s["id"] for s in out["skipped"]] == ["f"] and out["skipped"][0]["error"]
+
+
+def synthetic(model, input_id, outcome, set_id="1", puzzle="2x2", validity="valid", mismatch=False, setup="no_model"):
+    return {"model": model, "input_id": input_id, "input_set_id": set_id, "puzzle": puzzle, "validity": validity,
+            "outcome": outcome, "mismatch": mismatch, "setup": setup, "reference_length": 3, "move_count": 3,
+            "latency_s": 1.0, "input_tokens": 1, "output_tokens": 1, "retry_input_tokens": 0,
+            "retry_output_tokens": 0, "cost": 0.5}
+
+
+def test_pairing_uses_input_set_id():
+    from ui import benchmarks as bm
+    a = [synthetic("a", "i1", "success"), synthetic("a", "i2", "failure")]
+    b = [synthetic("b", "i1", "failure", set_id="2"), synthetic("b", "i2", "failure")]
+    test = bm.paired_model_test(a, b, "success_rate")
+    assert test["inputs_paired"] == 1          # i1 under set 2 is another input
+
+
+def test_ties_and_holm_over_distinct_tests():
+    from src.evaluate.metrics import holm, sign_test
+    from ui import benchmarks as bm
+    ids = [f"i{n}" for n in range(8)]
+    rows = ([synthetic("a", i, "success") for i in ids]
+            + [synthetic("b", i, "success" if n < 4 else "failure") for n, i in enumerate(ids)]
+            + [synthetic("c", i, "failure") for i in ids])
+    row = next(r for r in bm.build_rows(rows, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    p_ab, p_bc = sign_test(4, 0), sign_test(4, 0)
+    assert (row["best"]["model"], row["best"]["against"]) == ("a", "b")
+    assert (row["worst"]["model"], row["worst"]["against"]) == ("c", "b")
+    assert row["best"]["p_value"] == p_ab and row["best"]["p_holm"] == holm([p_ab, p_bc])[0]
+    tied = [synthetic("a", "i0", "success"), synthetic("b", "i0", "success"), synthetic("c", "i0", "failure")]
+    row = next(r for r in bm.build_rows(tied, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    assert row["best"] is None and row["worst"]["model"] == "c"
+
+
+def test_unpriced_model_has_no_cost_per_success():
+    from ui import benchmarks as bm
+    rows = [dict(synthetic("a", "i1", "success"), priced=False), synthetic("b", "i1", "success")]
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "cost_per_success")
+    assert row["cells"]["a"]["value"] is None and row["cells"]["b"]["value"] == 0.5
+    assert row["best"] is None and row["worst"] is None
+
+
+def test_efficiency_n_counts_ratios():
+    from ui import benchmarks as bm
+    rows = [synthetic("a", "i1", "success"), synthetic("a", "i2", "failure")]
+    row = next(r for r in bm.build_rows(rows, ["a"], ["2x2"], "valid") if r["metric"] == "efficiency")
+    assert row["cells"]["a"] == {"value": 1.0, "n": 1}
+
+
+def test_benchmarks_only_unknown_models_means_no_filter(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    out = make_bundles(ui_repo).benchmarks(bench_query(models=["gone"]), set())
+    assert [m["name"] for m in out["models"]] == ["example-model"] and out["rows"]
+
+
+def test_benchmarks_moved_ref_gives_new_answer(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    first = bundles.benchmarks(bench_query(), set())
+    push_results(ui_repo, "f", files_as("f", files_for(records)))
+    bundles.git.fetch(force=True)
+    second = bundles.benchmarks(bench_query(), set())
+    assert first["experiments"] == ["e"] and second["experiments"] == ["e", "f"]
+    assert not bundles._cache  # separate from the bundle cache
+
+
+def test_benchmarks_moved_experiment_ref_is_scored_again(ui_repo, samples, monkeypatch):
+    valid, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    loads, scored = [], []
+    real_load, real_rows = expdata.load_experiment, expdata.attempt_rows
+    monkeypatch.setattr(expdata, "load_experiment", lambda *a, **k: loads.append(a[1]) or real_load(*a, **k))
+    monkeypatch.setattr(expdata, "attempt_rows", lambda *a, **k: scored.append(a[0]["id"]) or real_rows(*a, **k))
+    bundles = make_bundles(ui_repo)
+    first = bundles.benchmarks(bench_query(), set())
+    more = records + [record(valid, "no_model", 2, SUCCESS)]
+    push_results(ui_repo, "e", files_for(more), force=True)  # the same branch moves, as a live run's does
+    bundles.git.fetch(force=True)
+    second = bundles.benchmarks(bench_query(), set())
+    assert second != first and second["experiments"] == ["e"]
+    assert len(bundles._scored_cache) == 1  # the new entry replaced the old one
+    assert loads == ["e", "e"] and scored == ["e", "e"]  # read and scored again, not served from the old entry
+    n = lambda out: sum(c["n"] for r in out["rows"] if r["metric"] == "success_rate" for c in r["cells"].values())
+    assert n(second) == n(first) + 1
+
+
+def test_benchmarks_mirror_release_is_read_once(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    release = ui_repo / "releases" / "1.0.1"
+    release.mkdir()
+    source = ui_repo / "releases" / "1.0.0"
+    (release / "inputs.jsonl").write_text((source / "inputs.jsonl").read_text(encoding="utf-8"), encoding="utf-8")
+    manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+    (release / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    git(ui_repo, "add", "releases/1.0.1")
+    git(ui_repo, "commit", "-q", "-m", "mirror")
+    git(ui_repo, "push", "-q", "origin", "HEAD:refs/heads/main")
+    files = files_for(records)
+    push_results(ui_repo, "m", {"results/m/experiment.toml": EXP_TOML.replace('"1.0.0"', '"1.0.1"'),
+                                "results/m/raw/example-model.jsonl": files["results/e/raw/example-model.jsonl"]})
+    calls = []
+    real = expdata.load_experiment
+    monkeypatch.setattr(expdata, "load_experiment", lambda *a, **k: calls.append(a[1]) or real(*a, **k))
+    bundles = make_bundles(ui_repo)
+    out = bundles.benchmarks(bench_query(releases=["1.0.0"]), set())
+    assert out["experiments"] == ["m"] and out["skipped"] == [] and calls == ["m"]
+    calls.clear()
+    out = bundles.benchmarks(bench_query(releases=["1.0.0", "1.0.1"]), set())
+    assert out["experiments"] == ["m"] and calls == []  # the loaded experiment is reused, not read again
+
+
+def two_model_rows(a_solves, b_solves, inputs, attempts=2):
+    """`a_solves(n)` and `b_solves(n)` give how many of the attempts on input n succeed."""
+    rows = []
+    for n in range(inputs):
+        for model, solves in (("a", a_solves(n)), ("b", b_solves(n))):
+            rows += [synthetic(model, f"i{n}", "success" if k < solves else "failure") for k in range(attempts)]
+    return rows
+
+
+def test_best_disagreeing_with_sign_test_does_not_agree():
+    from ui import benchmarks as bm
+    # A solves 2/2 on 28 inputs, B 1/2 on the other 49: A leads the pooled rate, B is higher on 49 inputs.
+    rows = two_model_rows(lambda n: 2 if n < 28 else 0, lambda n: 0 if n < 28 else 1, 77)
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    assert row["best"]["model"] == "a" and row["best"]["p_holm"] < 0.05
+    assert row["best"]["agrees"] is False and row["worst"]["agrees"] is False
+
+
+def test_best_favoured_on_most_inputs_agrees():
+    from ui import benchmarks as bm
+    rows = two_model_rows(lambda n: 2, lambda n: 0, 10)
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    assert row["best"]["agrees"] is True and row["worst"]["agrees"] is True
+    rows = two_model_rows(lambda n: 0, lambda n: 2, 10)  # hallucinations: lower is better
+    for r in rows:
+        r["outcome"] = "hallucination" if r["outcome"] == "success" else "failure"
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "hallucination_rate")
+    assert row["best"]["model"] == "a" and row["best"]["agrees"] is True
+
+
+def test_benchmarks_new_filters_reuse_scored_rows(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    loads, scored = [], []
+    real_load, real_rows = expdata.load_experiment, expdata.attempt_rows
+    monkeypatch.setattr(expdata, "load_experiment", lambda *a, **k: loads.append(a[1]) or real_load(*a, **k))
+    monkeypatch.setattr(expdata, "attempt_rows", lambda *a, **k: scored.append(a[0]["id"]) or real_rows(*a, **k))
+    bundles = make_bundles(ui_repo)
+    bundles.benchmarks(bench_query(), set())
+    out = bundles.benchmarks(bench_query(setups=["no_model"], validity="valid"), set())
+    assert loads == ["e"] and scored == ["e"] and out["experiments"] == ["e"]
+
+
+def test_scored_cache_holds_one_entry_per_experiment(ui_repo, monkeypatch):
+    shas = {}
+    monkeypatch.setattr(expdata, "load_experiment", lambda git, i, ref, main: {"id": i})
+    bundles = make_bundles(ui_repo)
+    monkeypatch.setattr(bundles.git, "sha", lambda ref: shas.get(ref, "s0"))
+    held = {i: bundles._scored(i, f"ref/{i}", "m0") for i in (f"x{n}" for n in range(70))}  # more than the old cap
+    assert len(bundles._scored_cache) == 70
+    assert all(bundles._scored(i, f"ref/{i}", "m0") is v for i, v in held.items())  # nothing dropped
+    shas["ref/x0"] = "s1"
+    assert bundles._scored("x0", "ref/x0", "m0") is not held["x0"]  # its ref moved
+    assert bundles._scored("x1", "ref/x1", "m1") is not held["x1"]  # main moved
+    assert len(bundles._scored_cache) == 70
