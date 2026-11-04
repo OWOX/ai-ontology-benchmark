@@ -157,8 +157,8 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
     if not EXPERIMENT_ID_PATTERN.fullmatch(experiment_id):
         _fail(path, "experiment_id", "may contain only letters, digits, '-', and '_'")
     release = _get(path, config, "release", str)
-    if not RELEASE_PATTERN.fullmatch(release):
-        _fail(path, "release", "must look like MAJOR.MINOR.PATCH, for example 1.0.0")
+    if release != "latest" and not RELEASE_PATTERN.fullmatch(release):
+        _fail(path, "release", 'must be "latest" or look like MAJOR.MINOR.PATCH, for example 1.0.0')
     attempts = _get(path, config, "attempts", int)
     _check_min(path, "attempts", attempts, 1)
     retry_cap = _get(path, config, "retry_cap", int)

@@ -24,7 +24,7 @@ cp config/templates/anthropic.toml config/experiments/claude-haiku-5-5_2x2_20261
 export ANTHROPIC_API_KEY=...
 ```
 
-The other providers read `OPENAI_API_KEY` and `GOOGLE_API_KEY`. Set the key before you run, because `--estimate` doesn't check it. Set `release` in the copy to the newest folder in `releases/`.
+The other providers read `OPENAI_API_KEY` and `GOOGLE_API_KEY`. Set the key before you run, because `--estimate` doesn't check it. The templates set `release = "latest"`, which picks the newest release on the first run, and the experiment keeps it.
 
 The `fake` config needs no key and spends nothing, because the fake provider reports zero tokens. `--estimate` still prices it as a real model. Add `--no-commit` to every `run` command with it, so the smoke test stays out of git, and skip the second command in step 4.
 

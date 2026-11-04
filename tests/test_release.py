@@ -302,3 +302,10 @@ def test_assessment_hash_matches_the_newest_release_manifest():
                  key=lambda p: tuple(int(n) for n in p.name.split(".")))
     manifest = json.loads((newest / "manifest.json").read_text(encoding="utf-8"))
     assert assessment_sha256() == manifest["assessment_sha256"]
+
+
+def test_latest_version_prefers_1_10_0_over_1_9_0(tmp_path):
+    from src.release.release import latest_version
+    for name in ("1.9.0", "1.10.0", "0.99.9", "notes"):
+        (tmp_path / name).mkdir()
+    assert latest_version(tmp_path) == "1.10.0"
