@@ -23,7 +23,7 @@ The nine interface methods:
 6. `scramble(input_seed, depth)` returns `(state, moves)`. It picks moves with `random.Random(input_seed)`, never picks two moves in a row on the same face, and draws again if the result is solved.
 7. `corrupt(state, input_seed)` returns `(state, description)`. It twists one corner in place. On the 3x3 it may instead flip one edge, chosen by the input seed. The description names the piece and the change, for example `"twisted corner UFR clockwise"`.
 8. `render(state)` returns a text net of the six faces, one face block per label, with the colour letters spaced out.
-9. `is_move_token(token)` returns true when `MOVE_TOKEN` matches the whole token: an optional layer count, a face letter with an optional `w`, or a lower-case face, slice, or rotation letter, then an optional `'`, `2`, or both. The layer count goes with face letters only. It is true for every legal move and for shapes the puzzle doesn't allow, such as `r` or `3Fw'`.
+9. `is_move_token(token)` returns true when `MOVE_TOKEN` matches the whole token: a face letter with an optional layer count and an optional `w`, or a lower-case face letter, a slice letter (`M`, `E`, or `S`), or a rotation letter (`x`, `y`, or `z`), then an optional `'`, `2`, or both. The layer count goes with face letters only. It is true for every legal move and for shapes the puzzle doesn't allow, such as `r` or `3Fw'`.
 
 The reachability check for `load_state()` tests corner twist sum, edge flip sum, and permutation parity.
 

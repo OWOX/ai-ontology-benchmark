@@ -2,8 +2,7 @@
 """Cube engine for the 2x2 and 3x3. Reads nothing and writes nothing.
 
 Stickers are placed in 3D, so a face turn is a rotation of the stickers in one
-layer. All move tables, piece positions, and the 2x2 search tables derive from
-that one placement.
+layer. All move tables and piece positions derive from that one placement.
 """
 
 import random
@@ -21,12 +20,10 @@ READING = {"U": ((0, 0, 1), (1, 0, 0)), "R": ((0, -1, 0), (0, 0, -1)),
            "L": ((0, -1, 0), (0, 0, 1)), "B": ((0, -1, 0), (-1, 0, 0))}
 # Corner and edge names list faces in this order, for example UFR and UF.
 NAME_ORDER = {"U": 0, "D": 0, "F": 1, "B": 1, "R": 2, "L": 2}
-# Whole-cube rotations of the 2x2, each written as two face turns.
 # The shape of a cube move in Singmaster and WCA notation, legal or not: a face letter with an
 # optional layer count and w, or a lower-case wide, slice, or rotation letter; then ' or 2 or both.
 # The layer count goes with face letters only, so the puzzle name 2x2 in prose isn't a move token.
 MOVE_TOKEN = re.compile(r"(?:[0-9]*[URFDLB]w?|[urfdlbMESxyz])(?:2'?|'2?)?")
-ROTATIONS = (("R", "L'"), ("U", "D'"))
 
 
 def _cross(u, v):
