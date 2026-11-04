@@ -121,12 +121,17 @@ def test_corrupt_descriptions_and_edge_choice():
     assert all(E2.corrupt(E2.solved_state(), s)[1].startswith("twisted corner") for s in range(50))
 
 
-def test_load_state_label_mismatch():
-    state, _ = E3.scramble(1, 10)
+@pytest.mark.parametrize("engine", [E2, E3, E4, E5])
+def test_load_state_label_mismatch(engine):
+    state, _ = engine.scramble(1, 10)
     with pytest.raises(ValidityMismatchError):
-        E3.load_state({"state": state, "validity": "invalid"})
+        engine.load_state({"state": state, "validity": "invalid"})
     with pytest.raises(ValidityMismatchError):
-        E3.load_state({"state": state, "validity": "maybe"})
+        engine.load_state({"state": state, "validity": "maybe"})
+    bad, _ = engine.corrupt(state, 1)
+    with pytest.raises(ValidityMismatchError):
+        engine.load_state({"state": bad, "validity": "valid"})
+    assert engine.load_state({"state": bad, "validity": "invalid"}) == bad
 
 
 def test_malformed_strings_are_invalid():
