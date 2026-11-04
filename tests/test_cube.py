@@ -50,6 +50,19 @@ def test_turns_return_to_start(engine):
         assert apply_all(engine, start, [turn + "'"] * 2) == apply_all(engine, start, [turn + "2"])
 
 
+@pytest.mark.parametrize("engine", [E3, E4, E5])
+def test_sexy_move_has_order_six(engine):
+    state = apply_all(engine, engine.solved_state(), ["R", "U", "R'", "U'"] * 6)
+    assert state == engine.solved_state()
+    assert apply_all(engine, engine.solved_state(), ["R", "U", "R'", "U'"]) != engine.solved_state()
+
+
+def test_whole_cube_turn_stays_solved():
+    assert E2.is_solved(apply_all(E2, E2.solved_state(), ["R", "L'"]))
+    recoloured = "".join(c * 9 for c in "FUBLDR")
+    assert E3.is_solved(recoloured) and not E3.is_solved(E3.apply_move(E3.solved_state(), "R"))
+
+
 def test_wide_turn_stickers():
     # Rw on a solved 4x4 turns the two right-hand layers: the front's right two columns go up.
     assert E4.apply_move(E4.solved_state(), "Rw") == (
@@ -60,7 +73,7 @@ def test_wide_turn_stickers():
     assert E5.apply_move(E5.solved_state(), "Rw") != E5.apply_move(E5.solved_state(), "R")
 
 
-def test_whole_cube_turns_stay_solved():
+def test_whole_cube_turns_stay_solved_on_big_cubes():
     # On the 4x4, Rw and Lw' together turn every layer: a whole-cube rotation.
     rotated = apply_all(E4, E4.solved_state(), ["Rw", "Lw'"])
     assert rotated == "".join(c * 16 for c in "FRDBLU") and E4.is_solved(rotated)
