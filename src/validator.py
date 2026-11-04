@@ -59,7 +59,7 @@ def _lines(raw_response: str) -> list[str]:
 LIST_MARKER = re.compile(r"^(?:\d+[.)]|[-*\u2022])")
 # Characters stripped from both ends of a token, for classification only. The prime ' is not one of
 # them, because it is part of a move.
-DECORATION = "`*_.)(\""
+DECORATION = "`*_.)("
 
 
 def _strip_token(token: str) -> str:
@@ -74,9 +74,19 @@ def _strip_token(token: str) -> str:
         token = stripped
 
 
-def _decorated_tokens(line: str) -> list[str]:
-    """The tokens of a line split on whitespace and commas and stripped, with empty ones dropped."""
-    return [t for t in (_strip_token(t) for t in line.replace(",", " ").split()) if t]
+LETTER_MARKER = re.compile(r"[A-Za-z][.)]")
+
+
+def _decorated_tokens(line: str, engine) -> list[str]:
+    """The tokens of a line split on whitespace and commas and stripped, with empty ones dropped.
+    A single letter and a full stop or bracket, as in `b)`, is a lettered list marker and is dropped
+    unless it is a capital letter that is a move, as in `R.`."""
+    tokens = []
+    for raw in line.replace(",", " ").split():
+        token = _strip_token(raw)
+        if token and not (LETTER_MARKER.fullmatch(raw) and not (raw[0].isupper() and engine.is_move_token(token))):
+            tokens.append(token)
+    return tokens
 
 
 def _read_lines(lines: list[str], engine) -> tuple[list[str], bool, bool]:
@@ -92,7 +102,7 @@ def _read_lines(lines: list[str], engine) -> tuple[list[str], bool, bool]:
             layout_ok = layout_ok and tokens == [line]
             continue
         layout_ok = False
-        decorated = _decorated_tokens(line)
+        decorated = _decorated_tokens(line, engine)
         if decorated and all(engine.is_move_token(t) for t in decorated):
             moves += decorated
         elif decorated == ["MISMATCH"]:

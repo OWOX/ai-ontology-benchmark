@@ -243,6 +243,9 @@ DECORATED = {
     "commas": ("R, U, F", ["R", "U", "F"], "format_error"),
     "quoted move": ('"R"', ["R"], "format_error"),
     "bold move": ("**R**", ["R"], "format_error"),
+    "lettered marker": ("b) R U", ["R", "U"], "format_error"),
+    "lettered lines": ("a. R\nb. U", ["R", "U"], "format_error"),
+    "move with full stop": ("R.", ["R"], "format_error"),
     "illegal in a numbered list": ("1. M", ["M"], "hallucination"),
     "illegal among commas": ("R, M", ["R", "M"], "hallucination"),
     "mismatch with a full stop": ("MISMATCH.", [], "format_error"),
@@ -273,3 +276,10 @@ def test_prose_stays_abstention_and_a_lone_mismatch_stays_a_verdict():
 def test_decorated_mismatch_beside_moves_is_format_error():
     v = validate(VALID, "1. R\n**MISMATCH**", "ok")
     assert (v.outcome, v.parsed_moves, v.mismatch) == ("format_error", ["R"], False)
+
+
+def test_lettered_marker_alone_is_abstention_and_a_lone_quote_is_not_stripped():
+    assert validate(VALID, "x.", "ok").outcome == "abstention"
+    assert validate(VALID, "1. M", "ok").outcome == "hallucination"
+    assert validate(VALID, '"R', "ok").outcome == "abstention"
+    assert validate(VALID, '"R"', "ok").outcome == "format_error"
