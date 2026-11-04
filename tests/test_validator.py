@@ -173,7 +173,7 @@ def test_decision_cap_reached_is_infrastructure():
 
 def test_outcome_order():
     assert OUTCOMES == ("infrastructure_failure", "truncated", "malformed_output", "abstention",
-                        "format_error", "hallucination", "success", "failure")
+                        "hallucination", "format_error", "success", "failure")
 
 
 def test_truncated_is_its_own_outcome():

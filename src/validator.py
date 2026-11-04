@@ -16,7 +16,7 @@ FENCE = re.compile(r"^\s*```[A-Za-z]*\s*\n(.*?)\n?\s*```\s*$", re.DOTALL)
 
 # In check order.
 OUTCOMES = ("infrastructure_failure", "truncated", "malformed_output", "abstention",
-            "format_error", "hallucination", "success", "failure")
+            "hallucination", "format_error", "success", "failure")
 
 
 @dataclass(frozen=True)

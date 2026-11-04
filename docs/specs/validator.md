@@ -37,7 +37,7 @@ Steps, in order:
 
 `move_count` is the length of `parsed_moves` for `hallucination`, `format_error`, `success`, and `failure`, and empty for the other outcomes. The mismatch flag is on only for the single line `MISMATCH` and is off for every other outcome. `hallucination` is true for outcome `hallucination` and false for every other outcome of a text model. For a decision model it is `None` (JSON `null`) for every outcome.
 
-`OUTCOMES`, exported from the validator, lists the outcomes in this check order: `infrastructure_failure`, `truncated`, `malformed_output`, `abstention`, `format_error`, `hallucination`, `success`, `failure`.
+`OUTCOMES`, exported from the validator, lists the outcomes in this check order: `infrastructure_failure`, `truncated`, `malformed_output`, `abstention`, `hallucination`, `format_error`, `success`, `failure`.
 
 ## Decision path
 
