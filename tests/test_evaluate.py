@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import compute, wilson
+from src.evaluate.metrics import compute, holm, paired_tests, sign_test, wilson
 from src.puzzles.registry import get_engine
 from src.run import models, run as run_module
 from test_release import commit_all, edit, release_ok, repo  # noqa: F401  (repo is a fixture)
@@ -173,6 +173,134 @@ def test_rows_sorted_by_setup_then_model_order(release_dir):
         ("no_model", "B"), ("no_model", "A"), ("prescriptive", "B"), ("prescriptive", "A")]
 
 
+# ---- paired setup test ----
+
+
+def arow(input_id, setup, outcome, model="M", puzzle="2x2", validity="valid", mismatch=False):
+    return {"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
+            "input_id": input_id, "outcome": outcome, "mismatch": mismatch}
+
+
+def pair_row(rows, metric_name="success_rate", pair=("no_model", "descriptive"), **where):
+    (found,) = [r for r in paired_tests(rows) if r["metric"] == metric_name
+                and (r["setup_a"], r["setup_b"]) == pair
+                and all(r[k] == v for k, v in where.items())]
+    return found
+
+
+def test_sign_test_exact_values():
+    assert sign_test(8, 2) == pytest.approx(0.109375)
+    assert sign_test(2, 8) == pytest.approx(0.109375)
+    assert sign_test(0, 0) == 1.0
+    assert sign_test(10, 0) == pytest.approx(0.001953125)
+    assert sign_test(5, 5) == 1.0
+
+
+def test_paired_csv_keeps_small_p_values():
+    attempts = [arow(f"i{n}", s, o) for n in range(20)
+                for s, o in (("no_model", "failure"), ("descriptive", "success"))]
+    rows = paired_tests(attempts)
+    row = pair_row(attempts)
+    assert row["p_value"] == pytest.approx(1.9073486e-06)
+    text = evaluate_module.csv_text(rows, exact=("p_value", "p_holm"))
+    line = dict(zip(text.splitlines()[0].split(","), text.splitlines()[1].split(",")))
+    assert float(line["p_value"]) == pytest.approx(1.9073486e-06, rel=1e-4)
+    assert line["mean_difference"] == "1.0000"
+
+
+def test_holm_adjusts_in_input_order():
+    assert holm([0.01, 0.04, 0.03]) == pytest.approx([0.03, 0.06, 0.06])
+    assert holm([]) == []
+
+
+def test_paired_counts_difference_and_holm():
+    rows = []
+    for n in range(1, 9):  # 8 inputs: no_model fails, descriptive succeeds
+        rows += [arow(f"i{n}", "no_model", "failure"), arow(f"i{n}", "descriptive", "success"),
+                 arow(f"i{n}", "prescriptive", "failure")]
+    for n in (9, 10):  # 2 inputs the other way round
+        rows += [arow(f"i{n}", "no_model", "success"), arow(f"i{n}", "descriptive", "failure"),
+                 arow(f"i{n}", "prescriptive", "failure")]
+    row = pair_row(rows)
+    assert (row["inputs_paired"], row["a_higher"], row["b_higher"]) == (10, 2, 8)
+    assert row["mean_difference"] == pytest.approx(0.6)
+    assert row["p_value"] == pytest.approx(0.109375)
+    other = pair_row(rows, pair=("no_model", "prescriptive"))
+    assert (other["inputs_paired"], other["a_higher"], other["b_higher"]) == (10, 2, 0)
+    assert other["p_value"] == pytest.approx(0.5)
+    third = pair_row(rows, pair=("descriptive", "prescriptive"))
+    assert third["p_value"] == pytest.approx(0.0078125)
+    # family p-values (0.109375, 0.5, 0.0078125): Holm gives 0.21875, 0.5, 0.0234375
+    assert row["p_holm"] == pytest.approx(0.21875) and other["p_holm"] == pytest.approx(0.5)
+    assert third["p_holm"] == pytest.approx(0.0234375) and third["significant"] is True
+    assert row["significant"] is False
+
+
+def test_paired_significant_when_holm_below_threshold():
+    rows = []
+    for n in range(10):
+        rows += [arow(f"i{n}", "no_model", "failure"), arow(f"i{n}", "descriptive", "success"),
+                 arow(f"i{n}", "prescriptive", "success")]
+    row = pair_row(rows)
+    assert row["p_value"] == pytest.approx(0.001953125)
+    assert row["p_holm"] == pytest.approx(0.005859375) and row["significant"] is True
+    assert pair_row(rows, pair=("descriptive", "prescriptive"))["p_value"] == 1.0
+
+
+def test_input_with_one_setup_or_only_infrastructure_failures_is_not_paired():
+    rows = [arow("i1", "no_model", "success"), arow("i1", "descriptive", "failure"),
+            arow("i2", "no_model", "success"),  # only one setup
+            arow("i3", "no_model", "success"), arow("i3", "descriptive", "infrastructure_failure")]
+    row = pair_row(rows)
+    assert (row["inputs_paired"], row["a_higher"], row["b_higher"]) == (1, 1, 0)
+    empty = pair_row(rows, pair=("no_model", "prescriptive"))
+    assert empty["inputs_paired"] == 0
+    assert [empty[k] for k in ("mean_difference", "p_value", "p_holm", "significant")] == ["n/a"] * 4
+
+
+def test_pairs_without_inputs_leave_the_holm_family():
+    rows = [arow("i1", "no_model", "success"), arow("i1", "descriptive", "failure")]
+    row = pair_row(rows)
+    assert row["p_value"] == 1.0 and row["p_holm"] == 1.0  # family of one
+
+
+def test_two_attempts_on_one_input_are_one_paired_input():
+    rows = [arow("i1", "no_model", "success"), arow("i1", "no_model", "failure"),
+            arow("i1", "descriptive", "success"), arow("i1", "descriptive", "success")]
+    row = pair_row(rows)
+    assert (row["inputs_paired"], row["a_higher"], row["b_higher"]) == (1, 0, 1)
+    assert row["mean_difference"] == pytest.approx(0.5)
+
+
+def test_valid_inputs_get_no_mismatch_detection_rows():
+    rows = [arow("i1", "no_model", "success", validity="valid"),
+            arow("i1", "descriptive", "success", validity="valid"),
+            arow("j1", "no_model", "success", validity="invalid", mismatch=True),
+            arow("j1", "descriptive", "failure", validity="invalid")]
+    result = paired_tests(rows)
+    assert {(r["validity"], r["metric"]) for r in result} == {
+        ("valid", "success_rate"), ("valid", "hallucination_rate"),
+        ("invalid", "success_rate"), ("invalid", "hallucination_rate"),
+        ("invalid", "mismatch_detection_rate")}
+    row = pair_row(rows, "mismatch_detection_rate", validity="invalid")
+    assert (row["a_higher"], row["b_higher"]) == (1, 0)
+
+
+def test_paired_rows_sorted_and_pooled_over_depths():
+    rows = []
+    for model in ("B", "A"):
+        for puzzle in ("3x3", "2x2"):
+            rows += [arow("i1", "no_model", "success", model=model, puzzle=puzzle),
+                     arow("i1", "descriptive", "success", model=model, puzzle=puzzle)]
+    result = paired_tests(rows, ["B", "A"])
+    keys = [(r["model"], r["puzzle"], r["metric"], r["setup_a"], r["setup_b"]) for r in result]
+    assert [k[:2] for k in keys[::6]] == [("B", "2x2"), ("B", "3x3"), ("A", "2x2"), ("A", "3x3")]
+    assert [(r["metric"], r["setup_a"], r["setup_b"]) for r in result[:6]] == [
+        (m, a, b) for m in ("success_rate", "hallucination_rate")
+        for a, b in (("no_model", "descriptive"), ("no_model", "prescriptive"), ("descriptive", "prescriptive"))]
+    assert [r["model"] for r in paired_tests(rows)[::6]] == ["A", "A", "B", "B"]
+
+
 # ---- command tests ----
 
 EXPERIMENT = (
@@ -232,6 +360,7 @@ def test_assessment_mismatch_refused(repo, monkeypatch, capsys):
     assert go() == 1
     assert "assessment_sha256" in capsys.readouterr().err
     assert not (repo / "results/exp/1.0.0.md").exists() and not (repo / "results/exp/prices.toml").exists()
+    assert not (repo / "results/exp/1.0.0.paired.csv").exists()
 
 
 def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
@@ -239,7 +368,7 @@ def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
     prepare(repo, monkeypatch)
     raw_before = {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}
     assert go() == 0
-    first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "prices.toml")}
+    first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv", "prices.toml")}
     assert go() == 0
     assert first == {n: (repo / "results/exp" / n).read_bytes() for n in first}
     assert raw_before == {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}
@@ -250,6 +379,19 @@ def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
     assert go() == 0
     assert (repo / "results/exp/1.0.0.md").read_bytes() != first["1.0.0.md"]
     assert "9.0" in (repo / "results/exp/prices.toml").read_text(encoding="utf-8")
+
+
+def test_paired_csv_written_and_stable(repo, monkeypatch):
+    release_ok(repo, "major")
+    prepare(repo, monkeypatch)
+    assert go() == 0
+    path = repo / "results/exp/1.0.0.paired.csv"
+    first = path.read_bytes()
+    header = first.decode("utf-8").splitlines()[0]
+    assert header == ("model,puzzle,validity,metric,setup_a,setup_b,inputs_paired,a_higher,b_higher,"
+                      "mean_difference,p_value,p_holm,significant")
+    assert go() == 0
+    assert path.read_bytes() == first
 
 
 def test_torn_lines_skipped_and_counted(repo, monkeypatch):
@@ -284,6 +426,7 @@ def test_duplicate_attempt_refused(repo, monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "A.jsonl" in err and "more than once" in err
     assert not (repo / "results/exp/1.0.0.md").exists()
+    assert not (repo / "results/exp/1.0.0.paired.csv").exists()
 
 
 def test_config_model_without_price_refused_and_nothing_written(repo, monkeypatch, capsys):
@@ -296,7 +439,7 @@ def test_config_model_without_price_refused_and_nothing_written(repo, monkeypatc
     assert go() == 1
     err = capsys.readouterr().err
     assert "prices.toml" in err and "'Z'" in err
-    for name in ("prices.toml", "1.0.0.md", "1.0.0.metrics.csv"):
+    for name in ("prices.toml", "1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv"):
         assert not (repo / "results/exp" / name).exists()
 
 

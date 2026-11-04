@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from src.evaluate.metrics import compute
+from src.evaluate.metrics import compute, paired_tests
 from src.evaluate.report import write_report
 from src.run.prompts import SETUPS
 from test_evaluate import answer, make_inputs, raw
@@ -53,26 +53,31 @@ def tree(tmp_path):
     (results / "raw").mkdir(parents=True)
     (results / "experiment.toml").write_text("release = '1.0.0'\n", encoding="utf-8")
     (results / "prices.toml").write_text("[M]\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "definitions.md").write_text("# Definitions\n", encoding="utf-8")
     return tmp_path, inputs
 
 
-def build(tree, changed_outcome=False) -> str:
+def build(tree, changed_outcome=False, paired_rows=(), with_paired=False) -> str:
     root, _ = tree
     release, path = root / "releases" / "1.0.0", root / "results" / "exp" / "1.0.0.md"
     rows = compute(records(changed_outcome), release, PRICES, ["M"])
-    write_report(path, "exp", CONFIG, release, PRICES, *rows, torn_lines=2)
+    if with_paired:
+        paired_rows = paired_tests(rows[0], ["M"])
+    write_report(path, "exp", CONFIG, release, PRICES, *rows, torn_lines=2, paired_rows=paired_rows)
     return path.read_text(encoding="utf-8")
 
 
 def test_matches_stored_expected_report(tree):
-    text = build(tree)
+    text = build(tree, with_paired=True)
     if os.environ.get("UPDATE_FIXTURES") == "1":
         EXPECTED.write_text(text, encoding="utf-8")
     assert text == EXPECTED.read_text(encoding="utf-8")
 
 
 def test_relative_links_point_at_existing_files(tree):
-    text = build(tree)
+    text = build(tree, with_paired=True)
+    assert "../../docs/definitions.md#metrics" in text
     folder = tree[0] / "results" / "exp"
     links = re.findall(r"\]\(([^)]+)\)", text)
     assert links
@@ -133,3 +138,44 @@ def test_kind_column_shows_the_config_value_or_not_set(tree):
     text = path.read_text(encoding="utf-8")
     assert "| AI model | Provider | API model id | Kind | Served model ids | Params |" in text
     assert "| M | fake | m-1 | not set | m-1 | temperature=0.5 |" in text
+
+
+def paired(**over) -> dict:
+    row = {"model": "M", "puzzle": "2x2", "validity": "valid", "metric": "success_rate",
+           "setup_a": "no_model", "setup_b": "descriptive", "inputs_paired": 10, "a_higher": 2,
+           "b_higher": 8, "mean_difference": 0.3, "p_value": 0.109375, "p_holm": 0.328125,
+           "significant": False}
+    row.update(over)
+    return row
+
+
+def test_setup_comparison_absent_without_paired_rows(tree):
+    text = build(tree)
+    assert "Setup comparison" not in text
+    assert text == build(tree, paired_rows=[])
+
+
+def test_setup_comparison_sits_between_summary_and_metrics(tree):
+    text = build(tree, paired_rows=[paired()])
+    assert text.index("## Summary") < text.index("## Setup comparison") < text.index("## Metrics")
+    assert "[paired setup test](../../docs/definitions.md#metrics)" in text
+    assert "### M\n\n#### 2x2\n\n" in text.split("## Setup comparison")[1]
+    assert ("| Validity | Metric | Setups | Inputs paired | A higher | B higher | Mean difference "
+            "| p | Holm p | Significant |") in text
+    assert "| valid | success_rate | no_model vs descriptive | 10 | 2 | 8 | 0.30 | 0.109 | 0.328 | no |" in text
+
+
+def test_setup_comparison_shows_yes_and_na(tree):
+    rows = [paired(significant=True),
+            paired(metric="hallucination_rate", inputs_paired=0, a_higher=0, b_higher=0,
+                   mean_difference="n/a", p_value="n/a", p_holm="n/a", significant="n/a")]
+    text = build(tree, paired_rows=rows)
+    assert "| 0.30 | 0.109 | 0.328 | yes |" in text
+    assert "| 0 | 0 | 0 | n/a | n/a | n/a | n/a |" in text
+
+
+def test_setup_comparison_shows_small_p_as_less_than(tree):
+    text = build(tree, paired_rows=[paired(p_value=1.9e-06, p_holm=0.0005), paired(metric="x", p_value=0.001, p_holm=0.04)])
+    assert "| <0.001 | <0.001 | yes |" not in text
+    assert "| <0.001 | <0.001 |" in text
+    assert "| 0.001 | 0.040 |" in text
