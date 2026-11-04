@@ -17,7 +17,7 @@ Tests never call a real AI model API.
 
 ## 2. Copy an example config
 
-`config/templates/` holds one experiment config per provider: `anthropic`, `openai`, `google`, and `fake`. Copy one to `config/experiments/`. The file name you copy to is the experiment id, and it names the branch `results/<experiment id>` that everyone sees, so make it unique, for example `claude-haiku-5-5_2x2_20261103-1200`.
+`config/templates/` holds one experiment config per provider: `anthropic`, `openai`, `google`, and `fake`. Copy one to `config/experiments/`. The file name you copy to is the experiment id, and it names the branch `results/<experiment id>` that everyone sees, so make it unique. Name it as the UI does, `<models>_<puzzles>_<yyyymmdd-hhmm>`, for example `claude-haiku-5-5_2x2_20261103-1200`.
 
 ```
 cp config/templates/anthropic.toml config/experiments/claude-haiku-5-5_2x2_20261103-1200.toml
@@ -26,7 +26,7 @@ export ANTHROPIC_API_KEY=...
 
 The other providers read `OPENAI_API_KEY` and `GOOGLE_API_KEY`. Set the key before you run, because `--estimate` doesn't check it. Set `release` in the copy to the newest folder in `releases/`.
 
-The `fake` config needs no key and spends nothing, because the fake provider reports zero tokens. `--estimate` still prices it as a real model. Add `--no-commit` to every `run` command with it, so the smoke test stays out of git.
+The `fake` config needs no key and spends nothing, because the fake provider reports zero tokens. `--estimate` still prices it as a real model. Add `--no-commit` to every `run` command with it, so the smoke test stays out of git, and skip the second command in step 4.
 
 ## 3. Check the cost and run
 
@@ -42,7 +42,7 @@ python -m src.run.run --experiment <experiment id>
 
 ```
 python -m src.evaluate.evaluate --experiment <experiment id>
-python -m src.run.run --experiment <experiment id>
+python -m src.run.run --experiment <experiment id> --limit 0
 ```
 
-`evaluate` writes the report to `results/<experiment id>/<release>.md` in the work tree only. Running `run` again, with no attempts left, commits the report to the results branch and pushes it.
+`evaluate` writes the report to `results/<experiment id>/<release>.md` in the work tree only. Running `run` with `--limit 0` calls no AI model, and commits the report to the results branch and pushes it.
