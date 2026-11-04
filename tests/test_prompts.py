@@ -3,6 +3,7 @@
 
 import json
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -226,7 +227,6 @@ def test_parse_questions_reads_text_and_names_the_source():
 
 
 def test_every_puzzle_has_a_template_under_each_setup():
-    from pathlib import Path
     root = Path(__file__).resolve().parent.parent / "prompts"
     for setup in SETUPS:
         for puzzle in ENGINES:
