@@ -1,0 +1,52 @@
+release = "1.3.2"
+puzzles = ["3x3"]
+attempts = 3
+retry_cap = 3
+max_output_tokens = 32000
+
+[[models]]
+name = "claude-opus-5-5"
+provider = "anthropic"
+api_model_id = "claude-opus-5-5"
+kind = "system-2"
+
+[[models]]
+name = "claude-sonnet-5-5"
+provider = "anthropic"
+api_model_id = "claude-sonnet-5-5"
+kind = "system-2"
+
+[[models]]
+name = "claude-haiku-5-5"
+provider = "anthropic"
+api_model_id = "claude-haiku-5-5"
+kind = "system-2"
+
+[[models]]
+name = "gpt-6-astra"
+provider = "openai"
+api_model_id = "gpt-6-astra"
+kind = "system-2"
+
+[[models]]
+name = "gpt-6.1-sol"
+provider = "openai"
+api_model_id = "gpt-6.1-sol"
+kind = "system-2"
+
+[[models]]
+name = "gemini-4-argon"
+provider = "google"
+api_model_id = "gemini-4-argon"
+kind = "system-2"
+
+[[models]]
+name = "gemini-3.8-flash"
+provider = "google"
+api_model_id = "gemini-3.8-flash"
+kind = "system-2"
+
+[budget]
+per_request_usd = 2.0
+per_model_usd = 10.0
+per_experiment_usd = 10.0
