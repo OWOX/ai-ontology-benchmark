@@ -25,7 +25,7 @@ Send one prompt to one AI model and return the reply in the same shape for every
 5. `latency_s` is the time from sending the request to receiving the full response.
 6. A network error, timeout, HTTP 429, or HTTP 5xx raises `InfrastructureError`. For `openai`, HTTP 408 and 409 do too. The exception carries any token counts the API reported.
 7. Provider `fake` makes no network call. It returns replies from a list given to it in tests, and raises `InfrastructureError` when the list says so. When the list is empty, it returns the default reply: text `U`, stop reason `ok`, served model `fake`, zero tokens, and zero latency.
-8. Every request has an explicit timeout, `REQUEST_TIMEOUT_S = 1800` seconds, so that no SDK default decides it: `httpx.Timeout(1800, connect=30)` for `anthropic` and `openai` (the installed SDKs take the `httpx2` class of that name), and `HttpOptions(timeout=1_800_000)` in milliseconds for `google`. A timeout is a connection error, so it is an `InfrastructureError`.
+8. Every request to an LLM provider (`anthropic`, `openai`, `google`) has an explicit timeout, `REQUEST_TIMEOUT_S = 1800` seconds, so that no SDK default decides it: `httpx.Timeout(1800, connect=30)` for `anthropic` and `openai` (the installed SDKs take the `httpx2` class of that name), and `HttpOptions(timeout=1_800_000)` in milliseconds for `google`. The decision providers keep their SDK defaults. A timeout is a connection error, so it is an `InfrastructureError`.
 9. A missing API key raises `ValueError` that names the env var, before any request is sent.
 
 ## Decision models

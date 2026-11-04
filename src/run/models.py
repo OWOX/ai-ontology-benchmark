@@ -17,8 +17,9 @@ KEY_VARIABLES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "
 ACCOUNT_VARIABLES = {"cloudflare": "CLOUDFLARE_ACCOUNT_ID"}
 # Providers of decision models, which are called with call_decision() instead of call_model().
 DECISION_PROVIDERS = ("typesafe", "cloudflare", "fake_decision")
-# The longest one request may take, in seconds, for every provider. A long reasoning reply can run
-# for many minutes, so it is generous, and it is set so that no SDK default decides it silently.
+# The longest one request may take, in seconds, for the three LLM providers (anthropic, openai, google).
+# A long reasoning reply can run for many minutes, so it is generous, and it is set so that no SDK
+# default decides it silently. The decision providers (typesafe, cloudflare) keep their SDK defaults.
 REQUEST_TIMEOUT_S = 1800
 # The longest a connection may take to open, in seconds.
 CONNECT_TIMEOUT_S = 30.0
