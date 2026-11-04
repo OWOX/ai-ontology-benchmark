@@ -63,7 +63,7 @@ DECORATION = "`*_.)("
 
 
 def _strip_token(token: str, first: bool = False) -> str:
-    """Strip a list marker (only on the first token of a line) and surrounding decoration from one
+    """Strip a list marker glued to the first token of a line and surrounding decoration from one
     token, for classification only."""
     if first:
         token = LIST_MARKER.sub("", token)
@@ -79,14 +79,24 @@ def _strip_token(token: str, first: bool = False) -> str:
 LETTER_MARKER = re.compile(r"[A-Za-z][.)]")
 
 
+# A token that is only a numeric or bullet marker can never be a move, so it is dropped anywhere.
+WHOLE_MARKER = re.compile(r"(?:\d+[.)]|[-*\u2022])")
+
+
 def _decorated_tokens(line: str, engine) -> list[str]:
     """The tokens of a line split on whitespace and commas and stripped, with empty ones dropped.
-    A list marker counts only as the first token of a line. A single letter and a full stop or bracket, as in `b)`, is a lettered list marker and is dropped
-    unless it is a capital letter that is a move, as in `R.`."""
+    A token that is only a numeric or bullet marker is dropped wherever it is, and one glued to the
+    first token is stripped from it. A single letter and a full stop or bracket, as in `b)`, is a
+    lettered list marker only as the first token, and is kept when it is a capital letter that is
+    a move, as in `R.`."""
     tokens = []
     for position, raw in enumerate(line.replace(",", " ").split()):
+        if WHOLE_MARKER.fullmatch(raw):
+            continue
         token = _strip_token(raw, position == 0)
-        if token and not (position == 0 and LETTER_MARKER.fullmatch(raw) and not (raw[0].isupper() and engine.is_move_token(token))):
+        lettered = (position == 0 and LETTER_MARKER.fullmatch(raw)
+                    and not (raw[0].isupper() and engine.is_move_token(token)))
+        if token and not lettered:
             tokens.append(token)
     return tokens
 
