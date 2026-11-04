@@ -27,6 +27,11 @@ def test_markdown_renderer():
     assert run.returncode == 0, run.stderr + run.stdout
 
 
+def test_summary_intervals_pooled_from_a_report_are_marked():
+    run = subprocess.run([NODE, "tests/js/expmetrics.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
 def test_named_net_follows_the_net_order():
     run = subprocess.run([NODE, "tests/js/cube.test.mjs"], cwd=ROOT, capture_output=True, text=True)
     assert run.returncode == 0, run.stderr + run.stdout

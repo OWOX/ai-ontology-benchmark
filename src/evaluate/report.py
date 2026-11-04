@@ -58,8 +58,9 @@ def p_text(value: object) -> str:
 
 
 def rate_cell(row: dict, name: str) -> str:
-    """Show a rate as `0.42 (0.30–0.55) n=60, 20 inputs`, or `0.42 (n/a) n=60, 1 inputs` with no interval."""
-    counts = f"n={row[name + '_n']}, {row[name + '_inputs']} inputs"
+    """Show a rate as `0.42 (0.30–0.55) n=60, 20 inputs`, or `0.42 (n/a) n=60, 1 input` with no interval."""
+    k = row[name + "_inputs"]
+    counts = f"n={row[name + '_n']}, {k} input{'' if k == 1 else 's'}"
     if row[name] == NA:
         return f"{NA} {counts}"
     low, high = row[name + "_low"], row[name + "_high"]

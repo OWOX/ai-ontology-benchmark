@@ -97,6 +97,12 @@ def test_bootstrap_is_deterministic():
     assert a[0] == 0.5 and 0.0 <= a[1] <= 0.5 <= a[2] <= 1.0
 
 
+def test_bootstrap_pinned_values():
+    """Pins the seeding and key format: a change to either moves the interval."""
+    rate, low, high = bootstrap_interval([(1, 3), (0, 3), (3, 3), (2, 3)], "g|success_rate")
+    assert rate == 0.5 and low == pytest.approx(0.0833333333) and high == pytest.approx(0.8333333333)
+
+
 def test_bootstrap_one_input_has_no_interval():
     assert bootstrap_interval([(2, 3)], "k") == (2 / 3, "n/a", "n/a")
 
@@ -120,7 +126,15 @@ def test_balanced_accuracy_interval_is_stratified_and_deterministic():
             + [_row(f"x{i}", "invalid", mismatch=i != 4) for i in range(1, 5)])
     [row] = detection_rows(rows, ["m"])
     assert row == detection_rows(rows, ["m"])[0]
-    assert 0.0 <= row["balanced_accuracy_low"] <= 0.75 <= row["balanced_accuracy_high"] <= 1.0
+    assert row["balanced_accuracy_low"] == 0.375 and row["balanced_accuracy_high"] == 1.0
+
+
+def test_balanced_accuracy_draws_each_side_separately():
+    """With 2 valid and 2 invalid inputs, an unstratified draw can leave one side empty."""
+    rows = [_row("v1", "valid", False), _row("v2", "valid", False),
+            _row("x1", "invalid", True), _row("x2", "invalid", True)]
+    row = detection_rows(rows, ["m"])[0]
+    assert (row["balanced_accuracy_low"], row["balanced_accuracy_high"]) == (1.0, 1.0)
 
 
 def test_balanced_accuracy_interval_needs_two_inputs_per_side():

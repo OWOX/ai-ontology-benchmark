@@ -70,3 +70,5 @@ Cost is `(input_tokens + retry_input_tokens) × price_input_per_mtok / 1,000,000
 15. Two attempts on one input count as one paired input. Shares of 0.5 and 1.0 make one discordant input.
 16. Valid inputs get no `mismatch_detection_rate` rows.
 17. `detection_rows`: 4 valid inputs with 1 flagged and 4 invalid inputs with 3 flagged give balanced accuracy 0.75, and an always-`MISMATCH` group gives 0.5.
+18. The balanced-accuracy interval is pinned to an exact (low, high) for 4 valid and 4 invalid inputs, is (1.0, 1.0) for 2 perfect inputs per side (an unstratified draw could leave a side empty), and is `n/a` when a side has fewer than 2 inputs.
+19. `bootstrap_interval` is pinned to an exact (low, high) for a fixed cells list and key. Reproducibility relies on Python's `random.Random` seeding and `choices`, whose output for a given seed has been stable since Python 3.6.

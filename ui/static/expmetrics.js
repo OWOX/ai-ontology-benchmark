@@ -4,6 +4,7 @@
 (function () {
   const h = UI.el;
   const NOTE = "* computed from the raw records by the UI for display. No report is committed for this experiment, so these are not official numbers.";
+  const SUMMARY_NOTE = "* pooled from the report's rows. The interval is a Wilson score interval over attempts, for display only, not the report's bootstrap interval over inputs.";
   const RATES = [["success_rate", "Success"], ["hallucination_rate", "Hallucination"],
     ["mismatch_detection_rate", "Mismatch detection"], ["false_mismatch_rate", "False mismatch"],
     ["malformed_output_rate", "Malformed output"], ["truncated_rate", "Truncated"],
@@ -28,7 +29,8 @@
 
   // One row per AI model, setup, and validity label; then tokens and cost per AI model from the list rows.
   function summary(detail, listRows) {
-    const mark = detail.metrics_source === "computed" ? " *" : "";
+    const computed = detail.metrics_source === "computed";
+    const mark = " *";  // computed rows and rows pooled from a report CSV are both display-only
     if (!detail.summary_rows.length) return h("p", { class: "muted", text: "No attempts to summarize yet." });
     const box = h("div");
     box.append(table(["AI model", "Setup", "Validity", "Attempts", ...RATES.map((r) => r[1])],
@@ -40,7 +42,7 @@
       const sum = (k) => (rows.length && rows.every((r) => typeof r[k] === "number") ? rows.reduce((a, r) => a + r[k], 0) : null);
       return [m, grouped(sum("total_tokens")), sum("cost_usd") === null ? "n/a" : "$" + sum("cost_usd").toFixed(2)];
     })));
-    if (mark) box.append(h("p", { class: "muted small", text: NOTE }));
+    box.append(h("p", { class: "muted small", text: computed ? NOTE : SUMMARY_NOTE }));
     return box;
   }
 
@@ -55,5 +57,5 @@
     return box;
   }
 
-  window.ExpMetrics = { NOTE, pct, grouped, summary, full };
+  window.ExpMetrics = { NOTE, SUMMARY_NOTE, pct, grouped, summary, full };
 })();
