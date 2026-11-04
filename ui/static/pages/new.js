@@ -15,6 +15,10 @@
   const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", parallel: "4", result: null };
   let cleanup = null;
   let idSeq = 0;
+  // `run --estimate` prints one line per AI model and a total line (src/run/budget.py print_estimate). The page reads
+  // them into a table with patterns of its own, kept in step by tests/test_ui_js.py.
+  const ESTIMATE_MODEL = /^(\S+): (\d+) attempts, ~(\d+) input tokens, worst case \$(\S+); spent \$(\S+) of per_model_usd (\S+)$/;
+  const ESTIMATE_TOTAL = /^total: (\d+) attempts, worst case \$(\S+); spent \$(\S+) of per_experiment_usd (\S+); per_request_usd (\S+)$/;
 
   const mine = (id, pred) => UI.jobs.some((j) => j.id === id && j.state === "running" && pred(j.job));
 
@@ -228,17 +232,52 @@
         }
       }
 
+      // Estimate's table: one row per AI model line, and the total line as its footer. Built empty and shown with
+      // its first row, so a failed estimate shows only the terminal.
+      function estimateTable() {
+        const usd = (v) => {
+          const n = Number(v);
+          return "$" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: n > 0 && n < 1 ? 4 : 2 });
+        };
+        const count = (v) => Number(v).toLocaleString("en-GB");
+        const cells = (tag, values) => h("tr", {}, ...values.map(([text, cls, title], i) =>
+          h(tag, { class: (i ? "n " : "") + (cls || ""), text, ...(title ? { title } : {}) })));
+        const over = (cost, budget) => Number(cost) > Number(budget)
+          ? ["over", "The worst case exceeds the budget: the run stops when spending reaches it."] : [];
+        const body = h("tbody"), foot = h("tfoot"), note = h("p", { class: "muted small" });
+        const table = h("table", { class: "estimate-table" },
+          h("thead", {}, cells("th", [["AI model"], ["Attempts"], ["Input tokens (est.)"], ["Worst case"], ["Spent"], ["Budget"]])), body, foot);
+        const wrap = h("div", { class: "estimate", hidden: "" }, table, note);
+        let tokens = 0;
+        const read = (text) => {
+          let m = ESTIMATE_TOTAL.exec(text);
+          if (m) {
+            foot.replaceChildren(cells("th", [["Total"], [count(m[1])], [count(tokens)], [usd(m[2]), ...over(m[2], m[4])], [usd(m[3])], [usd(m[4])]]));
+            note.textContent = `Budget is per AI model in each row and per experiment in the total. Request budget: ${usd(m[5])}.`;
+          } else if ((m = ESTIMATE_MODEL.exec(text))) {
+            tokens += Number(m[3]);
+            body.append(cells("td", [[m[1]], [count(m[2])], [count(m[3])], [usd(m[4]), ...over(m[4], m[6])], [usd(m[5])], [usd(m[6])]]));
+          } else return false;
+          wrap.hidden = false;
+          return true;
+        };
+        return { wrap, read };
+      }
+
       // The output of Estimate or Dry run: that job's log lines for this experiment id, from the log history and
-      // then as they arrive. Text only. A later press of either button starts the block afresh.
+      // then as they arrive. Text only, except that Estimate's result lines go into a table above the rest.
+      // A later press of either button starts the block afresh.
       // What it shows is kept in S, so a redraw of the page draws it again from the log history.
       function showResult(label, job, id, after) {
         S.result = { label, job, id, after };
         if (ref.off) ref.off();
         if (!ref.result) { ref.result = h("div", { class: "job-result" }); ref.section.append(ref.result); }
-        const box = h("pre", { class: "terminal", role: "log", "aria-label": `${label} output` });
-        ref.result.replaceChildren(h("h4", { text: `${label} output` }), box);
+        const box = h("pre", { class: "terminal" + (job === "estimate" ? " short" : ""), role: "log", "aria-label": `${label} output` });
+        const table = job === "estimate" ? estimateTable() : null;
+        ref.result.replaceChildren(h("h4", { text: `${label} output` }), ...(table ? [table.wrap] : []), box);
         const add = (ev) => {
           if (ev.id !== id || ev.job !== job || ev.seq <= after) return;
+          if (table && ev.stream === "stdout" && table.read(ev.text)) return;
           const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
           const line = h("span", { class: ev.stream === "cmd" ? "cmd" : ev.stream === "stderr" ? "err" : "" });
           line.append((ev.stream === "cmd" ? "$ " : "") + ev.text + "\n");
