@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import compute, holm, paired_tests, sign_test, wilson
+from src.evaluate.metrics import compute, detection_rows, holm, paired_tests, sign_test, wilson
 from src.puzzles.registry import get_engine
 from src.run import models, run as run_module
 from test_release import commit_all, edit, release_ok, repo  # noqa: F401  (repo is a fixture)
@@ -162,6 +162,43 @@ def test_rows_sorted_by_setup_then_model_order(release_dir):
     _, metrics, _ = compute(records, release_dir, prices, ["B", "A"])
     assert [(r["setup"], r["model"]) for r in metrics] == [
         ("no_model", "B"), ("no_model", "A"), ("prescriptive", "B"), ("prescriptive", "A")]
+
+
+# ---- mismatch detection ----
+
+
+def _row(input_id, validity, mismatch, outcome="failure", model="m", setup="no_model", puzzle="2x2"):
+    return {"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
+            "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False}
+
+
+def test_balanced_accuracy():
+    rows = ([_row("v1", "valid", mismatch=True)] + [_row(f"v{i}", "valid", mismatch=False) for i in range(2, 5)]
+            + [_row(f"x{i}", "invalid", mismatch=True) for i in range(1, 4)] + [_row("x4", "invalid", mismatch=False)])
+    [row] = detection_rows(rows, ["m"])
+    assert row["detection_rate"] == 0.75 and row["false_mismatch_rate"] == 0.25
+    assert row["balanced_accuracy"] == 0.75
+    assert (row["detection_n"], row["false_mismatch_n"]) == (4, 4)
+
+
+def test_always_mismatch_scores_half():
+    rows = [_row("v1", "valid", mismatch=True), _row("x1", "invalid", mismatch=True)]
+    assert detection_rows(rows, ["m"])[0]["balanced_accuracy"] == 0.5
+
+
+def test_no_invalid_inputs_gives_na():
+    assert detection_rows([_row("v1", "valid", mismatch=False)], ["m"])[0]["balanced_accuracy"] == "n/a"
+
+
+def test_detection_leaves_out_infrastructure_failures_and_sorts():
+    rows = [_row("v1", "valid", False, outcome="infrastructure_failure"),
+            _row("v2", "valid", False, setup="prescriptive"), _row("x1", "invalid", True, setup="prescriptive"),
+            _row("v2", "valid", False, setup="no_model"), _row("x1", "invalid", True, setup="no_model"),
+            _row("v2", "valid", False, model="a"), _row("x1", "invalid", True, model="a")]
+    result = detection_rows(rows, ["m", "a"])
+    assert [(r["model"], r["setup"]) for r in result] == [
+        ("m", "no_model"), ("m", "prescriptive"), ("a", "no_model")]
+    assert result[0]["false_mismatch_n"] == 1
 
 
 # ---- paired setup test ----
@@ -359,7 +396,7 @@ def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
     prepare(repo, monkeypatch)
     raw_before = {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}
     assert go() == 0
-    first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv", "prices.toml")}
+    first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv", "1.0.0.detection.csv", "prices.toml")}
     assert go() == 0
     assert first == {n: (repo / "results/exp" / n).read_bytes() for n in first}
     assert raw_before == {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}

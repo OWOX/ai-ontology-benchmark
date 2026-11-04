@@ -282,3 +282,35 @@ def paired_tests(attempt_rows: list[dict], models: list[str] | None = None) -> l
                     r["p_holm"] = r["significant"] = NA
             result += [{k: r[k] for k in PAIRED_COLUMNS} for r in rows]
     return result
+
+
+def interval_for_balanced_accuracy(rows: list[dict]) -> tuple:
+    """Return (low, high) for the balanced accuracy of one group. Not computed yet: n/a."""
+    return NA, NA
+
+
+def detection_rows(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
+    """Return one mismatch detection row per AI model, puzzle, and setup, pooled over depths."""
+    order = models or sorted({r["model"] for r in attempt_rows})
+    groups = defaultdict(list)
+    for r in attempt_rows:
+        if r["outcome"] != "infrastructure_failure":
+            groups[(r["model"], r["puzzle"], r["setup"])].append(r)
+    keys = sorted(groups, key=lambda k: (model_rank(order, k[0]), list(ENGINES).index(k[1]),
+                                         SETUPS.index(k[2])))
+    result = []
+    for model, puzzle, setup in keys:
+        rows = groups[(model, puzzle, setup)]
+        invalid = [r for r in rows if r["validity"] == "invalid"]
+        valid = [r for r in rows if r["validity"] == "valid"]
+        detection = sum(r["mismatch"] for r in invalid) / len(invalid) if invalid else NA
+        false_mismatch = sum(r["mismatch"] for r in valid) / len(valid) if valid else NA
+        both = NA not in (detection, false_mismatch)
+        low, high = interval_for_balanced_accuracy(rows) if both else (NA, NA)
+        result.append({
+            "model": model, "puzzle": puzzle, "setup": setup,
+            "detection_rate": detection, "detection_n": len(invalid),
+            "false_mismatch_rate": false_mismatch, "false_mismatch_n": len(valid),
+            "balanced_accuracy": (detection + (1 - false_mismatch)) / 2 if both else NA,
+            "balanced_accuracy_low": low, "balanced_accuracy_high": high})
+    return result

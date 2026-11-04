@@ -199,6 +199,29 @@ def comparison_section(definitions_link: str, config: dict, paired_rows) -> list
     return out
 
 
+def detection_section(definitions_link: str, config: dict, detection_rows) -> list[str]:
+    """Mismatch detection as balanced accuracy: one table per AI model."""
+    out = ["## Mismatch detection", "",
+           f"[Balanced accuracy]({definitions_link}#metrics) is the mean of the detection rate and "
+           "one minus the false mismatch rate. Answering MISMATCH always, or never, scores 0.50.", ""]
+    header = ["Puzzle", "Setup", "Detection rate", "False mismatch rate", "Balanced accuracy"]
+    for model in config["models"]:
+        rows = [r for r in detection_rows if r["model"] == model["name"]]
+        if not rows:
+            continue
+        body = []
+        for puzzle in dict.fromkeys(r["puzzle"] for r in rows):
+            for r in rows:
+                if r["puzzle"] == puzzle:
+                    body.append([puzzle, r["setup"],
+                                 f"{number(r['detection_rate'], 2)} n={r['detection_n']}",
+                                 f"{number(r['false_mismatch_rate'], 2)} n={r['false_mismatch_n']}",
+                                 number(r["balanced_accuracy"], 2)])
+            body.append([puzzle, "always MISMATCH (baseline)", "1.00", "1.00", "0.50"])
+        out += [f"### {model['name']}", ""] + table(header, body)
+    return out
+
+
 def metric_line(r: dict) -> list:
     """One row of a puzzle's metrics table."""
     line = [r["setup"], r["model"], r["scramble_depth"], r["validity"], r["attempts"],
@@ -260,7 +283,7 @@ def attempts_section(link, release_dir: Path, attempt_rows: list[dict]) -> list[
 
 
 def write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows,
-                 metric_rows, summary_rows, torn_lines: int = 0, paired_rows=()) -> None:
+                 metric_rows, summary_rows, torn_lines: int = 0, paired_rows=(), detection_rows=()) -> None:
     path, release_dir = Path(path), Path(release_dir)
 
     def link(target: Path) -> str:
@@ -272,6 +295,9 @@ def write_report(path, experiment_id, experiment_config, release_dir, prices, at
     lines += experiment_section(link, path.parent, experiment_config, prices, attempt_rows,
                                 torn_lines)
     lines += summary_section(experiment_config, summary_rows)
+    if detection_rows:
+        definitions = link(release_dir.parent.parent / "docs" / "definitions.md")
+        lines += detection_section(definitions, experiment_config, detection_rows)
     if paired_rows:
         definitions = link(release_dir.parent.parent / "docs" / "definitions.md")
         lines += comparison_section(definitions, experiment_config, paired_rows)

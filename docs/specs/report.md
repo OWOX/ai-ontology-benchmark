@@ -8,7 +8,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 
 ## Inputs
 
-`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0, paired_rows=())`. [evaluate](evaluate.md) calls it with what `compute()` and `paired_tests()` returned and the count of torn raw lines it skipped.
+`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0, paired_rows=(), detection_rows=())`. [evaluate](evaluate.md) calls it with what `compute()` and `paired_tests()` returned and the count of torn raw lines it skipped.
 
 ## Outputs
 
@@ -33,10 +33,11 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
    2. Invalid inputs: success rate, mismatch detection rate, hallucination rate, malformed output rate, truncation rate, abstention rate, and format error rate.
 
    Every rate cell reads `0.42 (0.30–0.55) n=60`: the rate, its 95% interval, and its denominator.
-5. **Setup comparison.** Present only when `paired_rows` is not empty. One sentence above the tables links the [paired setup test](../definitions.md#metrics). For each AI model, one table per puzzle with columns Validity, Metric, Setups (`a vs b`), Inputs paired, A higher, B higher, Mean difference (2 places), p (3 places, or `<0.001` when smaller), Holm p (3 places, or `<0.001` when smaller), and Significant (`yes`, `no`, or `n/a`). Mean difference, p, and Holm p show `n/a` when no input is paired.
-6. **Metrics.** Every row of `metric_rows`, one table per puzzle, with rates shown the same way.
-7. **Attempts.** One table per input, headed by the input id linked to its line in the release's `inputs.jsonl` (`#L<n>`). The heading also shows the validity label and depth. Columns are AI model, setup, attempt, outcome, moves joined with spaces, mismatch, input and output tokens, and latency. The token columns are headed `Input tokens (excl. retries)` and `Output tokens (excl. retries)`, because they leave out the retry tokens that the cost and the metrics tables include. Where re-validation changed an outcome, the cell shows `stored → current`.
-8. **Raw responses.** Not copied. One link to the `raw/` folder.
+5. **Mismatch detection.** Present only when `detection_rows` is not empty, after Summary. One sentence above the tables links the [balanced accuracy](../definitions.md#metrics) definition. For each AI model, one table with columns Puzzle, Setup, Detection rate, False mismatch rate, and Balanced accuracy (rates as `0.75 n=4`, balanced accuracy to 2 places, `n/a` when missing). Each puzzle gets one extra row, `always MISMATCH (baseline)`, with 1.00, 1.00, and 0.50.
+6. **Setup comparison.** Present only when `paired_rows` is not empty. One sentence above the tables links the [paired setup test](../definitions.md#metrics). For each AI model, one table per puzzle with columns Validity, Metric, Setups (`a vs b`), Inputs paired, A higher, B higher, Mean difference (2 places), p (3 places, or `<0.001` when smaller), Holm p (3 places, or `<0.001` when smaller), and Significant (`yes`, `no`, or `n/a`). Mean difference, p, and Holm p show `n/a` when no input is paired.
+7. **Metrics.** Every row of `metric_rows`, one table per puzzle, with rates shown the same way.
+8. **Attempts.** One table per input, headed by the input id linked to its line in the release's `inputs.jsonl` (`#L<n>`). The heading also shows the validity label and depth. Columns are AI model, setup, attempt, outcome, moves joined with spaces, mismatch, input and output tokens, and latency. The token columns are headed `Input tokens (excl. retries)` and `Output tokens (excl. retries)`, because they leave out the retry tokens that the cost and the metrics tables include. Where re-validation changed an outcome, the cell shows `stored → current`.
+9. **Raw responses.** Not copied. One link to the `raw/` folder.
 
 ## How to test
 
@@ -49,6 +50,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 7. The `Puzzles:` line appears only when the config sets `puzzles`.
 8. The Kind column shows the config's `kind`, and "not set" for a model with none.
 9. With `paired_rows`, the Setup comparison section appears between Summary and Metrics, with the columns above. Without them, it is absent and the report is unchanged.
+10. With `detection_rows`, the Mismatch detection section appears right after Summary, with a baseline row per puzzle. Without them, it is absent.
 
 ## Risk
 

@@ -66,6 +66,19 @@ Cost spent, at the prices above (USD):
 | Abstention rate | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 |
 | Format error rate | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 |
 
+## Mismatch detection
+
+[Balanced accuracy](../../docs/definitions.md#metrics) is the mean of the detection rate and one minus the false mismatch rate. Answering MISMATCH always, or never, scores 0.50.
+
+### M
+
+| Puzzle | Setup | Detection rate | False mismatch rate | Balanced accuracy |
+|---|---|---|---|---|
+| 2x2 | no_model | 0.50 n=2 | 0.00 n=2 | 0.75 |
+| 2x2 | descriptive | 0.50 n=2 | 0.00 n=2 | 0.75 |
+| 2x2 | prescriptive | 0.50 n=2 | 0.00 n=2 | 0.75 |
+| 2x2 | always MISMATCH (baseline) | 1.00 | 1.00 | 0.50 |
+
 ## Setup comparison
 
 Each row is a [paired setup test](../../docs/definitions.md#metrics) of two setups on the same inputs.

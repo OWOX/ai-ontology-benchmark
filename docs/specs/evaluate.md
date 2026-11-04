@@ -37,9 +37,14 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
    5. Rows are sorted by AI model (the order of `models`), puzzle, validity (valid first), metric (the order above), and pair.
    6. `significant` is `p_holm < 0.05`. When `inputs_paired` is 0, `mean_difference`, `p_value`, `p_holm`, and `significant` are `n/a`, and the row is left out of the Holm family.
    7. Holm: sort the family's p-values ascending. The adjusted p_(i) is the maximum over j ≤ i of min(1, (m − j + 1) × p_(j)), with m the family size.
-3. `results/<ID>/<VERSION>.metrics.csv`: `metric_rows`, for analysis in other tools.
-4. `results/<ID>/<VERSION>.paired.csv`: `paired_rows`, with the same CSV conventions as the metrics CSV, except that `p_value` and `p_holm` are written with 6 significant digits (`{:.6g}`), so a small p-value is not rounded to zero.
-5. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
+3. `detection_rows(attempt_rows, models=None) -> detection_rows` in `metrics.py`: [balanced accuracy](../definitions.md#metrics) of mismatch detection, one row per AI model, puzzle, and setup, pooled over scramble depths, with columns `model, puzzle, setup, detection_rate, detection_n, false_mismatch_rate, false_mismatch_n, balanced_accuracy, balanced_accuracy_low, balanced_accuracy_high`.
+   1. Attempts with outcome `infrastructure_failure` are left out. Rows are sorted by AI model (the order of `models`), puzzle (registry order), and setup (`SETUPS` order).
+   2. Detection is over invalid attempts, false mismatch over valid ones. A rate is `n/a` when its n is 0, and balanced accuracy is `n/a` when either rate is.
+   3. `balanced_accuracy_low` and `balanced_accuracy_high` come from `interval_for_balanced_accuracy(rows)`, which returns `n/a` for both until the bootstrap interval replaces it.
+4. `results/<ID>/<VERSION>.metrics.csv`: `metric_rows`, for analysis in other tools.
+5. `results/<ID>/<VERSION>.paired.csv`: `paired_rows`, with the same CSV conventions as the metrics CSV, except that `p_value` and `p_holm` are written with 6 significant digits (`{:.6g}`), so a small p-value is not rounded to zero.
+6. `results/<ID>/<VERSION>.detection.csv`: `detection_rows`, with the same CSV conventions as the metrics CSV.
+7. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
 
 Every metric follows its definition in [definitions.md](../definitions.md#metrics), including which attempts each one leaves out. A metric with no data is `n/a`.
 

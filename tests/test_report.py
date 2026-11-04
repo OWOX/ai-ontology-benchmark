@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from src.evaluate.metrics import compute, paired_tests
+from src.evaluate.metrics import compute, detection_rows, paired_tests
 from src.evaluate.report import write_report
 from src.run.prompts import SETUPS
 from test_evaluate import answer, make_inputs, raw
@@ -58,13 +58,15 @@ def tree(tmp_path):
     return tmp_path, inputs
 
 
-def build(tree, changed_outcome=False, paired_rows=(), with_paired=False) -> str:
+def build(tree, changed_outcome=False, paired_rows=(), with_paired=False, detection=()) -> str:
     root, _ = tree
     release, path = root / "releases" / "1.0.0", root / "results" / "exp" / "1.0.0.md"
     rows = compute(records(changed_outcome), release, PRICES, ["M"])
     if with_paired:
         paired_rows = paired_tests(rows[0], ["M"])
-    write_report(path, "exp", CONFIG, release, PRICES, *rows, torn_lines=2, paired_rows=paired_rows)
+        detection = detection_rows(rows[0], ["M"])
+    write_report(path, "exp", CONFIG, release, PRICES, *rows, torn_lines=2, paired_rows=paired_rows,
+                 detection_rows=detection)
     return path.read_text(encoding="utf-8")
 
 
@@ -179,3 +181,29 @@ def test_setup_comparison_shows_small_p_as_less_than(tree):
     assert "| <0.001 | <0.001 | yes |" not in text
     assert "| <0.001 | <0.001 |" in text
     assert "| 0.001 | 0.040 |" in text
+
+
+def detection_row(**over) -> dict:
+    row = {"model": "M", "puzzle": "2x2", "setup": "no_model", "detection_rate": 0.75,
+           "detection_n": 4, "false_mismatch_rate": 0.25, "false_mismatch_n": 4,
+           "balanced_accuracy": 0.75, "balanced_accuracy_low": "n/a", "balanced_accuracy_high": "n/a"}
+    row.update(over)
+    return row
+
+
+def test_mismatch_detection_sits_after_summary_with_baseline_row(tree):
+    text = build(tree, detection=[detection_row()])
+    assert text.index("## Summary") < text.index("## Mismatch detection") < text.index("## Metrics")
+    assert "[Balanced accuracy](../../docs/definitions.md#metrics)" in text
+    assert "| Puzzle | Setup | Detection rate | False mismatch rate | Balanced accuracy |" in text
+    assert "| 2x2 | no_model | 0.75 n=4 | 0.25 n=4 | 0.75 |" in text
+    assert "| 2x2 | always MISMATCH (baseline) | 1.00 | 1.00 | 0.50 |" in text
+
+
+def test_mismatch_detection_absent_without_rows(tree):
+    assert "## Mismatch detection" not in build(tree)
+
+
+def test_mismatch_detection_shows_na(tree):
+    text = build(tree, detection=[detection_row(detection_rate="n/a", detection_n=0, balanced_accuracy="n/a")])
+    assert "| 2x2 | no_model | n/a n=0 | 0.25 n=4 | n/a |" in text
