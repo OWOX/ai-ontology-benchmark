@@ -225,7 +225,10 @@ def test_balanced_accuracy():
     [row] = detection_rows(rows, ["m"])
     assert row["detection_rate"] == 0.75 and row["false_mismatch_rate"] == 0.25
     assert row["balanced_accuracy"] == 0.75
-    assert (row["detection_n"], row["false_mismatch_n"]) == (4, 4)
+    assert (row["detection_rate_n"], row["false_mismatch_rate_n"]) == (4, 4)
+    assert (row["detection_rate_inputs"], row["false_mismatch_rate_inputs"]) == (4, 4)
+    assert row["detection_rate_low"] <= 0.75 <= row["detection_rate_high"]
+    assert row["false_mismatch_rate_low"] <= 0.25 <= row["false_mismatch_rate_high"]
 
 
 def test_always_mismatch_scores_half():
@@ -245,7 +248,7 @@ def test_detection_leaves_out_infrastructure_failures_and_sorts():
     result = detection_rows(rows, ["m", "a"])
     assert [(r["model"], r["setup"]) for r in result] == [
         ("m", "no_model"), ("m", "prescriptive"), ("a", "no_model")]
-    assert result[0]["false_mismatch_n"] == 1
+    assert result[0]["false_mismatch_rate_n"] == 1
 
 
 # ---- paired setup test ----
@@ -447,8 +450,7 @@ def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
     first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv", "1.0.0.detection.csv", "1.0.0.corruption.csv", "prices.toml")}
     assert go() == 0
     header = (repo / "results/exp/1.0.0.detection.csv").read_text(encoding="utf-8").splitlines()[0]
-    assert header == ("model,puzzle,setup,detection_rate,detection_n,false_mismatch_rate,false_mismatch_n,"
-                      "balanced_accuracy,balanced_accuracy_low,balanced_accuracy_high")
+    assert header == ",".join(DETECTION_COLUMNS)
     assert first == {n: (repo / "results/exp" / n).read_bytes() for n in first}
     assert raw_before == {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}
     (repo / "config/prices.toml").write_text(PRICE_FILE.format(price=9.0), encoding="utf-8")

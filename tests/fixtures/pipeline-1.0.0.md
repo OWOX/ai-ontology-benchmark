@@ -73,9 +73,9 @@ Cost spent, at the prices above (USD):
 
 | Puzzle | Setup | Detection rate | False mismatch rate | Balanced accuracy |
 |---|---|---|---|---|
-| 2x2 | no_model | 0.00 n=2 | 0.00 n=4 | 0.50 |
-| 2x2 | descriptive | 0.00 n=2 | 0.00 n=4 | 0.50 |
-| 2x2 | prescriptive | 0.00 n=2 | 0.00 n=4 | 0.50 |
+| 2x2 | no_model | 0.00 (n/a) n=2, 1 input | 0.00 (0.00–0.00) n=4, 2 inputs | 0.50 |
+| 2x2 | descriptive | 0.00 (n/a) n=2, 1 input | 0.00 (0.00–0.00) n=4, 2 inputs | 0.50 |
+| 2x2 | prescriptive | 0.00 (n/a) n=2, 1 input | 0.00 (0.00–0.00) n=4, 2 inputs | 0.50 |
 | 2x2 | always MISMATCH (baseline) | 1.00 | 1.00 | 0.50 |
 
 ## Detection by corruption type

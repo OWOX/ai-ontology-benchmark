@@ -356,8 +356,11 @@ def interval_for_balanced_accuracy(rows: list[dict]) -> tuple:
     return percentiles(draws)
 
 
-DETECTION_COLUMNS = ("model", "puzzle", "setup", "detection_rate", "detection_n", "false_mismatch_rate",
-                     "false_mismatch_n", "balanced_accuracy", "balanced_accuracy_low", "balanced_accuracy_high")
+DETECTION_COLUMNS = (
+    "model", "puzzle", "setup",
+    "detection_rate", "detection_rate_low", "detection_rate_high", "detection_rate_n", "detection_rate_inputs",
+    "false_mismatch_rate", "false_mismatch_rate_low", "false_mismatch_rate_high", "false_mismatch_rate_n",
+    "false_mismatch_rate_inputs", "balanced_accuracy", "balanced_accuracy_low", "balanced_accuracy_high")
 
 
 def detection_rows(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
@@ -374,16 +377,16 @@ def detection_rows(attempt_rows: list[dict], models: list[str] | None = None) ->
         rows = groups[(model, puzzle, setup)]
         invalid = [r for r in rows if r["validity"] == "invalid"]
         valid = [r for r in rows if r["validity"] == "valid"]
-        detection = sum(r["mismatch"] for r in invalid) / len(invalid) if invalid else NA
-        false_mismatch = sum(r["mismatch"] for r in valid) / len(valid) if valid else NA
+        key = f"{model}|{puzzle}|{setup}"
+        row = {"model": model, "puzzle": puzzle, "setup": setup}
+        rate_columns(row, "detection_rate", input_cells(invalid, lambda r: r["mismatch"]), key)
+        rate_columns(row, "false_mismatch_rate", input_cells(valid, lambda r: r["mismatch"]), key)
+        detection, false_mismatch = row["detection_rate"], row["false_mismatch_rate"]
         both = NA not in (detection, false_mismatch)
         low, high = interval_for_balanced_accuracy(rows) if both else (NA, NA)
-        result.append({
-            "model": model, "puzzle": puzzle, "setup": setup,
-            "detection_rate": detection, "detection_n": len(invalid),
-            "false_mismatch_rate": false_mismatch, "false_mismatch_n": len(valid),
-            "balanced_accuracy": (detection + (1 - false_mismatch)) / 2 if both else NA,
-            "balanced_accuracy_low": low, "balanced_accuracy_high": high})
+        row.update(balanced_accuracy=(detection + (1 - false_mismatch)) / 2 if both else NA,
+                   balanced_accuracy_low=low, balanced_accuracy_high=high)
+        result.append(row)
     return result
 
 

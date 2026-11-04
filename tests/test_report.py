@@ -185,7 +185,9 @@ def test_setup_comparison_shows_small_p_as_less_than(tree):
 
 def detection_row(**over) -> dict:
     row = {"model": "M", "puzzle": "2x2", "setup": "no_model", "detection_rate": 0.75,
-           "detection_n": 4, "false_mismatch_rate": 0.25, "false_mismatch_n": 4,
+           "detection_rate_low": 0.5, "detection_rate_high": 1.0, "detection_rate_n": 4, "detection_rate_inputs": 4,
+           "false_mismatch_rate": 0.25, "false_mismatch_rate_low": "n/a", "false_mismatch_rate_high": "n/a",
+           "false_mismatch_rate_n": 4, "false_mismatch_rate_inputs": 1,
            "balanced_accuracy": 0.75, "balanced_accuracy_low": "n/a", "balanced_accuracy_high": "n/a"}
     row.update(over)
     return row
@@ -196,7 +198,7 @@ def test_mismatch_detection_sits_after_summary_with_baseline_row(tree):
     assert text.index("## Summary") < text.index("## Mismatch detection") < text.index("## Metrics")
     assert "[Balanced accuracy](../../docs/definitions.md#metrics)" in text
     assert "| Puzzle | Setup | Detection rate | False mismatch rate | Balanced accuracy |" in text
-    assert "| 2x2 | no_model | 0.75 n=4 | 0.25 n=4 | 0.75 |" in text
+    assert "| 2x2 | no_model | 0.75 (0.50–1.00) n=4, 4 inputs | 0.25 (n/a) n=4, 1 input | 0.75 |" in text
     assert "| 2x2 | always MISMATCH (baseline) | 1.00 | 1.00 | 0.50 |" in text
 
 
@@ -205,8 +207,8 @@ def test_mismatch_detection_absent_without_rows(tree):
 
 
 def test_mismatch_detection_shows_na(tree):
-    text = build(tree, detection=[detection_row(detection_rate="n/a", detection_n=0, balanced_accuracy="n/a")])
-    assert "| 2x2 | no_model | n/a n=0 | 0.25 n=4 | n/a |" in text
+    text = build(tree, detection=[detection_row(detection_rate="n/a", detection_rate_low="n/a", detection_rate_high="n/a", detection_rate_n=0, detection_rate_inputs=0, balanced_accuracy="n/a")])
+    assert "| 2x2 | no_model | n/a n=0, 0 inputs | 0.25 (n/a) n=4, 1 input | n/a |" in text
 
 
 def test_detection_by_corruption_type_sits_after_mismatch_detection(tree):

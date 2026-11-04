@@ -227,8 +227,7 @@ def detection_section(definitions_link: str, config: dict, detection_rows) -> li
             for r in rows:
                 if r["puzzle"] == puzzle:
                     body.append([puzzle, r["setup"],
-                                 f"{number(r['detection_rate'], 2)} n={r['detection_n']}",
-                                 f"{number(r['false_mismatch_rate'], 2)} n={r['false_mismatch_n']}",
+                                 rate_cell(r, "detection_rate"), rate_cell(r, "false_mismatch_rate"),
                                  balanced_cell(r)])
             body.append([puzzle, "always MISMATCH (baseline)", "1.00", "1.00", "0.50"])
         out += [f"### {model['name']}", ""] + table(header, body)
