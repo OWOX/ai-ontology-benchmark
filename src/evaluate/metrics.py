@@ -6,6 +6,8 @@ the attempts. Reads the release's inputs.jsonl and writes nothing. It is part of
 import json
 import math
 from collections import Counter, defaultdict
+from fractions import Fraction
+from itertools import combinations
 from operator import itemgetter
 from pathlib import Path
 
@@ -16,6 +18,11 @@ from src.validator import validate
 
 NA = "n/a"
 Z = 1.96  # 95% confidence
+PAIRED_METRICS = ("success_rate", "hallucination_rate", "mismatch_detection_rate")
+ALPHA = 0.05
+PAIRED_COLUMNS = (
+    "model", "puzzle", "validity", "metric", "setup_a", "setup_b", "inputs_paired", "a_higher",
+    "b_higher", "mean_difference", "p_value", "p_holm", "significant")
 KEY = ("puzzle", "setup", "model", "scramble_depth", "validity")
 
 
@@ -210,3 +217,81 @@ def compute(raw_records: list[dict], release_dir: Path, prices: dict,
         row.update(group_metrics(pooled[key], key[2], False))
         summary_rows.append(row)
     return rows, metric_rows, summary_rows
+
+
+def sign_test(a: int, b: int) -> float:
+    """Exact two-sided sign test on `a` against `b` discordant inputs. 1.0 when there are none."""
+    n = a + b
+    if n == 0:
+        return 1.0
+    tail = sum(math.comb(n, k) for k in range(min(a, b) + 1))
+    return min(1.0, 2 * tail / 2 ** n)
+
+
+def holm(p_values: list[float]) -> list[float]:
+    """Holm-adjusted p-values, in the order given."""
+    m = len(p_values)
+    adjusted, running = [0.0] * m, 0.0
+    for rank, index in enumerate(sorted(range(m), key=lambda i: p_values[i])):
+        running = max(running, min(1.0, (m - rank) * p_values[index]))
+        adjusted[index] = running
+    return adjusted
+
+
+def is_hit(row: dict, metric: str) -> bool:
+    if metric == "mismatch_detection_rate":
+        return bool(row["mismatch"])
+    return row["outcome"] == metric.removesuffix("_rate")
+
+
+def input_shares(rows: list[dict], metric: str) -> dict:
+    """Share of hits per (input, setup), leaving out infrastructure failures."""
+    counts = defaultdict(lambda: [0, 0])
+    for r in rows:
+        if r["outcome"] == "infrastructure_failure":
+            continue
+        cell = counts[(r["input_id"], r["setup"])]
+        cell[0] += is_hit(r, metric)
+        cell[1] += 1
+    return {key: Fraction(hits, n) for key, (hits, n) in counts.items()}
+
+
+def compare_setups(shares: dict, setup_a: str, setup_b: str) -> dict:
+    """Return the pair's counts, mean difference and p-value over the inputs paired."""
+    inputs = sorted({i for i, s in shares if s == setup_a} & {i for i, s in shares if s == setup_b})
+    diffs = [shares[(i, setup_b)] - shares[(i, setup_a)] for i in inputs]
+    a_higher, b_higher = sum(d < 0 for d in diffs), sum(d > 0 for d in diffs)
+    return {"inputs_paired": len(inputs), "a_higher": a_higher, "b_higher": b_higher,
+            "mean_difference": float(sum(diffs) / len(diffs)) if diffs else NA,
+            "p_value": sign_test(a_higher, b_higher) if diffs else NA}
+
+
+def paired_tests(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
+    """Return the paired setup test rows, pooled over scramble depths and never over validity."""
+    order = models or sorted({r["model"] for r in attempt_rows})
+    groups = defaultdict(list)
+    for r in attempt_rows:
+        groups[(r["model"], r["puzzle"], r["validity"])].append(r)
+    keys = sorted(groups, key=lambda k: (model_rank(order, k[0]), list(ENGINES).index(k[1]),
+                                         k[2] != "valid"))
+    pairs = list(combinations(SETUPS, 2))
+    result = []
+    for model, puzzle, validity in keys:
+        for metric in PAIRED_METRICS:
+            if metric == "mismatch_detection_rate" and validity != "invalid":
+                continue
+            shares = input_shares(groups[(model, puzzle, validity)], metric)
+            rows = []
+            for setup_a, setup_b in pairs:
+                row = {"model": model, "puzzle": puzzle, "validity": validity, "metric": metric,
+                       "setup_a": setup_a, "setup_b": setup_b}
+                row.update(compare_setups(shares, setup_a, setup_b))
+                rows.append(row)
+            family = [r for r in rows if r["inputs_paired"]]
+            for r, adjusted in zip(family, holm([r["p_value"] for r in family])):
+                r["p_holm"], r["significant"] = adjusted, adjusted < ALPHA
+            for r in rows:
+                if not r["inputs_paired"]:
+                    r["p_holm"] = r["significant"] = NA
+            result += [{k: r[k] for k in PAIRED_COLUMNS} for r in rows]
+    return result
