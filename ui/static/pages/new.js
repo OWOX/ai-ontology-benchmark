@@ -17,7 +17,7 @@
   let idSeq = 0;
   // `run --estimate` prints one line per AI model and a total line (src/run/budget.py print_estimate). The page reads
   // them into a table with patterns of its own, kept in step by tests/test_ui_js.py.
-  const ESTIMATE_MODEL = /^(\S+): (\d+) attempts, ~(\d+) input tokens, worst case \$(\S+); spent \$(\S+) of per_model_usd (\S+)$/;
+  const ESTIMATE_MODEL = /^(.+?): (\d+) attempts, ~(\d+) input tokens, worst case \$(\S+); spent \$(\S+) of per_model_usd (\S+)$/;
   const ESTIMATE_TOTAL = /^total: (\d+) attempts, worst case \$(\S+); spent \$(\S+) of per_experiment_usd (\S+); per_request_usd (\S+)$/;
 
   const mine = (id, pred) => UI.jobs.some((j) => j.id === id && j.state === "running" && pred(j.job));
@@ -237,13 +237,16 @@
       function estimateTable() {
         const usd = (v) => {
           const n = Number(v);
+          // inf, nan, and amounts too small for 4 places (1e-05) show as printed.
+          if (!Number.isFinite(n) || (n > 0 && n < 0.00005)) return "$" + v;
           return "$" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: n > 0 && n < 1 ? 4 : 2 });
         };
         const count = (v) => Number(v).toLocaleString("en-GB");
         const cells = (tag, values) => h("tr", {}, ...values.map(([text, cls, title], i) =>
           h(tag, { class: (i ? "n " : "") + (cls || ""), text, ...(title ? { title } : {}) })));
-        const over = (cost, budget) => Number(cost) > Number(budget)
-          ? ["over", "The worst case exceeds the budget: the run stops when spending reaches it."] : [];
+        // As run checks spending: what is spent already plus the worst case still to come.
+        const over = (cost, spent, budget) => Number(spent) + Number(cost) > Number(budget)
+          ? ["over", "Spent plus the worst case exceeds the budget: the run stops when spending reaches it."] : [];
         const body = h("tbody"), foot = h("tfoot"), note = h("p", { class: "muted small" });
         const table = h("table", { class: "estimate-table" },
           h("thead", {}, cells("th", [["AI model"], ["Attempts"], ["Input tokens (est.)"], ["Worst case"], ["Spent"], ["Budget"]])), body, foot);
@@ -252,11 +255,11 @@
         const read = (text) => {
           let m = ESTIMATE_TOTAL.exec(text);
           if (m) {
-            foot.replaceChildren(cells("th", [["Total"], [count(m[1])], [count(tokens)], [usd(m[2]), ...over(m[2], m[4])], [usd(m[3])], [usd(m[4])]]));
+            foot.replaceChildren(cells("th", [["Total"], [count(m[1])], [count(tokens)], [usd(m[2]), ...over(m[2], m[3], m[4])], [usd(m[3])], [usd(m[4])]]));
             note.textContent = `Budget is per AI model in each row and per experiment in the total. Request budget: ${usd(m[5])}.`;
           } else if ((m = ESTIMATE_MODEL.exec(text))) {
             tokens += Number(m[3]);
-            body.append(cells("td", [[m[1]], [count(m[2])], [count(m[3])], [usd(m[4]), ...over(m[4], m[6])], [usd(m[5])], [usd(m[6])]]));
+            body.append(cells("td", [[m[1]], [count(m[2])], [count(m[3])], [usd(m[4]), ...over(m[4], m[5], m[6])], [usd(m[5])], [usd(m[6])]]));
           } else return false;
           wrap.hidden = false;
           return true;
