@@ -27,7 +27,7 @@ def fake(monkeypatch):
 
 
 def attempt(cap=5, retry_cap=2, can_afford=lambda i, o: None):
-    return decision.run_decision_attempt(MODEL, "P", LEGAL, QUESTIONS, cap, retry_cap, can_afford)
+    return decision.run_decision_attempt(MODEL, "P", LEGAL, QUESTIONS, cap, retry_cap, can_afford, "label")
 
 
 def test_stops_on_done_after_two_moves(fake):

@@ -24,7 +24,7 @@ class DecisionResult:
 
 
 def run_decision_attempt(model: dict, prompt: str, legal: list[str], questions: dict,
-                         cap: int, retry_cap: int, can_afford, label: str = "") -> DecisionResult:
+                         cap: int, retry_cap: int, can_afford, label: str) -> DecisionResult:
     """Run the loop for one attempt. `questions` is the object from load_questions(), read once
     per run. `can_afford(paid_in, paid_out)` gets every token the attempt has paid so far, retried
     and completed calls together, and raises BudgetError before a call that would pass a budget:

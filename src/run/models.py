@@ -69,7 +69,10 @@ class RefusedError(Exception):
 def log_infrastructure_error(label: str, call: int, error: Exception) -> None:
     """Write why a call failed to stderr, never stdout, which carries the progress output the UI parses.
     `label` names the attempt, `call` is the number of the request in it, from 1."""
-    print(f"infrastructure error: {label} call {call}: {error}"[:300], file=sys.stderr, flush=True)
+    text = str(error).replace("\r", " ").replace("\n", " ")
+    # One write, so a line from another attempt never lands in the middle of this one.
+    sys.stderr.write(f"infrastructure error: {label} call {call}: {text}"[:300] + "\n")
+    sys.stderr.flush()
 
 
 # Error types an SSE error event can carry that mean the service, not the request, failed.

@@ -116,7 +116,7 @@ def test_infrastructure_errors_are_logged_to_stderr_only(exp, capsys):
     go("--model", "A", "--limit", "1")
     captured = capsys.readouterr()
     lines = [line for line in captured.err.splitlines() if line.startswith("infrastructure error:")]
-    assert len(lines) == 2 and len(lines[0]) <= 300
+    assert len(lines) == 2 and len(lines[0]) == 300
     assert lines[0].startswith("infrastructure error: A ") and " no_model attempt 1 call 1: boom" in lines[0]
     assert lines[1].endswith(" call 2: again")
     assert "infrastructure error" not in captured.out
@@ -1177,3 +1177,8 @@ def test_run_passes_the_experiment_reasoning_effort_to_the_model(exp, monkeypatc
     monkeypatch.setattr(run_module, "call_model", call)
     assert stdin_run(exp, monkeypatch, 'reasoning_effort = "high"\n' + EXPERIMENT, "--limit", "1") == 0
     assert seen and set(seen) == {"high"}
+
+
+def test_infrastructure_error_log_is_one_line(capsys):
+    models.log_infrastructure_error("A in-1", 1, InfrastructureError("first\r\nsecond\nthird"))
+    assert capsys.readouterr().err == "infrastructure error: A in-1 call 1: first  second third\n"

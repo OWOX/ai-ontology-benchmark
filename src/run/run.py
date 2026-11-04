@@ -146,7 +146,7 @@ def pending_attempts(config: dict, inputs: list[dict], raw_dir: Path, only_model
                         yield row, model, setup, number
 
 
-def call_with_retries(model: dict, prompt: str, config: dict, can_afford, label: str = "") -> tuple:
+def call_with_retries(model: dict, prompt: str, config: dict, can_afford, label: str) -> tuple:
     """Return (reply or None, retry_input_tokens, retry_output_tokens, budget error or None).
 
     `can_afford(retry_in, retry_out)` raises BudgetError if another call would pass a budget.
