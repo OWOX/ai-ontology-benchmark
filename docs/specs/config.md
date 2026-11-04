@@ -1,10 +1,10 @@
 # config
 
-Files: `config/release.toml`, `config/experiments/<experiment id>.toml`, `config/prices.toml`, `src/config.py`.
+Files: `config/release.toml`, `config/experiments/<experiment id>.toml`, `config/templates/<provider>.toml`, `config/prices.toml`, `src/config.py`.
 
 ## Purpose
 
-Hold every study parameter in three kinds of file, and refuse a config with a missing or wrong value before any work starts.
+Hold every study parameter in three kinds of file, plus example configs to copy, and refuse a config with a missing or wrong value before any work starts.
 
 ## Inputs
 
@@ -55,6 +55,8 @@ Hold every study parameter in three kinds of file, and refuse a config with a mi
    price_output_per_mtok = 15.00 # price per million output tokens
    ```
 
+4. `config/templates/<provider>.toml`, one experiment config per provider for [getting started](../getting-started.md). No script reads them. A user copies one to `config/experiments/` and runs it.
+
 ## Outputs
 
 `load_release_config(path)`, `load_experiment_config(path)`, and `load_prices(path)`. Each returns a dict after these checks, and raises `ValueError` naming the file and field on the first one that fails.
@@ -81,3 +83,4 @@ The checks:
 4. `parse_experiment_config` on the text of a valid file returns the same dict as `load_experiment_config` on that file, and its errors name `source`.
 5. In an experiment config, `puzzles` accepts a valid list, and raises `ValueError` naming `puzzles` for an empty list, a repeated name, a value that isn't a list of strings, and an unknown name. With no `puzzles`, the returned dict has no `puzzles` key.
 6. In an experiment config, a model with `kind` set to `system-1` or `system-2` loads, and a model with no `kind` loads. `kind` raises `ValueError` naming `kind` for any other string and for a value that isn't a string.
+7. Every file in `config/templates/` loads as an experiment config, names a release folder in `releases/`, and has a price in `config/prices.toml` for each AI model.

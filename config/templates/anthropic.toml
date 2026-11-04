@@ -1,0 +1,15 @@
+# Template for a first experiment, see docs/getting-started.md.
+# Copy it to config/experiments/<experiment id>.toml before running.
+# Needs ANTHROPIC_API_KEY in the environment.
+# Set release to the newest folder in releases/.
+release = "1.3.1"
+attempts = 1
+retry_cap = 3
+max_output_tokens = 32000
+puzzles = ["2x2"]
+
+[[models]]
+name = "claude-haiku-5-5"
+provider = "anthropic"
+api_model_id = "claude-haiku-5-5"
+kind = "system-2"

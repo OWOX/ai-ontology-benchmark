@@ -2,6 +2,7 @@
 """Tests for the config loaders. They read the repo config and write temporary files only."""
 
 import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -41,6 +42,16 @@ def test_example_files_load():
     assert experiment["experiment_id"] == "example"
     assert experiment["models"][0]["provider"] == "fake"
     assert "example-model" in load_prices("config/prices.toml")
+
+
+def test_templates_load_and_name_a_release_and_prices():
+    prices = load_prices("config/prices.toml")
+    templates = sorted(Path("config/templates").glob("*.toml"))
+    assert templates
+    for path in templates:
+        experiment = load_experiment_config(path)
+        assert Path("releases", experiment["release"]).is_dir(), path
+        assert all(model["name"] in prices for model in experiment["models"]), path
 
 
 def test_valid_minimal_files_load(tmp_path):
