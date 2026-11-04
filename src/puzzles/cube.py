@@ -7,7 +7,7 @@ that one placement.
 """
 
 import random
-from collections import deque
+import re
 from functools import lru_cache
 
 from src.puzzles.engine import Engine, IllegalMoveError, ValidityMismatchError
@@ -22,6 +22,10 @@ READING = {"U": ((0, 0, 1), (1, 0, 0)), "R": ((0, -1, 0), (0, 0, -1)),
 # Corner and edge names list faces in this order, for example UFR and UF.
 NAME_ORDER = {"U": 0, "D": 0, "F": 1, "B": 1, "R": 2, "L": 2}
 # Whole-cube rotations of the 2x2, each written as two face turns.
+# The shape of a cube move in Singmaster and WCA notation, legal or not: a face letter with an
+# optional layer count and w, or a lower-case wide, slice, or rotation letter; then ' or 2 or both.
+# The layer count goes with face letters only, so the puzzle name 2x2 in prose isn't a move token.
+MOVE_TOKEN = re.compile(r"(?:[0-9]*[URFDLB]w?|[urfdlbMESxyz])(?:2'?|'2?)?")
 ROTATIONS = (("R", "L'"), ("U", "D'"))
 
 
@@ -167,78 +171,6 @@ def _is_reachable(n, state):
     return _parity(corners[0]) == _parity(edges[0])
 
 
-@lru_cache(maxsize=None)
-def _search_tables():
-    """Return the 2x2 search moves and the pruning tables, built once.
-
-    With the DBL corner fixed, U, R, and F give the same distances in the
-    half-turn metric. A move is (face, source, twist added). The tables hold
-    the distance to solved for corner orientation (3^7) and permutation (7!).
-    """
-    moves = []
-    for face in "URF":
-        for suffix in ("", "'", "2"):
-            permutation, twist = _piece_coords(2, apply_move_to(2, _solved(2), face + suffix), 3)
-            moves.append((face, tuple(permutation), tuple(twist)))
-
-    def distances(start, step):
-        dist, queue = {start: 0}, deque([start])
-        while queue:
-            key = queue.popleft()
-            for _, source, twist in moves:
-                new = step(key, source, twist)
-                if new not in dist:
-                    dist[new] = dist[key] + 1
-                    queue.append(new)
-        return dist
-
-    twist_dist = distances((0,) * 8, lambda k, s, t: tuple((k[s[j]] + t[j]) % 3 for j in range(8)))
-    perm_dist = distances(tuple(range(8)), lambda k, s, t: tuple(k[s[j]] for j in range(8)))
-    return moves, twist_dist, perm_dist
-
-
-def _fix_dbl_corner(state):
-    """Return the whole-cube rotation of a 2x2 state that has the DBL corner home."""
-    solved = _solved(2)
-    dbl = next(p for p in _positions(2, 3) if {_face_of(2, i) for i in p} == {"D", "B", "L"})
-    seen, queue = {state}, deque([state])
-    while queue:
-        current = queue.popleft()
-        if all(current[i] == solved[i] for i in dbl):
-            return current
-        for rotation in ROTATIONS:
-            turned = apply_move_to(2, apply_move_to(2, current, rotation[0]), rotation[1])
-            if turned not in seen:
-                seen.add(turned)
-                queue.append(turned)
-    raise ValueError("no rotation puts the DBL corner home")
-
-
-def _ida_star_2x2(state):
-    moves, twist_dist, perm_dist = _search_tables()
-    permutation, twist = _piece_coords(2, _fix_dbl_corner(state), 3)
-
-    def search(perm, tw, depth, bound, last_face):
-        estimate = max(twist_dist[tw], perm_dist[perm])
-        if depth + estimate > bound:
-            return False
-        if estimate == 0:
-            return True
-        for face, source, added in moves:
-            if face != last_face and search(
-                    tuple(perm[s] for s in source),
-                    tuple((tw[source[j]] + added[j]) % 3 for j in range(8)),
-                    depth + 1, bound, face):
-                return True
-        return False
-
-    perm, tw = tuple(permutation), tuple(twist)
-    bound = max(twist_dist[tw], perm_dist[perm])
-    while not search(perm, tw, 0, bound, ""):
-        bound += 1
-    return bound
-
-
 class CubeEngine(Engine):
     """The engine for the 2x2 and 3x3 cubes."""
 
@@ -309,9 +241,5 @@ class CubeEngine(Engine):
             blocks.append("\n".join([face] + rows))
         return "\n\n".join(blocks)
 
-    def reference_length(self, state: str) -> int:
-        if not _is_reachable(self.n, state):
-            raise ValueError("state cannot be reached from the solved state")
-        if self.n != 2:
-            raise NotImplementedError("no reference solver for this cube yet (AGENTS.md open item 2)")
-        return _ida_star_2x2(state)
+    def is_move_token(self, token: str) -> bool:
+        return MOVE_TOKEN.fullmatch(token) is not None

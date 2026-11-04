@@ -108,7 +108,7 @@ def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
     models = exp["config"]["models"] if exp["config"] else []
     decision_models = {m["name"] for m in models if m["provider"] in DECISION_PROVIDERS}
     try:
-        return make_attempt_rows(records, inputs, prices, {}, decision_models)
+        return make_attempt_rows(records, inputs, prices, decision_models)
     except (EvalError, KeyError) as error:
         exp["error"] = str(error.args[0]) if error.args else str(error)
         return []

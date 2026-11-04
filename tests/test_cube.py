@@ -1,13 +1,11 @@
 # Spec: docs/specs/cube.md
 """Tests for the cube engine. They read nothing and write nothing."""
 
-import random
-from collections import deque
-
 import pytest
 
 from src.puzzles.cube import CubeEngine
 from src.puzzles.engine import IllegalMoveError, ValidityMismatchError
+from src.puzzles.registry import get_engine
 
 E2, E3 = CubeEngine(2), CubeEngine(3)
 
@@ -109,8 +107,6 @@ def test_malformed_strings_are_invalid():
         with pytest.raises(ValidityMismatchError):
             E3.load_state({"state": case, "validity": "valid"})
         assert E3.load_state({"state": case, "validity": "invalid"}) == case
-        with pytest.raises(ValueError):
-            E3.reference_length(case)
     with pytest.raises(ValidityMismatchError):
         E2.load_state({"state": "U" * 24, "validity": "valid"})
 
@@ -122,38 +118,23 @@ def test_render():
     assert E3.render(E3.solved_state()).split("\n\n")[1] == "R\nR R R\nR R R\nR R R"
 
 
-def test_reference_length_unsolved_cubes():
-    with pytest.raises(NotImplementedError):
-        E3.reference_length(E3.scramble(1, 5)[0])
-    with pytest.raises(ValueError):
-        E2.reference_length(E2.corrupt(E2.solved_state(), 3)[0])
-    assert E2.reference_length(E2.solved_state()) == 0
-    assert E2.reference_length(E2.apply_move(E2.solved_state(), "R2")) == 1
+@pytest.mark.parametrize("puzzle", ["2x2", "3x3"])
+@pytest.mark.parametrize("token", ["R", "U'", "F2", "r", "Rw", "Rw2", "3Fw'", "M", "E2", "S'", "x", "y2", "z'", "R2'", "u"])
+def test_move_shaped_tokens(puzzle, token):
+    assert get_engine(puzzle).is_move_token(token)
 
 
-def breadth_first_distance(state):
-    seen, queue = {state}, deque([(state, 0)])
-    while queue:
-        current, dist = queue.popleft()
-        if E2.is_solved(current):
-            return dist
-        for move in E2.legal_moves():
-            new = E2.apply_move(current, move)
-            if new not in seen:
-                seen.add(new)
-                queue.append((new, dist + 1))
+@pytest.mark.parametrize("puzzle", ["2x2", "3x3"])
+@pytest.mark.parametrize("token", ["", "I", "can't", "MISMATCH", "2x2", "R,", "(R", "R3", "Q", "RU", "R''", " R", "R ", "R\u2019", "a", "The"])
+def test_prose_tokens(puzzle, token):
+    assert not get_engine(puzzle).is_move_token(token)
 
 
-def test_ida_star_matches_breadth_first():
-    rng = random.Random(0)
-    for _ in range(20):
-        depth = rng.randint(1, 4)
-        state, _ = E2.scramble(rng.randrange(10**6), depth)
-        assert 1 <= E2.reference_length(state) <= depth
-        assert E2.reference_length(state) == breadth_first_distance(state)
+@pytest.mark.parametrize("puzzle", ["2x2", "3x3"])
+def test_every_legal_move_is_a_move_token(puzzle):
+    engine = get_engine(puzzle)
+    assert all(engine.is_move_token(m) for m in engine.legal_moves())
 
 
-def test_ida_star_on_deep_scrambles():
-    for seed in range(10):
-        state, _ = E2.scramble(seed, 14)
-        assert 1 <= E2.reference_length(state) <= 11
+def test_engine_has_no_reference_length():
+    assert not hasattr(get_engine("2x2"), "reference_length")

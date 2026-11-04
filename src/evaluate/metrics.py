@@ -11,7 +11,7 @@ from itertools import combinations
 from operator import itemgetter
 from pathlib import Path
 
-from src.puzzles.registry import ENGINES, get_engine
+from src.puzzles.registry import ENGINES
 from src.run.prompts import SETUPS
 from src.run.raw import is_decision_record
 from src.validator import validate
@@ -91,7 +91,6 @@ def group_metrics(rows: list[dict], validity: str, full: bool) -> dict:
     out.update(rates(done, validity))
     out["cost_per_success"] = sum(r["cost"] for r in rows) / successes if successes else NA
     if full:
-        out["efficiency"] = efficiency(done, validity)
         out["consistency"] = consistency(done)
         latencies = [r["latency_s"] for r in done if r["latency_s"] is not None]
         out["latency_per_attempt_s"] = mean(latencies)
@@ -102,25 +101,6 @@ def group_metrics(rows: list[dict], validity: str, full: bool) -> dict:
     return out
 
 
-def efficiency(done: list[dict], validity: str) -> object:
-    """Mean of move count over reference length, for successes on valid inputs."""
-    ratios = []
-    for r in done:
-        if r["outcome"] == "success" and validity == "valid" and r["reference_length"]:
-            ratios.append(r["move_count"] / r["reference_length"])
-    return mean(ratios)
-
-
-def reference_length(cache: dict, row: dict) -> int | None:
-    """Reference length of a valid input, or None where the engine has no solver yet."""
-    if row["input_id"] not in cache:
-        try:
-            cache[row["input_id"]] = get_engine(row["puzzle"]).reference_length(row["state"])
-        except NotImplementedError:
-            cache[row["input_id"]] = None
-    return cache[row["input_id"]]
-
-
 def attempt_cost(raw: dict, price: dict) -> float:
     input_tokens = raw["input_tokens"] + raw["retry_input_tokens"]
     output_tokens = raw["output_tokens"] + raw["retry_output_tokens"]
@@ -128,14 +108,14 @@ def attempt_cost(raw: dict, price: dict) -> float:
             + output_tokens * price["price_output_per_mtok"]) / 1e6
 
 
-def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float, reference) -> dict:
+def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float) -> dict:
     return {
         "input_id": raw["input_id"], "input_line": line, "puzzle": source["puzzle"],
         "scramble_depth": source["scramble_depth"], "validity": source["validity"],
         "setup": raw["setup"], "model": raw["model"], "attempt_number": raw["attempt_number"],
         "stored_outcome": raw["outcome"], "outcome": verdict.outcome,
         "parsed_moves": verdict.parsed_moves, "mismatch": verdict.mismatch,
-        "move_count": verdict.move_count, "reference_length": reference,
+        "move_count": verdict.move_count,
         "input_tokens": raw["input_tokens"], "output_tokens": raw["output_tokens"],
         "retry_input_tokens": raw["retry_input_tokens"],
         "retry_output_tokens": raw["retry_output_tokens"], "latency_s": raw["latency_s"],
@@ -143,7 +123,7 @@ def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float, r
     }
 
 
-def make_attempt_rows(raw_records, inputs, prices, cache, decision_models=frozenset()) -> list[dict]:
+def make_attempt_rows(raw_records, inputs, prices, decision_models=frozenset()) -> list[dict]:
     by_id = {row["input_id"]: (number, row) for number, row in enumerate(inputs, start=1)}
     rows = []
     for raw in raw_records:
@@ -156,10 +136,7 @@ def make_attempt_rows(raw_records, inputs, prices, cache, decision_models=frozen
         verdict = validate(source, raw["raw_response"], raw["stop_reason"],
                            decision=is_decision_record(raw, decision_models))
         cost = attempt_cost(raw, prices[raw["model"]])
-        reference = None
-        if verdict.outcome == "success" and source["validity"] == "valid":
-            reference = reference_length(cache, source)
-        rows.append(make_attempt_row(raw, line, source, verdict, cost, reference))
+        rows.append(make_attempt_row(raw, line, source, verdict, cost))
     return rows
 
 
@@ -196,7 +173,7 @@ def compute(raw_records: list[dict], release_dir: Path, prices: dict,
     """Return (attempt_rows, metric_rows, summary_rows). `models` fixes the AI model sort order."""
     lines = (Path(release_dir) / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
     inputs = [json.loads(line) for line in lines]
-    rows = make_attempt_rows(raw_records, inputs, prices, {}, decision_models)
+    rows = make_attempt_rows(raw_records, inputs, prices, decision_models)
     order = models or sorted({r["model"] for r in rows})
     decorated = [(attempt_sort_key(r, order), r) for r in rows]
     decorated.sort(key=itemgetter(0))

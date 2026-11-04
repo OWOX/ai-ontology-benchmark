@@ -197,7 +197,7 @@ def metric_line(r: dict) -> list:
     for _, name in METRIC_COLUMNS:
         line.append(rate_cell(r, name))
     line += [
-        number(r["efficiency"], 2), number(r["consistency"], 2),
+        number(r["consistency"], 2),
         number(r["latency_per_attempt_s"], 2), number(r["input_tokens_per_attempt"], 1),
         number(r["output_tokens_per_attempt"], 1), number(r["cost_per_success"], 4),
     ]
@@ -208,7 +208,7 @@ def metrics_section(metric_rows: list[dict]) -> list[str]:
     out = ["## Metrics", ""]
     header = ["Setup", "AI model", "Depth", "Validity", "Attempts", "Infra failures"]
     header += [title for title, _ in METRIC_COLUMNS]
-    header += ["Efficiency", "Consistency", "Latency (s)", "Input tokens", "Output tokens",
+    header += ["Consistency", "Latency (s)", "Input tokens", "Output tokens",
                "Cost per success"]
     puzzles = list(dict.fromkeys(r["puzzle"] for r in metric_rows))
     for puzzle in puzzles:

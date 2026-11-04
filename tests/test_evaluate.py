@@ -107,7 +107,6 @@ def test_hand_worked_metrics(release_dir):
     assert valid["false_mismatch_rate"] == pytest.approx(1 / 6)
     assert valid["malformed_output_rate"] == 0
     assert (valid["mismatch_detection_rate"], valid["mismatch_detection_rate_n"]) == ("n/a", 0)
-    assert valid["efficiency"] == pytest.approx((1 + 3 + 1) / 3)
     assert valid["consistency"] == pytest.approx(2 / 3)
     assert valid["latency_per_attempt_s"] == pytest.approx(3.0)
     assert valid["input_tokens_per_attempt"] == pytest.approx(62 / 6)
@@ -117,7 +116,7 @@ def test_hand_worked_metrics(release_dir):
     assert invalid["hallucination_rate"] == pytest.approx(2 / 6)
     assert invalid["malformed_output_rate"] == pytest.approx(1 / 6)
     assert invalid["mismatch_detection_rate"] == pytest.approx(2 / 6)
-    assert (invalid["false_mismatch_rate"], invalid["efficiency"]) == ("n/a", "n/a")
+    assert invalid["false_mismatch_rate"] == "n/a"
     assert invalid["consistency"] == pytest.approx(1 / 3)
     assert invalid["cost_per_success"] == pytest.approx(0.12 / 2)
     low, high = invalid["success_rate_low"], invalid["success_rate_high"]
@@ -131,7 +130,7 @@ def test_infrastructure_failures_change_only_counts_tokens_and_cost(release_dir)
     old, new = metric(before, "invalid"), metric(after, "invalid")
     assert metric(before, "valid") == metric(after, "valid")
     for name in ("success_rate", "hallucination_rate", "mismatch_detection_rate", "malformed_output_rate",
-                 "success_rate_n", "efficiency", "consistency", "latency_per_attempt_s"):
+                 "success_rate_n", "consistency", "latency_per_attempt_s"):
         assert new[name] == old[name]
     assert (old["infrastructure_failure_count"], new["infrastructure_failure_count"]) == (0, 2)
     assert new["input_tokens_per_attempt"] == pytest.approx((60 + 14) / 8)
@@ -142,7 +141,7 @@ def test_infrastructure_failures_change_only_counts_tokens_and_cost(release_dir)
 def test_no_successes_gives_no_cost_per_success(release_dir):
     records = [raw("2x2-d1-001", 1, answer(["U"]), "failure")]
     _, metrics, _ = compute(records, release_dir, PRICES)
-    assert metrics[0]["cost_per_success"] == "n/a" and metrics[0]["efficiency"] == "n/a"
+    assert metrics[0]["cost_per_success"] == "n/a"
 
 
 def test_changed_stored_outcome_shows_both_and_metrics_use_current(release_dir):
@@ -152,14 +151,6 @@ def test_changed_stored_outcome_shows_both_and_metrics_use_current(release_dir):
     changed = [r for r in attempts if r["stored_outcome"] != r["outcome"]]
     assert [(r["stored_outcome"], r["outcome"]) for r in changed] == [("failure", "success")]
     assert metric(metrics, "valid")["success_rate"] == 0.5
-
-
-def test_reference_length_not_implemented_gives_na_efficiency(release_dir, monkeypatch):
-    def refuse(state):
-        raise NotImplementedError("no solver")
-    monkeypatch.setattr(get_engine("2x2"), "reference_length", refuse)
-    _, metrics, _ = compute(twelve_records(), release_dir, PRICES)
-    assert metric(metrics, "valid")["efficiency"] == "n/a"
 
 
 def test_rows_sorted_by_setup_then_model_order(release_dir):

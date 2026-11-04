@@ -12,7 +12,7 @@ None.
 
 ## Outputs
 
-An abstract base class `Engine` with the nine abstract methods from AGENTS.md, in the same order: `legal_moves`, `solved_state`, `load_state`, `apply_move`, `is_solved`, `scramble`, `corrupt`, `render`, and `reference_length`. Each method's docstring repeats its line from AGENTS.md. The class has no logic.
+An abstract base class `Engine` with the nine abstract methods from AGENTS.md, in the same order: `legal_moves`, `solved_state`, `load_state`, `apply_move`, `is_solved`, `scramble`, `corrupt`, `render`, and `is_move_token`. Each method's docstring repeats its line from AGENTS.md. The class has no logic.
 
 Two exception classes live here too, so that callers can catch them by name:
 

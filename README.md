@@ -39,7 +39,6 @@ This study tests the question in closed systems where correctness isn't a matter
 
 1. Hallucination is usually judged by a person or by another model. Here a deterministic script decides, so every count can be reproduced.
 2. Every AI model and every setup must see byte-identical inputs, or the comparison means nothing.
-3. Move counts must be comparable across models, so all of them are measured against the same reference solver.
 
 ## Docs
 

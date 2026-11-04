@@ -90,14 +90,14 @@ Each row is a [paired setup test](../../docs/definitions.md#metrics) of two setu
 
 ### 2x2
 
-| Setup | AI model | Depth | Validity | Attempts | Infra failures | Success | Hallucination | Mismatch detection | False mismatch | Malformed | Efficiency | Consistency | Latency (s) | Input tokens | Output tokens | Cost per success |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| no_model | M | 1 | valid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | n/a n=0 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 1.00 | 0.50 | 1.75 | 10.0 | 5.0 | 0.0400 |
-| no_model | M | 1 | invalid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | 0.50 (0.09–0.91) n=2 | n/a n=0 | 0.50 (0.09–0.91) n=2 | n/a | 0.50 | 0.50 | 10.0 | 5.0 | 0.0400 |
-| descriptive | M | 1 | valid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | n/a n=0 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 1.00 | 0.50 | 1.75 | 10.0 | 5.0 | 0.0400 |
-| descriptive | M | 1 | invalid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | 0.50 (0.09–0.91) n=2 | n/a n=0 | 0.50 (0.09–0.91) n=2 | n/a | 0.50 | 0.50 | 10.0 | 5.0 | 0.0400 |
-| prescriptive | M | 1 | valid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | n/a n=0 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 1.00 | 0.50 | 1.75 | 10.0 | 5.0 | 0.0400 |
-| prescriptive | M | 1 | invalid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | 0.50 (0.09–0.91) n=2 | n/a n=0 | 0.50 (0.09–0.91) n=2 | n/a | 0.50 | 0.50 | 10.0 | 5.0 | 0.0400 |
+| Setup | AI model | Depth | Validity | Attempts | Infra failures | Success | Hallucination | Mismatch detection | False mismatch | Malformed | Consistency | Latency (s) | Input tokens | Output tokens | Cost per success |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| no_model | M | 1 | valid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | n/a n=0 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.50 | 1.75 | 10.0 | 5.0 | 0.0400 |
+| no_model | M | 1 | invalid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | 0.50 (0.09–0.91) n=2 | n/a n=0 | 0.50 (0.09–0.91) n=2 | 0.50 | 0.50 | 10.0 | 5.0 | 0.0400 |
+| descriptive | M | 1 | valid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | n/a n=0 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.50 | 1.75 | 10.0 | 5.0 | 0.0400 |
+| descriptive | M | 1 | invalid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | 0.50 (0.09–0.91) n=2 | n/a n=0 | 0.50 (0.09–0.91) n=2 | 0.50 | 0.50 | 10.0 | 5.0 | 0.0400 |
+| prescriptive | M | 1 | valid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | n/a n=0 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.50 | 1.75 | 10.0 | 5.0 | 0.0400 |
+| prescriptive | M | 1 | invalid | 2 | 0 | 0.50 (0.09–0.91) n=2 | 0.00 (0.00–0.66) n=2 | 0.50 (0.09–0.91) n=2 | n/a n=0 | 0.50 (0.09–0.91) n=2 | 0.50 | 0.50 | 10.0 | 5.0 | 0.0400 |
 
 ## Attempts
 
