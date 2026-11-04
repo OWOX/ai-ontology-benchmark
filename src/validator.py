@@ -21,7 +21,8 @@ OUTCOMES = ("infrastructure_failure", "truncated", "malformed_output", "abstenti
 
 @dataclass(frozen=True)
 class Verdict:
-    # Moves read from the AI model's output, in order. Empty when there is no usable output.
+    # Moves read from the AI model's output, in order. Empty when there is no usable output, for
+    # abstention, and for a lone MISMATCH line.
     # For a decision model they are its calls' next_move choices, in order.
     parsed_moves: list[str]
     # True when at least one parsed move is an impossible move, i.e. a move token that is not in
@@ -29,7 +30,7 @@ class Verdict:
     hallucination: bool | None
     # Whether the AI model picked up the wrong state: its own claim that the input can't be
     # reached from the solved state. Read from its output, not computed. False when there is
-    # no usable output. For a decision model it is true when the call that ended the attempt
+    # no usable output, for abstention, and for format_error. For a decision model it is true when the call that ended the attempt
     # chose mismatch.
     mismatch: bool
     # Number of parsed moves in the half-turn metric. None for infrastructure_failure, truncated,

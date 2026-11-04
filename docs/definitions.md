@@ -87,12 +87,12 @@ Every term below means the same thing in code, configs, records, reports, and do
 10. **Mismatch flag.** The flag set only when the whole response is the single line `MISMATCH`, which says the input describes a puzzle that can't be reached from the solved state by legal moves. For a decision model, it is on when the call that ended the attempt chose `mismatch`. Off for every other outcome, including `format_error`, `truncated`, `malformed_output`, and `infrastructure_failure`.
 11. **Hallucination flag.** True when the parsed moves contain at least one impossible move, which is outcome `hallucination`. False for outcomes `abstention`, `format_error`, `success`, and `failure`, and for `infrastructure_failure`, `truncated`, and `malformed_output` of a text model, which have no parsed moves to judge. Null for every outcome of a decision model, which can't return an impossible move, so there is nothing to judge.
 12. **Solved.** The validator applied every parsed move to the input state in order, every move was legal, and `is_solved()` is true for the final state. An empty move list is never solved, because no input starts solved.
-13. **Expected result.** For a valid input, the puzzle ends solved and the mismatch flag is off. For an invalid input, the mismatch flag is on. Moves returned with the flag on are still checked for impossible moves.
+13. **Expected result.** For a valid input, the puzzle ends solved and the mismatch flag is off. For an invalid input, the mismatch flag is on.
 14. **Outcome.** The one result the validator gives each attempt, checked in this order:
     1. `infrastructure_failure`: the retry cap was reached, so there is no complete response to judge.
     2. `truncated`: the stop reason is `truncated`, so the response was cut off at the token limit.
     3. `malformed_output`: the stop reason is `refused` (a refusal by the API or a content filter), no line is left, or, for a decision model, the raw response doesn't parse as the array of answers.
-    4. `abstention`: there is no move line, and the response is not the single line `MISMATCH`. The AI model answered in prose, for example to say it can't solve the puzzle. A response with a `MISMATCH` line and other lines is a `format_error`, not an abstention.
+    4. `abstention`: there is no move line and no line that is exactly `MISMATCH`. The AI model answered in prose, for example to say it can't solve the puzzle.
     5. `hallucination`: a parsed move is not a legal move, so the hallucination flag is true. The attempt fails, even if the final state happens to be solved.
     6. `format_error`: every parsed move is legal, but the response isn't in the required layout: it has a prose line, a move line with more than one token or with whitespace around its token, or the line `MISMATCH` together with any other line.
     7. `success`: the expected result is reached.

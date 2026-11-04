@@ -209,7 +209,7 @@ def test_padded_move_is_format_error():
 
 def test_mismatch_with_explanation_is_format_error():
     v = validate(INVALID, "MISMATCH\nThe UFL corner is twisted.", "ok")
-    assert (v.outcome, v.mismatch) == ("format_error", False)
+    assert (v.outcome, v.mismatch, v.parsed_moves, v.move_count, v.hallucination) == ("format_error", False, [], 0, False)
 
 
 def test_impossible_move_token_is_hallucination():
@@ -230,3 +230,6 @@ def test_decision_hallucination_is_none():
     raw = '[{"answers": {"next_move": {"choice": "mismatch"}}}]'
     assert validate(INVALID, raw, "ok", decision=True).hallucination is None
     assert validate(INVALID, "", "infrastructure_failure", decision=True).hallucination is None
+    assert validate(INVALID, "not json", "ok", decision=True).hallucination is None
+    assert validate(ONE_VALID, calls(ONE_SOLVE, "done"), "ok", decision=True).hallucination is None
+    assert validate(ONE_VALID, calls("done"), "ok", decision=True).hallucination is None
