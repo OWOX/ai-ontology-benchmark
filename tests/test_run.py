@@ -19,7 +19,7 @@ from src.run.models import InfrastructureError, Reply
 from src.run.budget import worst_request, worst_state
 from src.run.prompts import build_prompt, load_questions
 from src.run.raw import read_raw
-from test_release import git, release_ok, repo  # noqa: F401  (repo is a fixture)
+from test_release import edit_template, git, release_ok, repo  # noqa: F401  (repo is a fixture)
 
 EXPERIMENT = (
     'release = "1.0.0"\nattempts = 2\nretry_cap = 3\nmax_output_tokens = 100\n'
@@ -1084,3 +1084,40 @@ def test_a_worker_failure_that_is_not_an_exception_ends_the_run(exp, monkeypatch
     thread.start()
     thread.join(10)
     assert not thread.is_alive() and isinstance(outcome[0], KeyboardInterrupt)
+
+
+def use_latest(repo):
+    path = repo / "config/experiments/exp.toml"
+    path.write_text(path.read_text().replace('release = "1.0.0"', 'release = "latest"'))
+
+
+def test_latest_resolves_to_the_newest_release_and_is_stored_concrete(exp, capsys):
+    edit_template(exp)
+    release_ok(exp, "minor")
+    use_latest(exp)
+    assert go("--no-commit", "--limit", "2") == 0
+    assert "release latest resolved to 1.1.0" in capsys.readouterr().out
+    copy = (exp / "results/exp/experiment.toml").read_text()
+    assert 'release = "1.1.0"' in copy and "latest" not in copy
+    assert {r["release_version"] for r in records(exp, "A")} == {"1.1.0"}
+
+
+def test_resumed_latest_keeps_the_release_in_the_copy(exp):
+    use_latest(exp)
+    assert go("--no-commit", "--limit", "2") == 0
+    edit_template(exp)
+    release_ok(exp, "minor")
+    assert go("--no-commit", "--limit", "4") == 0
+    assert 'release = "1.0.0"' in (exp / "results/exp/experiment.toml").read_text()
+    assert {r["release_version"] for r in records(exp, "A")} == {"1.0.0"}
+
+
+def test_copy_that_says_latest_is_refused(exp, capsys):
+    use_latest(exp)
+    (exp / "results/exp").mkdir(parents=True)
+    (exp / "results/exp/experiment.toml").write_text((exp / "config/experiments/exp.toml").read_text())
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)]
+    assert go("--no-commit") == 1
+    assert len(models.FAKE_REPLIES) == 1
+    err = capsys.readouterr().err
+    assert "results/exp/experiment.toml" in err and "'release'" in err

@@ -11,7 +11,12 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
 1. `--experiment ID`. Reads `config/experiments/<ID>.toml` with [config](config.md).
 
    With `--config -`, `run` reads the experiment config as TOML from stdin instead, with `parse_experiment_config(text, ID, "<stdin>")`, and never opens `config/experiments/`. This is how the [UI](ui.md) starts an experiment, because the UI writes no files. The config's only copy is then `results/<ID>/experiment.toml`, which `run` writes and commits as below. `--config` takes only `-`.
-2. The release named in that config, `releases/<release>/`. Before the first call, `run` checks:
+2. The release named in that config, `releases/<release>/`. `release = "latest"` is resolved first, before anything else reads the release:
+   1. If `results/<experiment id>/experiment.toml` exists, the experiment already started and `release` is the version in that copy. A copy that says `latest` is an error naming the copy and `release`.
+   2. Otherwise `release` is the highest version folder in `--releases`, from `latest_version()`. With no release the error names that directory and `release`.
+   3. `run` prints `release latest resolved to <version>`, and rewrites the line `release = "latest"` of the config bytes to the version, so the stored copy, the raw records, and the reports hold the version. If the config doesn't have exactly one such line, the error names its source and `release`. `--estimate` and `--dry-run` resolve the same way and write nothing.
+
+   Before the first call, `run` checks:
    1. Every file in the release matches its sha256 in `manifest.json`.
    2. The assessment files in the working tree hash to the release's `assessment_sha256`, so the validator that writes the raw records is the one the release pins.
    3. `prompt_versions()` over the release's inputs and templates equals the manifest's `prompt_versions`, so the engine code in the working tree renders exactly the prompts the release froze.

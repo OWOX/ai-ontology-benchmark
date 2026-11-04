@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import queue
+import re
 import signal
 import sys
 import threading
@@ -23,7 +24,7 @@ from pathlib import Path
 
 from src.config import load_experiment_config, load_prices, max_moves, parse_experiment_config
 from src.evaluate.metrics import attempt_cost
-from src.release.release import assessment_sha256
+from src.release.release import assessment_sha256, latest_version
 from src.run.branch import BranchError, ResultsBranch
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
                             print_estimate, spent_by_model, worst_case_request_cost, worst_request)
@@ -91,6 +92,29 @@ def check_experiment_copy(source: str, config_bytes: bytes, results: Path) -> No
     copy = results / "experiment.toml"
     if copy.exists() and without_budget(copy.read_bytes()) != without_budget(config_bytes):
         raise RunError(f"{source}: differs from {copy}; an experiment never changes once it starts, except its [budget]")
+
+
+LATEST_LINE = re.compile(r"""^([ \t]*release[ \t]*=[ \t]*)(?:"latest"|'latest')""", re.MULTILINE)
+
+
+def resolve_latest(config: dict, config_bytes: bytes, source: str, releases: Path, results: Path) -> bytes:
+    """Replace release "latest" with a concrete version in `config` and return the rewritten bytes.
+    An experiment that already started keeps the release in its stored copy."""
+    copy = results / "experiment.toml"
+    if copy.exists():
+        version = tomllib.loads(copy.read_text(encoding="utf-8")).get("release")
+        if version == "latest" or not isinstance(version, str):
+            raise RunError(f"{copy}: field 'release' must be a version, not {version!r}")
+    else:
+        version = latest_version(releases)
+        if version is None:
+            raise RunError(f"{releases}: field 'release' is 'latest', but the directory holds no release")
+    text, count = LATEST_LINE.subn(lambda m: f'{m.group(1)}"{version}"', config_bytes.decode("utf-8"))
+    if count != 1:
+        raise RunError(f"{source}: field 'release' must be one line that sets it to \"latest\"")
+    config["release"] = version
+    print(f"release latest resolved to {version}")
+    return text.encode("utf-8")
 
 
 def read_done(raw_path: Path) -> set[tuple]:
@@ -212,13 +236,15 @@ def run(args: argparse.Namespace) -> int:
     names = [m["name"] for m in config["models"]]
     if args.model and args.model not in names:
         raise RunError(f"{source}: field 'models' has no model {args.model!r}")
+    results = args.results / config["experiment_id"]
+    if config["release"] == "latest":
+        config_bytes = resolve_latest(config, config_bytes, source, args.releases, results)
     folder = args.releases / config["release"]
     needs_decision = any(m["provider"] in DECISION_PROVIDERS for m in config["models"])
     manifest, inputs = load_release(folder, needs_decision)
     for name in config.get("puzzles", []):
         if name not in manifest["release_config"]["puzzles"]:
             raise RunError(f"{source}: field 'puzzles' names {name!r}, which release {config['release']} does not hold")
-    results = args.results / config["experiment_id"]
     check_experiment_copy(source, config_bytes, results)
     prices = load_prices(args.prices)
     check_prices(config, prices, args.prices)
