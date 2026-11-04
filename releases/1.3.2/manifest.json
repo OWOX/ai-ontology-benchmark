@@ -1,0 +1,61 @@
+{
+  "assessment_sha256": "a58dcd1c7a3147952b99a61424fd3a2b84b4d67855bdf0586e71c9bf8008438a",
+  "commit": "7c9d7fd5e844c8d53da7f8488378e9e08959c982",
+  "created_at": "2026-11-04T04:12:55Z",
+  "decision_prompt_versions": {
+    "descriptive": {
+      "2x2": "f413e8a9f6a8",
+      "3x3": "46b24da21ce9"
+    },
+    "no_model": {
+      "2x2": "c9c245e0ec14",
+      "3x3": "028988720033"
+    },
+    "prescriptive": {
+      "2x2": "91ab2f1295e9",
+      "3x3": "8e3e91a82367"
+    }
+  },
+  "files": {
+    "README.md": "576e8f654dddc7be473781894f22ff846b91fa85a94ea4c472721613e0fdef37",
+    "inputs.jsonl": "960e785fb03e10d5d181b4cc592e1f3ab92cf332841ce54441d8cb31fcc9cb6e",
+    "prompts/decision/questions.txt": "101da7878f3d67d839b16ab9c984e77cb5f757838a137051f76542368f875488",
+    "prompts/descriptive/2x2.txt": "d0dfdeedf310104be79d71dcf3f24aca737ae4d8d9e2d200db6a75d7a021d6c1",
+    "prompts/descriptive/3x3.txt": "8193fc954f0343b4b9a38f36a6dd1b9dad85deb01cedd75da966b8f23081f754",
+    "prompts/no_model/2x2.txt": "3e483135205760665571444a765f4a8cc423843de91104207aeb9fdaff01c054",
+    "prompts/no_model/3x3.txt": "e40758d61747c1621c7edecb4d9f852d9f70fa844a90a7331e8bc9d8fa1c0833",
+    "prompts/prescriptive/2x2.txt": "21fbc75d342bfac664d841ee70532d128a5891cc128cbb542c4c251707950c6f",
+    "prompts/prescriptive/3x3.txt": "c7565d7351e4b31233256cd18f40298e0b10e9aa6dd7b6065dd32e1ff6bfe271"
+  },
+  "input_set_id": "1",
+  "note": "Mirror of 1.3.1 after evaluate gained the paired setup test",
+  "prompt_versions": {
+    "descriptive": {
+      "2x2": "d04f7295702f",
+      "3x3": "d8778f255092"
+    },
+    "no_model": {
+      "2x2": "07b93c228ffe",
+      "3x3": "3243cd507c17"
+    },
+    "prescriptive": {
+      "2x2": "a3ebfa4c2de4",
+      "3x3": "b323b5bf5f93"
+    }
+  },
+  "release_config": {
+    "puzzles": [
+      "2x2",
+      "3x3"
+    ],
+    "scramble_count": 10,
+    "scramble_depths": [
+      5,
+      10,
+      20
+    ],
+    "seed": 20261017,
+    "valid_invalid_split": 0.5
+  },
+  "release_version": "1.3.2"
+}
