@@ -8,7 +8,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 
 ## Inputs
 
-`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0, paired_rows=(), detection_rows=(), corruption_rows=())`. [evaluate](evaluate.md) calls it with what `compute()`, `paired_tests()`, and `detection_rows()` returned and the count of torn raw lines it skipped.
+`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0, paired_rows=(), detection_rows=(), corruption_rows=())`. [evaluate](evaluate.md) calls it with what `compute()`, `paired_tests()`, `detection_rows()`, and `corruption_rows()` returned and the count of torn raw lines it skipped.
 
 ## Outputs
 

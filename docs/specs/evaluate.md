@@ -43,11 +43,11 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
    2. Detection is over invalid attempts, false mismatch over valid ones. A rate is `n/a` when its n is 0, and balanced accuracy is `n/a` when either rate is.
    3. `balanced_accuracy_low` and `balanced_accuracy_high` come from `interval_for_balanced_accuracy(rows)`: a stratified bootstrap with the same draws and percentiles, where each draw picks valid and invalid inputs separately, each side as many as it has, and takes the balanced accuracy of the draw. The key is `<model>|<puzzle>|<setup>|balanced_accuracy`. It returns `n/a` for both when either side has fewer than 2 inputs.
 5. `corruption_rows(attempt_rows, models=None)` in `metrics.py`, with `corruption_type(description)`, the first two words of a corruption description. One row per AI model, puzzle, setup, and corruption type over invalid attempts, with `detection_rate` (the share with the mismatch flag on) and its `_n`, `_inputs`, `_low`, and `_high` columns from `rate_columns`, key `<model>|<puzzle>|<setup>|<type>|detection_rate`. Each attempt row carries its input's `corruption`, so no `inputs` argument is needed. Attempts with outcome `infrastructure_failure` are left out. Rows are sorted by AI model, puzzle, setup, and type (`twisted corner`, `flipped edge`, `swapped corners`, `swapped edges`, `recoloured sticker`).
-5. `results/<ID>/<VERSION>.metrics.csv`: `metric_rows`, for analysis in other tools.
-6. `results/<ID>/<VERSION>.paired.csv`: `paired_rows`, with the same CSV conventions as the metrics CSV, except that `p_value` and `p_holm` are written with 6 significant digits (`{:.6g}`), so a small p-value is not rounded to zero.
-7. `results/<ID>/<VERSION>.detection.csv`: `detection_rows`, with the same CSV conventions as the metrics CSV.
-8. `results/<ID>/<VERSION>.corruption.csv`: `corruption_rows`, with the same CSV conventions as the metrics CSV, and a header-only file when there are no rows.
-9. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
+6. `results/<ID>/<VERSION>.metrics.csv`: `metric_rows`, for analysis in other tools.
+7. `results/<ID>/<VERSION>.paired.csv`: `paired_rows`, with the same CSV conventions as the metrics CSV, except that `p_value` and `p_holm` are written with 6 significant digits (`{:.6g}`), so a small p-value is not rounded to zero.
+8. `results/<ID>/<VERSION>.detection.csv`: `detection_rows`, with the same CSV conventions as the metrics CSV.
+9. `results/<ID>/<VERSION>.corruption.csv`: `corruption_rows`, with the same CSV conventions as the metrics CSV, and a header-only file when there are no rows.
+10. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
 
 Every metric follows its definition in [definitions.md](../definitions.md#metrics), including which attempts each one leaves out. A metric with no data is `n/a`.
 
