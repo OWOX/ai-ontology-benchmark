@@ -256,7 +256,8 @@ class Bundles(BranchReaders):
                             "puzzles": [p for p in ENGINES if p in held]},
                 "models": [{"name": n, "provider": entries[n]} for n in shown],
                 "experiments": read,
-                "rows": benchmarks.build_rows(attempts, shown, [p for p in puzzles if p in held], scope),
+                "rows": benchmarks.build_rows(attempts, shown, [p for p in puzzles if p in held], scope,
+                                           "|".join([*chosen, *setups])),
                 "skipped": skipped}
 
     # --- the other routes ------------------------------------------------------------------

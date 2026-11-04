@@ -635,17 +635,20 @@ def test_benchmarks_pooled_rates_equal_metrics(ui_repo, samples):
     exp, inputs = open_experiment(ui_repo, "e", files_for(records))
     out = make_bundles(ui_repo).benchmarks(bench_query(), set())
     done = [r for r in expdata.attempt_rows(exp, inputs) if r["outcome"] != "infrastructure_failure"]
-    expected = expdata.all_scope_rates(done)
+    keyed = [{**r, "input_id": ("1", r["input_id"])} for r in done]
+    expected = expdata.all_scope_rates(keyed, "benchmarks|2x2|example-model|all|1.0.0|no_model|descriptive|prescriptive")
     cells = {r["metric"]: r["cells"]["example-model"] for r in out["rows"] if r["puzzle"] == "2x2"}
     assert out["experiments"] == ["e"] and out["releases"] == ["1.0.0"] and out["skipped"] == []
     for metric in ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
-                   "malformed_output_rate"):
-        assert cells[metric] == {"value": expected[metric], "low": expected[metric + "_low"],
-                                 "high": expected[metric + "_high"], "n": expected[metric + "_n"]}
+                   "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate"):
+        assert cells[metric] == {"value": expdata.cell(expected[metric]), "low": expdata.cell(expected[metric + "_low"]),
+                                 "high": expdata.cell(expected[metric + "_high"]), "n": expected[metric + "_n"],
+                                 "inputs": expected[metric + "_inputs"]}
+    assert "efficiency" not in cells
     invalid = out_for(ui_repo, validity="invalid")
-    only = rates([r for r in done if r["validity"] == "invalid"], "invalid")
+    only = rates([r for r in keyed if r["validity"] == "invalid"], "invalid", "x")
     assert invalid["success_rate"]["value"] == only["success_rate"]
-    assert invalid["efficiency"]["value"] is None and invalid["false_mismatch_rate"]["value"] is None
+    assert invalid["false_mismatch_rate"]["value"] is None
     valid = out_for(ui_repo, validity="valid")
     assert valid["mismatch_detection_rate"]["value"] is None and valid["mismatch_detection_rate"]["n"] == 0
     assert [r["metric"] for r in out["rows"]][:3] == ["success_rate", "hallucination_rate", "mismatch_detection_rate"]
@@ -678,8 +681,8 @@ def test_benchmarks_two_models_share_one_test(ui_repo):
     assert row["best"]["inputs_paired"] == len(inputs)
     assert row["best"]["p_value"] == row["worst"]["p_value"] == sign_test(len(inputs), 0)
     assert row["best"]["p_holm"] == row["best"]["p_value"] == row["worst"]["p_holm"]
-    eff = next(r for r in out["rows"] if r["metric"] == "efficiency")
-    assert eff["tested"] is False and "p_value" not in (eff["best"] or {})
+    other = next(r for r in out["rows"] if r["metric"] == "consistency")
+    assert other["tested"] is False and "p_value" not in (other["best"] or {})
 
 
 def test_benchmarks_filters_narrow_models_not_options(ui_repo):
@@ -722,9 +725,10 @@ def test_benchmarks_broken_experiment_is_skipped(ui_repo, samples):
     assert out["experiments"] == ["e"] and [s["id"] for s in out["skipped"]] == ["f"] and out["skipped"][0]["error"]
 
 
-def synthetic(model, input_id, outcome, set_id="1", puzzle="2x2", validity="valid", mismatch=False, setup="no_model"):
+def synthetic(model, input_id, outcome, set_id="1", puzzle="2x2", validity="valid", mismatch=False, setup="no_model",
+              decision=False):
     return {"model": model, "input_id": input_id, "input_set_id": set_id, "puzzle": puzzle, "validity": validity,
-            "outcome": outcome, "mismatch": mismatch, "setup": setup, "reference_length": 3, "move_count": 3,
+            "outcome": outcome, "mismatch": mismatch, "setup": setup, "decision": decision, "move_count": 3,
             "latency_s": 1.0, "input_tokens": 1, "output_tokens": 1, "retry_input_tokens": 0,
             "retry_output_tokens": 0, "cost": 0.5}
 
@@ -762,11 +766,54 @@ def test_unpriced_model_has_no_cost_per_success():
     assert row["best"] is None and row["worst"] is None
 
 
-def test_efficiency_n_counts_ratios():
+def metric_row(rows, models, metric, scope="valid"):
     from ui import benchmarks as bm
-    rows = [synthetic("a", "i1", "success"), synthetic("a", "i2", "failure")]
-    row = next(r for r in bm.build_rows(rows, ["a"], ["2x2"], "valid") if r["metric"] == "efficiency")
-    assert row["cells"]["a"] == {"value": 1.0, "n": 1}
+    return next(r for r in bm.build_rows(rows, models, ["2x2"], scope) if r["metric"] == metric)
+
+
+def test_no_efficiency_and_eight_tested_rates():
+    from ui import benchmarks as bm
+    rows = [synthetic("a", "i1", "success"), synthetic("a", "i2", "truncated")]
+    built = bm.build_rows(rows, ["a"], ["2x2"], "valid")
+    metrics = [r["metric"] for r in built]
+    assert "efficiency" not in metrics
+    assert {"truncated_rate", "abstention_rate", "format_error_rate"} <= set(metrics)
+    assert sum(r["tested"] for r in built) == 8
+    assert all(bm.direction(m) == "lower" for m in ("truncated_rate", "abstention_rate", "format_error_rate"))
+    assert "efficiency" not in built[0]["cells"]["a"]
+    assert metric_row(rows, ["a"], "truncated_rate")["cells"]["a"]["value"] == 0.5
+
+
+def test_new_rate_hits_are_the_matching_outcome():
+    rows = ([synthetic("a", f"i{n}", "abstention") for n in range(6)]
+            + [synthetic("b", f"i{n}", "success") for n in range(6)])
+    row = metric_row(rows, ["a", "b"], "abstention_rate")
+    assert row["best"]["model"] == "b" and row["worst"]["model"] == "a" and row["best"]["inputs_paired"] == 6
+    assert row["worst"]["agrees"] is True
+
+
+def test_decision_hallucination_is_null_and_untested():
+    rows = ([synthetic("d", f"i{n}", "failure", decision=True) for n in range(4)]
+            + [synthetic("a", f"i{n}", "hallucination") for n in range(4)]
+            + [synthetic("b", f"i{n}", "failure") for n in range(4)])
+    row = metric_row(rows, ["d", "a", "b"], "hallucination_rate")
+    assert row["cells"]["d"]["value"] is None and row["cells"]["d"]["n"] == 0
+    assert row["cells"]["a"]["value"] == 1.0
+    for side in ("best", "worst"):
+        assert row[side] is None or "d" not in (row[side]["model"], row[side]["against"])
+    only = metric_row(rows[:4], ["d"], "hallucination_rate")
+    assert only["cells"]["d"]["value"] is None and only["best"] is None
+
+
+def test_bootstrap_interval_reproducible_over_inputs():
+    from src.evaluate.metrics import bootstrap_interval
+    rows = [synthetic("a", f"i{n}", "success" if n % 3 else "failure") for n in range(12)]
+    first = metric_row(rows, ["a"], "success_rate")["cells"]["a"]
+    again = metric_row(list(reversed(rows)), ["a"], "success_rate")["cells"]["a"]
+    assert first == again and first["n"] == 12 and first["inputs"] == 12
+    cells = [(int(n % 3 != 0), 1) for n in range(12)]
+    value, low, high = bootstrap_interval(cells, "benchmarks|2x2|a|valid||success_rate")
+    assert (first["value"], first["low"], first["high"]) == (value, low, high) and low < value < high
 
 
 def test_benchmarks_only_unknown_models_means_no_filter(ui_repo, samples):

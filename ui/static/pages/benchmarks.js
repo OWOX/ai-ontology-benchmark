@@ -8,23 +8,24 @@
   const METRICS = [
     ["success_rate", "Success rate"], ["hallucination_rate", "Hallucination rate"],
     ["mismatch_detection_rate", "Mismatch detection rate"], ["false_mismatch_rate", "False mismatch rate"],
-    ["malformed_output_rate", "Malformed output rate"], ["efficiency", "Efficiency"], ["consistency", "Consistency"],
+    ["malformed_output_rate", "Malformed output rate"], ["truncated_rate", "Truncated rate"],
+    ["abstention_rate", "Abstention rate"], ["format_error_rate", "Format error rate"], ["consistency", "Consistency"],
     ["latency_per_attempt_s", "Latency per attempt"], ["tokens_per_attempt", "Tokens per attempt"],
     ["cost_per_success", "Cost per success"],
   ];
   const DEFAULT_METRICS = METRICS.slice(0, 3).map((m) => m[0]);
   const LABEL = Object.fromEntries(METRICS);
-  const RATES = METRICS.slice(0, 5).map((m) => m[0]);
+  const RATES = METRICS.slice(0, 8).map((m) => m[0]);
   const SETUPS = [["no_model", "no model"], ["descriptive", "descriptive"], ["prescriptive", "prescriptive"]];
   const VALIDITY = [["all", "all inputs"], ["valid", "valid only"], ["invalid", "invalid only"]];
   const SIG = [["all", "All (no test)"], ["weak", "Weak (p < 0.10)"], ["significant", "Significant (p < 0.05)"], ["strong", "Strong (p < 0.01)"]];
   const THRESHOLD = { weak: 0.10, significant: 0.05, strong: 0.01 };
-  const UNTESTED_NOTE = "Efficiency, consistency, latency, tokens, and cost have no significance test, so they are coloured only under All.";
+  const UNTESTED_NOTE = "Consistency, latency, tokens, and cost have no significance test, so they are coloured only under All.";
 
   const list = (s) => (s || "").split(",").filter(Boolean);
   const pct = (v, d) => (v * 100).toFixed(d === undefined ? 1 : d) + "%";
   const FORMAT = {
-    efficiency: (v) => v.toFixed(2), consistency: (v) => v.toFixed(2),
+    consistency: (v) => v.toFixed(2),
     latency_per_attempt_s: (v) => v.toFixed(1) + " s", tokens_per_attempt: (v) => Math.round(v).toLocaleString("en-GB"),
     cost_per_success: (v) => "$" + v.toFixed(2),
   };
@@ -144,7 +145,7 @@
     const parts = [];
     if (mark) parts.push(mark.tip);
     if (RATES.includes(metric) && typeof cell.value === "number" && typeof cell.low === "number") {
-      parts.push(`95% interval ${pct(cell.low)} to ${pct(cell.high)}, n=${cell.n}.`);
+      parts.push(`95% interval ${pct(cell.low)} to ${pct(cell.high)}, n=${cell.n}, ${cell.inputs} inputs.`);
     }
     return parts.join(" ");
   }
@@ -161,7 +162,7 @@
   const shortName = (name) => name.split("-").slice(1).join("-") || name;
 
   // One small chart: a horizontal bar per AI model, grouped by provider, neutral unless the row's winner or loser,
-  // a Wilson whisker on rates. The value sits at the end of the bar. Its height follows the number of models.
+  // a bootstrap whisker on rates. The value sits at the end of the bar. Its height follows the number of models.
   function chart(row, models, marks) {
     const rate = RATES.includes(row.metric);
     const width = 360, left = 96, right = 58, top = 4, rowH = 19, barH = 12, gap = 8, axisH = rate ? 18 : 6;
