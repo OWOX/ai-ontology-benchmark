@@ -6,6 +6,7 @@ test_release), then calls run's main() in-process from inside that repo with the
 import csv
 import io
 import json
+import shutil
 import sys
 import threading
 import time
@@ -1121,3 +1122,34 @@ def test_copy_that_says_latest_is_refused(exp, capsys):
     assert len(models.FAKE_REPLIES) == 1
     err = capsys.readouterr().err
     assert "results/exp/experiment.toml" in err and "'release'" in err
+
+
+def test_branch_copy_keeps_the_release_when_the_work_tree_lacks_it(exp):
+    use_latest(exp)
+    assert go("--limit", "2") == 0  # commits the copy, with 1.0.0, to the results branch
+    (exp / "results/exp/experiment.toml").unlink()
+    edit_template(exp)
+    release_ok(exp, "minor")
+    assert go("--no-commit", "--estimate") == 0  # no fetch, still reads the local branch
+    assert not (exp / "results/exp/experiment.toml").exists()
+    git(exp, "checkout", "-q", "-b", "other")  # the copy is read from the branch, not from HEAD
+    assert go("--model", "A", "--limit", "1") == 0
+    assert 'release = "1.0.0"' in (exp / "results/exp/experiment.toml").read_text()
+    assert {r["release_version"] for r in records(exp, "A")} == {"1.0.0"}
+
+
+def test_latest_without_any_release_refused(exp, capsys):
+    use_latest(exp)
+    shutil.rmtree(exp / "releases")
+    assert go("--no-commit") == 1
+    err = capsys.readouterr().err
+    assert "releases" in err and "'release'" in err
+
+
+def test_latest_line_that_does_not_match_once_refused(exp, capsys):
+    path = exp / "config/experiments/exp.toml"
+    path.write_text(path.read_text().replace('release = "1.0.0"', '"release" = "latest"'))
+    assert go("--no-commit") == 1
+    err = capsys.readouterr().err
+    assert "exp.toml" in err and "'release'" in err
+    assert not (exp / "results/exp").exists()

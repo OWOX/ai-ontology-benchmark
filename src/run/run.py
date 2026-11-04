@@ -25,7 +25,7 @@ from pathlib import Path
 from src.config import load_experiment_config, load_prices, max_moves, parse_experiment_config
 from src.evaluate.metrics import attempt_cost
 from src.release.release import assessment_sha256, latest_version
-from src.run.branch import BranchError, ResultsBranch
+from src.run.branch import BranchError, ResultsBranch, branch_copy
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
                             print_estimate, spent_by_model, worst_case_request_cost, worst_request)
 from src.run.decision import DecisionResult, run_decision_attempt
@@ -97,12 +97,15 @@ def check_experiment_copy(source: str, config_bytes: bytes, results: Path) -> No
 LATEST_LINE = re.compile(r"""^([ \t]*release[ \t]*=[ \t]*)(?:"latest"|'latest')""", re.MULTILINE)
 
 
-def resolve_latest(config: dict, config_bytes: bytes, source: str, releases: Path, results: Path) -> bytes:
+def resolve_latest(config: dict, config_bytes: bytes, source: str, releases: Path, results: Path,
+                   fetch: bool = False) -> bytes:
     """Replace release "latest" with a concrete version in `config` and return the rewritten bytes.
-    An experiment that already started keeps the release in its stored copy."""
+    An experiment that already started keeps the release in its stored copy: the one in the work tree,
+    else the one on the results branch."""
     copy = results / "experiment.toml"
-    if copy.exists():
-        version = tomllib.loads(copy.read_text(encoding="utf-8")).get("release")
+    stored = copy.read_bytes() if copy.exists() else branch_copy(config["experiment_id"], results, fetch)
+    if stored is not None:
+        version = tomllib.loads(stored.decode("utf-8")).get("release")
         if version == "latest" or not isinstance(version, str):
             raise RunError(f"{copy}: field 'release' must be a version, not {version!r}")
     else:
@@ -238,7 +241,9 @@ def run(args: argparse.Namespace) -> int:
         raise RunError(f"{source}: field 'models' has no model {args.model!r}")
     results = args.results / config["experiment_id"]
     if config["release"] == "latest":
-        config_bytes = resolve_latest(config, config_bytes, source, args.releases, results)
+        config_bytes = resolve_latest(
+            config, config_bytes, source, args.releases, results,
+            fetch=not (args.dry_run or args.no_commit or args.estimate))
     folder = args.releases / config["release"]
     needs_decision = any(m["provider"] in DECISION_PROVIDERS for m in config["models"])
     manifest, inputs = load_release(folder, needs_decision)
