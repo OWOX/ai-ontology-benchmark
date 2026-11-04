@@ -43,13 +43,14 @@ This study tests the question in closed systems where correctness isn't a matter
 
 ## Docs
 
-1. [Definitions](docs/definitions.md): every term and metric, from puzzle and input to success rate and hallucination rate.
-2. [Methodology](docs/methodology.md): the setups and how each attempt is measured.
-3. [Assumptions](docs/assumptions.md): what the study takes as given.
-4. [Related work](docs/related-work.md): other papers on the same problems, and the gap this study fills.
-5. [Script specs](docs/specs/README.md): inputs, outputs, and tests for every script, and the commands that run the project.
-6. [AGENTS.md](AGENTS.md): rules for coding agents, including the invariants that keep results reproducible.
-7. [One-page summary](docs/onepager.pdf) (PDF): the goals, approach, expected outcomes, and authors on one page.
+1. [Getting started](docs/getting-started.md): the minimum steps to run an experiment from the terminal.
+2. [Definitions](docs/definitions.md): every term and metric, from puzzle and input to success rate and hallucination rate.
+3. [Methodology](docs/methodology.md): the setups and how each attempt is measured.
+4. [Assumptions](docs/assumptions.md): what the study takes as given.
+5. [Related work](docs/related-work.md): other papers on the same problems, and the gap this study fills.
+6. [Script specs](docs/specs/README.md): inputs, outputs, and tests for every script, and the commands that run the project.
+7. [AGENTS.md](AGENTS.md): rules for coding agents, including the invariants that keep results reproducible.
+8. [One-page summary](docs/onepager.pdf) (PDF): the goals, approach, expected outcomes, and authors on one page.
 
 ## Structure
 
