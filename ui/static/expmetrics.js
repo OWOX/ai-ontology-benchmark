@@ -6,7 +6,8 @@
   const NOTE = "* computed from the raw records by the UI for display. No report is committed for this experiment, so these are not official numbers.";
   const RATES = [["success_rate", "Success"], ["hallucination_rate", "Hallucination"],
     ["mismatch_detection_rate", "Mismatch detection"], ["false_mismatch_rate", "False mismatch"],
-    ["malformed_output_rate", "Malformed output"]];
+    ["malformed_output_rate", "Malformed output"], ["truncated_rate", "Truncated"],
+    ["abstention_rate", "Abstention"], ["format_error_rate", "Format error"]];
 
   const pct = (v) => (typeof v === "number" ? (v * 100).toFixed(1) + "%" : "n/a");
   const grouped = (v) => (typeof v === "number" ? v.toLocaleString() : "n/a");

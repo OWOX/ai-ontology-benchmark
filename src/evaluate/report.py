@@ -17,6 +17,9 @@ VALID_ROWS = [
     ("Hallucination rate", "hallucination_rate"),
     ("False mismatch rate", "false_mismatch_rate"),
     ("Malformed output rate", "malformed_output_rate"),
+    ("Truncation rate", "truncated_rate"),
+    ("Abstention rate", "abstention_rate"),
+    ("Format error rate", "format_error_rate"),
     ("Cost per success", "cost_per_success"),
 ]
 INVALID_ROWS = [
@@ -24,6 +27,9 @@ INVALID_ROWS = [
     ("Mismatch detection rate", "mismatch_detection_rate"),
     ("Hallucination rate", "hallucination_rate"),
     ("Malformed output rate", "malformed_output_rate"),
+    ("Truncation rate", "truncated_rate"),
+    ("Abstention rate", "abstention_rate"),
+    ("Format error rate", "format_error_rate"),
 ]
 METRIC_COLUMNS = [
     ("Success", "success_rate"),
@@ -31,6 +37,9 @@ METRIC_COLUMNS = [
     ("Mismatch detection", "mismatch_detection_rate"),
     ("False mismatch", "false_mismatch_rate"),
     ("Malformed", "malformed_output_rate"),
+    ("Truncated", "truncated_rate"),
+    ("Abstention", "abstention_rate"),
+    ("Format error", "format_error_rate"),
 ]
 
 

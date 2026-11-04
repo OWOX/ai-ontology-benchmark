@@ -9,7 +9,7 @@ from collections import defaultdict
 from src.evaluate.metrics import NA, rate_columns, summary_sort_key, sorted_keys
 
 RATES = ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
-         "malformed_output_rate")
+         "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate")
 
 
 def number(text: object) -> float | None:

@@ -163,7 +163,8 @@ def test_computed_rows_equal_compute(ui_repo, samples):
     summary = compute(records, ui_repo / "releases" / "1.0.0", prices)[2]
     for validity in ("valid", "invalid"):
         mine = [r for r in summary if r["validity"] == validity]
-        for rate in ("success_rate", "hallucination_rate", "malformed_output_rate"):
+        for rate in ("success_rate", "hallucination_rate", "malformed_output_rate", "truncated_rate",
+                     "abstention_rate", "format_error_rate"):
             n = sum(r[rate + "_n"] for r in mine)
             expected = sum(r[rate] * r[rate + "_n"] for r in mine if r[rate + "_n"]) / n
             assert by[validity][rate] == pytest.approx(expected)

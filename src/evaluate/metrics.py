@@ -59,7 +59,10 @@ def rates(rows: list[dict], validity: str) -> dict:
     flagged = sum(r["mismatch"] for r in rows)
     out: dict = {}
     rate_columns(out, "success_rate", count_outcome(rows, "success"), n)
-    rate_columns(out, "hallucination_rate", count_outcome(rows, "hallucination"), n)
+    if rows and all(r["decision"] for r in rows):
+        rate_columns(out, "hallucination_rate", 0, 0)  # a decision model can't return an impossible move
+    else:
+        rate_columns(out, "hallucination_rate", count_outcome(rows, "hallucination"), n)
     if validity == "invalid":
         rate_columns(out, "mismatch_detection_rate", flagged, n)
         rate_columns(out, "false_mismatch_rate", 0, 0)
@@ -67,6 +70,9 @@ def rates(rows: list[dict], validity: str) -> dict:
         rate_columns(out, "mismatch_detection_rate", 0, 0)
         rate_columns(out, "false_mismatch_rate", flagged, n)
     rate_columns(out, "malformed_output_rate", count_outcome(rows, "malformed_output"), n)
+    rate_columns(out, "truncated_rate", count_outcome(rows, "truncated"), n)
+    rate_columns(out, "abstention_rate", count_outcome(rows, "abstention"), n)
+    rate_columns(out, "format_error_rate", count_outcome(rows, "format_error"), n)
     return out
 
 
@@ -108,7 +114,8 @@ def attempt_cost(raw: dict, price: dict) -> float:
             + output_tokens * price["price_output_per_mtok"]) / 1e6
 
 
-def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float) -> dict:
+def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float,
+                     decision: bool = False) -> dict:
     return {
         "input_id": raw["input_id"], "input_line": line, "puzzle": source["puzzle"],
         "scramble_depth": source["scramble_depth"], "validity": source["validity"],
@@ -120,6 +127,7 @@ def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float) -
         "retry_input_tokens": raw["retry_input_tokens"],
         "retry_output_tokens": raw["retry_output_tokens"], "latency_s": raw["latency_s"],
         "served_model": raw["served_model"], "created_at": raw["created_at"], "cost": cost,
+        "decision": decision,
     }
 
 
@@ -133,10 +141,10 @@ def make_attempt_rows(raw_records, inputs, prices, decision_models=frozenset()) 
         if raw["model"] not in prices:
             raise EvalError(f"prices: no prices for model {raw['model']!r}")
         line, source = by_id[raw["input_id"]]
-        verdict = validate(source, raw["raw_response"], raw["stop_reason"],
-                           decision=is_decision_record(raw, decision_models))
+        decision = is_decision_record(raw, decision_models)
+        verdict = validate(source, raw["raw_response"], raw["stop_reason"], decision=decision)
         cost = attempt_cost(raw, prices[raw["model"]])
-        rows.append(make_attempt_row(raw, line, source, verdict, cost))
+        rows.append(make_attempt_row(raw, line, source, verdict, cost, decision))
     return rows
 
 
@@ -256,6 +264,8 @@ def paired_tests(attempt_rows: list[dict], models: list[str] | None = None) -> l
     for model, puzzle, validity in keys:
         for metric in PAIRED_METRICS:
             if metric == "mismatch_detection_rate" and validity != "invalid":
+                continue
+            if metric == "hallucination_rate" and all(r["decision"] for r in groups[(model, puzzle, validity)]):
                 continue
             shares = input_shares(groups[(model, puzzle, validity)], metric)
             rows = []

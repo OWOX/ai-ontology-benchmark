@@ -10,8 +10,9 @@
   const COLORS = {
     pending: "#d0d4da", in_progress: "#f2b705", success: "#2e9e5b", failure: "#d64545",
     hallucination: "#8e44ad", malformed_output: "#1a9bb0", infrastructure_failure: "#5d6d7e",
+    truncated: "#d68910", abstention: "#7f8c8d", format_error: "#c0392b",
   };
-  const OUTCOMES = ["success", "failure", "hallucination", "malformed_output", "infrastructure_failure"];
+  const OUTCOMES = ["success", "failure", "hallucination", "malformed_output", "truncated", "abstention", "format_error", "infrastructure_failure"];
   const POLL_MS = 1500;
   const key = (model, input, setup, attempt) => `${model}|${input}|${setup}|${attempt}`;
   let current = null;

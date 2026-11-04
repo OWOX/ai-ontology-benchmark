@@ -29,8 +29,8 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
    6. The token prices used, linked to `prices.toml` in the experiment folder.
    7. The three budgets in force, and the cost spent per AI model and in total, at the prices used.
 4. **Summary.** For each AI model, two tables with setups as columns:
-   1. Valid inputs: success rate, hallucination rate, false mismatch rate, malformed output rate, and cost per success.
-   2. Invalid inputs: success rate, mismatch detection rate, hallucination rate, and malformed output rate.
+   1. Valid inputs: success rate, hallucination rate, false mismatch rate, malformed output rate, truncation rate, abstention rate, format error rate, and cost per success.
+   2. Invalid inputs: success rate, mismatch detection rate, hallucination rate, malformed output rate, truncation rate, abstention rate, and format error rate.
 
    Every rate cell reads `0.42 (0.30–0.55) n=60`: the rate, its 95% interval, and its denominator.
 5. **Setup comparison.** Present only when `paired_rows` is not empty. One sentence above the tables links the [paired setup test](../definitions.md#metrics). For each AI model, one table per puzzle with columns Validity, Metric, Setups (`a vs b`), Inputs paired, A higher, B higher, Mean difference (2 places), p (3 places, or `<0.001` when smaller), Holm p (3 places, or `<0.001` when smaller), and Significant (`yes`, `no`, or `n/a`). Mean difference, p, and Holm p show `n/a` when no input is paired.

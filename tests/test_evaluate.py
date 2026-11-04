@@ -169,7 +169,7 @@ def test_rows_sorted_by_setup_then_model_order(release_dir):
 
 def arow(input_id, setup, outcome, model="M", puzzle="2x2", validity="valid", mismatch=False):
     return {"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
-            "input_id": input_id, "outcome": outcome, "mismatch": mismatch}
+            "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False}
 
 
 def pair_row(rows, metric_name="success_rate", pair=("no_model", "descriptive"), **where):
@@ -461,3 +461,55 @@ def test_scoring_uses_the_records_decision_flag_over_the_config_rule(release_dir
     unflagged = raw("2x2-d1-001", 1, json.dumps(calls), "success", model="M", decision=False)
     attempts, _, _ = compute([unflagged], release_dir, PRICES, decision_models={"M"})
     assert attempts[0]["outcome"] == "abstention"  # read as lines, the JSON is prose
+
+
+def test_new_outcome_rates(release_dir):
+    v1 = "2x2-d1-001"
+    records = [
+        raw(v1, 1, "R", "truncated", stop_reason="truncated"),
+        raw(v1, 2, "I cannot solve this", "abstention"),
+        raw(v1, 3, "R U", "format_error"),
+        raw(v1, 4, answer(["R"]), "success"),
+    ]
+    attempts, metrics, _ = compute(records, release_dir, PRICES)
+    assert [a["outcome"] for a in attempts] == ["truncated", "abstention", "format_error", "success"]
+    row = metrics[0]
+    assert row["truncated_rate"] == 0.25 and row["abstention_rate"] == 0.25
+    assert row["format_error_rate"] == 0.25 and row["malformed_output_rate"] == 0.0
+    assert row["truncated_rate_n"] == 4
+
+
+def test_decision_model_hallucination_rate_is_na(release_dir):
+    legal = get_engine("2x2").legal_moves()
+    _, scramble = get_engine("2x2").scramble(1, 1)
+    inverse = {"": "'", "'": "", "2": "2"}
+    solve = scramble[0][0] + inverse[scramble[0][1:]]
+    good = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}}},
+            {"answers": {"next_move": {"choice": "done"}}}]
+    bad = [{"answers": {"next_move": {"choice": "done"}}}]
+    records = [
+        raw("2x2-d1-001", n, json.dumps(calls), "x", model="jev", decision=True, setup=setup)
+        for setup in ("no_model", "descriptive") for n, calls in ((1, good), (2, bad))]
+    prices = {"jev": PRICES["M"]}
+    attempts, metrics, summary = compute(records, release_dir, prices)
+    assert {a["outcome"] for a in attempts} == {"success", "failure"}
+    assert all(a["decision"] for a in attempts)
+    assert metrics[0]["hallucination_rate"] == "n/a" and metrics[0]["hallucination_rate_n"] == 0
+    assert summary[0]["hallucination_rate"] == "n/a"
+    assert not any(r["metric"] == "hallucination_rate" and r["model"] == "jev"
+                   for r in paired_tests(attempts))
+    assert any(r["metric"] == "success_rate" for r in paired_tests(attempts))
+
+
+def test_old_records_rescore_without_error(release_dir):
+    legal = get_engine("2x2").legal_moves()
+    _, scramble = get_engine("2x2").scramble(1, 1)
+    inverse = {"": "'", "'": "", "2": "2"}
+    solve = scramble[0][0] + inverse[scramble[0][1:]]
+    calls = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}}},
+             {"answers": {"next_move": {"choice": "done"}}}]
+    old = raw("2x2-d1-001", 1, "R", "malformed_output", stop_reason="truncated", hallucination=False)
+    decision = raw("2x2-d1-001", 2, json.dumps(calls), "success", model="M", decision=True,
+                   hallucination=False)
+    attempts, _, _ = compute([old, decision], release_dir, PRICES)
+    assert [r["outcome"] for r in attempts] == ["truncated", "success"]

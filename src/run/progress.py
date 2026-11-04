@@ -108,7 +108,8 @@ class Progress:
                 f"{record['setup']} #{record['attempt_number']} {record['outcome']} | "
                 f"in {t.tokens_in} out {t.tokens_out} | ${t.cost:.4f} | "
                 f"success {t.rate('success')} hallucination {t.rate('hallucination')} "
-                f"malformed {t.rate('malformed_output')}")
+                f"malformed {t.rate('malformed_output')} truncated {t.rate('truncated')} "
+                f"abstention {t.rate('abstention')} format error {t.rate('format_error')}")
 
     # rich path, imported only when stdout is a terminal
 
@@ -147,11 +148,12 @@ class Progress:
     def table(self):
         table = self.Table()
         for title in ("AI model", "attempts", "input tokens*", "output tokens*", "cost USD", "success",
-                      "hallucination", "malformed", "mismatch detection", "false mismatch", "infra failures"):
+                      "hallucination", "malformed", "truncated", "abstention", "format error", "mismatch detection", "false mismatch", "infra failures"):
             table.add_column(title, justify="left" if title == "AI model" else "right")
         for name, t in [*self.by_model.items(), ("total", self.total)]:
             table.add_row(name, str(t.attempts), str(t.tokens_in), str(t.tokens_out), f"{t.cost:.4f}",
                           t.rate("success"), t.rate("hallucination"), t.rate("malformed_output"),
+                          t.rate("truncated"), t.rate("abstention"), t.rate("format_error"),
                           t.detection(), t.false_mismatch(), str(t.outcomes["infrastructure_failure"]))
         table.caption = "* retry tokens included"
         return table

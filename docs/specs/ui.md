@@ -83,7 +83,7 @@ Every path below is read from a git ref, never from the work tree, except the AP
  "experiments": [{"id": "...", "model": "...", "provider": "...", "api_model_id": "...", "puzzle": "2x2", "validity": "all",
                   "release": "1.1.1", "attempts": 180, "infrastructure_failures": 0,
                   "success_rate": 0.41, "hallucination_rate": 0.12, "mismatch_detection_rate": 0.6,
-                  "false_mismatch_rate": 0.05, "malformed_output_rate": 0.0,
+                  "false_mismatch_rate": 0.05, "malformed_output_rate": 0.0, "truncated_rate": 0.0, "abstention_rate": 0.0, "format_error_rate": 0.0,
                   "total_tokens": 812345, "cost_usd": 3.21, "metrics_source": "report",
                   "report_version": "1.1.1", "differs_from_catalogue": false, "served_models": ["..."],
                   "pushed": true, "running": false, "error": null, "branch": "<url>"}],
@@ -282,7 +282,7 @@ The inputs page lists every input of the puzzle: the input id, the depth, the va
 ### Experiments
 
 1. Filters: AI model, puzzle, and validity (all inputs, valid only, or invalid only; default all), then Columns, a dropdown with one checkbox per table column that shows or hides it (all shown by default; the experiment id can't be hidden, because it is the row's link). A sort by a hidden column is ignored until the column shows again. The release comes from the menu. Filters and hidden columns are kept in the hash. A gap of 20px separates the filters from the table. Mismatch detection rate is `n/a` under valid only, and false mismatch rate under invalid only, by definition.
-2. A table, one row per experiment, AI model, and puzzle in the chosen validity scope, with the columns: experiment id, AI model, puzzle, release, attempts, success rate, hallucination rate, mismatch detection rate, false mismatch rate, malformed output rate, infrastructure failures, total tokens, cost, and report. Rates show as percentages, and `n/a` when `null`. Column headers wrap between words, so a column is no wider than its widest value or longest header word, and sit at the bottom of the header row. Clicking a column header sorts by it, and a second click reverses.
+2. A table, one row per experiment, AI model, and puzzle in the chosen validity scope, with the columns: experiment id, AI model, puzzle, release, attempts, success rate, hallucination rate, mismatch detection rate, false mismatch rate, malformed output rate, truncation rate, abstention rate, format error rate, infrastructure failures, total tokens, cost, and report. Rates show as percentages, and `n/a` when `null`. Column headers wrap between words, so a column is no wider than its widest value or longest header word, and sit at the bottom of the header row. Clicking a column header sorts by it, and a second click reverses.
 3. A row with `metrics_source: computed` shows `*` after each metric and in the report column, and the table ends with the note "* computed from the raw records by the UI for display. No report is committed for this experiment, so these are not official numbers." A row with a report shows its version.
 4. A row with `differs_from_catalogue` shows ⚠️ after the AI model, with the tooltip "this experiment's settings for the AI model differ from config/models.toml". A row with `pushed: false` shows "running, not pushed". A row with `error` shows the message across the metric columns.
 5. Each row links to `#/experiments/<id>`.
@@ -299,7 +299,7 @@ The page is a workspace: a progress bar across the top, and under it two columns
    2. Settings, read-only, in the same blocks as New Experiment: Puzzles with every puzzle of the release as a card, the experiment's own highlighted and the rest faded; AI models with one column per provider, every catalogue model and every model of the experiment listed with a disabled checkbox, ticked for the experiment's own, whose tooltip is its `api_model_id` and `params`; and Parameters as disabled fields in the same two columns as New Experiment (the three budgets, then attempts, retry cap, and max output tokens), without the limit and parallel requests. It is folded while a run job of the experiment is alive and open otherwise, re-checked on every snapshot and job poll until the user folds or unfolds it by hand.
    3. Cube, open: the Cube panel ([Progress](#progress)).
    4. Plan, open: the plan tree ([Progress](#progress)).
-   5. Summary, folded: one row per AI model and setup, split by validity label, from `summary_rows` (pooled over puzzles and depths, as in [evaluate](evaluate.md#outputs)), with success, hallucination, mismatch detection, false mismatch, and malformed output rates, each with `n` and its interval, plus attempts, total tokens, and cost per AI model. With a report CSV, which holds no summary rows, the server pools them from the CSV's rows the same way. The `*` note applies when computed.
+   5. Summary, folded: one row per AI model and setup, split by validity label, from `summary_rows` (pooled over puzzles and depths, as in [evaluate](evaluate.md#outputs)), with success, hallucination, mismatch detection, false mismatch, malformed output, truncation, abstention, and format error rates, each with `n` and its interval, plus attempts, total tokens, and cost per AI model. With a report CSV, which holds no summary rows, the server pools them from the CSV's rows the same way. The `*` note applies when computed.
    6. Full metrics, folded: one row per puzzle, setup, AI model, scramble depth, and validity label, with each rate, its `n`, and its interval, and the `*` note when computed.
    7. Report, folded: the report, rendered, with its source link, when there is one.
    8. Evaluate and commit, open, while the experiment's results are in this checkout: Evaluate, with an optional "Score under release" select, and Commit, which opens a dialog with the preview's branch, files, and diffstat. Confirm calls `POST /api/commit` and shows the PR link. Commit is disabled while any job of this experiment is alive or before a report exists in this checkout.
@@ -360,6 +360,9 @@ Arc colours:
 | `failure` | `#d64545` |
 | `hallucination` | `#8e44ad` |
 | `malformed_output` | `#1a9bb0` |
+| `truncated` | `#d68910` |
+| `abstention` | `#7f8c8d` |
+| `format_error` | `#c0392b` |
 | `infrastructure_failure` | `#5d6d7e` |
 
 Cube net: a state is `6·n·n` characters over `URFDLB`, faces in that order, each face row-major. The net puts U above F, L, F, R, and B in a row, and D below F. Sticker colours: U white, R red, F green, D yellow, L orange, B blue. These colours live in `cube.js` only, and the page scripts use them, so the table is never copied. `cube.js` loads before the page scripts and holds the sticker colours, `svg()`, `cubeNet`, `cubeIso`, and `cubeIsoTurn`.

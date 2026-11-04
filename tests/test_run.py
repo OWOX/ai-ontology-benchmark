@@ -506,11 +506,11 @@ def test_plain_progress_line_per_attempt(exp, capsys):
     assert go("--model", "A", "--limit", "3", "--no-commit") == 0
     first, second, third = progress_lines(capsys.readouterr().out)
     assert first.startswith("[1/3] A 2x2 ") and " no_model #1 failure | in 10 out 4 | $0.0000 | " in first
-    assert first.endswith("success 0% hallucination 0% malformed 0%")
+    assert first.endswith("success 0% hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
     assert " no_model #2 hallucination | in 20 out 8 | " in second
-    assert second.endswith("success 0% hallucination 50% malformed 0%")
+    assert second.endswith("success 0% hallucination 50% malformed 0% truncated 0% abstention 0% format error 0%")
     assert " descriptive #1 malformed_output | in 30 out 12 | " in third and third.startswith("[3/3] A ")
-    assert third.endswith("success 0% hallucination 33% malformed 33%")
+    assert third.endswith("success 0% hallucination 33% malformed 33% truncated 0% abstention 0% format error 0%")
 
 
 def test_progress_counts_prior_records(exp, capsys):
@@ -525,8 +525,8 @@ def test_progress_rates_leave_out_infrastructure_failures(exp, capsys):
     models.FAKE_REPLIES[:] = [InfrastructureError("x", 0, 0) for _ in range(4)] + [reply()]
     go("--model", "A", "--limit", "2", "--no-commit")
     first, second = progress_lines(capsys.readouterr().out)
-    assert "infrastructure_failure" in first and first.endswith("success n/a hallucination n/a malformed n/a")
-    assert second.endswith("success 0% hallucination 0% malformed 0%")
+    assert "infrastructure_failure" in first and first.endswith("success n/a hallucination n/a malformed n/a truncated n/a abstention n/a format error n/a")
+    assert second.endswith("success 0% hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
 
 
 def test_no_progress_for_dry_run_and_estimate(exp, capsys):
@@ -764,7 +764,7 @@ def test_decision_model_end_to_end(exp, monkeypatch):
     with open(exp / "results/exp/1.0.0.metrics.csv", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     by_setup = {r["setup"]: r for r in rows if r["model"] == "D"}
-    assert by_setup["no_model"]["success_rate"] == "1.0000" and by_setup["no_model"]["hallucination_rate"] == "0.0000"
+    assert by_setup["no_model"]["success_rate"] == "1.0000" and by_setup["no_model"]["hallucination_rate"] == "n/a"
     assert by_setup["descriptive"]["malformed_output_rate"] == "1.0000"
     assert by_setup["prescriptive"]["infrastructure_failure_count"] == "1"
     assert by_setup["prescriptive"]["success_rate_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
