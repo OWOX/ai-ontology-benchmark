@@ -96,8 +96,9 @@ def jsonl(records):
     return "".join(json.dumps(r, sort_keys=True) + "\n" for r in records)
 
 
-def push_results(repo, experiment_id, files):
-    """Commit `files` on top of HEAD into refs/heads/results/<id> on origin, never touching the work tree."""
+def push_results(repo, experiment_id, files, force=False):
+    """Commit `files` on top of HEAD into refs/heads/results/<id> on origin, never touching the work tree.
+    `force` moves a branch that already exists."""
     index = repo / ".git" / f"index-{experiment_id}"
     env = dict(os.environ, GIT_INDEX_FILE=str(index))
 
@@ -114,7 +115,7 @@ def push_results(repo, experiment_id, files):
         commit = run("commit-tree", run("write-tree"), "-p", "HEAD", "-m", f"results {experiment_id}")
     finally:
         index.unlink(missing_ok=True)
-    run("push", "-q", "origin", f"{commit}:refs/heads/results/{experiment_id}")
+    run("push", "-q", "origin", f"{'+' if force else ''}{commit}:refs/heads/results/{experiment_id}")
 
 
 def open_experiment(ui_repo, experiment_id, files):
@@ -782,6 +783,25 @@ def test_benchmarks_moved_ref_gives_new_answer(ui_repo, samples):
     second = bundles.benchmarks(bench_query(), set())
     assert first["experiments"] == ["e"] and second["experiments"] == ["e", "f"]
     assert not bundles._cache  # separate from the bundle cache
+
+
+def test_benchmarks_moved_experiment_ref_is_scored_again(ui_repo, samples, monkeypatch):
+    valid, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    loads, scored = [], []
+    real_load, real_rows = expdata.load_experiment, expdata.attempt_rows
+    monkeypatch.setattr(expdata, "load_experiment", lambda *a, **k: loads.append(a[1]) or real_load(*a, **k))
+    monkeypatch.setattr(expdata, "attempt_rows", lambda *a, **k: scored.append(a[0]["id"]) or real_rows(*a, **k))
+    bundles = make_bundles(ui_repo)
+    first = bundles.benchmarks(bench_query(), set())
+    more = records + [record(valid, "no_model", 2, SUCCESS)]
+    push_results(ui_repo, "e", files_for(more), force=True)  # the same branch moves, as a live run's does
+    bundles.git.fetch(force=True)
+    second = bundles.benchmarks(bench_query(), set())
+    assert second != first and second["experiments"] == ["e"]
+    assert loads == ["e", "e"] and scored == ["e", "e"]  # read and scored again, not served from the old entry
+    n = lambda out: sum(c["n"] for r in out["rows"] if r["metric"] == "success_rate" for c in r["cells"].values())
+    assert n(second) == n(first) + 1
 
 
 def test_benchmarks_mirror_release_is_read_once(ui_repo, samples, monkeypatch):
