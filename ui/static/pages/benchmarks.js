@@ -123,7 +123,7 @@
     const v = row[side];
     if (!v) return null;
     if (sig !== "all") {
-      if (!row.tested || typeof v.p_holm !== "number" || !(v.p_holm < THRESHOLD[sig])) return null;
+      if (!row.tested || typeof v.p_holm !== "number" || !(v.p_holm < THRESHOLD[sig]) || !v.agrees) return null;
     }
     const other = side === "best" ? "Better" : "Worse";
     if (!v.against) return { model: v.model, side, tip: `${side === "best" ? "Best" : "Worst"} in this row.` };

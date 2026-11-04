@@ -794,3 +794,33 @@ def test_benchmarks_mirror_release_is_read_once(ui_repo, samples, monkeypatch):
     calls.clear()
     out = bundles.benchmarks(bench_query(releases=["1.0.0", "1.0.1"]), set())
     assert out["experiments"] == ["m"] and calls == ["m"]
+
+
+def two_model_rows(a_solves, b_solves, inputs, attempts=2):
+    """`a_solves(n)` and `b_solves(n)` give how many of the attempts on input n succeed."""
+    rows = []
+    for n in range(inputs):
+        for model, solves in (("a", a_solves(n)), ("b", b_solves(n))):
+            rows += [synthetic(model, f"i{n}", "success" if k < solves else "failure") for k in range(attempts)]
+    return rows
+
+
+def test_best_disagreeing_with_sign_test_does_not_agree():
+    from ui import benchmarks as bm
+    # A solves 2/2 on 28 inputs, B 1/2 on the other 49: A leads the pooled rate, B is higher on 49 inputs.
+    rows = two_model_rows(lambda n: 2 if n < 28 else 0, lambda n: 0 if n < 28 else 1, 77)
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    assert row["best"]["model"] == "a" and row["best"]["p_holm"] < 0.05
+    assert row["best"]["agrees"] is False and row["worst"]["agrees"] is False
+
+
+def test_best_favoured_on_most_inputs_agrees():
+    from ui import benchmarks as bm
+    rows = two_model_rows(lambda n: 2, lambda n: 0, 10)
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    assert row["best"]["agrees"] is True and row["worst"]["agrees"] is True
+    rows = two_model_rows(lambda n: 0, lambda n: 2, 10)  # hallucinations: lower is better
+    for r in rows:
+        r["outcome"] = "hallucination" if r["outcome"] == "success" else "failure"
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid") if r["metric"] == "hallucination_rate")
+    assert row["best"]["model"] == "a" and row["best"]["agrees"] is True

@@ -88,7 +88,18 @@ def paired_model_test(a_rows: list[dict], b_rows: list[dict], metric: str) -> di
     paired = sorted(set(a) & set(b))
     a_higher = sum(a[k] > b[k] for k in paired)
     b_higher = sum(a[k] < b[k] for k in paired)
-    return {"inputs_paired": len(paired), "p_value": sign_test(a_higher, b_higher) if paired else None}
+    return {"inputs_paired": len(paired), "p_value": sign_test(a_higher, b_higher) if paired else None,
+            "a_higher": a_higher, "b_higher": b_higher}
+
+
+def agrees(side: str, found: tuple[str, str], metric: str, test: dict) -> bool:
+    """True when most paired inputs that differ favour the better model of the pair, in the metric's direction.
+    The better model is the named one for `best` and the other one for `worst`. A tie in the counts is False.
+    `test` was computed with `test["order"]` as (a, b)."""
+    higher = dict(zip(test["order"], (test["a_higher"], test["b_higher"])))
+    model, other = found
+    better, worse = (higher[model], higher[other]) if direction(metric) == "higher" else (higher[other], higher[model])
+    return (better > worse) if side == "best" else (worse > better)
 
 
 def ranking(cells_by_model: dict[str, dict], metric: str) -> list[str]:
@@ -121,7 +132,8 @@ def row_for(puzzle: str, metric: str, cells_by_model: dict[str, dict], by_model:
     tests: dict[frozenset, dict] = {}
     for found in picks.values():
         if found and frozenset(found) not in tests:
-            tests[frozenset(found)] = paired_model_test(by_model[found[0]], by_model[found[1]], metric)
+            tests[frozenset(found)] = {**paired_model_test(by_model[found[0]], by_model[found[1]], metric),
+                                       "order": found}
     family = [t for t in tests.values() if t["p_value"] is not None]
     for t, adjusted in zip(family, holm([t["p_value"] for t in family])):
         t["p_holm"] = adjusted
@@ -129,7 +141,8 @@ def row_for(puzzle: str, metric: str, cells_by_model: dict[str, dict], by_model:
         if found:
             test = tests[frozenset(found)]
             out[side] = {"model": found[0], "against": found[1], "inputs_paired": test["inputs_paired"],
-                         "p_value": test["p_value"], "p_holm": test.get("p_holm")}
+                         "p_value": test["p_value"], "p_holm": test.get("p_holm"),
+                         "agrees": agrees(side, found, metric, test)}
     return out
 
 
