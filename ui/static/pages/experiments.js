@@ -8,16 +8,26 @@
   const RATES = ["success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate", "malformed_output_rate",
     "truncated_rate", "abstention_rate", "format_error_rate"];
   const COLUMNS = [
-    ["id", "Experiment id"], ["model", "AI model"], ["puzzle", "Puzzle"], ["release", "Release"], ["attempts", "Attempts"],
+    ["id", "Experiment id"], ["started_at", "Started"], ["model", "AI model"], ["puzzle", "Puzzle"], ["release", "Release"], ["attempts", "Attempts"],
     ["success_rate", "Success rate"], ["hallucination_rate", "Hallucination rate"],
     ["mismatch_detection_rate", "Mismatch detection rate"], ["false_mismatch_rate", "False mismatch rate"],
     ["malformed_output_rate", "Malformed output rate"], ["truncated_rate", "Truncation rate"],
     ["abstention_rate", "Abstention rate"], ["format_error_rate", "Format error rate"], ["infrastructure_failures", "Infrastructure failures"],
     ["total_tokens", "Total tokens"], ["cost_usd", "Cost"], ["report_version", "Report"],
   ];
+  // Hidden when the hash has no `hide` key. `hide=none` in the hash shows every column.
+  const DEFAULT_HIDDEN = ["release", "false_mismatch_rate", "malformed_output_rate", "infrastructure_failures",
+    "total_tokens", "report_version"];
 
   const num = (v) => (typeof v === "number" ? v.toLocaleString() : "n/a");
   const usd = (v) => (typeof v === "number" ? "$" + v.toFixed(2) : "n/a");
+
+  function started(iso) {  // "2026, Nov 4 14:30" in the browser's time zone
+    if (!iso) return "";
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+    return `${p.year}, ${p.month} ${p.day} ${p.hour}:${p.minute}`;
+  }
 
   function select(label, value, options, onChange) {
     const s = h("select", { "aria-label": label }, h("option", { value: "", text: "all" }),
@@ -48,7 +58,7 @@
     if (r.differs_from_catalogue) model.append(" ", h("span", { title: DIFFERS, text: "⚠️" }));
     const id = h("td", {}, h("a", { href: `#/experiments/${encodeURIComponent(r.id)}${q}`, text: r.id }));
     if (r.pushed === false) id.append(" ", h("span", { class: "muted small", text: "running, not pushed" }));
-    const cells = { id, model, puzzle: h("td", { text: r.puzzle || "" }), release: h("td", { text: r.release || "" }) };
+    const cells = { id, model, started_at: h("td", { text: started(r.started_at) }), puzzle: h("td", { text: r.puzzle || "" }), release: h("td", { text: r.release || "" }) };
     const lead = shown.filter((k) => k in cells);
     if (r.error) {
       const rest = shown.length - lead.length;
@@ -75,7 +85,7 @@
       box.addEventListener("change", () => {
         const off = COLUMNS.map(([c]) => c).filter((c) => c !== k ? hidden.has(c) : !box.checked);
         reopen = k;
-        onChange(off.join(","));
+        onChange(off.join(",") || "none");
       });
       return h("label", {}, box, " " + t);
     });
@@ -110,7 +120,7 @@
       const rows = all.filter((r) => (r.error || r.validity === validity)
         && (!query.model || r.model === query.model) && (!query.puzzle || r.puzzle === query.puzzle));
       const uniq = (k) => [...new Set(all.map((r) => r[k]).filter(Boolean))].sort();
-      const hidden = new Set((query.hide || "").split(",").filter((k) => k && k !== "id" && COLUMNS.some(([c]) => c === k)));
+      const hidden = new Set((query.hide === undefined ? DEFAULT_HIDDEN : query.hide.split(",")).filter((k) => k && k !== "id" && COLUMNS.some(([c]) => c === k)));
       const shown = COLUMNS.map(([k]) => k).filter((k) => !hidden.has(k));
       const filters = h("div", { class: "actions exp-filters" },
         select("AI model", query.model || "", uniq("model"), (v) => go({ model: v })),

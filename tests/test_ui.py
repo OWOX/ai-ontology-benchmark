@@ -1228,3 +1228,10 @@ def test_null_reasoning_effort_resumes_a_branch_saved_without_one(server):
     assert "reasoning_effort" not in saved
     assert call(server, "POST", "/api/run", {**FORM, "reasoning_effort": None})[1]["status"] == "unchanged"
     wait_job(server, "run:example-model")
+
+
+def test_benchmarks_route(server):
+    status, data = call(server, "GET", "/api/benchmarks?releases=1.0.0&models=,nope&validity=valid")
+    assert status == 200 and data["releases"] == ["1.0.0"] and data["rows"] == [] and data["models"] == []
+    status, data = call(server, "GET", "/api/benchmarks?puzzles=7x7")
+    assert status == 400 and "'puzzles'" in data["error"]

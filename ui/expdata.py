@@ -153,7 +153,9 @@ def _experiment_rows(exp: dict, inputs: list[dict]) -> list[dict]:
     rows = attempt_rows(exp, inputs)
     source = "report" if exp["csv_rows"] is not None else "computed"
     models = {m["name"]: m for m in config["models"]} if config else {}
-    base = {"id": exp["id"], "release": config["release"] if config else None,
+    times = [r["created_at"] for found in exp["records"].values() for r in found
+             if isinstance(r.get("created_at"), str) and r["created_at"]]
+    base = {"id": exp["id"], "release": config["release"] if config else None, "started_at": min(times, default=None),
             "metrics_source": source, "report_version": exp["report_version"],
             "differs_from_catalogue": False, "pushed": False, "running": False,
             "error": exp["error"], "branch": None}
