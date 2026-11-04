@@ -752,6 +752,11 @@ def test_ties_and_holm_over_distinct_tests():
     assert [(b["model"], b["against"]) for b in row["best"]] == [("a", "c"), ("b", "c")]
     assert [(w["model"], w["against"]) for w in row["worst"]] == [("c", "b")]
     assert row["best"][0]["p_holm"] == row["worst"][0]["p_holm"] == holm([sign_test(1, 0), sign_test(1, 0)])[0]
+    bottom = [synthetic("a", "i0", "success"), synthetic("b", "i0", "failure"), synthetic("c", "i0", "failure")]
+    row = next(r for r in bm.build_rows(bottom, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
+    assert [(b["model"], b["against"]) for b in row["best"]] == [("a", "b")]
+    assert sorted((w["model"], w["against"]) for w in row["worst"]) == [("b", "a"), ("c", "a")]
+    assert all(w["agrees"] for w in row["worst"])
     every = [synthetic(m, "i0", "success") for m in ("a", "b", "c")]
     row = next(r for r in bm.build_rows(every, ["a", "b", "c"], ["2x2"], "valid") if r["metric"] == "success_rate")
     assert row["best"] is None and row["worst"] is None
