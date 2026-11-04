@@ -22,8 +22,9 @@ def apply_all(engine, state, moves):
 def test_basic_shape():
     assert E2.solved_state() == "UUUURRRRFFFFDDDDLLLLBBBB"
     assert E3.legal_moves() == "U U' U2 R R' R2 F F' F2 D D' D2 L L' L2 B B' B2".split()
-    with pytest.raises(NotImplementedError, match="open item 5"):
-        CubeEngine(5)
+    for size in (0, 1, 6):
+        with pytest.raises(ValueError):
+            CubeEngine(size)
 
 
 def test_known_move_results():
