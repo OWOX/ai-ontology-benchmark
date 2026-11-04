@@ -220,6 +220,19 @@ def test_torn_line_skipped(ui_repo, samples):
     assert len(expdata.attempt_rows(exp, inputs)) == 4
 
 
+def test_started_at_is_the_earliest_record(ui_repo, samples):
+    _, _, records = samples
+    records = [dict(r) for r in records]
+    records[1]["created_at"] = "2026-10-24T09:15:00Z"
+    exp, inputs = open_experiment(ui_repo, "e", files_for(records))
+    assert {r["started_at"] for r in expdata.experiment_rows(exp, inputs)} == {"2026-10-24T09:15:00Z"}
+    for r in records:
+        r["created_at"] = 7  # not a string: ignored, never a crash
+    exp, inputs = open_experiment(ui_repo, "f", files_as("f", files_for(records)))
+    rows = expdata.experiment_rows(exp, inputs)
+    assert rows and {r["started_at"] for r in rows} == {None}
+
+
 def test_broken_branch_gives_error_row(ui_repo):
     exp, inputs = open_experiment(ui_repo, "e", {"results/e/experiment.toml": "release = 3\n"})
     rows = expdata.experiment_rows(exp, inputs)
