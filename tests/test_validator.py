@@ -283,3 +283,10 @@ def test_lettered_marker_alone_is_abstention_and_a_lone_quote_is_not_stripped():
     assert validate(VALID, "1. M", "ok").outcome == "hallucination"
     assert validate(VALID, '"R', "ok").outcome == "abstention"
     assert validate(VALID, '"R"', "ok").outcome == "format_error"
+
+
+def test_list_markers_count_only_at_the_start_of_a_line():
+    for response in ("R U r.", "R U x."):
+        v = validate(VALID, response, "ok")
+        assert v.outcome == "hallucination", response
+    assert validate(VALID, "R U r.", "ok").parsed_moves == ["R", "U", "r"]
