@@ -26,7 +26,7 @@ Setups are compared with the [paired setup test](definitions.md#metrics) on the 
 
 ## Development and held-out inputs
 
-Input set 1 (releases 1.x) is the [development input set](definitions.md#inputs). Prompts were changed while its results were read, so its results show how the method was built and are not evidence for the research question. Release 2.0.0 freezes a new input set from a new seed, the [held-out input set](definitions.md#inputs), with the prompts and the assessment as they stand when it is cut. Every AI model runs on it once. A prompt change after that is a new minor release, and its results are reported next to, never instead of, the earlier ones.
+Input sets 1 and 2 (releases 1.x and 2.x) are the [development input sets](definitions.md#inputs). Prompts were changed while the results of input set 1 were read, so the results on either set show how the method was built and are not evidence for the research question. Release 3.0.0 freezes a new input set from a new seed, the [held-out input set](definitions.md#inputs), with the prompts and the assessment as they stand when it is cut. Every AI model runs on it once. A prompt change after that is a new minor release, and its results are reported next to, never instead of, the earlier ones.
 
 ## Sample size
 
@@ -40,4 +40,4 @@ The [paired setup test](definitions.md#metrics) compares setups on the same inpu
 | 0.20 | 0.35 | 160 | 200 |
 | 0.10 | 0.25 | 120 | 150 |
 
-Input set 1 has 30 valid inputs per puzzle, which has about 10–25% power for a 15–20 point difference, so a null result on it says little. The held-out input set aims for at least 150 valid inputs per puzzle (a scramble count of 50 over three depths), enough to detect a 20-point difference. More attempts per input add little power, because the paired test uses the input as its unit, so the held-out run uses 1 attempt per input unless the budget allows more inputs.
+Input sets 1 and 2 have 30 valid inputs per puzzle, which has about 10–25% power for a 15–20 point difference, so a null result on it says little. The held-out input set aims for at least 150 valid inputs per puzzle (a scramble count of 50 over three depths), enough to detect a 20-point difference. More attempts per input add little power, because the paired test uses the input as its unit, so the held-out run uses 1 attempt per input unless the budget allows more inputs.
