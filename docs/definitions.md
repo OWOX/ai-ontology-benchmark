@@ -136,7 +136,7 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
 
 Every rate is reported with its denominator `n`, the number of attempts, the number of inputs behind it, and a 95% bootstrap interval over inputs: inputs are drawn with replacement 2000 times, each draw keeps all attempts of the inputs drawn, and the interval is the 2.5th and 97.5th percentile of the rate over the draws. Attempts on one input aren't independent, so resampling attempts would make the interval too narrow. The draws come from a fixed seed, so the same raw records always give the same interval. The interval is n/a when fewer than 2 inputs are behind the rate.
 
-1. **Success rate.** The share of attempts, on valid and invalid inputs, with outcome `success`. Reported separately for valid and invalid inputs, never pooled.
+1. **Success rate.** The share of attempts, on valid and invalid inputs, with outcome `success`. Reports split it by validity label.
 2. **Hallucination rate.** The share of attempts with outcome `hallucination`. n/a for decision models, which can't return an impossible move.
 3. **Mismatch detection rate.** The share of attempts on invalid inputs where the mismatch flag is on, whatever the outcome. Truncated output, malformed output, abstention, and format errors count as not detected. The flag is enough. The AI model doesn't have to say what is wrong.
 4. **False mismatch rate.** The share of attempts on valid inputs where the mismatch flag is on. Truncated output, malformed output, abstention, and format errors count as not flagged.
