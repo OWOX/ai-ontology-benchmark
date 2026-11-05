@@ -248,6 +248,7 @@ class Bundles(BranchReaders):
                     set_id = (manifests.get(config["release"]) or {}).get("input_set_id")
                     for row in rows:
                         row["input_set_id"] = set_id
+                        row["experiment"] = exp["id"]
                         row["priced"] = row["model"] in exp["prices"]
                     held["rows"] = rows
                 rows = held["rows"]

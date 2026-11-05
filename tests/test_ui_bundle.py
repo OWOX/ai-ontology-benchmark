@@ -645,7 +645,7 @@ def test_benchmarks_pooled_rates_equal_metrics(ui_repo, samples):
                    "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate"):
         assert cells[metric] == {"value": expdata.cell(expected[metric]), "low": expdata.cell(expected[metric + "_low"]),
                                  "high": expdata.cell(expected[metric + "_high"]), "n": expected[metric + "_n"],
-                                 "inputs": expected[metric + "_inputs"]}
+                                 "inputs": expected[metric + "_inputs"], "experiments": ["e"]}
     assert "efficiency" not in cells
     invalid = out_for(ui_repo, validity="invalid")
     only = rates([r for r in keyed if r["validity"] == "invalid"], "invalid", "x")
@@ -654,7 +654,16 @@ def test_benchmarks_pooled_rates_equal_metrics(ui_repo, samples):
     valid = out_for(ui_repo, validity="valid")
     assert valid["mismatch_detection_rate"]["value"] is None and valid["mismatch_detection_rate"]["n"] == 0
     assert [r["metric"] for r in out["rows"]][:3] == ["success_rate", "hallucination_rate", "mismatch_detection_rate"]
-    assert cells["tokens_per_attempt"] == {"value": 20, "n": 4}
+    assert cells["tokens_per_attempt"] == {"value": 20, "n": 4, "experiments": ["e"]}
+
+
+def test_benchmarks_cells_name_their_experiments(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    push_results(ui_repo, "f", files_as("f", files_for([r for r in records if r["setup"] == "no_model"])))
+    cells = out_for(ui_repo)
+    assert all(c["experiments"] == ["e", "f"] for c in cells.values())
+    assert all(c["experiments"] == ["e"] for c in out_for(ui_repo, setups=["descriptive"]).values())
 
 
 def out_for(ui_repo, **kwargs):
@@ -733,7 +742,7 @@ def synthetic(model, input_id, outcome, set_id="1", puzzle="2x2", validity="vali
     return {"model": model, "input_id": input_id, "input_set_id": set_id, "puzzle": puzzle, "validity": validity,
             "outcome": outcome, "mismatch": mismatch, "setup": setup, "decision": decision, "move_count": 3,
             "latency_s": 1.0, "input_tokens": 1, "output_tokens": 1, "retry_input_tokens": 0,
-            "retry_output_tokens": 0, "cost": 0.5}
+            "retry_output_tokens": 0, "cost": 0.5, "experiment": "e"}
 
 
 def test_pairing_uses_input_set_id():

@@ -38,9 +38,41 @@
   let seq = 0;
   let reopen = null;  // "<picker>|<value>" of the checkbox just toggled
 
-  document.addEventListener("click", (e) => {  // a click outside an open picker closes it
+  document.addEventListener("click", (e) => {  // a click outside an open picker or experiments panel closes it
     for (const d of document.querySelectorAll("details.col-picker[open]")) if (!d.contains(e.target)) d.open = false;
+    if (!e.target.closest(".cell-pop, .cell-link")) closePop();
   });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && pop) { const from = pop.from; closePop(); if (from.isConnected) from.focus(); }
+  });
+  document.addEventListener("scroll", (e) => { if (!(pop && pop.contains(e.target))) closePop(); }, true);
+
+  // The panel that lists the experiments behind a table cell. One at a time, fixed under its cell. It sits right
+  // after its button, so it follows the button in tab order and leaves with the page on navigation.
+  let pop = null;
+  function closePop() {
+    if (!pop) return;
+    pop.from.setAttribute("aria-expanded", "false");
+    pop.remove();
+    pop = null;
+  }
+  function openPop(button, cell, title, focus) {
+    const again = pop && pop.from === button;
+    closePop();
+    if (again) return;
+    pop = h("div", { class: "cell-pop", role: "dialog", "aria-label": title },
+      h("p", { class: "muted small", text: `${title}: n=${cell.n}, ${cell.experiments.length} experiment${cell.experiments.length === 1 ? "" : "s"}` }),
+      h("ul", {}, ...cell.experiments.map((id) => h("li", {}, h("a", { href: "#/experiments/" + encodeURIComponent(id), text: id })))));
+    pop.from = button;
+    pop.key = button.dataset.key;
+    button.setAttribute("aria-expanded", "true");
+    button.after(pop);
+    const r = button.closest("td").getBoundingClientRect();
+    pop.style.left = Math.max(12, Math.min(r.left, window.innerWidth - 12 - pop.offsetWidth)) + "px";
+    const below = r.bottom + 4 + pop.offsetHeight <= window.innerHeight - 12 || window.innerHeight - r.bottom >= r.top;
+    pop.style.top = (below ? r.bottom + 4 : Math.max(12, r.top - 4 - pop.offsetHeight)) + "px";
+    if (focus) pop.querySelector("a").focus();
+  }
 
   // The choices of the hash, with their defaults.
   function choices(params, bundle) {
@@ -248,10 +280,23 @@
         const cell = row.cells[m.name];
         if (!cell) return h("td");
         const mark = marks[m.name];
-        const td = h("td", { class: mark ? mark.cls : "", text: typeof cell.value !== "number" ? "n/a"
-          : RATES.includes(row.metric) ? `${pct(cell.value)} n=${cell.n}` : fmt(row.metric, cell.value) });
+        const text = typeof cell.value !== "number" ? "n/a"
+          : RATES.includes(row.metric) ? pct(cell.value) : fmt(row.metric, cell.value);  // n is in the panel
+        // The value opens the list of experiments behind it.
+        const button = (cell.experiments || []).length ? h("button", { type: "button", class: "cell-link", "aria-haspopup": "dialog",
+          "aria-expanded": "false", text }) : null;
         const tip = cellTip(row.metric, cell, mark && mark.verdict);
-        if (tip) td.title = tip;
+        if (button) {
+          button.dataset.key = `${row.puzzle}|${row.metric}|${m.name}`;
+          button.reopen = (focus) => openPop(button, cell, `${row.puzzle} · ${LABEL[row.metric]} · ${m.name}`, focus);
+          button.addEventListener("click", () => button.reopen(true));
+          if (tip) button.title = tip;
+        }
+        const td = h("td", { class: mark ? mark.cls : "" }, button || text);
+        if (tip && !button) td.title = tip;
+        // Focus leaving the cell and its panel closes the panel. A click on plain text (no new focus) is left to
+        // the outside-click listener.
+        td.addEventListener("focusout", (e) => { if (e.relatedTarget && !td.contains(e.relatedTarget)) closePop(); });
         return td;
       });
       body.push(h("tr", {}, first ? h("th", { rowspan: String(rows.filter((r) => r.puzzle === row.puzzle).length), text: row.puzzle }) : null,
@@ -261,6 +306,9 @@
   }
 
   function show(el, data, c, toolbar, defs) {
+    // Its cell is about to be replaced: a redraw (a poll while a job runs) opens it again on the new cell.
+    const open = pop && pop.key, focused = !!pop && pop.contains(document.activeElement);
+    closePop();
     const models = data.models.filter((m) => {
       const names = chosenModels(c, data.options);
       return !names || names.includes(m.name);
@@ -286,6 +334,8 @@
     el.append(h("p", { class: "muted small", text: `Computed from the raw records by the UI for display, over ${data.experiments.length} experiment${data.experiments.length === 1 ? "" : "s"}. `
       + "Official numbers are in each experiment's report." }));
     for (const s of data.skipped || []) el.append(h("p", { class: "muted small", text: `${s.id}: ${s.error}` }));
+    const again = open && [...el.querySelectorAll(".cell-link")].find((b) => b.dataset.key === open);
+    if (again) again.reopen(focused);
   }
 
   window.Benchmarks = { verdict, chosenModels };  // for tests/js/benchmarks.test.mjs
@@ -293,6 +343,7 @@
   UI.registerPage("benchmarks", {
     render(bundle, params, el) {
       unlive();
+      closePop();
       const c = choices(params, bundle);
       const stamp = String(bundle.fetched_at || "");
       const go = (changes) => {

@@ -57,7 +57,8 @@ def cells(rows: list[dict], scope: str, key: str) -> dict[str, dict]:
     priced = all(r.get("priced", True) for r in rows)  # an unpriced model's cost is 0, never a result
     out["cost_per_success"] = {"value": sum(r["cost"] for r in rows) / successes if successes and priced else None,
                                "n": len(rows)}
-    return out
+    ids = list(dict.fromkeys(r["experiment"] for r in rows))  # the experiments behind the cell, in read order
+    return {m: {**c, "experiments": ids} for m, c in out.items()}
 
 
 def hit(row: dict, metric: str) -> bool:
