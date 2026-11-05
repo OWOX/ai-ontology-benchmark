@@ -50,7 +50,8 @@
       : sign * compare(a[col], b[col])));
   }
 
-  function line(r, q, shown) {
+  function line(r, shown) {
+    const q = r.release ? "?release=" + encodeURIComponent(r.release) : "";  // the experiment page opens under its own release
     const computed = r.metrics_source === "computed";
     const mark = computed ? " *" : "";
     const star = (v) => (typeof v === "number" ? mark : "");
@@ -93,13 +94,46 @@
     const picker = h("details", { class: "col-picker" },
       h("summary", { text: count === COLUMNS.length ? "all" : `${count} of ${COLUMNS.length}` }),
       h("div", { class: "col-menu" }, ...boxes));
-    if (reopen) {
+    if (reopen) {  // the release picker, drawn first, has taken its own key
       picker.open = true;
       const box = boxes[COLUMNS.findIndex(([k]) => k === reopen)].firstChild;
       requestAnimationFrame(() => box.focus());
     }
     reopen = null;
     return h("div", { class: "small" }, "Columns", picker);  // not a label: a click would reach the first checkbox
+  }
+
+  // The default releases: the newest release with an experiment, every newer release, and the releases with
+  // its major and minor, which share its input set. With no experiment at all, every release.
+  // A `?release=` from a Models or Puzzles link selects that release and its mirrors instead.
+  function defaultReleases(releases, rows, named) {
+    const minor = (v) => v.split(".").slice(0, 2).join(".");
+    if (releases.includes(named)) return releases.filter((v) => minor(v) === minor(named));
+    const used = new Set(rows.map((r) => r.release).filter(Boolean));
+    const at = releases.findIndex((v) => used.has(v));
+    if (at < 0) return releases.slice();
+    return releases.filter((v, i) => i <= at || minor(v) === minor(releases[at]));
+  }
+
+  function releasePicker(releases, selected, onChange) {
+    const boxes = releases.map((v) => {
+      const box = h("input", { type: "checkbox" });
+      box.checked = selected.includes(v);
+      box.disabled = box.checked && selected.length === 1;
+      box.addEventListener("change", () => {
+        reopen = "release|" + v;
+        onChange(releases.filter((o) => (o === v ? box.checked : selected.includes(o))));
+      });
+      return h("label", {}, box, " " + v);
+    });
+    const summary = selected.length === releases.length ? "all" : selected.length === 1 ? selected[0] : `${selected.length} of ${releases.length}`;
+    const pick = h("details", { class: "col-picker" }, h("summary", { text: summary }), h("div", { class: "col-menu" }, ...boxes));
+    if (reopen && reopen.startsWith("release|")) {
+      const at = releases.indexOf(reopen.slice(8));
+      if (at >= 0) { pick.open = true; requestAnimationFrame(() => boxes[at].firstChild.focus()); }
+      reopen = null;
+    }
+    return h("div", { class: "small" }, "Releases", pick);  // not a label: a click would reach the first checkbox
   }
 
   document.addEventListener("click", (e) => {  // a click outside the open column picker closes it
@@ -115,14 +149,20 @@
         for (const [k, v] of Object.entries(changes)) { if (v) q.set(k, v); else q.delete(k); }
         UI.go("#/experiments" + (q.toString() ? "?" + q : ""));
       };
-      const rel = params.release ? "?release=" + encodeURIComponent(params.release) : "";
-      const all = bundle.experiments;
-      const rows = all.filter((r) => (r.error || r.validity === validity)
+      const all = bundle.experiments, releases = bundle.releases || [];
+      const fallback = defaultReleases(releases, all, params.release);
+      const picked = query.releases ? query.releases.split(",").filter((v) => releases.includes(v)) : [];
+      const chosen = picked.length ? picked : fallback;
+      const same = (a, b) => a.length === b.length && a.every((v) => b.includes(v));
+      const inReleases = all.filter((r) => !r.release || chosen.includes(r.release));
+      const rows = inReleases.filter((r) => (r.error || r.validity === validity)
         && (!query.model || r.model === query.model) && (!query.puzzle || r.puzzle === query.puzzle));
-      const uniq = (k) => [...new Set(all.map((r) => r[k]).filter(Boolean))].sort();
+      // An active filter stays an option, so it shows even when the chosen releases have no rows for it.
+      const uniq = (k) => [...new Set([...inReleases.map((r) => r[k]), query[k]].filter(Boolean))].sort();
       const hidden = new Set((query.hide === undefined ? DEFAULT_HIDDEN : query.hide.split(",")).filter((k) => k && k !== "id" && COLUMNS.some(([c]) => c === k)));
       const shown = COLUMNS.map(([k]) => k).filter((k) => !hidden.has(k));
       const filters = h("div", { class: "actions exp-filters" },
+        releasePicker(releases, chosen, (v) => go({ releases: same(v, fallback) ? "" : v.join(",") })),
         select("AI model", query.model || "", uniq("model"), (v) => go({ model: v })),
         select("Puzzle", query.puzzle || "", uniq("puzzle"), (v) => go({ puzzle: v })),
         h("label", { class: "small" }, "Validity ", Object.assign(h("select", { "aria-label": "Validity" },
@@ -136,9 +176,9 @@
         th.firstChild.addEventListener("click", () => go({ sort: k, dir: on && query.dir !== "desc" ? "desc" : "" }));
         return th;
       }));
-      const body = sorted(rows, hidden.has(query.sort) ? "" : query.sort, query.dir).map((r) => line(r, rel, shown));
+      const body = sorted(rows, hidden.has(query.sort) ? "" : query.sort, query.dir).map((r) => line(r, shown));
       el.append(h("h2", { text: "Experiments" }), filters);
-      if (!body.length) el.append(h("p", { class: "muted", text: "No experiments for this release and filters." }));
+      if (!body.length) el.append(h("p", { class: "muted", text: "No experiments for these releases and filters." }));
       else el.append(h("div", { class: "table-wrap" }, h("table", { class: "exp-table" }, h("thead", {}, head), h("tbody", {}, ...body))));
       if (rows.some((r) => r.metrics_source === "computed" && !r.error)) el.append(h("p", { class: "muted small", text: NOTE }));
     },

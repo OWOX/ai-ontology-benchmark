@@ -159,11 +159,14 @@ class Bundles(BranchReaders):
         inputs_by_release: dict[str, list[dict]] = {}
         catalogue = {e["name"]: e for e in self._catalogue()}
         experiments, rows = [], []
+        # The Experiments list picks its releases on the page, so rows cover every release on main. Everything
+        # else in the bundle reads only this release and its mirrors.
         for exp in self._load_all(refs, main):
             config = exp["config"]
-            if config is not None and not is_mirror(release, config["release"], manifests):
+            if config is not None and config["release"] not in manifests:
                 continue
-            experiments.append(exp)
+            if config is None or is_mirror(release, config["release"], manifests):
+                experiments.append(exp)
             if config and config["release"] not in inputs_by_release:
                 inputs_by_release[config["release"]] = expdata.read_inputs(self.git, main, config["release"])
             inputs = inputs_by_release[config["release"]] if config else []

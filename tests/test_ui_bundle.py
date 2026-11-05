@@ -585,6 +585,25 @@ def test_malformed_branch_isolated(ui_repo, samples, kind):
     assert detail["error"] and "results/e" in detail["error"]
 
 
+def test_experiment_rows_cover_every_release(ui_repo, samples):
+    """The Experiments page picks its releases, so rows include another input set's experiments; the rest
+    of the bundle reads only the bundle's release."""
+    _, _, records = samples
+    release = ui_repo / "releases" / "2.0.0"
+    release.mkdir()
+    source = ui_repo / "releases" / "1.0.0"
+    (release / "inputs.jsonl").write_text((source / "inputs.jsonl").read_text(encoding="utf-8"), encoding="utf-8")
+    (release / "manifest.json").write_text((source / "manifest.json").read_text(encoding="utf-8"), encoding="utf-8")
+    git(ui_repo, "add", "releases/2.0.0")
+    git(ui_repo, "commit", "-q", "-m", "new input set")
+    git(ui_repo, "push", "-q", "origin", "HEAD:refs/heads/main")
+    push_results(ui_repo, "e", files_for(records))
+    bundle = make_bundles(ui_repo).get(None, True, set(), {}, set())
+    assert bundle["release"] == "2.0.0" and exp_ids(bundle) == ["e"]
+    assert {r["release"] for r in bundle["experiments"]} == {"1.0.0"} and any(r["attempts"] for r in bundle["experiments"])
+    assert all(m["experiments"] == [] for p in bundle["providers"] for m in p["models"])
+
+
 def test_provider_without_catalogue_models_is_left_out():
     from ui.catalogue import PROVIDER_ORDER
     catalogue = {"m": {"name": "m", "provider": "typesafe", "api_model_id": "x"}}
