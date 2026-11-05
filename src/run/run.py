@@ -29,7 +29,7 @@ from src.run.branch import BranchError, ResultsBranch, branch_copy
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
                             print_estimate, spent_by_model, worst_case_request_cost, worst_request)
 from src.run.decision import DecisionResult, run_decision_attempt
-from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model, log_infrastructure_error
+from src.run.models import DECISION_PROVIDERS, InfrastructureError, RequestError, call_model, log_infrastructure_error
 from src.run.progress import Progress
 from src.run.prompts import (SETUPS, both_prompt_versions, build_prompt, decision_questions, decision_state,
                              load_questions, prompt_versions)
@@ -528,7 +528,7 @@ def main(argv: list[str] | None = None) -> int:
         previous = None
     try:
         return run(args)
-    except (RunError, BudgetError, BranchError, ValueError) as error:
+    except (RunError, BudgetError, BranchError, RequestError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     finally:
