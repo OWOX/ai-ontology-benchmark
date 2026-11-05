@@ -38,7 +38,7 @@ def write(tmp_path, text, name="file.toml"):
 
 
 def test_example_files_load():
-    assert load_release_config("config/release.toml")["puzzles"] == ["2x2", "3x3"]
+    assert load_release_config("config/release.toml")["puzzles"] == ["2x2", "3x3", "4x4", "5x5"]
     experiment = load_experiment_config("config/experiments/example.toml")
     assert experiment["experiment_id"] == "example"
     assert experiment["models"][0]["provider"] == "fake"
