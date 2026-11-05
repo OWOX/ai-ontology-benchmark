@@ -31,28 +31,24 @@
   function settings(d, bundle) {
     const c = d.config;
     if (!c) return [h("p", { class: "muted", text: "No config on the branch." })];
-    const tick = (on, mixed) => { const b = h("input", { type: "checkbox", disabled: "" }); b.checked = on; b.indeterminate = !!mixed; return b; };
-    const names = [...new Set([...bundle.puzzles.map((p) => p.name), ...c.puzzles])];
-    const cards = names.map((name) => {
+    const tick = (on) => { const b = h("input", { type: "checkbox", disabled: "" }); b.checked = on; return b; };
+    // Only the experiment's own puzzles and AI models, in its config order.
+    const cards = c.puzzles.map((name) => {
       const p = bundle.puzzles.find((x) => x.name === name);
-      const on = c.puzzles.includes(name);
-      return h("div", { class: "card ro" + (on ? " sel" : " off") }, p && p.n ? cubeNet(solvedState(p.n), { width: 96, height: 72 }) : null,
+      return h("div", { class: "card ro sel" }, p && p.n ? cubeNet(solvedState(p.n), { width: 96, height: 72 }) : null,
         h("div", { class: "name", text: name }), p ? h("div", { class: "muted small", text: `${p.input_count} inputs` }) : null);
     });
     const entries = d.model_entries;
-    const providers = [...new Set([...bundle.providers.map((p) => p.name), ...entries.map((e) => e.provider)])];
-    const cols = providers.map((name) => {
-      const catalogue = (bundle.providers.find((p) => p.name === name) || { models: [] }).models.map((m) => m.name);
-      const models = [...new Set([...catalogue, ...entries.filter((e) => e.provider === name).map((e) => e.name)])];
-      const n = models.filter((m) => c.models.includes(m)).length;
-      return h("div", { class: "model-col" }, h("label", { class: "provider-head" }, tick(n > 0 && n === models.length, n > 0 && n < models.length), h("span", { text: name })),
-        ...models.map((m) => {
-          const e = entries.find((x) => x.name === m);
-          const label = h("label", { class: "model" + (c.models.includes(m) ? "" : " off") }, tick(c.models.includes(m)), h("span", { text: m }));
-          if (e) label.title = `${e.api_model_id || ""} ${JSON.stringify(e.params || {})}`.trim();
-          return label;
-        }));
-    });
+    const providerOf = (m) => (entries.find((e) => e.name === m) || {}).provider || "";
+    const providers = [...new Set(c.models.map(providerOf))];
+    const cols = providers.map((name) => h("div", { class: "model-col" },
+      h("label", { class: "provider-head" }, tick(true), h("span", { text: name })),
+      ...c.models.filter((m) => providerOf(m) === name).map((m) => {
+        const e = entries.find((x) => x.name === m);
+        const label = h("label", { class: "model" }, tick(true), h("span", { text: m }));
+        if (e) label.title = `${e.api_model_id || ""} ${JSON.stringify(e.params || {})}`.trim();
+        return label;
+      })));
     const fields = PARAMS.map((col) => h("div", { class: "grid" },
       ...col.map(([label, get]) => h("label", {}, label, h("input", { type: "text", disabled: "", value: String(get(c)) })))));
     return [h("section", { class: "step" }, h("h3", { text: "Puzzles" }), h("div", { class: "cards" }, ...cards)),
