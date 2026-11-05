@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import CORRUPTION_COLUMNS, DETECTION_COLUMNS, bootstrap_interval, compute, corruption_rows, corruption_type, detection_rows, holm, paired_tests, sign_test
+from src.evaluate.metrics import CORRUPTION_COLUMNS, DETECTION_COLUMNS, bootstrap_interval, compute, corruption_rows, corruption_type, detection_rows, holm, paired_tests, rates, sign_test
 from src.puzzles.registry import get_engine
 from src.run import models, run as run_module
 from test_release import commit_all, edit, release_ok, repo  # noqa: F401  (repo is a fixture)
@@ -150,7 +150,8 @@ def test_hand_worked_metrics(release_dir):
     assert [r["validity"] for r in metrics] == ["valid", "invalid"]
     assert (valid["attempts"], valid["infrastructure_failure_count"]) == (6, 0)
     assert (valid["success_rate"], valid["success_rate_n"]) == (0.5, 6)
-    assert valid["hallucination_rate"] == pytest.approx(1 / 6)
+    assert valid["hallucination_rate"] == pytest.approx(1 / 5)  # 5 of the 6 attempts gave moves
+    assert valid["hallucination_rate_n"] == 5
     assert valid["false_mismatch_rate"] == pytest.approx(1 / 6)
     assert valid["malformed_output_rate"] == 0
     assert (valid["mismatch_detection_rate"], valid["mismatch_detection_rate_n"]) == ("n/a", 0)
@@ -160,7 +161,8 @@ def test_hand_worked_metrics(release_dir):
     assert valid["output_tokens_per_attempt"] == pytest.approx(31 / 6)
     assert valid["cost_per_success"] == pytest.approx(0.124 / 3)
     assert invalid["success_rate"] == pytest.approx(2 / 6)
-    assert invalid["hallucination_rate"] == pytest.approx(2 / 6)
+    assert invalid["hallucination_rate"] == pytest.approx(2 / 3)  # MISMATCH and malformed attempts left out
+    assert invalid["hallucination_rate_n"] == 3
     assert invalid["malformed_output_rate"] == pytest.approx(1 / 6)
     assert invalid["mismatch_detection_rate"] == pytest.approx(2 / 6)
     assert invalid["false_mismatch_rate"] == "n/a"
@@ -216,7 +218,8 @@ def test_rows_sorted_by_setup_then_model_order(release_dir):
 
 def _row(input_id, validity, mismatch, outcome="failure", model="m", setup="no_model", puzzle="2x2"):
     return {"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
-            "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False}
+            "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False,
+            "parsed_moves": ["R"]}
 
 
 def test_balanced_accuracy():
@@ -254,9 +257,10 @@ def test_detection_leaves_out_infrastructure_failures_and_sorts():
 # ---- paired setup test ----
 
 
-def arow(input_id, setup, outcome, model="M", puzzle="2x2", validity="valid", mismatch=False):
+def arow(input_id, setup, outcome, model="M", puzzle="2x2", validity="valid", mismatch=False, moves=("R",)):
     return {"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
-            "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False}
+            "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False,
+            "parsed_moves": list(moves)}
 
 
 def pair_row(rows, metric_name="success_rate", pair=("no_model", "descriptive"), **where):
@@ -348,6 +352,33 @@ def test_two_attempts_on_one_input_are_one_paired_input():
     row = pair_row(rows)
     assert (row["inputs_paired"], row["a_higher"], row["b_higher"]) == (1, 0, 1)
     assert row["mean_difference"] == pytest.approx(0.5)
+
+
+def test_hallucination_rate_counts_only_attempts_that_gave_moves():
+    rows = [arow("a", "no_model", "hallucination"), arow("a", "no_model", "success"),
+            arow("b", "no_model", "failure"),
+            arow("b", "no_model", "success", mismatch=True, moves=()),
+            arow("c", "no_model", "abstention", moves=()),
+            arow("c", "no_model", "truncated", moves=()),
+            arow("d", "no_model", "malformed_output", moves=())]
+    out = rates(rows, "valid", "k")
+    assert out["hallucination_rate"] == pytest.approx(1 / 3)
+    assert (out["hallucination_rate_n"], out["hallucination_rate_inputs"]) == (3, 2)
+    assert out["success_rate_n"] == 7
+
+
+def test_hallucination_rate_is_na_when_no_attempt_gave_moves():
+    rows = [arow("a", "no_model", "abstention", moves=()), arow("b", "no_model", "failure", mismatch=True, moves=())]
+    out = rates(rows, "valid", "k")
+    assert out["hallucination_rate"] == "n/a" and out["hallucination_rate_n"] == 0
+
+
+def test_hallucination_pair_needs_a_move_giving_attempt_under_each_setup():
+    rows = [arow("i1", "no_model", "abstention", moves=()), arow("i1", "descriptive", "hallucination"),
+            arow("i2", "no_model", "success"), arow("i2", "descriptive", "hallucination")]
+    row = pair_row(rows, "hallucination_rate")
+    assert row["inputs_paired"] == 1 and row["b_higher"] == 1
+    assert pair_row(rows, "success_rate")["inputs_paired"] == 2
 
 
 def test_valid_inputs_get_no_mismatch_detection_rows():

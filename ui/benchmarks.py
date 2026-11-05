@@ -7,7 +7,7 @@ so it lives outside the assessment. Reads attempt rows, writes nothing.
 from collections import defaultdict
 from fractions import Fraction
 
-from src.evaluate.metrics import consistency, holm, is_hit, mean, rates, sign_test
+from src.evaluate.metrics import consistency, gave_moves, holm, is_hit, mean, rates, sign_test
 from ui.expdata import all_scope_rates
 from ui.expdata import cell as na_to_none
 
@@ -67,11 +67,14 @@ def hit(row: dict, metric: str) -> bool:
 
 def shares(rows: list[dict], metric: str) -> dict:
     """Like `src.evaluate.metrics.input_shares`, but per input across setups and keyed by (input set id, input id).
-    Mismatch detection counts invalid rows only and false mismatch valid rows only."""
+    Mismatch detection counts invalid rows only and false mismatch valid rows only. The hallucination rate counts
+    only rows that gave moves."""
     counts = defaultdict(lambda: [0, 0])
     wanted = {"mismatch_detection_rate": "invalid", "false_mismatch_rate": "valid"}.get(metric)
     for r in rows:
         if r["outcome"] == "infrastructure_failure" or (wanted and r["validity"] != wanted):
+            continue
+        if metric == "hallucination_rate" and not gave_moves(r):
             continue
         found = counts[(r["input_set_id"], r["input_id"])]
         found[0] += hit(r, metric)

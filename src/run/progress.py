@@ -21,6 +21,7 @@ class Tally:
         self.outcomes: Counter = Counter()
         self.valid = self.invalid = self.flagged_valid = self.flagged_invalid = 0
         self.decision_counted = 0
+        self.gave_moves = 0
 
     def add(self, record: dict, price: dict) -> None:
         self.attempts += 1
@@ -31,6 +32,7 @@ class Tally:
         if record["outcome"] == "infrastructure_failure":
             return  # left out of every rate
         self.decision_counted += bool(record.get("decision"))
+        self.gave_moves += bool(record.get("parsed_moves"))
         if record["validity"] == "invalid":
             self.invalid += 1
             self.flagged_invalid += bool(record["mismatch"])
@@ -49,10 +51,11 @@ class Tally:
         return self.share(self.outcomes[outcome], self.counted)
 
     def hallucination(self) -> str:
-        """The hallucination rate, or n/a when every counted record is a decision model's, which can't hallucinate."""
+        """The hallucination rate over the records that gave moves, or n/a when every counted record is a decision
+        model's, which can't hallucinate."""
         if self.counted and self.decision_counted == self.counted:
             return NA
-        return self.rate("hallucination")
+        return self.share(self.outcomes["hallucination"], self.gave_moves)
 
     def detection(self) -> str:
         return self.share(self.flagged_invalid, self.invalid)
