@@ -201,15 +201,16 @@ class Bundles(BranchReaders):
             if self.git.fetched_at is None:
                 self.git.fetch()
             versions = self.releases()
-            chosen = self._choose("releases", query.get("releases"), versions, versions[:1])
+            refs = self.git.results_refs(live_ids)
+            main_sha = self.git.sha(self.git.main_ref())
+            chosen = self._choose("releases", query.get("releases"), versions,
+                                  self._newest_with_data(versions, refs, main_sha))
             puzzles = self._choose("puzzles", query.get("puzzles"), list(ENGINES), list(ENGINES))
             setups = self._choose("setups", query.get("setups"), list(SETUPS), list(SETUPS))
             scope = query.get("validity") or "all"
             if scope not in expdata.SCOPES:
                 raise ApiError(400, f"field 'validity' must be one of {', '.join(expdata.SCOPES)}")
             models = list(query.get("models") or [])
-            refs = self.git.results_refs(live_ids)
-            main_sha = self.git.sha(self.git.main_ref())
             shas = tuple(sorted((i, self.git.sha(r)) for i, r in refs.items()))
             key = ("benchmarks", tuple(chosen), tuple(puzzles), tuple(setups), scope, tuple(sorted(models)),
                    main_sha, shas)
@@ -218,6 +219,14 @@ class Bundles(BranchReaders):
                     self._bench_cache.pop(next(iter(self._bench_cache)))
                 self._bench_cache[key] = self._benchmarks(chosen, puzzles, setups, scope, models, refs)
             return self._bench_cache[key]
+
+    def _newest_with_data(self, versions: list[str], refs: dict[str, str], main_sha: str | None) -> list[str]:
+        """The default release: the newest one that a readable experiment ran on, directly or through a mirror.
+        The newest release when there is none. Called under the lock."""
+        manifests = {v: self._manifest(v) for v in versions}
+        loaded = (self._scored(i, ref, main_sha)["exp"] for i, ref in sorted(refs.items()))
+        ran = {e["config"]["release"] for e in loaded if e["config"] is not None and not e["error"]}
+        return next(([v] for v in versions if any(is_mirror(v, r, manifests) for r in ran)), versions[:1])
 
     @staticmethod
     def _choose(field: str, asked: list[str] | None, known: list[str], default: list[str]) -> list[str]:

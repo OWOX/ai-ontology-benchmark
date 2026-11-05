@@ -203,7 +203,7 @@ Project jobs belong to no experiment and use the id `""`. Their names are `insta
 
 24. `GET /api/attempt/<id>?model=<name>&input=<input id>&setup=<setup>&attempt=<n>` needs no token, like `/api/replay`. It returns what the experiment page's terminal shows for one attempt: `{"prompt": "<text>", "raw_response": "<text>" | null, "record": {...} | null}`. `record` is the raw record with that `input`, `setup`, and `attempt_number`, read as in `/api/replay` (Inputs 6 and 7), or `null` when it has not landed yet. `raw_response` is its raw response, or `null`. `prompt` is rebuilt from the experiment's release on `main`, never the work tree: the input from `releases/<release>/inputs.jsonl` and the template `releases/<release>/prompts/<setup>/<puzzle>.txt`, filled by `fill_template`. For a decision model (a provider in `DECISION_PROVIDERS`) it is `decision_state(prompt, [])`, then a line `--- questions`, then the questions JSON, as `run --dry-run` prints them. A missing or malformed `model`, `input`, `setup`, or `attempt` gives 400 naming the query field. An unknown experiment, a model outside the experiment, an unknown input, or a release without the template (or, for a decision model, the questions file) gives 404.
 
-25. `GET /api/benchmarks?releases=<v,v>&models=<name,name>&puzzles=<name,name>&setups=<setup,setup>&validity=<all|valid|invalid>` returns the numbers of the [Benchmarks](#benchmarks) page. Every field is optional. `releases` defaults to the newest release, the other lists to everything there is, and `validity` to `all`. An unknown release, puzzle, setup, or validity gives 400 naming the field. An unknown model name is ignored, because a link can outlive a model.
+25. `GET /api/benchmarks?releases=<v,v>&models=<name,name>&puzzles=<name,name>&setups=<setup,setup>&validity=<all|valid|invalid>` returns the numbers of the [Benchmarks](#benchmarks) page. Every field is optional. `releases` defaults to the newest release that an experiment without an error ran on, directly or through a mirror, or to the newest release when there is none. The other lists default to everything there is, and `validity` to `all`. An unknown release, puzzle, setup, or validity gives 400 naming the field. An unknown model name is ignored, because a link can outlive a model.
 
     ```json
     {"releases": ["1.3.2"],
@@ -284,7 +284,7 @@ The foot terminal: a folded "Terminal" box with the job log from `GET /api/log` 
 One view that compares AI models across experiments, from `GET /api/benchmarks`. The page has its own selectors and ignores the menu's release.
 
 1. Selectors, in one row that wraps, each a dropdown of checkboxes like the Experiments column picker, except Significance and Validity, which are selects:
-   1. Releases: every release of the bundle. The default is the newest.
+   1. Releases: every release of the bundle. The default is the one the server chose, the response's `releases`.
    2. AI providers: from `options.providers`. All by default.
    3. AI models: those of the chosen providers. All by default.
    4. Puzzles: from `options.puzzles`. All by default.
