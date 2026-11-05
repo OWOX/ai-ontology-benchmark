@@ -203,8 +203,9 @@ class Bundles(BranchReaders):
             versions = self.releases()
             refs = self.git.results_refs(live_ids)
             main_sha = self.git.sha(self.git.main_ref())
-            chosen = self._choose("releases", query.get("releases"), versions,
-                                  self._newest_with_data(versions, refs, main_sha))
+            asked = query.get("releases")
+            chosen = self._choose("releases", asked, versions,
+                                  [] if asked else self._newest_with_data(versions, refs, main_sha))
             puzzles = self._choose("puzzles", query.get("puzzles"), list(ENGINES), list(ENGINES))
             setups = self._choose("setups", query.get("setups"), list(SETUPS), list(SETUPS))
             scope = query.get("validity") or "all"
@@ -221,12 +222,35 @@ class Bundles(BranchReaders):
             return self._bench_cache[key]
 
     def _newest_with_data(self, versions: list[str], refs: dict[str, str], main_sha: str | None) -> list[str]:
-        """The default release: the newest one that a readable experiment ran on, directly or through a mirror.
-        The newest release when there is none. Called under the lock."""
+        """The default release: the newest one with scored attempts from an experiment that ran on it, directly
+        or through a mirror. The newest release when there is none. Scores candidates newest first, so a record
+        that cannot be scored counts the same on every request. Called under the lock."""
         manifests = {v: self._manifest(v) for v in versions}
-        loaded = (self._scored(i, ref, main_sha)["exp"] for i, ref in sorted(refs.items()))
-        ran = {e["config"]["release"] for e in loaded if e["config"] is not None and not e["error"]}
-        return next(([v] for v in versions if any(is_mirror(v, r, manifests) for r in ran)), versions[:1])
+        held = [self._scored(i, ref, main_sha) for i, ref in sorted(refs.items())]
+        inputs_by_release: dict[str, list[dict]] = {}
+        for v in versions:
+            for h in held:
+                config = h["exp"]["config"]
+                if config is not None and is_mirror(v, config["release"], manifests) \
+                        and self._rows(h, manifests, inputs_by_release):
+                    return [v]
+        return versions[:1]
+
+    def _rows(self, held: dict, manifests: dict[str, dict | None], inputs_by_release: dict[str, list[dict]]) -> list[dict]:
+        """The scored attempt rows of one experiment with a config, read once. Empty when it has an error."""
+        exp = held["exp"]
+        if held["rows"] is None and not exp["error"]:
+            release = exp["config"]["release"]
+            if release not in inputs_by_release:
+                inputs_by_release[release] = expdata.read_inputs(self.git, self.git.main_ref(), release)
+            rows = expdata.attempt_rows(exp, inputs_by_release[release])
+            set_id = (manifests.get(release) or {}).get("input_set_id")
+            for row in rows:
+                row["input_set_id"] = set_id
+                row["experiment"] = exp["id"]
+                row["priced"] = row["model"] in exp["prices"]
+            held["rows"] = rows
+        return [] if exp["error"] else held["rows"] or []
 
     @staticmethod
     def _choose(field: str, asked: list[str] | None, known: list[str], default: list[str]) -> list[str]:
@@ -252,18 +276,8 @@ class Bundles(BranchReaders):
                 continue
             if config is not None and not any(is_mirror(r, config["release"], manifests) for r in chosen):
                 continue
-            if config is not None and not exp["error"]:
-                if held["rows"] is None:
-                    if config["release"] not in inputs_by_release:
-                        inputs_by_release[config["release"]] = expdata.read_inputs(self.git, main, config["release"])
-                    rows = expdata.attempt_rows(exp, inputs_by_release[config["release"]])
-                    set_id = (manifests.get(config["release"]) or {}).get("input_set_id")
-                    for row in rows:
-                        row["input_set_id"] = set_id
-                        row["experiment"] = exp["id"]
-                        row["priced"] = row["model"] in exp["prices"]
-                    held["rows"] = rows
-                rows = held["rows"]
+            if config is not None:
+                rows = self._rows(held, manifests, inputs_by_release)
             if config is None or exp["error"]:
                 skipped.append({"id": exp["id"], "error": exp["error"]})
                 continue

@@ -352,7 +352,7 @@
         for (const [k, v] of Object.entries(changes)) { if (v) q.set(k, v); else q.delete(k); }
         UI.go("#/benchmarks" + (q.toString() ? "?" + q : ""));
       };
-      // A list is kept only when it is not everything, or, for releases, not the default.
+      // A list is kept only when it is not everything. Picked releases are always kept, because the default moves.
       const keep = (all) => (v) => (v.length === all.length ? "" : v.join(","));
       const toolbar = () => {
         const o = opts || { providers: [], puzzles: [] };
@@ -363,7 +363,7 @@
         const releases = bundle.releases || [];
         const bar = h("div", { class: "actions exp-filters" },
           picker("Releases", releases.map((r) => [r, r]), (c.releases.length ? c.releases : defaultReleases).filter((r) => releases.includes(r)),
-            (v) => go({ releases: v.join(",") === defaultReleases.join(",") ? "" : v.join(",") }), "all"),
+            (v) => go({ releases: v.join(",") }), "all"),
           picker("AI providers", providers.map((p) => [p, p]), shownProviders, (v) => go({ providers: keep(providers)(v), models: "" })),
           picker("AI models", modelOptions.map((m) => [m, m]), picked.length ? picked : modelOptions, (v) => go({ models: keep(modelOptions)(v) })),
           picker("Puzzles", o.puzzles.map((p) => [p, p]), c.puzzles.length ? c.puzzles.filter((p) => o.puzzles.includes(p)) : o.puzzles,
