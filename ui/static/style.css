@@ -348,6 +348,8 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .bench-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; margin: 14px 0 20px; }
 .bench-chart { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
 .bench-chart h4 { margin: 0 0 4px; font-size: 13px; }
+.info { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border: 1px solid var(--muted); border-radius: 50%; color: var(--muted); font: italic 600 10px/1 Georgia, serif; text-decoration: none; vertical-align: 1px; cursor: help; }
+.info:hover, .info:focus-visible { color: var(--text); border-color: var(--text); }
 .bench-chart svg { display: block; width: 100%; height: auto; }
 .bench-chart .bar { fill: var(--bar); }
 .bench-chart .bar.win { fill: var(--win); }

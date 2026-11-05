@@ -155,12 +155,27 @@
   }
   const svgText = (attrs, text) => { const t = svg("text", attrs); t.textContent = text; return t; };
 
+  // The metric's name with an (i) after it: hovering or focusing shows its definition from docs/definitions.md
+  // (the bundle's `metric_definitions`) in the shared tooltip panel, and the icon links to it. Just the name when
+  // the bundle has no definition for it.
+  function metricLabel(metric, id, defs) {
+    const text = defs && defs.terms && defs.terms[LABEL[metric]];
+    if (!text) return [LABEL[metric]];
+    const icon = h(defs.source ? "a" : "span", { class: "info tip-src", "aria-label": "definition",
+      "aria-describedby": id, text: "i", ...(defs.source ? { href: defs.source, target: "_blank", rel: "noopener" } : { tabindex: "0" }) });
+    UI.tipOn(icon);
+    // A mouse click blurs the link, so its panel does not stay at a stale place once GitHub opens in another tab.
+    // A keyboard Enter (detail 0) keeps the focus.
+    icon.addEventListener("click", (e) => { if (e.detail) icon.blur(); });
+    return [LABEL[metric], " ", h("span", { class: "tip-wrap" }, icon, h("span", { class: "tip-fixed", id, role: "tooltip", text }))];
+  }
+
   // The model name without its vendor part: the first `-` separated part. A name of one part stays whole.
   const shortName = (name) => name.split("-").slice(1).join("-") || name;
 
   // One small chart: a horizontal bar per AI model, grouped by provider, neutral unless the row's winner or loser,
   // a bootstrap whisker on rates. The value sits at the end of the bar. Its height follows the number of models.
-  function chart(row, models, marks) {
+  function chart(row, models, marks, defs) {
     const rate = RATES.includes(row.metric);
     const width = 360, left = 96, right = 58, top = 4, rowH = 19, barH = 12, gap = 8, axisH = rate ? 18 : 6;
     const plot = width - left - right;
@@ -210,10 +225,11 @@
       root.append(svgText({ class: "val" + cls, x: end + 4, y: mid + 3.5, "text-anchor": "start" },
         rate ? pct(cell.value, 0) : fmt(row.metric, cell.value)));
     });
-    return h("div", { class: "bench-chart" }, h("h4", { text: `${row.puzzle} · ${LABEL[row.metric]}` }), root);
+    return h("div", { class: "bench-chart" }, h("h4", {}, `${row.puzzle} · `,
+      ...metricLabel(row.metric, `def-chart-${row.puzzle}-${row.metric}`, defs)), root);
   }
 
-  function table(rows, models, marksOf) {
+  function table(rows, models, marksOf, defs) {
     const providers = [];
     for (const m of models) {
       const last = providers[providers.length - 1];
@@ -239,12 +255,12 @@
         return td;
       });
       body.push(h("tr", {}, first ? h("th", { rowspan: String(rows.filter((r) => r.puzzle === row.puzzle).length), text: row.puzzle }) : null,
-        h("th", { text: LABEL[row.metric] }), ...tds));
+        h("th", {}, ...metricLabel(row.metric, `def-table-${row.puzzle}-${row.metric}`, defs)), ...tds));
     }
     return h("div", { class: "table-wrap" }, h("table", { class: "exp-table bench-table" }, h("thead", {}, ...head), h("tbody", {}, ...body)));
   }
 
-  function show(el, data, c, toolbar) {
+  function show(el, data, c, toolbar, defs) {
     const models = data.models.filter((m) => {
       const names = chosenModels(c, data.options);
       return !names || names.includes(m.name);
@@ -264,7 +280,7 @@
         return out;
       };
       el.append(h("div", { class: "bench-grid" }, ...rows.filter((r) => models.some((m) => r.cells[m.name] && typeof r.cells[m.name].value === "number"))
-        .map((r) => chart(r, models, marksOf(r)))), table(rows, models, marksOf));
+        .map((r) => chart(r, models, marksOf(r), defs))), table(rows, models, marksOf, defs));
       if (c.sig !== "all" && rows.some((r) => !r.tested)) el.append(h("p", { class: "muted small", text: UNTESTED_NOTE }));
     }
     el.append(h("p", { class: "muted small", text: `Computed from the raw records by the UI for display, over ${data.experiments.length} experiment${data.experiments.length === 1 ? "" : "s"}. `
@@ -317,7 +333,7 @@
       if (cached) {
         opts = cached.options;
         // The path came from the options of an earlier response, so it holds only when this one agrees.
-        if (requestFor(c, opts) === path) { show(body, cached, c, toolbar()); watch(); return; }
+        if (requestFor(c, opts) === path) { show(body, cached, c, toolbar(), bundle.metric_definitions); watch(); return; }
       }
       body.append(toolbar(), h("p", { class: "muted", text: "Loading…" }));
       async function fetchAndShow(fresh, quiet) {
@@ -333,7 +349,7 @@
             data = { options: opts, rows: [], models: [], experiments: [], skipped: [] };
           }
           if (mine !== seq || !body.isConnected) return;
-          if (data) { opts = data.options; show(body, data, c, toolbar()); }
+          if (data) { opts = data.options; show(body, data, c, toolbar(), bundle.metric_definitions); }
         } catch (e) {
           if (mine === seq && body.isConnected && !quiet) body.replaceChildren(toolbar(), h("p", { class: "msg err", text: e.message }));
         } finally {

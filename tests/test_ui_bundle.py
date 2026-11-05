@@ -3,7 +3,9 @@
 
 import json
 import os
+import re
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -15,7 +17,7 @@ from test_ui import PRICES, ui_repo  # noqa: F401  (ui_repo is a fixture)
 from ui import expdata
 from ui.catalogue import build_providers
 from ui import secrets as key_store
-from ui.bundle import Bundles, is_mirror
+from ui.bundle import Bundles, is_mirror, metric_definitions
 from ui.common import ApiError
 from ui.gitdata import GitData
 from ui.pooling import pooled_summary
@@ -318,7 +320,7 @@ def test_bundle_reads_refs_only(ui_repo, samples):
     assert exp_ids(bundles.get(None, True, set(), {}, set())) == []
     push_results(ui_repo, "e", files_for(records))
     bundle = bundles.get(None, True, set(), {}, set())
-    assert exp_ids(bundle) == ["e"] and bundle["schema"] == 2 and bundle["release"] == "1.0.0"
+    assert exp_ids(bundle) == ["e"] and bundle["schema"] == 3 and bundle["release"] == "1.0.0"
     assert [r["validity"] for r in bundle["experiments"]] == ["all", "valid", "invalid"]
     assert bundle["defaults"]["attempts"] == 3
     with pytest.raises(ApiError) as caught:
@@ -450,7 +452,7 @@ def test_links_pin_sha(ui_repo, samples, monkeypatch):
     monkeypatch.setattr(GitData, "github", lambda self: "https://github.com/o/r")
     bundles = make_bundles(ui_repo)
     bundle = bundles.get(None, True, set(), {}, set())
-    found = list(sources(bundle["puzzles"])) + [bundle["about"]["source"]]
+    found = list(sources(bundle["puzzles"])) + [bundle["about"]["source"], bundle["metric_definitions"]["source"]]
     assert len(found) >= 5
     assert all(s.startswith(f"https://github.com/o/r/blob/{bundle['main_sha']}/") for s in found)
     sha = bundles.git.sha("refs/remotes/origin/results/e")
@@ -947,3 +949,25 @@ def test_scored_cache_holds_one_entry_per_experiment(ui_repo, monkeypatch):
     assert bundles._scored("x0", "ref/x0", "m0") is not held["x0"]  # its ref moved
     assert bundles._scored("x1", "ref/x1", "m1") is not held["x1"]  # main moved
     assert len(bundles._scored_cache) == 70
+
+
+def test_metric_definitions():
+    text = ("## Recorded values\n\n1. **Move count.** Not a metric.\n\n## Metrics\n\nIntro.\n\n"
+            "1. **Success rate.** The share of attempts with outcome `success`.\n"
+            "2. **Paired model test.** The [paired setup test](#metrics) with two AI models.\n\n## Baseline\n\n"
+            "1. **Reference solver.** Not a metric.\n")
+    assert metric_definitions(text) == {"Success rate": "The share of attempts with outcome success.",
+                                        "Paired model test": "The paired setup test with two AI models."}
+    assert metric_definitions(None) == {} and metric_definitions("# Nothing\n") == {}
+
+
+def test_metric_definitions_cover_benchmarks():
+    root = Path(__file__).parent.parent
+    terms = metric_definitions((root / "docs" / "definitions.md").read_text(encoding="utf-8"))
+    page = (root / "ui" / "static" / "pages" / "benchmarks.js").read_text(encoding="utf-8")
+    labels = re.findall(r'\["[a-z_]+", "([^"]+)"\]', page.split("const METRICS = [", 1)[1].split("];", 1)[0])
+    assert len(labels) == 12 and all(terms.get(label) for label in labels)
+
+
+def test_bundle_without_definitions(ui_repo):
+    assert make_bundles(ui_repo).get(None, True, set(), {}, set())["metric_definitions"] == {"terms": {}, "source": None}
