@@ -34,6 +34,7 @@
 
   // The last response and its options, so the keys of the next request can be worked out before it arrives.
   let opts = null;
+  let defaultReleases = [];  // the releases the server chose when the hash names none
   const cache = new Map();
   let seq = 0;
   let reopen = null;  // "<picker>|<value>" of the checkbox just toggled
@@ -74,12 +75,11 @@
     if (focus) pop.querySelector("a").focus();
   }
 
-  // The choices of the hash, with their defaults.
-  function choices(params, bundle) {
+  // The choices of the hash, with their defaults. No releases means the server's default.
+  function choices(params) {
     const q = params.query;
-    const newest = (bundle.releases || [])[0];
     return {
-      releases: list(q.releases).length ? list(q.releases) : newest ? [newest] : [],
+      releases: list(q.releases),
       providers: list(q.providers), models: list(q.models), puzzles: list(q.puzzles), setups: list(q.setups),
       validity: VALIDITY.some(([v]) => v === q.validity) ? q.validity : "all",
       sig: SIG.some(([v]) => v === q.sig) ? q.sig : "significant",
@@ -344,7 +344,7 @@
     render(bundle, params, el) {
       unlive();
       closePop();
-      const c = choices(params, bundle);
+      const c = choices(params);
       const stamp = String(bundle.fetched_at || "");
       const go = (changes) => {
         const q = new URLSearchParams(params.query);
@@ -352,7 +352,7 @@
         for (const [k, v] of Object.entries(changes)) { if (v) q.set(k, v); else q.delete(k); }
         UI.go("#/benchmarks" + (q.toString() ? "?" + q : ""));
       };
-      // A list is kept only when it is not everything, or, for releases, not just the newest.
+      // A list is kept only when it is not everything. Picked releases are always kept, because the default moves.
       const keep = (all) => (v) => (v.length === all.length ? "" : v.join(","));
       const toolbar = () => {
         const o = opts || { providers: [], puzzles: [] };
@@ -362,8 +362,8 @@
         const picked = c.models.length ? modelOptions.filter((m) => c.models.includes(m)) : modelOptions;
         const releases = bundle.releases || [];
         const bar = h("div", { class: "actions exp-filters" },
-          picker("Releases", releases.map((r) => [r, r]), c.releases.filter((r) => releases.includes(r)),
-            (v) => go({ releases: v.length === 1 && v[0] === releases[0] ? "" : v.join(",") }), "all"),
+          picker("Releases", releases.map((r) => [r, r]), (c.releases.length ? c.releases : defaultReleases).filter((r) => releases.includes(r)),
+            (v) => go({ releases: v.join(",") }), "all"),
           picker("AI providers", providers.map((p) => [p, p]), shownProviders, (v) => go({ providers: keep(providers)(v), models: "" })),
           picker("AI models", modelOptions.map((m) => [m, m]), picked.length ? picked : modelOptions, (v) => go({ models: keep(modelOptions)(v) })),
           picker("Puzzles", o.puzzles.map((p) => [p, p]), c.puzzles.length ? c.puzzles.filter((p) => o.puzzles.includes(p)) : o.puzzles,
@@ -383,6 +383,7 @@
       const cached = !running() && path && cache.get(stamp + path);
       if (cached) {
         opts = cached.options;
+        if (!c.releases.length) defaultReleases = cached.releases;
         // The path came from the options of an earlier response, so it holds only when this one agrees.
         if (requestFor(c, opts) === path) { show(body, cached, c, toolbar(), bundle.metric_definitions); watch(); return; }
       }
@@ -400,7 +401,11 @@
             data = { options: opts, rows: [], models: [], experiments: [], skipped: [] };
           }
           if (mine !== seq || !body.isConnected) return;
-          if (data) { opts = data.options; show(body, data, c, toolbar(), bundle.metric_definitions); }
+          if (data) {
+            opts = data.options;
+            if (!c.releases.length) defaultReleases = data.releases || defaultReleases;
+            show(body, data, c, toolbar(), bundle.metric_definitions);
+          }
         } catch (e) {
           if (mine === seq && body.isConnected && !quiet) body.replaceChildren(toolbar(), h("p", { class: "msg err", text: e.message }));
         } finally {

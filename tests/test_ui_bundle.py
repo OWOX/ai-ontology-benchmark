@@ -676,6 +676,31 @@ def test_benchmarks_pooled_rates_equal_metrics(ui_repo, samples):
     assert cells["tokens_per_attempt"] == {"value": 20, "n": 4, "experiments": ["e"]}
 
 
+def test_benchmarks_default_release_is_newest_with_experiments(ui_repo, samples):
+    _, _, records = samples
+    release = ui_repo / "releases" / "2.0.0"
+    release.mkdir()
+    source = ui_repo / "releases" / "1.0.0"
+    for name in ("inputs.jsonl", "manifest.json"):
+        (release / name).write_text((source / name).read_text(encoding="utf-8"), encoding="utf-8")
+    git(ui_repo, "add", "releases/2.0.0")
+    git(ui_repo, "commit", "-q", "-m", "new input set")
+    git(ui_repo, "push", "-q", "origin", "HEAD:refs/heads/main")
+    assert make_bundles(ui_repo).benchmarks(bench_query(), set())["releases"] == ["2.0.0"]  # no experiment yet
+    push_results(ui_repo, "e", files_for(records))
+    out = make_bundles(ui_repo).benchmarks(bench_query(), set())
+    assert out["releases"] == ["1.0.0"] and out["experiments"] == ["e"]
+    assert make_bundles(ui_repo).benchmarks(bench_query(releases=["2.0.0"]), set())["experiments"] == []
+    # A config without records, or with a record that cannot be scored, is no data, on every request.
+    bad = [dict(r) for r in records]
+    del bad[0]["raw_response"]
+    on_new = EXP_TOML.replace('release = "1.0.0"', 'release = "2.0.0"')
+    push_results(ui_repo, "f", {"results/f/experiment.toml": on_new})
+    push_results(ui_repo, "g", files_as("g", files_for(bad, **{"results/e/experiment.toml": on_new})))
+    bundles = make_bundles(ui_repo)
+    assert [bundles.benchmarks(bench_query(), set())["releases"] for _ in range(2)] == [["1.0.0"], ["1.0.0"]]
+
+
 def test_benchmarks_cells_name_their_experiments(ui_repo, samples):
     _, _, records = samples
     push_results(ui_repo, "e", files_for(records))
