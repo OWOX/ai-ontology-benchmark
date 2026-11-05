@@ -358,6 +358,8 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .bench-chart text { fill: var(--text); font: 10px system-ui, sans-serif; }
 .bench-chart text.val { font-size: 10px; }
 .bench-chart text.tick, .bench-chart text.name { fill: var(--muted); }
+.bench-chart text.win { fill: var(--win); font-weight: 600; }
+.bench-chart text.lose { fill: var(--lose); font-weight: 600; }
 .bench-table th, .bench-table td { text-align: left; }
 .bench-table th.center { text-align: center; }
 .bench-table td.win { background: var(--win-bg); color: var(--win); font-weight: 600; }

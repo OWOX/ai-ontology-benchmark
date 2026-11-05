@@ -1,12 +1,14 @@
 # Spec: docs/specs/cube.md
-"""Cube engine for the 2x2 and 3x3. Reads nothing and writes nothing.
+"""Cube engine for the 2x2, 3x3, 4x4, and 5x5. Reads nothing and writes nothing.
 
 Stickers are placed in 3D, so a face turn is a rotation of the stickers in one
-layer. All move tables and piece positions derive from that one placement.
+layer. All move tables and piece positions derive from that one placement. The 4x4 and 5x5
+add wide turns of the two outer layers on one side.
 """
 
 import random
 import re
+from collections import Counter, deque
 from functools import lru_cache
 
 from src.puzzles.engine import Engine, IllegalMoveError, ValidityMismatchError
@@ -62,17 +64,19 @@ def _moves(n):
     table = {}
     for face in FACES:
         axis = NORMAL[face]
-        source = list(range(len(stickers)))
-        for i, (position, normal) in enumerate(stickers):
-            if _dot(axis, position) == n - 1:
-                target = (_turn_clockwise(position, axis), _turn_clockwise(normal, axis))
-                source[index[target]] = i
-        inverse = [0] * len(source)
-        for j, i in enumerate(source):
-            inverse[i] = j
-        table[face] = tuple(source)
-        table[face + "'"] = tuple(inverse)
-        table[face + "2"] = tuple(source[i] for i in source)
+        turns = [(face, n - 1)] + ([(face + "w", n - 3)] if n >= 4 else [])
+        for name, depth in turns:
+            source = list(range(len(stickers)))
+            for i, (position, normal) in enumerate(stickers):
+                if _dot(axis, position) >= depth:
+                    target = (_turn_clockwise(position, axis), _turn_clockwise(normal, axis))
+                    source[index[target]] = i
+            inverse = [0] * len(source)
+            for j, i in enumerate(source):
+                inverse[i] = j
+            table[name] = tuple(source)
+            table[name + "'"] = tuple(inverse)
+            table[name + "2"] = tuple(source[i] for i in source)
     return table
 
 
@@ -85,23 +89,29 @@ def _face_of(n, sticker):
 
 
 @lru_cache(maxsize=None)
+def _cubies(n):
+    """Return {cubie position: sticker indices}."""
+    groups = {}
+    for i, (position, _) in enumerate(_stickers(n)):
+        groups.setdefault(position, []).append(i)
+    return groups
+
+
+@lru_cache(maxsize=None)
 def _positions(n, size):
-    """Return the corner (size 3) or edge (size 2) positions as sticker indices.
+    """Return the corner (size 3) or middle edge (size 2) positions as sticker indices.
 
     A corner lists its up or down sticker first, then the others anticlockwise
     seen from outside. An edge lists its up or down sticker first, else its
     front or back sticker.
     """
     stickers = _stickers(n)
-    groups = {}
-    for i, (position, _) in enumerate(stickers):
-        groups.setdefault(position, []).append(i)
     result = []
-    for group in groups.values():
-        if len(group) != size:
+    for position, group in _cubies(n).items():
+        if len(group) != size or (size == 2 and 0 not in position):
             continue
         if size == 2:
-            group.sort(key=lambda i: NAME_ORDER[_face_of(n, i)])
+            group = sorted(group, key=lambda i: NAME_ORDER[_face_of(n, i)])
         else:
             first = next(i for i in group if stickers[i][1][1] != 0)
             a, b = [i for i in group if i != first]
@@ -114,6 +124,14 @@ def _positions(n, size):
 
 def _piece_name(n, position):
     return "".join(sorted((_face_of(n, i) for i in position), key=NAME_ORDER.get))
+
+
+def _wing_name(n, position):
+    """Return the edge a wing sits on and the face whose end of the edge it is nearer, as UF near R."""
+    cubie = _stickers(n)[position[0]][0]
+    axis = next(k for k in range(3) if abs(cubie[k]) < n - 1)
+    near = next(face for face in FACES if NORMAL[face][axis] == (1 if cubie[axis] > 0 else -1))
+    return f"{_piece_name(n, position)} near {near}"
 
 
 def _solved(n):
@@ -145,6 +163,64 @@ def _piece_coords(n, state, size):
     return permutation, orientation
 
 
+@lru_cache(maxsize=None)
+def _destinations(n):
+    """Return, for each move, where every sticker goes."""
+    out = []
+    for source in _moves(n).values():
+        destination = [0] * len(source)
+        for j, i in enumerate(source):
+            destination[i] = j
+        out.append(tuple(destination))
+    return out
+
+
+def _orbit(n, start, step):
+    """Return everything reachable from start by applying step(item, destination) for each move."""
+    seen, queue = {start}, deque([start])
+    while queue:
+        item = queue.popleft()
+        for destination in _destinations(n):
+            new = step(item, destination)
+            if new not in seen:
+                seen.add(new)
+                queue.append(new)
+    return seen
+
+
+@lru_cache(maxsize=None)
+def _wings(n):
+    """Return the wing slots (4x4 and 5x5) as pairs of sticker indices.
+
+    A wing is an edge piece off the middle of its edge. A pair lists the two
+    stickers in the order that the first wing's pair reaches that slot, so a
+    wing shows its colours in the same order in every slot it can reach.
+    """
+    slots = [sorted(group, key=lambda i: NAME_ORDER[_face_of(n, i)])
+             for position, group in _cubies(n).items() if len(group) == 2 and 0 not in position]
+    reach = _orbit(n, tuple(slots[0]), lambda pair, d: (d[pair[0]], d[pair[1]]))
+    by_slot = {frozenset(pair): pair for pair in reach}
+    return [by_slot[frozenset(slot)] for slot in slots]
+
+
+@lru_cache(maxsize=None)
+def _wing_colours(n):
+    solved = _solved(n)
+    return sorted((solved[x], solved[y]) for x, y in _wings(n))
+
+
+@lru_cache(maxsize=None)
+def _centre_orbits(n):
+    """Return the groups of centre stickers that the moves exchange with each other."""
+    orbits = []
+    left = {group[0] for group in _cubies(n).values() if len(group) == 1}
+    while left:
+        orbit = _orbit(n, min(left), lambda i, d: d[i])
+        orbits.append(sorted(orbit))
+        left -= orbit
+    return orbits
+
+
 def _parity(permutation):
     inversions = sum(1 for i in range(len(permutation)) for j in range(i)
                      if permutation[j] > permutation[i])
@@ -152,7 +228,14 @@ def _parity(permutation):
 
 
 def _is_reachable(n, state):
-    """Check well-formedness, corner twist sum, edge flip sum, and permutation parity."""
+    """Check that a state can be reached from the solved state by legal moves.
+
+    The state holds colours only, so identical pieces are interchangeable. Corners
+    need all eight pieces and a twist sum of zero. The 3x3 and 5x5 also keep their
+    fixed centres, flip their middle edges evenly, and match corner and middle edge
+    parity. The 4x4 and 5x5 wings keep their colour order and appear once each, and
+    every other centre orbit shows each colour as often as when solved.
+    """
     if len(state) != 6 * n * n or any(c not in FACES for c in state):
         return False
     corners = _piece_coords(n, state, 3)
@@ -160,8 +243,14 @@ def _is_reachable(n, state):
         return False
     if n == 2:
         return True
-    if any(state[f * 9 + 4] != FACES[f] for f in range(6)):
+    solved = _solved(n)
+    if any(Counter(state[i] for i in orbit) != Counter(solved[i] for i in orbit)
+           for orbit in _centre_orbits(n)):
         return False
+    if n >= 4 and sorted((state[x], state[y]) for x, y in _wings(n)) != _wing_colours(n):
+        return False
+    if n == 4:
+        return True
     edges = _piece_coords(n, state, 2)
     if edges is None or len(set(edges[0])) != 12 or sum(edges[1]) % 2 != 0:
         return False
@@ -170,20 +259,23 @@ def _is_reachable(n, state):
 
 TYPES_2 = ("twisted corner", "recoloured sticker")
 TYPES_3 = ("twisted corner", "flipped edge", "swapped corners", "swapped edges", "recoloured sticker")
+# Swaps are left out of the big cubes: a single swap of two pieces can be reachable there.
+TYPES_4 = ("twisted corner", "flipped wing", "recoloured sticker")
+TYPES_5 = ("twisted corner", "flipped wing", "flipped edge", "recoloured sticker")
+TYPES = {2: TYPES_2, 3: TYPES_3, 4: TYPES_4, 5: TYPES_5}
 
 
 class CubeEngine(Engine):
-    """The engine for the 2x2 and 3x3 cubes."""
+    """The engine for the 2x2, 3x3, 4x4, and 5x5 cubes."""
 
     def __init__(self, n: int):
-        if n == 5:
-            raise NotImplementedError("5x5 move group is undecided (AGENTS.md open item 5)")
-        if n not in (2, 3):
+        if n not in (2, 3, 4, 5):
             raise ValueError(f"unsupported cube size {n}")
         self.n = n
 
     def legal_moves(self) -> list[str]:
-        return [face + suffix for face in FACES for suffix in ("", "'", "2")]
+        turns = list(FACES) + ([face + "w" for face in FACES] if self.n >= 4 else [])
+        return [turn + suffix for turn in turns for suffix in ("", "'", "2")]
 
     def solved_state(self) -> str:
         return _solved(self.n)
@@ -218,12 +310,12 @@ class CubeEngine(Engine):
 
     def corrupt(self, state: str, input_seed: int) -> tuple[str, str]:
         rng = random.Random(input_seed)
-        kinds = TYPES_2 if self.n == 2 else TYPES_3
-        kind = rng.choice(kinds)
+        kind = rng.choice(TYPES[self.n])
         chars = list(state)
         if kind == "recoloured sticker":
+            centres = {group[0] for group in _cubies(self.n).values() if len(group) == 1}
             size = self.n * self.n
-            index = rng.choice([i for i in range(len(state)) if i % size != 4 or self.n == 2])
+            index = rng.choice([i for i in range(len(state)) if i not in centres])
             old = state[index]
             colour = rng.choice([c for c in FACES if c != old])
             chars[index] = colour
@@ -235,12 +327,14 @@ class CubeEngine(Engine):
                 chars[i], chars[j] = state[j], state[i]
             names = f"{_piece_name(self.n, first)} {_piece_name(self.n, second)}"
             return "".join(chars), f"{kind} {names}"
-        size = 2 if kind == "flipped edge" else 3
-        position = rng.choice(_positions(self.n, size))
+        if kind == "flipped wing":
+            position = rng.choice(_wings(self.n))
+        else:
+            position = rng.choice(_positions(self.n, 2 if kind == "flipped edge" else 3))
         old = [state[i] for i in position]
-        name = _piece_name(self.n, position)
-        if size == 2:
-            new, description = old[::-1], f"flipped edge {name}"
+        name = _wing_name(self.n, position) if kind == "flipped wing" else _piece_name(self.n, position)
+        if kind in ("flipped wing", "flipped edge"):
+            new, description = old[::-1], f"{kind} {name}"
         elif rng.random() < 0.5:
             new, description = [old[1], old[2], old[0]], f"twisted corner {name} clockwise"
         else:

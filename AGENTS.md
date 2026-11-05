@@ -97,5 +97,5 @@ Ask before building anything that depends on these.
 2. Resolved: no reference solver. Efficiency was dropped on 2026-11-04, because optimal solvers aren't practical for 5x5 and the other puzzles.
 3. Resolved: the output schema is in invariant 9.
 4. The exact octahedral and tetrahedral puzzles, for example the face-turning octahedron (FTO) and the Pyraminx. Tetrahedral itself still needs confirmation.
-5. Which moves each move group contains: whole-puzzle rotations, slice moves, and wide moves, and how each counts in the half-turn metric.
+5. Resolved for the cubes on 2026-11-03: face turns on the 2x2 and 3x3, face and wide turns on the 4x4 and 5x5, each counting as one move. The cube move groups contain no slice moves and no whole-cube rotations. Still open for the octahedral and tetrahedral puzzles: which moves each move group contains (whole-puzzle rotations, slice moves, and wide moves), and how each counts in the half-turn metric.
 6. Repo visibility.

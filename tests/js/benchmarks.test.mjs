@@ -16,28 +16,31 @@ function check(name, got, want) {
   if (JSON.stringify(got) !== JSON.stringify(want)) { failed++; console.error(`FAIL ${name}\n  got:  ${JSON.stringify(got)}\n  want: ${JSON.stringify(want)}`); }
 }
 const side = (model, extra) => ({ model, against: "b", p_value: 0.004, p_holm: 0.008, inputs_paired: 20, agrees: true, ...extra });
-const row = (best, worst, tested = true) => ({ tested, best, worst });
-const who = (v) => v && v.model;
+const row = (best, worst, tested = true) => ({ tested, best: best && [].concat(best), worst: worst && [].concat(worst) });
+const who = (vs) => vs.length ? vs.map((v) => v.model).join(",") : null;
+const tip = (vs) => vs[0].tip;
 
 // Under a tier: coloured only when p_holm is below the threshold and the sign test agrees.
 const sig = row(side("a"), side("c", { p_holm: 0.04 }));
 check("significant: below 0.05 and agrees", who(verdict(sig, "best", "significant")), "a");
 check("significant: 0.04 is below 0.05", who(verdict(sig, "worst", "significant")), "c");
 check("strong: 0.008 is below 0.01", who(verdict(sig, "best", "strong")), "a");
-check("strong: 0.04 is not below 0.01", verdict(sig, "worst", "strong"), null);
+check("strong: 0.04 is not below 0.01", who(verdict(sig, "worst", "strong")), null);
 check("weak: 0.04 is below 0.10", who(verdict(sig, "worst", "weak")), "c");
-check("p_holm on the threshold is not below it", verdict(row(side("a", { p_holm: 0.05 }), null), "best", "significant"), null);
-check("not agreeing is never coloured", verdict(row(side("a", { agrees: false }), null), "best", "weak"), null);
-check("missing p_holm is never coloured", verdict(row(side("a", { p_holm: null }), null), "best", "weak"), null);
-check("an untested row is never coloured under a tier", verdict(row({ model: "a", against: null }, null, false), "best", "weak"), null);
-check("no side, no verdict", verdict(row(null, null), "best", "all"), null);
+check("p_holm on the threshold is not below it", who(verdict(row(side("a", { p_holm: 0.05 }), null), "best", "significant")), null);
+check("not agreeing is never coloured", who(verdict(row(side("a", { agrees: false }), null), "best", "weak")), null);
+check("missing p_holm is never coloured", who(verdict(row(side("a", { p_holm: null }), null), "best", "weak")), null);
+check("an untested row is never coloured under a tier", who(verdict(row({ model: "a", against: null }, null, false), "best", "weak")), null);
+check("no side, no verdict", who(verdict(row(null, null), "best", "all")), null);
 
 // Under All: best and worst are always coloured, even when the test is weak, disagrees, or is missing.
 check("all: not significant, not agreeing", who(verdict(row(side("a", { p_holm: 0.9, agrees: false }), null), "best", "all")), "a");
 check("all: untested row", who(verdict(row({ model: "a" }, { model: "c" }, false), "worst", "all")), "c");
-check("all: best tip without a test", verdict(row({ model: "a" }, null, false), "best", "all").tip, "Best in this row.");
-check("all: worst tip without a test", verdict(row(null, { model: "c" }, false), "worst", "all").tip, "Worst in this row.");
-check("tip names the test", verdict(sig, "best", "all").tip, "Better than b: p = 0.004 (Holm 0.008), 20 inputs paired.");
+check("all: best tip without a test", tip(verdict(row({ model: "a" }, null, false), "best", "all")), "Best in this row.");
+check("all: worst tip without a test", tip(verdict(row(null, { model: "c" }, false), "worst", "all")), "Worst in this row.");
+check("a tie at the top colours every tied model", who(verdict(row([side("a"), side("d")], null), "best", "significant")), "a,d");
+check("a tie is gated per model", who(verdict(row([side("a"), side("d", { p_holm: 0.2 })], null), "best", "significant")), "a");
+check("tip names the test", tip(verdict(sig, "best", "all")), "Better than b: p = 0.004 (Holm 0.008), 20 inputs paired.");
 
 // Models to ask for: the chosen ones among the chosen providers, and null for no filter.
 const options = { providers: [{ name: "anthropic", models: ["claude-a", "claude-b"] }, { name: "openai", models: ["gpt-a"] }] };

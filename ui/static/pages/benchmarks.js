@@ -128,17 +128,14 @@
     return h("label", { class: "small" }, name + " ", s);
   }
 
-  // Which cell of a row is coloured, and the sentence for its tooltip.
+  // Which cells of a row are coloured on one side, each with the sentence for its tooltip.
   function verdict(row, side, sig) {
-    const v = row[side];
-    if (!v) return null;
-    if (sig !== "all") {
-      if (!row.tested || typeof v.p_holm !== "number" || !(v.p_holm < THRESHOLD[sig]) || !v.agrees) return null;
-    }
-    const other = side === "best" ? "Better" : "Worse";
-    if (!v.against) return { model: v.model, side, tip: `${side === "best" ? "Best" : "Worst"} in this row.` };
-    const p = typeof v.p_value === "number" ? `p = ${pval(v.p_value)}${typeof v.p_holm === "number" ? ` (Holm ${pval(v.p_holm)})` : ""}` : "no test";
-    return { model: v.model, side, tip: `${other} than ${v.against}: ${p}, ${v.inputs_paired} inputs paired.` };
+    return (row[side] || []).filter((v) => sig === "all"
+      || (row.tested && typeof v.p_holm === "number" && v.p_holm < THRESHOLD[sig] && v.agrees)).map((v) => {
+      if (!v.against) return { model: v.model, side, tip: `${side === "best" ? "Best" : "Worst"} in this row.` };
+      const p = typeof v.p_value === "number" ? `p = ${pval(v.p_value)}${typeof v.p_holm === "number" ? ` (Holm ${pval(v.p_holm)})` : ""}` : "no test";
+      return { model: v.model, side, tip: `${side === "best" ? "Better" : "Worse"} than ${v.against}: ${p}, ${v.inputs_paired} inputs paired.` };
+    });
   }
 
   function cellTip(metric, cell, mark) {
@@ -193,11 +190,12 @@
     models.forEach((m, i) => {
       const cell = cells[i];
       const mid = spots[i] + rowH / 2;
-      root.append(svgText({ class: "name", x: left - 6, y: mid + 3.5, "text-anchor": "end" }, shortName(m.name)));
+      const mark = cell && typeof cell.value === "number" ? marks[m.name] : null;
+      const cls = mark ? " " + mark.cls : "";
+      root.append(svgText({ class: "name" + cls, x: left - 6, y: mid + 3.5, "text-anchor": "end" }, shortName(m.name)));
       root.lastChild.append(svg("title", {}, document.createTextNode(m.name)));
       if (!cell || typeof cell.value !== "number") return;
-      const mark = marks[m.name];
-      const bar = svg("rect", { class: "bar" + (mark ? " " + mark.cls : ""), x: left, y: mid - barH / 2,
+      const bar = svg("rect", { class: "bar" + cls, x: left, y: mid - barH / 2,
         width: Math.max(0, x(cell.value) - left), height: barH, rx: 2 });
       const tip = `${m.name}: ${fmt(row.metric, cell.value)}. ${cellTip(row.metric, cell, mark && mark.verdict)}`;
       bar.append(svg("title", {}, document.createTextNode(tip)));
@@ -209,7 +207,7 @@
           svg("line", { class: "whisker", x1: x(cell.high), x2: x(cell.high), y1: mid - 3, y2: mid + 3 }));
         end = Math.max(end, x(cell.high));
       }
-      root.append(svgText({ class: "val", x: end + 4, y: mid + 3.5, "text-anchor": "start" },
+      root.append(svgText({ class: "val" + cls, x: end + 4, y: mid + 3.5, "text-anchor": "start" },
         rate ? pct(cell.value, 0) : fmt(row.metric, cell.value)));
     });
     return h("div", { class: "bench-chart" }, h("h4", { text: `${row.puzzle} · ${LABEL[row.metric]}` }), root);
@@ -261,8 +259,7 @@
       const marksOf = (row) => {
         const out = {};
         for (const side of ["best", "worst"]) {
-          const v = verdict(row, side, c.sig);
-          if (v) out[v.model] = { cls: side === "best" ? "win" : "lose", verdict: v };
+          for (const v of verdict(row, side, c.sig)) out[v.model] = { cls: side === "best" ? "win" : "lose", verdict: v };
         }
         return out;
       };

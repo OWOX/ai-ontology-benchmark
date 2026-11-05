@@ -390,7 +390,7 @@ def detection_rows(attempt_rows: list[dict], models: list[str] | None = None) ->
     return result
 
 
-CORRUPTION_TYPES = ("twisted corner", "flipped edge", "swapped corners", "swapped edges",
+CORRUPTION_TYPES = ("twisted corner", "flipped edge", "flipped wing", "swapped corners", "swapped edges",
                     "recoloured sticker")
 
 
