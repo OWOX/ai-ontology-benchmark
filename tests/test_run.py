@@ -122,6 +122,17 @@ def test_infrastructure_errors_are_logged_to_stderr_only(exp, capsys):
     assert "infrastructure error" not in captured.out
 
 
+def test_request_error_stops_the_run_with_one_line(exp, capsys):
+    message = "anthropic: HTTP 400: You have reached your specified API usage limits."
+    models.FAKE_REPLIES[:] = [models.RequestError(message), Reply("U", "ok", "s", 1, 1, 0.1)]
+    assert go("--model", "A", "--limit", "1") == 1
+    captured = capsys.readouterr()
+    assert captured.err.splitlines()[-1] == f"error: {message}"
+    assert "Traceback" not in captured.err
+    assert len(models.FAKE_REPLIES) == 1  # never retried
+    assert not (exp / "results/exp/raw/A.jsonl").exists() or records(exp, "A") == []
+
+
 def test_retry_then_success_sums_retry_tokens(exp):
     models.FAKE_REPLIES[:] = [InfrastructureError("x", 5, 1), Reply("U", "ok", "s", 10, 3, 0.5)]
     go("--model", "A", "--limit", "1")

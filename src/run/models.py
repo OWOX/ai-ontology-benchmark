@@ -27,7 +27,7 @@ CONNECT_TIMEOUT_S = 30.0
 GOOGLE_REFUSALS = ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "RECITATION")
 
 # Tests fill this list. Each fake call pops the first item: a Reply is returned and an
-# InfrastructureError instance is raised.
+# InfrastructureError or RequestError instance is raised.
 FAKE_REPLIES: list = []
 # The same for decision models: a DecisionReply is returned, an InfrastructureError or a
 # RefusedError instance is raised.
@@ -64,6 +64,33 @@ class DecisionReply:
 
 class RefusedError(Exception):
     """A content-filter refusal. Never retried. No decision-model SDK reports one today."""
+
+
+class RequestError(Exception):
+    """The API rejected the request itself, with an HTTP error that is not an infrastructure failure:
+    an account usage limit, a bad key, or an unknown model. Never retried. `run` stops on it."""
+
+
+def _request_error(provider: str, error: Exception, message: str | None = None) -> RequestError:
+    """One line naming the provider, the HTTP status, and the message the API sent. `message` is
+    the one the SDK already read from the body, when it keeps one."""
+    # status_code (anthropic, openai, cloudflare), code (google, whose status is a name), status (typesafe)
+    status = next((value for value in (getattr(error, name, None) for name in ("status_code", "code", "status"))
+                   if isinstance(value, int) and not isinstance(value, bool)), None)
+    body = getattr(error, "body", None)
+    inner = body.get("error") if isinstance(body, dict) else None
+    detail = inner if isinstance(inner, dict) else body
+    if not message and isinstance(detail, dict):
+        message = detail.get("message")
+    if not message and isinstance(inner, str):  # a body like {"error": "text"}
+        message = inner
+    if not message and isinstance(body, dict) and isinstance(body.get("errors"), list):  # cloudflare
+        message = "; ".join(item["message"] for item in body["errors"]
+                            if isinstance(item, dict) and isinstance(item.get("message"), str))
+    message = message or getattr(error, "message", None) or str(error)
+    # An SSE error event comes with the stream's own 200, which says nothing about the error.
+    prefix = f"{provider}: HTTP {status}: " if status and status != 200 else f"{provider}: "
+    return RequestError(prefix + " ".join(str(message).split()))
 
 
 def log_infrastructure_error(label: str, call: int, error: Exception) -> None:
@@ -111,7 +138,7 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str, effor
     except anthropic.APIStatusError as error:
         if error.status_code == 429 or error.status_code >= 500 or _stream_error_is_transient(error):
             raise InfrastructureError(f"anthropic: {error}") from error
-        raise
+        raise _request_error("anthropic", error) from error
     latency = time.perf_counter() - start
     stop_reason = {"max_tokens": "truncated", "refusal": "refused"}.get(response.stop_reason, "ok")
     text = "".join(block.text for block in response.content if block.type == "text")
@@ -137,13 +164,13 @@ def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: 
     except openai.BadRequestError as error:
         if error.code == "content_filter":
             return Reply("", "refused", "", 0, 0, time.perf_counter() - start)
-        raise
+        raise _request_error("openai", error) from error
     except (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError) as error:
         raise InfrastructureError(f"openai: {error}") from error
     except openai.APIStatusError as error:
         if error.status_code in (408, 409):  # request timeout and conflict, both worth trying again
             raise InfrastructureError(f"openai: {error}") from error
-        raise
+        raise _request_error("openai", error) from error
     latency = time.perf_counter() - start
     choice = response.choices[0]
     stop_reason = {"length": "truncated", "content_filter": "refused"}.get(choice.finish_reason, "ok")
@@ -172,7 +199,7 @@ def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: 
     except errors.APIError as error:
         if error.code == 429 or error.code >= 500:
             raise InfrastructureError(f"google: {error}") from error
-        raise
+        raise _request_error("google", error) from error
     except httpx.TransportError as error:  # connection errors and timeouts
         raise InfrastructureError(f"google: {error}") from error
     latency = time.perf_counter() - start
@@ -202,7 +229,7 @@ def _fake() -> Reply:
     if not FAKE_REPLIES:
         return Reply("U", "ok", "fake", 0, 0, 0.0)
     item = FAKE_REPLIES.pop(0)
-    if isinstance(item, InfrastructureError):
+    if isinstance(item, (InfrastructureError, RequestError)):
         raise item
     return item
 
@@ -254,6 +281,9 @@ def _typesafe(model: dict, state: str, questions: dict, key: str) -> DecisionRep
     except typesafe_sdk.TypeSafeAPIResponseValidationError:
         # A 200 whose body is not a JSON object. The call stays empty, and the validator rules it malformed.
         return _decision_reply({}, time.perf_counter() - start)
+    except typesafe_sdk.TypeSafeAPIError as error:
+        # The SDK keeps the message it read from the body, whatever its shape, in `_message`.
+        raise _request_error("typesafe", error, getattr(error, "_message", None)) from error
     latency = time.perf_counter() - start
     return _decision_reply(response.model_dump(exclude_unset=True), latency)
 
@@ -276,7 +306,7 @@ def _cloudflare(model: dict, state: str, questions: dict, key: str) -> DecisionR
     except cloudflare.APIStatusError as error:
         if error.status_code == 429 or error.status_code >= 500:
             raise InfrastructureError(f"cloudflare: {error}") from error
-        raise
+        raise _request_error("cloudflare", error) from error
     latency = time.perf_counter() - start
     if hasattr(result, "model_dump"):
         result = result.model_dump()

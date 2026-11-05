@@ -160,9 +160,9 @@ def test_anthropic_transient_stream_error_event_is_infrastructure(monkeypatch, e
         call_model(entry("anthropic"), "prompt", 50)
 
 
-def test_anthropic_other_stream_error_event_propagates(monkeypatch):
+def test_anthropic_other_stream_error_event_is_a_request_error(monkeypatch):
     install(monkeypatch, "anthropic", sse_error("invalid_request_error"))
-    with pytest.raises(anthropic.APIStatusError):
+    with pytest.raises(models.RequestError, match=r"^anthropic: (?!HTTP)"):
         call_model(entry("anthropic"), "prompt", 50)
 
 
@@ -211,11 +211,11 @@ def test_google_reply_without_a_model_version_has_no_served_model(monkeypatch):
     assert call_model(entry("google"), "prompt", 50).served_model == ""
 
 
-def test_openai_other_bad_request_propagates(monkeypatch):
+def test_openai_other_bad_request_is_a_request_error(monkeypatch):
     error = status_error(openai.BadRequestError, 400)
     error.code = "invalid_request"
     install(monkeypatch, "openai", error)
-    with pytest.raises(openai.BadRequestError):
+    with pytest.raises(models.RequestError, match="^openai: HTTP 400: "):
         call_model(entry("openai"), "prompt", 50)
 
 
@@ -246,10 +246,21 @@ def test_infrastructure_errors(monkeypatch, provider, index):
         call_model(entry(provider), "prompt", 50)
 
 
-def test_anthropic_other_client_error_propagates(monkeypatch):
+def test_anthropic_other_client_error_is_a_request_error(monkeypatch):
     install(monkeypatch, "anthropic", status_error(anthropic.BadRequestError, 400))
-    with pytest.raises(anthropic.BadRequestError):
+    with pytest.raises(models.RequestError, match="^anthropic: HTTP 400: "):
         call_model(entry("anthropic"), "prompt", 50)
+
+
+def test_anthropic_usage_limit_names_the_api_message(monkeypatch):
+    message = "You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC."
+    body = {"type": "error", "error": {"type": "invalid_request_error", "message": message}}
+    error = anthropic.BadRequestError("boom", response=httpx.Response(400, request=REQUEST), body=body)
+    install(monkeypatch, "anthropic", error)
+    with pytest.raises(models.RequestError) as raised:
+        call_model(entry("anthropic"), "prompt", 50)
+    assert str(raised.value) == f"anthropic: HTTP 400: {message}"
+    assert raised.value.__cause__ is error
 
 
 def test_google_output_tokens_include_thoughts(monkeypatch):
@@ -257,9 +268,10 @@ def test_google_output_tokens_include_thoughts(monkeypatch):
     assert call_model(entry("google"), "prompt", 50).output_tokens == 12
 
 
-def test_google_other_client_error_propagates(monkeypatch):
-    install(monkeypatch, "google", errors.ClientError(400, {"error": {}}))
-    with pytest.raises(errors.ClientError):
+def test_google_other_client_error_is_a_request_error(monkeypatch):
+    body = {"error": {"code": 400, "status": "INVALID_ARGUMENT", "message": "bad model"}}
+    install(monkeypatch, "google", errors.ClientError(400, body))
+    with pytest.raises(models.RequestError, match="^google: HTTP 400: bad model$"):
         call_model(entry("google"), "prompt", 50)
 
 
@@ -381,11 +393,22 @@ def test_cloudflare_timeout_is_an_infrastructure_error(monkeypatch):
         models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
 
 
-def test_cloudflare_400_propagates(monkeypatch):
+def test_cloudflare_400_names_the_envelope_message(monkeypatch):
+    import cloudflare
+
+    request = httpx.Request("POST", "https://api.cloudflare.com/x")
+    body = {"errors": [{"code": 7000, "message": "No route for that URI"}], "success": False, "result": None}
+    error = cloudflare.BadRequestError("boom", response=httpx.Response(400, request=request), body=body)
+    _cloudflare_stub(monkeypatch, _raiser(error))
+    with pytest.raises(models.RequestError, match="^cloudflare: HTTP 400: No route for that URI$"):
+        models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+
+
+def test_cloudflare_400_is_a_request_error(monkeypatch):
     import cloudflare
 
     _cloudflare_stub(monkeypatch, _raiser(_status_error(cloudflare.BadRequestError, 400)))
-    with pytest.raises(cloudflare.BadRequestError):
+    with pytest.raises(models.RequestError, match="^cloudflare: HTTP 400: "):
         models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
 
 
@@ -405,11 +428,19 @@ def test_typesafe_connection_error_and_timeout_are_infrastructure_errors(monkeyp
             models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
 
 
-def test_typesafe_400_propagates(monkeypatch):
-    import typesafe_sdk
+def test_typesafe_422_names_the_message_the_sdk_read(monkeypatch):
+    import httpx2
+    from typesafe_sdk._core.errors import api_error
 
+    body = {"detail": [{"loc": ["body", "state"], "msg": "field required"}]}
+    _typesafe_stub(monkeypatch, _raiser(api_error(422, body, httpx2.Headers())))
+    with pytest.raises(models.RequestError, match="^typesafe: HTTP 422: state: field required$"):
+        models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
+
+
+def test_typesafe_400_is_a_request_error(monkeypatch):
     _typesafe_stub(monkeypatch, _raiser(_typesafe_error(400)))
-    with pytest.raises(typesafe_sdk.TypeSafeBadRequestError):
+    with pytest.raises(models.RequestError, match="^typesafe: HTTP 400: boom$"):
         models.call_decision(TYPESAFE_MODEL, "S", {"q": 1})
 
 
@@ -589,8 +620,8 @@ def test_openai_408_and_409_are_infrastructure(monkeypatch, code):
         call_model(entry("openai"), "prompt", 50)
 
 
-def test_openai_other_status_errors_propagate(monkeypatch):
+def test_openai_other_status_errors_are_request_errors(monkeypatch):
     error = openai.APIStatusError("x", response=httpx2.Response(401, request=httpx2.Request("POST", "https://example.invalid")), body=None)
     install(monkeypatch, "openai", error)
-    with pytest.raises(openai.APIStatusError):
+    with pytest.raises(models.RequestError, match="^openai: HTTP 401: x$"):
         call_model(entry("openai"), "prompt", 50)
