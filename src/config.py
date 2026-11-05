@@ -18,7 +18,9 @@ FORBIDDEN_PARAMS = {
     "contents", "max_tokens", "max_output_tokens", "max_completion_tokens",
     "instructions", "system_instruction", "response_format", "response_mime_type",
     "response_schema", "tools", "tool_choice",
+    "reasoning_effort", "output_config", "thinking_config", "thinking",
 }
+EFFORTS = ("low", "medium", "high")
 RELEASE_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 EXPERIMENT_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 # Budget limits in USD; an experiment config may set any of them.
@@ -165,6 +167,9 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
     _check_min(path, "retry_cap", retry_cap, 0)
     max_tokens = _get(path, config, "max_output_tokens", int)
     _check_min(path, "max_output_tokens", max_tokens, 1)
+    if "reasoning_effort" in config:
+        if _get(path, config, "reasoning_effort", str) not in EFFORTS:
+            _fail(path, "reasoning_effort", f"must be one of {', '.join(EFFORTS)}")
     if "max_moves" in config:
         _check_min(path, "max_moves", _get(path, config, "max_moves", int), 1)
     if "puzzles" in config:

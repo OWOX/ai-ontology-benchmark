@@ -1,15 +1,16 @@
 # Spec: docs/specs/ui.md
 """Pools the rows of an experiment's report CSV (`<version>.metrics.csv`) into bundle rows and
 summary rows. Each rate is pooled as hits over n, with hits rounded back from the CSV's 4-decimal
-rate. Reads parsed CSV rows and writes nothing.
+rate. The CSV holds no per-input cells, so the intervals are Wilson score intervals over the pooled
+attempts, for display only (the UI marks them with `*`). Reads parsed CSV rows and writes nothing.
 """
 
 from collections import defaultdict
 
-from src.evaluate.metrics import NA, rate_columns, summary_sort_key, sorted_keys
+from src.evaluate.metrics import NA, summary_sort_key, sorted_keys, wilson
 
 RATES = ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
-         "malformed_output_rate")
+         "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate")
 
 
 def number(text: object) -> float | None:
@@ -30,10 +31,14 @@ def hits_and_n(rows: list[dict], rate: str) -> tuple[int, int]:
 
 
 def pooled_rates(rows: list[dict]) -> dict:
-    """The rate, interval, and denominator columns pooled over `rows`."""
+    """The rate, interval, and denominator columns pooled over `rows`. The `_inputs` column is the
+    sum over the pooled rows, whose inputs never overlap."""
     out: dict = {}
     for rate in RATES:
-        rate_columns(out, rate, *hits_and_n(rows, rate))
+        hits, n = hits_and_n(rows, rate)
+        out[rate], out[rate + "_low"], out[rate + "_high"] = wilson(hits, n)
+        out[rate + "_n"] = n
+        out[rate + "_inputs"] = total(rows, rate + "_inputs")
     return out
 
 

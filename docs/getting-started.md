@@ -36,7 +36,7 @@ python -m src.run.run --experiment <experiment id> --limit 3
 python -m src.run.run --experiment <experiment id>
 ```
 
-`--estimate` prints the worst-case cost against each [budget](definitions.md#baseline-and-prices) and calls nothing. `--limit 3` runs three attempts as a smoke test. The last command runs the rest and skips attempts already recorded. `run` commits each attempt to the branch `results/<experiment id>` and pushes it to `origin` at the end.
+`--estimate` prints the worst-case cost against each [budget](definitions.md#prices) and calls nothing. `--limit 3` runs three attempts as a smoke test. The last command runs the rest and skips attempts already recorded. `run` commits each attempt to the branch `results/<experiment id>` and pushes it to `origin` at the end.
 
 ## 4. Score
 

@@ -29,7 +29,7 @@ from src.run.branch import BranchError, ResultsBranch, branch_copy
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
                             print_estimate, spent_by_model, worst_case_request_cost, worst_request)
 from src.run.decision import DecisionResult, run_decision_attempt
-from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model
+from src.run.models import DECISION_PROVIDERS, InfrastructureError, call_model, log_infrastructure_error
 from src.run.progress import Progress
 from src.run.prompts import (SETUPS, both_prompt_versions, build_prompt, decision_questions, decision_state,
                              load_questions, prompt_versions)
@@ -146,13 +146,13 @@ def pending_attempts(config: dict, inputs: list[dict], raw_dir: Path, only_model
                         yield row, model, setup, number
 
 
-def call_with_retries(model: dict, prompt: str, config: dict, can_afford) -> tuple:
+def call_with_retries(model: dict, prompt: str, config: dict, can_afford, label: str) -> tuple:
     """Return (reply or None, retry_input_tokens, retry_output_tokens, budget error or None).
 
     `can_afford(retry_in, retry_out)` raises BudgetError if another call would pass a budget.
     It runs before every call. A stop before the first call is raised; a stop after failed
     calls is returned, so the caller can record the paid retry tokens first. Retry only
-    infrastructure errors.
+    infrastructure errors, and write the reason of each to stderr under `label`.
     """
     retry_in = retry_out = 0
     for call_number in range(config["retry_cap"] + 1):
@@ -163,8 +163,9 @@ def call_with_retries(model: dict, prompt: str, config: dict, can_afford) -> tup
                 raise
             return None, retry_in, retry_out, stop
         try:
-            return call_model(model, prompt, config["max_output_tokens"]), retry_in, retry_out, None
+            return call_model(model, prompt, config["max_output_tokens"], config.get("reasoning_effort")), retry_in, retry_out, None
         except InfrastructureError as error:
+            log_infrastructure_error(label, call_number + 1, error)
             retry_in += error.input_tokens
             retry_out += error.output_tokens
     return None, retry_in, retry_out, None
@@ -354,6 +355,7 @@ class Attempt:
         self.seq, self.left, self.row, self.model, self.setup, self.number = seq, left, row, model, setup, number
         self.config, self.prices, self.results, self.flight, self.cap, self.questions, templates = play_context
         self.prompt = build_prompt(templates, row, setup)
+        self.label = f"{model['name']} {row['input_id']} {setup} attempt {number}"
         self.is_decision = model["provider"] in DECISION_PROVIDERS
         self.legal = get_engine(row["puzzle"]).legal_moves() if self.is_decision else []
         self.price = self.prices[model["name"]]
@@ -389,12 +391,12 @@ class Attempt:
     def call(self) -> None:
         if self.is_decision:
             self.result = run_decision_attempt(self.model, self.prompt, self.legal, self.questions,
-                                               self.cap, self.config["retry_cap"], self.can_afford)
+                                               self.cap, self.config["retry_cap"], self.can_afford, self.label)
             self.retry_in, self.retry_out = self.result.retry_input_tokens, self.result.retry_output_tokens
             self.stop = self.result.budget_stop
         else:
             self.reply, self.retry_in, self.retry_out, self.stop = call_with_retries(
-                self.model, self.prompt, self.config, self.can_afford)
+                self.model, self.prompt, self.config, self.can_afford, self.label)
 
 
 def dry_run(config, folder, pending, questions) -> None:

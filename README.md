@@ -24,7 +24,7 @@ This study tests the question in closed systems where correctness isn't a matter
 ## Expected outcomes
 
 1. An open benchmark: versioned, read-only [releases](docs/definitions.md#releases-and-experiments) of the inputs, prompts, and scoring code.
-2. For each AI model, setup, puzzle, and scramble depth, the hallucination rate, success rate, mismatch detection rate, and false mismatch rate, each with its denominator n and a 95% Wilson score interval.
+2. For each AI model, setup, puzzle, and scramble depth, the hallucination rate, success rate, mismatch detection rate, and false mismatch rate, each with its denominator n and a 95% bootstrap interval over inputs.
 3. Tokens per attempt and cost per success for each AI model and setup.
 4. Code under Apache 2.0, and data and results under CC BY 4.0.
 
@@ -39,7 +39,6 @@ This study tests the question in closed systems where correctness isn't a matter
 
 1. Hallucination is usually judged by a person or by another model. Here a deterministic script decides, so every count can be reproduced.
 2. Every AI model and every setup must see byte-identical inputs, or the comparison means nothing.
-3. Move counts must be comparable across models, so all of them are measured against the same reference solver.
 
 ## Docs
 

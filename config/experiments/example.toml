@@ -2,6 +2,7 @@ release = "1.0.0"
 attempts = 3
 retry_cap = 3
 max_output_tokens = 32000
+reasoning_effort = "medium"
 
 [[models]]
 name = "example-model"

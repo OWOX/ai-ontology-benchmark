@@ -22,10 +22,17 @@
 
   const mine = (id, pred) => UI.jobs.some((j) => j.id === id && j.state === "running" && pred(j.job));
 
+  // A bundle cached in the browser from before the field existed has no default, and the fresh bundle of the same
+  // release never calls reset() again. So the effort is filled here whenever it is unset: "" is a loaded experiment
+  // saved without one and stays "provider default".
+  function fillEffort(vals, defaults) {
+    if (vals.reasoning_effort === undefined) vals.reasoning_effort = (defaults && defaults.reasoning_effort) || "medium";
+  }
+
   function reset(bundle) {
     const d = bundle.defaults;
     Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", parallel: "4", result: null,
-      vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, ...d.budget } });
+      vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, reasoning_effort: d.reasoning_effort, ...d.budget } });
   }
 
   function whole(v, name) {
@@ -51,6 +58,7 @@
       models: bundle.providers.flatMap((p) => p.models).filter((m) => !m.disabled_reason).map((m) => m.name).filter((n) => S.models.includes(n)),
       attempts: whole(v.attempts, "attempts"), retry_cap: whole(v.retry_cap, "retry_cap"),
       max_output_tokens: whole(v.max_output_tokens, "max_output_tokens"),
+      reasoning_effort: v.reasoning_effort || null,
       budget: { per_request_usd: amount(v.per_request_usd, "per_request_usd"), per_model_usd: amount(v.per_model_usd, "per_model_usd"),
         per_experiment_usd: amount(v.per_experiment_usd, "per_experiment_usd") },
     };
@@ -137,6 +145,15 @@
       input.addEventListener("input", () => { S.vals[key] = input.value; });
       return h("label", {}, label, input);
     };
+    // low, medium, or high; "provider default" only appears for a loaded experiment that was saved without one.
+    const effort = (() => {
+      const select = h("select", { "aria-label": "Reasoning effort" });
+      const options = S.vals.reasoning_effort === "" ? ["", "low", "medium", "high"] : ["low", "medium", "high"];
+      for (const v of options) select.append(h("option", { value: v, text: v || "provider default" }));
+      select.value = S.vals.reasoning_effort || "";
+      select.addEventListener("change", () => { S.vals.reasoning_effort = select.value; });
+      return h("label", {}, "Reasoning effort: sent to every system-2 model", select);
+    })();
     const limit = (() => {
       const input = h("input", { type: "text", inputmode: "numeric", "aria-label": "Limit per model", value: S.limit });
       input.addEventListener("input", () => { S.limit = input.value; });
@@ -153,13 +170,14 @@
     })();
     const budgets = NUMBERS.filter(([k]) => k.endsWith("_usd")), rest = NUMBERS.filter(([k]) => !k.endsWith("_usd"));
     return h("div", { class: "params-cols" }, h("div", { class: "grid" }, ...budgets.map(field)),
-      h("div", { class: "grid" }, ...rest.map(field), limit, parallel));
+      h("div", { class: "grid" }, ...rest.map(field), effort, limit, parallel));
   }
 
   UI.registerPage("new", {
     render(bundle, params, el) {
       if (cleanup) cleanup();
       if (S.release !== bundle.release) reset(bundle);
+      fillEffort(S.vals, bundle.defaults);
       const formBox = h("div");
       el.append(h("div", { class: "newexp" }, formBox));
       const ref = {};
@@ -218,7 +236,7 @@
             return `${n} is disabled: ${m ? m.disabled_reason : "not in the catalogue"}; resuming needs it enabled`;
           });
           Object.assign(S, { id: value, touched: true, release: cfg.release, puzzles: cfg.puzzles, models: cfg.models.filter((n) => enabled.has(n)),
-            vals: { attempts: cfg.attempts, retry_cap: cfg.retry_cap, max_output_tokens: cfg.max_output_tokens, ...cfg.budget } });
+            vals: { attempts: cfg.attempts, retry_cap: cfg.retry_cap, max_output_tokens: cfg.max_output_tokens, reasoning_effort: cfg.reasoning_effort || "", ...cfg.budget } });
           if (cfg.release !== bundle.release) { UI.go("#/new?release=" + encodeURIComponent(cfg.release)); return; }
           paint();
           const page = h("a", { href: "#/experiments/" + encodeURIComponent(value) + "?release=" + encodeURIComponent(cfg.release), text: "Open its page" });

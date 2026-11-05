@@ -14,7 +14,7 @@ METHODS = [
     "scramble",
     "corrupt",
     "render",
-    "reference_length",
+    "is_move_token",
 ]
 
 

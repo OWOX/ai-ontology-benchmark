@@ -6,7 +6,7 @@ Reads nothing from disk. Writes nothing. The caller builds the record from the D
 from dataclasses import dataclass
 
 from src.run.budget import BudgetError
-from src.run.models import InfrastructureError, RefusedError, call_decision
+from src.run.models import InfrastructureError, RefusedError, call_decision, log_infrastructure_error
 from src.run.prompts import decision_questions, decision_state
 from src.validator import read_decision_call
 
@@ -24,15 +24,16 @@ class DecisionResult:
 
 
 def run_decision_attempt(model: dict, prompt: str, legal: list[str], questions: dict,
-                         cap: int, retry_cap: int, can_afford) -> DecisionResult:
+                         cap: int, retry_cap: int, can_afford, label: str) -> DecisionResult:
     """Run the loop for one attempt. `questions` is the object from load_questions(), read once
     per run. `can_afford(paid_in, paid_out)` gets every token the attempt has paid so far, retried
     and completed calls together, and raises BudgetError before a call that would pass a budget:
-    raised before the first call, returned in budget_stop after."""
+    raised before the first call, returned in budget_stop after. Each infrastructure error is written to
+    stderr under `label`, with the number of the request in the attempt."""
     asked = decision_questions(questions, legal)
     calls: list[dict] = []
     moves: list[str] = []
-    tokens_in = tokens_out = retry_in = retry_out = retries = 0
+    tokens_in = tokens_out = retry_in = retry_out = retries = requests = 0
     latency = 0.0
     served: list[str] = []
     stop = "ok"
@@ -47,9 +48,11 @@ def run_decision_attempt(model: dict, prompt: str, legal: list[str], questions: 
             stop, budget_stop = "infrastructure_failure", error
             break
         started = True
+        requests += 1
         try:
             reply = call_decision(model, decision_state(prompt, moves), asked)
         except InfrastructureError as error:
+            log_infrastructure_error(label, requests, error)
             retry_in += error.input_tokens
             retry_out += error.output_tokens
             retries += 1

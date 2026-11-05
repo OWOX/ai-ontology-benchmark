@@ -16,7 +16,7 @@ Config: [experiment.toml](experiment.toml)
 |---|---|---|---|---|---|
 | A | fake | a-1 | not set | fake | provider defaults |
 
-Attempts per input, model and setup: 2. Retry cap: 3. Maximum output tokens: 100.
+Attempts per input, model and setup: 2. Retry cap: 3. Maximum output tokens: 100. Reasoning effort: provider default.
 
 
 Torn raw lines skipped: 0.
@@ -44,20 +44,51 @@ Cost spent, at the prices above (USD):
 
 | Metric | no_model | descriptive | prescriptive |
 |---|---|---|---|
-| Success rate | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 |
-| Hallucination rate | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 |
-| False mismatch rate | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 |
-| Malformed output rate | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 |
+| Success rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
+| Hallucination rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
+| False mismatch rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
+| Malformed output rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
+| Truncation rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
+| Abstention rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
+| Format error rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
 | Cost per success | n/a | n/a | n/a |
 
 #### Invalid inputs
 
 | Metric | no_model | descriptive | prescriptive |
 |---|---|---|---|
-| Success rate | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 |
-| Mismatch detection rate | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 |
-| Hallucination rate | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 |
-| Malformed output rate | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 |
+| Success rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
+| Mismatch detection rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
+| Hallucination rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
+| Malformed output rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
+| Truncation rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
+| Abstention rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
+| Format error rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
+
+## Mismatch detection
+
+[Balanced accuracy](../../docs/definitions.md#metrics) is the mean of the detection rate and one minus the false mismatch rate. Answering MISMATCH always, or never, scores 0.50.
+
+### A
+
+| Puzzle | Setup | Detection rate | False mismatch rate | Balanced accuracy |
+|---|---|---|---|---|
+| 2x2 | no_model | 0.00 (n/a) n=2, 1 input | 0.00 (0.00–0.00) n=4, 2 inputs | 0.50 |
+| 2x2 | descriptive | 0.00 (n/a) n=2, 1 input | 0.00 (0.00–0.00) n=4, 2 inputs | 0.50 |
+| 2x2 | prescriptive | 0.00 (n/a) n=2, 1 input | 0.00 (0.00–0.00) n=4, 2 inputs | 0.50 |
+| 2x2 | always MISMATCH (baseline) | 1.00 | 1.00 | 0.50 |
+
+## Detection by corruption type
+
+The detection rate on invalid inputs, split by the kind of corruption applied.
+
+### A
+
+| Puzzle | Setup | Corruption type | Detection rate |
+|---|---|---|---|
+| 2x2 | no_model | recoloured sticker | 0.00 (n/a) n=2, 1 input |
+| 2x2 | descriptive | recoloured sticker | 0.00 (n/a) n=2, 1 input |
+| 2x2 | prescriptive | recoloured sticker | 0.00 (n/a) n=2, 1 input |
 
 ## Setup comparison
 
@@ -89,14 +120,14 @@ Each row is a [paired setup test](../../docs/definitions.md#metrics) of two setu
 
 ### 2x2
 
-| Setup | AI model | Depth | Validity | Attempts | Infra failures | Success | Hallucination | Mismatch detection | False mismatch | Malformed | Efficiency | Consistency | Latency (s) | Input tokens | Output tokens | Cost per success |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| no_model | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 | n/a n=0 | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 | n/a | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
-| no_model | A | 1 | invalid | 2 | 0 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | n/a n=0 | 0.00 (0.00–0.66) n=2 | n/a | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
-| descriptive | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 | n/a n=0 | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 | n/a | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
-| descriptive | A | 1 | invalid | 2 | 0 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | n/a n=0 | 0.00 (0.00–0.66) n=2 | n/a | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
-| prescriptive | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 | n/a n=0 | 0.00 (0.00–0.49) n=4 | 0.00 (0.00–0.49) n=4 | n/a | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
-| prescriptive | A | 1 | invalid | 2 | 0 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | 0.00 (0.00–0.66) n=2 | n/a n=0 | 0.00 (0.00–0.66) n=2 | n/a | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
+| Setup | AI model | Depth | Validity | Attempts | Infra failures | Success | Hallucination | Mismatch detection | False mismatch | Malformed | Truncated | Abstention | Format error | Consistency | Latency (s) | Input tokens | Output tokens | Cost per success |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| no_model | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | n/a n=0, 0 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
+| no_model | A | 1 | invalid | 2 | 0 | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
+| descriptive | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | n/a n=0, 0 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
+| descriptive | A | 1 | invalid | 2 | 0 | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
+| prescriptive | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | n/a n=0, 0 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
+| prescriptive | A | 1 | invalid | 2 | 0 | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
 
 ## Attempts
 

@@ -25,31 +25,39 @@ The [`evaluate`](../definitions.md#workflows) workflow. Re-validate every raw re
    1. `attempt_rows` has one row per raw record: its identifying fields, the outcome from re-validation, and the outcome stored in the raw record.
    2. `metric_rows` has one row per puzzle, setup, AI model, scramble depth, and validity label, with these columns:
       1. `attempts` and `infrastructure_failure_count`.
-      2. `success_rate`, `hallucination_rate`, `mismatch_detection_rate` (invalid rows only), `false_mismatch_rate` (valid rows only), and `malformed_output_rate`. Each rate has three more columns: `<rate>_n`, its denominator, and `<rate>_low` and `<rate>_high`, its 95% Wilson score interval.
-      3. `efficiency` (valid rows only), `consistency`, and `latency_per_attempt_s`.
+      2. `success_rate`, `hallucination_rate`, `mismatch_detection_rate` (invalid rows only), `false_mismatch_rate` (valid rows only), `malformed_output_rate`, `truncated_rate`, `abstention_rate`, and `format_error_rate`. `hallucination_rate` is `n/a` with `_n` 0 for a group whose attempts all come from a [decision model](../definitions.md#setups), read from each attempt row's `decision` value (the raw record's `decision`, or the config rule for an old record). Each rate has four more columns: `<rate>_n`, the attempts behind it, `<rate>_inputs`, the inputs behind it, and `<rate>_low` and `<rate>_high`, its 95% bootstrap interval over inputs (see below).
+      3. `consistency`, and `latency_per_attempt_s`.
       4. `input_tokens_per_attempt`, `output_tokens_per_attempt`, and `cost_per_success`.
    3. `summary_rows`: the same rates and their intervals, pooled over puzzles and depths, with one row per AI model, setup, and validity label. Valid and invalid inputs are never pooled together.
 2. `paired_tests(attempt_rows, models=None) -> paired_rows` in `metrics.py`: the [paired setup test](../definitions.md#metrics), pooled over scramble depths and never over validity labels, one row per AI model, puzzle, validity label, metric, and setup pair, with columns `model, puzzle, validity, metric, setup_a, setup_b, inputs_paired, a_higher, b_higher, mean_difference, p_value, p_holm, significant`.
    1. `models` is the list of AI model names in config order. It defaults to the names found in the rows, sorted, the same as `compute`.
-   2. `metric` is one of `success_rate`, `hallucination_rate`, and `mismatch_detection_rate` (invalid rows only).
+   2. `metric` is one of `success_rate`, `hallucination_rate`, and `mismatch_detection_rate` (invalid rows only). There are no `hallucination_rate` rows for a group whose attempts are all decision-model attempts.
    3. Setup pairs follow `SETUPS` order: (no_model, descriptive), (no_model, prescriptive), (descriptive, prescriptive).
    4. `mean_difference` is the mean over paired inputs of share_b − share_a.
    5. Rows are sorted by AI model (the order of `models`), puzzle, validity (valid first), metric (the order above), and pair.
    6. `significant` is `p_holm < 0.05`. When `inputs_paired` is 0, `mean_difference`, `p_value`, `p_holm`, and `significant` are `n/a`, and the row is left out of the Holm family.
    7. Holm: sort the family's p-values ascending. The adjusted p_(i) is the maximum over j ≤ i of min(1, (m − j + 1) × p_(j)), with m the family size.
-3. `results/<ID>/<VERSION>.metrics.csv`: `metric_rows`, for analysis in other tools.
-4. `results/<ID>/<VERSION>.paired.csv`: `paired_rows`, with the same CSV conventions as the metrics CSV, except that `p_value` and `p_holm` are written with 6 significant digits (`{:.6g}`), so a small p-value is not rounded to zero.
-5. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
+3. `bootstrap_interval(cells, key) -> (rate, low, high)` in `metrics.py`: `cells` is one `(hits, attempts)` pair per input, sorted by input id. The rate is total hits over total attempts. Each of 2000 draws (`BOOTSTRAP_DRAWS`) picks as many inputs as there are, with replacement, and takes the rate over the picked cells. `low` and `high` are `sorted[int(0.025 * B)]` and `sorted[int(0.975 * B) - 1]` of the draw rates. The generator is `random.Random` seeded with the sha256 of `bootstrap-v1|<key>` (`BOOTSTRAP_SEED`), where `key` names the group and the metric (the group's key fields joined with `|`, then the rate name; summary rows start with `summary|`), so the result never depends on group order. The result is `n/a` three times for 0 attempts, and `(rate, n/a, n/a)` for fewer than 2 inputs. A rate whose every attempt is a hit, or none is, has `low` and `high` equal to the rate. `rates()` builds the cells once per rate from each group's rows. The [report CSV pooling in the UI](ui.md) has no per-input cells and keeps a Wilson score interval for display only, marked `*`.
+4. `detection_rows(attempt_rows, models=None) -> detection_rows` in `metrics.py`: [balanced accuracy](../definitions.md#metrics) of mismatch detection, one row per AI model, puzzle, and setup, pooled over scramble depths, with the columns of `DETECTION_COLUMNS`: `model, puzzle, setup`, then `detection_rate` and `false_mismatch_rate`, each with its `_low`, `_high`, `_n`, and `_inputs` columns from `rate_columns`, then `balanced_accuracy, balanced_accuracy_low, balanced_accuracy_high`.
+   1. Attempts with outcome `infrastructure_failure` are left out. Rows are sorted by AI model (the order of `models`), puzzle (registry order), and setup (`SETUPS` order).
+   2. Detection is over invalid attempts, false mismatch over valid ones. Each rate has a bootstrap interval over inputs, key `<model>|<puzzle>|<setup>|<rate name>`. A rate is `n/a` when its n is 0, and balanced accuracy is `n/a` when either rate is.
+   3. `balanced_accuracy_low` and `balanced_accuracy_high` come from `interval_for_balanced_accuracy(rows)`: a stratified bootstrap with the same draws and percentiles, where each draw picks valid and invalid inputs separately, each side as many as it has, and takes the balanced accuracy of the draw. The key is `<model>|<puzzle>|<setup>|balanced_accuracy`. It returns `n/a` for both when either side has fewer than 2 inputs.
+5. `corruption_rows(attempt_rows, models=None)` in `metrics.py`, with `corruption_type(description)`, the first two words of a corruption description. One row per AI model, puzzle, setup, and corruption type over invalid attempts, with `detection_rate` (the share with the mismatch flag on) and its `_n`, `_inputs`, `_low`, and `_high` columns from `rate_columns`, key `<model>|<puzzle>|<setup>|<type>|detection_rate`. Each attempt row carries its input's `corruption`, so no `inputs` argument is needed. Attempts with outcome `infrastructure_failure` are left out. Rows are sorted by AI model, puzzle, setup, and type (`twisted corner`, `flipped edge`, `flipped wing`, `swapped corners`, `swapped edges`, `recoloured sticker`).
+6. `results/<ID>/<VERSION>.metrics.csv`: `metric_rows`, for analysis in other tools.
+7. `results/<ID>/<VERSION>.paired.csv`: `paired_rows`, with the same CSV conventions as the metrics CSV, except that `p_value` and `p_holm` are written with 6 significant digits (`{:.6g}`), so a small p-value is not rounded to zero.
+8. `results/<ID>/<VERSION>.detection.csv`: `detection_rows`, with the same CSV conventions as the metrics CSV.
+9. `results/<ID>/<VERSION>.corruption.csv`: `corruption_rows`, with the same CSV conventions as the metrics CSV, and a header-only file when there are no rows.
+10. `results/<ID>/<VERSION>.md`: the experiment report, written by [report](report.md).
 
-Every metric follows its definition in [definitions.md](../definitions.md#metrics), including which attempts each one leaves out. A metric with no data is `n/a`. `efficiency` is also `n/a` where the engine's `reference_length()` raises `NotImplementedError`.
+Every metric follows its definition in [definitions.md](../definitions.md#metrics), including which attempts each one leaves out. A metric with no data is `n/a`.
 
 Cost is `(input_tokens + retry_input_tokens) × price_input_per_mtok / 1,000,000` plus the same for output tokens.
 
 ## How to test
 
 1. A hand-built fixture of 12 raw records on 2x2 inputs, covering every outcome, gives metrics equal to values worked out by hand in the test file.
-2. The Wilson interval for 7 successes out of 10 is (0.397, 0.892), to three places.
-3. Adding infrastructure failures to the fixture changes no rate, efficiency, consistency, or latency, but raises `infrastructure_failure_count`, tokens per attempt, and cost per success.
+2. `bootstrap_interval` is deterministic, gives `(2/3, n/a, n/a)` for one input and `n/a` three times for none, gives (1.0, 1.0, 1.0) for ten all-hit inputs, and is wider for 10 all-or-nothing inputs of 3 attempts each than for 30 independent attempts with the same hit share.
+3. Adding infrastructure failures to the fixture changes no rate, consistency, or latency, but raises `infrastructure_failure_count`, tokens per attempt, and cost per success.
 4. A group with no successes has `cost_per_success` of `n/a`.
 5. A raw record whose stored outcome differs from re-validation shows both outcomes in `attempt_rows`, and the metrics use the re-validated one.
 6. Scoring an experiment from `1.1.0` under `1.2.0` exits with code 1. Scoring it under a mirror `1.1.1` works.
@@ -63,3 +71,7 @@ Cost is `(input_tokens + retry_input_tokens) × price_input_per_mtok / 1,000,000
 14. An input with attempts under only one setup, or only infrastructure failures under one setup, is not paired.
 15. Two attempts on one input count as one paired input. Shares of 0.5 and 1.0 make one discordant input.
 16. Valid inputs get no `mismatch_detection_rate` rows.
+17. `detection_rows`: 4 valid inputs with 1 flagged and 4 invalid inputs with 3 flagged give balanced accuracy 0.75, and an always-`MISMATCH` group gives 0.5.
+18. The balanced-accuracy interval is pinned to an exact (low, high) for 4 valid and 4 invalid inputs, is (1.0, 1.0) for 2 perfect inputs per side (an unstratified draw could leave a side empty), and is `n/a` when a side has fewer than 2 inputs.
+19. `bootstrap_interval` is pinned to an exact (low, high) for a fixed cells list and key. Reproducibility relies on Python's `random.Random` seeding and `choices`, whose output for a given seed has been stable since Python 3.6.
+20. `corruption_type` reads old descriptions, and `corruption_rows` splits two invalid inputs of different types into two rows.

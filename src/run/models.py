@@ -7,6 +7,7 @@ This is the only file that talks to an AI model API.
 """
 
 import os
+import sys
 import time
 from dataclasses import dataclass
 
@@ -16,6 +17,12 @@ KEY_VARIABLES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "
 ACCOUNT_VARIABLES = {"cloudflare": "CLOUDFLARE_ACCOUNT_ID"}
 # Providers of decision models, which are called with call_decision() instead of call_model().
 DECISION_PROVIDERS = ("typesafe", "cloudflare", "fake_decision")
+# The longest one request may take, in seconds, for the three LLM providers (anthropic, openai, google).
+# A long reasoning reply can run for many minutes, so it is generous, and it is set so that no SDK
+# default decides it silently. The decision providers (typesafe, cloudflare) keep their SDK defaults.
+REQUEST_TIMEOUT_S = 1800
+# The longest a connection may take to open, in seconds.
+CONNECT_TIMEOUT_S = 30.0
 # Google finish reasons that mean the answer was withheld.
 GOOGLE_REFUSALS = ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "RECITATION")
 
@@ -59,6 +66,15 @@ class RefusedError(Exception):
     """A content-filter refusal. Never retried. No decision-model SDK reports one today."""
 
 
+def log_infrastructure_error(label: str, call: int, error: Exception) -> None:
+    """Write why a call failed to stderr, never stdout, which carries the progress output the UI parses.
+    `label` names the attempt, `call` is the number of the request in it, from 1."""
+    text = str(error).replace("\r", " ").replace("\n", " ")
+    # One write, so a line from another attempt never lands in the middle of this one.
+    sys.stderr.write(f"infrastructure error: {label} call {call}: {text}"[:300] + "\n")
+    sys.stderr.flush()
+
+
 # Error types an SSE error event can carry that mean the service, not the request, failed.
 ANTHROPIC_TRANSIENT_STREAM_ERRORS = ("overloaded_error", "api_error", "rate_limit_error")
 
@@ -71,11 +87,12 @@ def _stream_error_is_transient(error) -> bool:
     return error.status_code == 200 and detail.get("type") in ANTHROPIC_TRANSIENT_STREAM_ERRORS
 
 
-def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply:
+def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
     import anthropic
     import httpx2
 
-    client = anthropic.Anthropic(api_key=key, max_retries=0)
+    client = anthropic.Anthropic(api_key=key, max_retries=0,
+                                 timeout=httpx2.Timeout(REQUEST_TIMEOUT_S, connect=CONNECT_TIMEOUT_S))
     start = time.perf_counter()
     try:
         # Streamed, because the SDK refuses a non-streaming call with a large max_tokens.
@@ -83,6 +100,7 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str) -> Re
             model=model["api_model_id"],
             max_tokens=max_output_tokens,
             messages=[{"role": "user", "content": prompt}],
+            **({"output_config": {"effort": effort}} if effort else {}),
             **model.get("params", {}),
         ) as stream:
             response = stream.get_final_message()
@@ -101,16 +119,19 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str) -> Re
                  response.usage.output_tokens, latency)
 
 
-def _openai(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply:
+def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+    import httpx2
     import openai
 
-    client = openai.OpenAI(api_key=key, max_retries=0)
+    client = openai.OpenAI(api_key=key, max_retries=0,
+                           timeout=httpx2.Timeout(REQUEST_TIMEOUT_S, connect=CONNECT_TIMEOUT_S))
     start = time.perf_counter()
     try:
         response = client.chat.completions.create(
             model=model["api_model_id"],
             max_completion_tokens=max_output_tokens,
             messages=[{"role": "user", "content": prompt}],
+            **({"reasoning_effort": effort} if effort else {}),
             **model.get("params", {}),
         )
     except openai.BadRequestError as error:
@@ -119,6 +140,10 @@ def _openai(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply
         raise
     except (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError) as error:
         raise InfrastructureError(f"openai: {error}") from error
+    except openai.APIStatusError as error:
+        if error.status_code in (408, 409):  # request timeout and conflict, both worth trying again
+            raise InfrastructureError(f"openai: {error}") from error
+        raise
     latency = time.perf_counter() - start
     choice = response.choices[0]
     stop_reason = {"length": "truncated", "content_filter": "refused"}.get(choice.finish_reason, "ok")
@@ -126,20 +151,23 @@ def _openai(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply
                  response.usage.prompt_tokens, response.usage.completion_tokens, latency)
 
 
-def _google(model: dict, prompt: str, max_output_tokens: int, key: str) -> Reply:
+def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
     import httpx
     from google import genai
     from google.genai import errors, types
 
     # attempts=1 means a single try, so the SDK never retries.
-    options = types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
+    options = types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1),
+                               timeout=REQUEST_TIMEOUT_S * 1000)  # milliseconds
     client = genai.Client(api_key=key, http_options=options)
     start = time.perf_counter()
     try:
         response = client.models.generate_content(
             model=model["api_model_id"],
             contents=prompt,
-            config={"max_output_tokens": max_output_tokens, **model.get("params", {})},
+            config={"max_output_tokens": max_output_tokens,
+                    **({"thinking_config": {"thinking_level": effort.upper()}} if effort else {}),
+                    **model.get("params", {})},
         )
     except errors.APIError as error:
         if error.code == 429 or error.code >= 500:
@@ -295,8 +323,9 @@ def call_decision(model: dict, state: str, questions: dict) -> DecisionReply:
     return functions[provider](model, state, questions, key)
 
 
-def call_model(model: dict, prompt: str, max_output_tokens: int) -> Reply:
-    """Send the prompt to the model's provider and return the reply in the common shape."""
+def call_model(model: dict, prompt: str, max_output_tokens: int, reasoning_effort: str | None = None) -> Reply:
+    """Send the prompt to the model's provider and return the reply in the common shape. The reasoning
+    effort goes to the provider's own parameter, only for a system-2 model."""
     provider = model["provider"]
     if provider in DECISION_PROVIDERS:
         raise ValueError(f"provider {provider} is a decision-model provider: use call_decision")
@@ -307,4 +336,5 @@ def call_model(model: dict, prompt: str, max_output_tokens: int) -> Reply:
     if not key:
         raise ValueError(f"missing API key: set the env var {variable}")
     functions = {"anthropic": _anthropic, "openai": _openai, "google": _google}
-    return functions[provider](model, prompt, max_output_tokens, key)
+    effort = reasoning_effort if model.get("kind") == "system-2" else None
+    return functions[provider](model, prompt, max_output_tokens, key, effort)

@@ -74,8 +74,8 @@ class Engine(ABC):
         """Return the text form of the state for the prompt."""
 
     @abstractmethod
-    def reference_length(self, state: State) -> int:
-        """Return the reference length in the half-turn metric.
+    def is_move_token(self, token: str) -> bool:
+        """Return true when the token has the shape of a move in the puzzle's notation.
 
-        Accept valid states only and raise on invalid ones.
+        Legal or not. The validator uses it only to tell impossible moves from prose.
         """

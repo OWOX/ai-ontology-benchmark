@@ -7,6 +7,5 @@ What the study takes as given. If one turns out false, the results built on it n
 3. Every valid input describes exactly one puzzle state, so an AI model can't blame an ambiguous input.
 4. An impossible move is an objective error. A script can count it, and nobody has to judge it.
 5. An invalid input can't be reached from the solved state by legal moves, so no answer can solve it and flagging it is objectively correct. This holds even when the corrupted state could be assembled by taking a physical puzzle apart.
-6. A reference solver gives a fair common baseline for move count, even when it isn't optimal, because every AI model is compared against the same number.
-7. The fifth puzzle is tetrahedral. This still needs confirmation, and so do the exact octahedral and tetrahedral puzzles.
-8. The code is in Python, so that Cube Bench's simulator can be reused as planned.
+6. The fifth puzzle is tetrahedral. This still needs confirmation, and so do the exact octahedral and tetrahedral puzzles.
+7. The code is in Python, so that Cube Bench's simulator can be reused as planned.

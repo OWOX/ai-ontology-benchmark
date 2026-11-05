@@ -24,19 +24,20 @@ The nine interface methods:
 4. `apply_move(state, move)` returns the new state. It raises `IllegalMoveError` for any string not in `legal_moves()`.
 5. `is_solved(state)` returns true when all stickers on each face share one colour, whatever that colour is.
 6. `scramble(input_seed, depth)` returns `(state, moves)`. It picks moves with `random.Random(input_seed)`, never picks two moves in a row with the same face letter, so `R` is never followed by `Rw`, and draws again if the result is solved.
-7. `corrupt(state, input_seed)` returns `(state, description)`. The input seed picks the kind of change and the piece, and the change is made in place:
-   1. 2x2: twist one corner.
-   2. 3x3: twist one corner or flip one edge.
-   3. 4x4: twist one corner or flip one wing.
-   4. 5x5: twist one corner, flip one middle edge, or flip one wing.
-   5. The description names the piece and the change: `"twisted corner UFR clockwise"`, `"flipped edge UF"`, and `"flipped wing UF near R"`. A wing is an edge piece off the middle of its edge, so each edge has two. The wing is named by its edge, then the face whose end of the edge it is nearer: `UF near R` and `UF near L` are the two wings of the UF edge. The edge name lists faces in the order U or D, then F or B, then R or L.
-   6. The draws for the 2x2 and 3x3 are the same as before the 4x4 and 5x5 were added, so their frozen inputs are unchanged.
+7. `corrupt(state, input_seed)` returns `(state, description)`. It picks a corruption type uniformly with `random.Random(input_seed)`, and the piece and direction follow from the same generator. The types per cube are:
+   1. 2x2: `twisted corner` and `recoloured sticker`. A swap of two 2x2 corners stays reachable, so there is none.
+   2. 3x3: `twisted corner`, `flipped edge`, `swapped corners`, `swapped edges`, and `recoloured sticker`. A swap exchanges the sticker triples (or pairs) of two positions, so each piece keeps its orientation and the permutation parity breaks.
+   3. 4x4: `twisted corner`, `flipped wing`, and `recoloured sticker`.
+   4. 5x5: `twisted corner`, `flipped wing`, `flipped edge` (a middle edge), and `recoloured sticker`.
+   5. The 4x4 and 5x5 have no swaps, because a single swap of two pieces can be reachable there.
+   6. A recolour changes one sticker that is not a centre sticker to another colour, so a colour count differs from n*n. On the big cubes no centre sticker is ever recoloured, whichever orbit it belongs to.
+   7. The description starts with the two-word type. It then names the pieces and the change: `"twisted corner UFR clockwise"`, `"flipped edge UF"`, `"flipped wing UF near R"`, `"swapped edges UF UR"`, and `"recoloured sticker F3 R to U"`. A wing is an edge piece off the middle of its edge, so each edge has two. The wing is named by its edge, then the face whose end of the edge it is nearer: `UF near R` and `UF near L` are the two wings of the UF edge. The edge name lists faces in the order U or D, then F or B, then R or L.
 8. `render(state)` returns a text net of the six faces, one face block per label, with the colour letters spaced out.
-9. `reference_length(state)` returns the optimal length found by IDA* search on the 2x2. On the 3x3, 4x4, and 5x5 it raises `NotImplementedError` until a reference solver is chosen ([open item 2](../../AGENTS.md#open)). It raises `ValueError` on an invalid state first. A wide turn counts as one move in the half-turn metric.
+9. `is_move_token(token)` returns true when `MOVE_TOKEN` matches the whole token: a face letter with an optional layer count and an optional `w`, or a lower-case face letter, a slice letter (`M`, `E`, or `S`), or a rotation letter (`x`, `y`, or `z`), then an optional `'`, `2`, or both. The layer count goes with face letters only. It is true for every legal move and for shapes the puzzle doesn't allow, such as `r` or `3Fw'`.
 
 ## Reachability
 
-The check for `load_state()` and `reference_length()` works on colours only, so pieces of one colour are interchangeable. A state is reachable when all of these hold:
+The check for `load_state()` works on colours only, so pieces of one colour are interchangeable. A state is reachable when all of these hold:
 
 1. It has 6·n² letters, all from `URFDLB`.
 2. Corners (every size): all eight are present and the twist sum is 0 mod 3.
@@ -58,11 +59,7 @@ The 3x3 code may reuse Cube Bench's `sim/`. Anything copied goes into `NOTICE`, 
 3. A solved state turned as a whole cube, by applying the same rotation to all faces, still passes `is_solved()`. On the 4x4, `Rw Lw'` is such a rotation.
 4. `apply_move(state, "r")`, `apply_move(state, "R ")`, and `apply_move(state, "R′")` each raise `IllegalMoveError`.
 5. `scramble()` with the same seed gives the same result twice. Over 1,000 seeds, no scramble has two consecutive moves with the same face letter and none ends solved.
-6. Every `corrupt()` output fails the reachability check, and every scramble output passes it, on every size. Breadth-first states to depth 2 and random walks on the 4x4 and 5x5 always pass. A flipped wing, a duplicated wing, a changed centre sticker, and (5x5 only) swapped middle edges fail. Two swapped corners pass on the 4x4 and fail on the 5x5.
+6. Every `corrupt()` output fails the reachability check, and every scramble output passes it, on every size. Over many seeds every corruption type of each cube appears, and each result fails `load_state()` as valid. Breadth-first states to depth 2 and random walks on the 4x4 and 5x5 always pass. A flipped wing, a duplicated wing, a changed centre sticker, and (5x5 only) swapped middle edges fail. Two swapped corners pass on the 4x4 and fail on the 5x5.
 7. `load_state()` raises on a valid state labelled invalid, and on an invalid state labelled valid.
-8. On the 2x2, `reference_length()` of a scramble is at least 1 and at most its depth, and the IDA* result matches a breadth-first search on 20 random states. On the 3x3, 4x4, and 5x5 it raises `NotImplementedError` for a valid state and `ValueError` for an invalid one.
-9. The 2x2 and 3x3 give the same `legal_moves()`, scrambles, corruptions, move results, and render as before the 4x4 and 5x5 were added. Pinned literal values in the tests check this.
-
-## Open
-
-1. Reference solvers for the 3x3, 4x4, and 5x5 ([open item 2](../../AGENTS.md#open)).
+8. `is_move_token()` is true for `R`, `U'`, `r`, `Rw2`, `3Fw'`, `M`, `x`, and `R2'`, and false for the empty string, `MISMATCH`, `2x2`, `R''`, `R3`, a token with a space, and `R’` with a typographic apostrophe. It is true for every move in `legal_moves()` of all four cubes.
+9. The 2x2 and 3x3 give the same `legal_moves()`, scrambles, move results, and render as before the 4x4 and 5x5 were added. Pinned literal values in the tests check this. Their corruptions changed on purpose with the new corruption types, so the tests check those for being unreachable and typed instead.

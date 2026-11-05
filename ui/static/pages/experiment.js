@@ -25,7 +25,8 @@
   // Two columns, as on New Experiment: the three budgets, then the rest.
   const PARAMS = [[["Request budget (USD)", (c) => c.budget.per_request_usd], ["Model budget (USD)", (c) => c.budget.per_model_usd],
     ["Experiment budget (USD)", (c) => c.budget.per_experiment_usd]],
-  [["Attempts per input and setup", (c) => c.attempts], ["Retry cap", (c) => c.retry_cap], ["Max output tokens", (c) => c.max_output_tokens]]];
+  [["Attempts per input and setup", (c) => c.attempts], ["Retry cap", (c) => c.retry_cap], ["Max output tokens", (c) => c.max_output_tokens],
+    ["Reasoning effort", (c) => c.reasoning_effort || "provider default"]]];
 
   function settings(d, bundle) {
     const c = d.config;

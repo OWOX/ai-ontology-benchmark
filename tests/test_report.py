@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from src.evaluate.metrics import compute, paired_tests
+from src.evaluate.metrics import compute, detection_rows, paired_tests
 from src.evaluate.report import write_report
 from src.run.prompts import SETUPS
 from test_evaluate import answer, make_inputs, raw
@@ -58,13 +58,15 @@ def tree(tmp_path):
     return tmp_path, inputs
 
 
-def build(tree, changed_outcome=False, paired_rows=(), with_paired=False) -> str:
+def build(tree, changed_outcome=False, paired_rows=(), with_paired=False, detection=(), corruption=(), config=CONFIG) -> str:
     root, _ = tree
     release, path = root / "releases" / "1.0.0", root / "results" / "exp" / "1.0.0.md"
     rows = compute(records(changed_outcome), release, PRICES, ["M"])
     if with_paired:
         paired_rows = paired_tests(rows[0], ["M"])
-    write_report(path, "exp", CONFIG, release, PRICES, *rows, torn_lines=2, paired_rows=paired_rows)
+        detection = detection_rows(rows[0], ["M"])
+    write_report(path, "exp", config, release, PRICES, *rows, torn_lines=2, paired_rows=paired_rows,
+                 detection_rows=detection, corruption_rows=corruption)
     return path.read_text(encoding="utf-8")
 
 
@@ -179,3 +181,47 @@ def test_setup_comparison_shows_small_p_as_less_than(tree):
     assert "| <0.001 | <0.001 | yes |" not in text
     assert "| <0.001 | <0.001 |" in text
     assert "| 0.001 | 0.040 |" in text
+
+
+def detection_row(**over) -> dict:
+    row = {"model": "M", "puzzle": "2x2", "setup": "no_model", "detection_rate": 0.75,
+           "detection_rate_low": 0.5, "detection_rate_high": 1.0, "detection_rate_n": 4, "detection_rate_inputs": 4,
+           "false_mismatch_rate": 0.25, "false_mismatch_rate_low": "n/a", "false_mismatch_rate_high": "n/a",
+           "false_mismatch_rate_n": 4, "false_mismatch_rate_inputs": 1,
+           "balanced_accuracy": 0.75, "balanced_accuracy_low": "n/a", "balanced_accuracy_high": "n/a"}
+    row.update(over)
+    return row
+
+
+def test_mismatch_detection_sits_after_summary_with_baseline_row(tree):
+    text = build(tree, detection=[detection_row()])
+    assert text.index("## Summary") < text.index("## Mismatch detection") < text.index("## Metrics")
+    assert "[Balanced accuracy](../../docs/definitions.md#metrics)" in text
+    assert "| Puzzle | Setup | Detection rate | False mismatch rate | Balanced accuracy |" in text
+    assert "| 2x2 | no_model | 0.75 (0.50–1.00) n=4, 4 inputs | 0.25 (n/a) n=4, 1 input | 0.75 |" in text
+    assert "| 2x2 | always MISMATCH (baseline) | 1.00 | 1.00 | 0.50 |" in text
+
+
+def test_mismatch_detection_absent_without_rows(tree):
+    assert "## Mismatch detection" not in build(tree)
+
+
+def test_mismatch_detection_shows_na(tree):
+    text = build(tree, detection=[detection_row(detection_rate="n/a", detection_rate_low="n/a", detection_rate_high="n/a", detection_rate_n=0, detection_rate_inputs=0, balanced_accuracy="n/a")])
+    assert "| 2x2 | no_model | n/a n=0, 0 inputs | 0.25 (n/a) n=4, 1 input | n/a |" in text
+
+
+def test_detection_by_corruption_type_sits_after_mismatch_detection(tree):
+    row = {"model": "M", "puzzle": "2x2", "setup": "no_model", "corruption_type": "twisted corner",
+           "detection_rate": 0.5, "detection_rate_low": 0.25, "detection_rate_high": 0.75,
+           "detection_rate_n": 4, "detection_rate_inputs": 2}
+    text = build(tree, detection=[detection_row()], corruption=[row])
+    assert text.index("## Mismatch detection") < text.index("## Detection by corruption type") < text.index("## Metrics")
+    assert "| Puzzle | Setup | Corruption type | Detection rate |" in text
+    assert "| 2x2 | no_model | twisted corner | 0.50 (0.25\u20130.75) n=4, 2 inputs |" in text
+    assert "## Detection by corruption type" not in build(tree)
+
+
+def test_experiment_section_names_the_reasoning_effort(tree):
+    assert "Reasoning effort: provider default." in build(tree)
+    assert "Reasoning effort: medium." in build(tree, config=dict(CONFIG, reasoning_effort="medium"))

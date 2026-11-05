@@ -452,7 +452,7 @@ def test_branches_and_config_route(server):
         {"id": "loc", "release": "1.0.0", "local": True, "remote": False},
         {"id": "rem", "release": "1.0.0", "local": False, "remote": True}]
     status, form = call(server, "GET", "/api/experiment/rem/config")
-    assert status == 200 and form == dict(FORM, id="rem")
+    assert status == 200 and form == dict(FORM, id="rem", reasoning_effort=None)
     assert call(server, "GET", "/api/experiment/loc/config")[1]["id"] == "loc"
     # the local branch wins over the remote one
     put_branch(server.root, "both", {"results/both/experiment.toml": dumps_config(dict(CONFIG, attempts=5))}, where="local")
@@ -475,7 +475,7 @@ def test_inputs_route(server):
 def test_experiment_detail_route(server):
     put_branch(server.root, "t1", {"results/t1/experiment.toml": dumps_config(CONFIG)})
     status, data = call(server, "GET", "/api/experiments/t1")
-    assert status == 200 and data["id"] == "t1" and data["config"] == FORM and data["pushed"] is True
+    assert status == 200 and data["id"] == "t1" and data["config"] == dict(FORM, reasoning_effort=None) and data["pushed"] is True
     assert call(server, "GET", "/api/experiments/nope")[0] == 404
 
 
@@ -1209,6 +1209,25 @@ def test_jobs_remember_parallel_of_running_run_jobs(server):
     assert jobs.parallels("t1") == {"example-model": 3} and jobs.parallels("other") == {}
     jobs.finish(job, 0)
     assert jobs.parallels("t1") == {}
+
+
+def test_reasoning_effort_defaults_to_medium_and_reaches_the_run_config(server):
+    assert call(server, "GET", "/api/bundle")[1]["defaults"]["reasoning_effort"] == "medium"
+    assert call(server, "POST", "/api/run", {**FORM, "reasoning_effort": "high"})[0] == 200
+    wait_job(server, "run:example-model")
+    saved = git(server.root, "show", "refs/heads/results/t1:results/t1/experiment.toml")
+    assert tomllib.loads(saved)["reasoning_effort"] == "high"
+    status, data = call(server, "POST", "/api/estimate", {**FORM, "reasoning_effort": "max"})
+    assert status == 400 and "reasoning_effort" in data["error"]
+
+
+def test_null_reasoning_effort_resumes_a_branch_saved_without_one(server):
+    assert call(server, "POST", "/api/run", FORM)[1]["status"] == "created"  # FORM has no reasoning_effort
+    wait_job(server, "run:example-model")
+    saved = git(server.root, "show", "refs/heads/results/t1:results/t1/experiment.toml")
+    assert "reasoning_effort" not in saved
+    assert call(server, "POST", "/api/run", {**FORM, "reasoning_effort": None})[1]["status"] == "unchanged"
+    wait_job(server, "run:example-model")
 
 
 def test_benchmarks_route(server):

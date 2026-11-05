@@ -1,5 +1,6 @@
 # Spec: docs/specs/ui.md (How to test)
 """Checks the page scripts with node: a syntax check of every ui/static/**/*.js and the markdown renderer's tests."""
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -24,6 +25,11 @@ def test_every_script_passes_node_check():
 
 def test_markdown_renderer():
     run = subprocess.run([NODE, "tests/js/markdown.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
+def test_summary_intervals_pooled_from_a_report_are_marked():
+    run = subprocess.run([NODE, "tests/js/expmetrics.test.mjs"], cwd=ROOT, capture_output=True, text=True)
     assert run.returncode == 0, run.stderr + run.stdout
 
 
@@ -79,3 +85,27 @@ def test_estimate_patterns_read_runs_estimate_lines(exp, capsys):
     assert run.returncode == 0, run.stderr
     matched = json.loads(run.stdout)
     assert len(lines) >= 2 and all(m == [True, False] for m in matched[:-1]) and matched[-1] == [False, True], lines
+
+
+def test_new_experiment_fills_the_reasoning_effort_a_stale_cached_bundle_lacks():
+    import json
+    import re
+    source = (ROOT / "ui" / "static" / "pages" / "new.js").read_text(encoding="utf-8")
+    body = re.search(r"  function fillEffort\(vals, defaults\) \{.*?\n  \}\n", source, re.S).group(0)
+    script = (body + "const out = [];"
+              "for (const [vals, d] of [[{}, {}], [{}, {reasoning_effort: 'high'}], [{reasoning_effort: ''}, {reasoning_effort: 'medium'}],"
+              " [{reasoning_effort: 'low'}, {reasoning_effort: 'medium'}]]) { fillEffort(vals, d); out.push(vals.reasoning_effort); }"
+              "console.log(JSON.stringify(out));")
+    run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout) == ["medium", "high", "", "low"]
+
+
+def test_experiments_default_columns_follow_the_spec():
+    source = (ROOT / "ui" / "static" / "pages" / "experiments.js").read_text()
+    columns = re.findall(r'\["(\w+)", "[^"]+"\]', source[source.index("const COLUMNS"):source.index("// Hidden when")])
+    hidden = re.search(r"DEFAULT_HIDDEN = \[(.*?)\]", source, re.S).group(1)
+    hidden = re.findall(r'"(\w+)"', hidden)
+    assert [c for c in columns if c not in hidden] == [
+        "id", "started_at", "model", "puzzle", "attempts", "success_rate", "hallucination_rate",
+        "mismatch_detection_rate", "cost_usd"]

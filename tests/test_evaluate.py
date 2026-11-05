@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import compute, holm, paired_tests, sign_test, wilson
+from src.evaluate.metrics import CORRUPTION_COLUMNS, DETECTION_COLUMNS, bootstrap_interval, compute, corruption_rows, corruption_type, detection_rows, holm, paired_tests, sign_test
 from src.puzzles.registry import get_engine
 from src.run import models, run as run_module
 from test_release import commit_all, edit, release_ok, repo  # noqa: F401  (repo is a fixture)
@@ -63,16 +63,16 @@ def twelve_records() -> list[dict]:
     return [
         raw(v1, 1, answer(["R"]), "success", 1.0),
         raw(v1, 2, answer(["R", "U", "U'"]), "success", 3.0),
-        raw(v1, 3, answer(["X"]), "hallucination", 2.0, retry=(2, 1)),
+        raw(v1, 3, answer(["M"]), "hallucination", 2.0, retry=(2, 1)),
         raw(v2, 1, answer(["U"]), "success", 2.0),
         raw(v2, 2, answer(["R"]), "failure", 4.0),
         raw(v2, 3, answer([]), "failure", 6.0),
         raw(i1, 1, answer([]), "success"),
         raw(i1, 2, " \n", "malformed_output"),
-        raw(i1, 3, answer(["X"]), "hallucination"),
+        raw(i1, 3, answer(["M"]), "hallucination"),
         raw(i2, 1, answer([]), "success"),
         raw(i2, 2, answer(["R"]), "failure"),
-        raw(i2, 3, answer(["X"]), "hallucination"),
+        raw(i2, 3, answer(["M"]), "hallucination"),
     ]
 
 
@@ -90,10 +90,57 @@ def metric(rows, validity):
     return row
 
 
-def test_wilson_seven_of_ten():
-    rate, low, high = wilson(7, 10)
-    assert (rate, round(low, 3), round(high, 3)) == (0.7, 0.397, 0.892)
-    assert wilson(0, 0) == ("n/a", "n/a", "n/a")
+def test_bootstrap_is_deterministic():
+    cells = [(1, 3), (0, 3), (3, 3), (2, 3)]
+    a = bootstrap_interval(cells, "g|success_rate")
+    assert a == bootstrap_interval(cells, "g|success_rate")
+    assert a[0] == 0.5 and 0.0 <= a[1] <= 0.5 <= a[2] <= 1.0
+
+
+def test_bootstrap_pinned_values():
+    """Pins the seeding and key format: a change to either moves the interval."""
+    rate, low, high = bootstrap_interval([(1, 3), (0, 3), (3, 3), (2, 3)], "g|success_rate")
+    assert rate == 0.5 and low == pytest.approx(0.0833333333) and high == pytest.approx(0.8333333333)
+
+
+def test_bootstrap_one_input_has_no_interval():
+    assert bootstrap_interval([(2, 3)], "k") == (2 / 3, "n/a", "n/a")
+
+
+def test_bootstrap_empty():
+    assert bootstrap_interval([], "k") == ("n/a", "n/a", "n/a")
+
+
+def test_bootstrap_all_hits():
+    assert bootstrap_interval([(3, 3)] * 10, "k") == (1.0, 1.0, 1.0)
+
+
+def test_clustered_interval_is_wider_than_independent():
+    clustered = bootstrap_interval([(3, 3)] * 5 + [(0, 3)] * 5, "k")
+    independent = bootstrap_interval([(1, 1)] * 15 + [(0, 1)] * 15, "k")
+    assert clustered[2] - clustered[1] > independent[2] - independent[1]
+
+
+def test_balanced_accuracy_interval_is_stratified_and_deterministic():
+    rows = ([_row(f"v{i}", "valid", mismatch=i == 1) for i in range(1, 5)]
+            + [_row(f"x{i}", "invalid", mismatch=i != 4) for i in range(1, 5)])
+    [row] = detection_rows(rows, ["m"])
+    assert row == detection_rows(rows, ["m"])[0]
+    assert row["balanced_accuracy_low"] == 0.375 and row["balanced_accuracy_high"] == 1.0
+
+
+def test_balanced_accuracy_draws_each_side_separately():
+    """With 2 valid and 2 invalid inputs, an unstratified draw can leave one side empty."""
+    rows = [_row("v1", "valid", False), _row("v2", "valid", False),
+            _row("x1", "invalid", True), _row("x2", "invalid", True)]
+    row = detection_rows(rows, ["m"])[0]
+    assert (row["balanced_accuracy_low"], row["balanced_accuracy_high"]) == (1.0, 1.0)
+
+
+def test_balanced_accuracy_interval_needs_two_inputs_per_side():
+    rows = [_row("v1", "valid", False), _row("x1", "invalid", True), _row("x2", "invalid", True)]
+    row = detection_rows(rows, ["m"])[0]
+    assert row["balanced_accuracy"] == 1.0 and row["balanced_accuracy_low"] == "n/a"
 
 
 def test_hand_worked_metrics(release_dir):
@@ -107,7 +154,6 @@ def test_hand_worked_metrics(release_dir):
     assert valid["false_mismatch_rate"] == pytest.approx(1 / 6)
     assert valid["malformed_output_rate"] == 0
     assert (valid["mismatch_detection_rate"], valid["mismatch_detection_rate_n"]) == ("n/a", 0)
-    assert valid["efficiency"] == pytest.approx((1 + 3 + 1) / 3)
     assert valid["consistency"] == pytest.approx(2 / 3)
     assert valid["latency_per_attempt_s"] == pytest.approx(3.0)
     assert valid["input_tokens_per_attempt"] == pytest.approx(62 / 6)
@@ -117,11 +163,11 @@ def test_hand_worked_metrics(release_dir):
     assert invalid["hallucination_rate"] == pytest.approx(2 / 6)
     assert invalid["malformed_output_rate"] == pytest.approx(1 / 6)
     assert invalid["mismatch_detection_rate"] == pytest.approx(2 / 6)
-    assert (invalid["false_mismatch_rate"], invalid["efficiency"]) == ("n/a", "n/a")
+    assert invalid["false_mismatch_rate"] == "n/a"
     assert invalid["consistency"] == pytest.approx(1 / 3)
     assert invalid["cost_per_success"] == pytest.approx(0.12 / 2)
-    low, high = invalid["success_rate_low"], invalid["success_rate_high"]
-    assert (round(low, 3), round(high, 3)) == (round(wilson(2, 6)[1], 3), round(wilson(2, 6)[2], 3))
+    assert invalid["success_rate_low"] <= 2 / 6 <= invalid["success_rate_high"]
+    assert invalid["success_rate_inputs"] == 2 and valid["success_rate_inputs"] == 2
     assert [(r["validity"], r["success_rate_n"]) for r in summary] == [("valid", 6), ("invalid", 6)]
 
 
@@ -131,7 +177,7 @@ def test_infrastructure_failures_change_only_counts_tokens_and_cost(release_dir)
     old, new = metric(before, "invalid"), metric(after, "invalid")
     assert metric(before, "valid") == metric(after, "valid")
     for name in ("success_rate", "hallucination_rate", "mismatch_detection_rate", "malformed_output_rate",
-                 "success_rate_n", "efficiency", "consistency", "latency_per_attempt_s"):
+                 "success_rate_n", "consistency", "latency_per_attempt_s"):
         assert new[name] == old[name]
     assert (old["infrastructure_failure_count"], new["infrastructure_failure_count"]) == (0, 2)
     assert new["input_tokens_per_attempt"] == pytest.approx((60 + 14) / 8)
@@ -142,7 +188,7 @@ def test_infrastructure_failures_change_only_counts_tokens_and_cost(release_dir)
 def test_no_successes_gives_no_cost_per_success(release_dir):
     records = [raw("2x2-d1-001", 1, answer(["U"]), "failure")]
     _, metrics, _ = compute(records, release_dir, PRICES)
-    assert metrics[0]["cost_per_success"] == "n/a" and metrics[0]["efficiency"] == "n/a"
+    assert metrics[0]["cost_per_success"] == "n/a"
 
 
 def test_changed_stored_outcome_shows_both_and_metrics_use_current(release_dir):
@@ -152,14 +198,6 @@ def test_changed_stored_outcome_shows_both_and_metrics_use_current(release_dir):
     changed = [r for r in attempts if r["stored_outcome"] != r["outcome"]]
     assert [(r["stored_outcome"], r["outcome"]) for r in changed] == [("failure", "success")]
     assert metric(metrics, "valid")["success_rate"] == 0.5
-
-
-def test_reference_length_not_implemented_gives_na_efficiency(release_dir, monkeypatch):
-    def refuse(state):
-        raise NotImplementedError("no solver")
-    monkeypatch.setattr(get_engine("2x2"), "reference_length", refuse)
-    _, metrics, _ = compute(twelve_records(), release_dir, PRICES)
-    assert metric(metrics, "valid")["efficiency"] == "n/a"
 
 
 def test_rows_sorted_by_setup_then_model_order(release_dir):
@@ -173,12 +211,52 @@ def test_rows_sorted_by_setup_then_model_order(release_dir):
         ("no_model", "B"), ("no_model", "A"), ("prescriptive", "B"), ("prescriptive", "A")]
 
 
+# ---- mismatch detection ----
+
+
+def _row(input_id, validity, mismatch, outcome="failure", model="m", setup="no_model", puzzle="2x2"):
+    return {"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
+            "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False}
+
+
+def test_balanced_accuracy():
+    rows = ([_row("v1", "valid", mismatch=True)] + [_row(f"v{i}", "valid", mismatch=False) for i in range(2, 5)]
+            + [_row(f"x{i}", "invalid", mismatch=True) for i in range(1, 4)] + [_row("x4", "invalid", mismatch=False)])
+    [row] = detection_rows(rows, ["m"])
+    assert row["detection_rate"] == 0.75 and row["false_mismatch_rate"] == 0.25
+    assert row["balanced_accuracy"] == 0.75
+    assert (row["detection_rate_n"], row["false_mismatch_rate_n"]) == (4, 4)
+    assert (row["detection_rate_inputs"], row["false_mismatch_rate_inputs"]) == (4, 4)
+    assert row["detection_rate_low"] <= 0.75 <= row["detection_rate_high"]
+    assert row["false_mismatch_rate_low"] <= 0.25 <= row["false_mismatch_rate_high"]
+
+
+def test_always_mismatch_scores_half():
+    rows = [_row("v1", "valid", mismatch=True), _row("x1", "invalid", mismatch=True)]
+    assert detection_rows(rows, ["m"])[0]["balanced_accuracy"] == 0.5
+
+
+def test_no_invalid_inputs_gives_na():
+    assert detection_rows([_row("v1", "valid", mismatch=False)], ["m"])[0]["balanced_accuracy"] == "n/a"
+
+
+def test_detection_leaves_out_infrastructure_failures_and_sorts():
+    rows = [_row("v1", "valid", False, outcome="infrastructure_failure"),
+            _row("v2", "valid", False, setup="prescriptive"), _row("x1", "invalid", True, setup="prescriptive"),
+            _row("v2", "valid", False, setup="no_model"), _row("x1", "invalid", True, setup="no_model"),
+            _row("v2", "valid", False, model="a"), _row("x1", "invalid", True, model="a")]
+    result = detection_rows(rows, ["m", "a"])
+    assert [(r["model"], r["setup"]) for r in result] == [
+        ("m", "no_model"), ("m", "prescriptive"), ("a", "no_model")]
+    assert result[0]["false_mismatch_rate_n"] == 1
+
+
 # ---- paired setup test ----
 
 
 def arow(input_id, setup, outcome, model="M", puzzle="2x2", validity="valid", mismatch=False):
     return {"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
-            "input_id": input_id, "outcome": outcome, "mismatch": mismatch}
+            "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False}
 
 
 def pair_row(rows, metric_name="success_rate", pair=("no_model", "descriptive"), **where):
@@ -361,6 +439,7 @@ def test_assessment_mismatch_refused(repo, monkeypatch, capsys):
     assert "assessment_sha256" in capsys.readouterr().err
     assert not (repo / "results/exp/1.0.0.md").exists() and not (repo / "results/exp/prices.toml").exists()
     assert not (repo / "results/exp/1.0.0.paired.csv").exists()
+    assert not (repo / "results/exp/1.0.0.detection.csv").exists()
 
 
 def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
@@ -368,8 +447,10 @@ def test_prices_copied_once_and_outputs_stable(repo, monkeypatch):
     prepare(repo, monkeypatch)
     raw_before = {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}
     assert go() == 0
-    first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv", "prices.toml")}
+    first = {n: (repo / "results/exp" / n).read_bytes() for n in ("1.0.0.md", "1.0.0.metrics.csv", "1.0.0.paired.csv", "1.0.0.detection.csv", "1.0.0.corruption.csv", "prices.toml")}
     assert go() == 0
+    header = (repo / "results/exp/1.0.0.detection.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert header == ",".join(DETECTION_COLUMNS)
     assert first == {n: (repo / "results/exp" / n).read_bytes() for n in first}
     assert raw_before == {p.name: p.read_bytes() for p in (repo / "results/exp/raw").iterdir()}
     (repo / "config/prices.toml").write_text(PRICE_FILE.format(price=9.0), encoding="utf-8")
@@ -454,7 +535,7 @@ def test_decision_model_records_are_parsed_as_arrays(release_dir):
     attempts, _, _ = compute([record], release_dir, PRICES, decision_models={"M"})
     assert attempts[0]["outcome"] == "success"
     attempts, _, _ = compute([record], release_dir, PRICES)
-    assert attempts[0]["outcome"] == "hallucination"  # read as lines, the JSON is an impossible move
+    assert attempts[0]["outcome"] == "abstention"  # read as lines, the JSON is prose
 
 
 def test_scoring_uses_the_records_decision_flag_over_the_config_rule(release_dir):
@@ -469,4 +550,94 @@ def test_scoring_uses_the_records_decision_flag_over_the_config_rule(release_dir
     assert attempts[0]["outcome"] == "success"
     unflagged = raw("2x2-d1-001", 1, json.dumps(calls), "success", model="M", decision=False)
     attempts, _, _ = compute([unflagged], release_dir, PRICES, decision_models={"M"})
-    assert attempts[0]["outcome"] == "hallucination"  # read as lines, the JSON is an impossible move
+    assert attempts[0]["outcome"] == "abstention"  # read as lines, the JSON is prose
+
+
+def test_new_outcome_rates(release_dir):
+    v1 = "2x2-d1-001"
+    records = [
+        raw(v1, 1, "R", "truncated", stop_reason="truncated"),
+        raw(v1, 2, "I cannot solve this", "abstention"),
+        raw(v1, 3, "R U", "format_error"),
+        raw(v1, 4, answer(["R"]), "success"),
+    ]
+    attempts, metrics, _ = compute(records, release_dir, PRICES)
+    assert [a["outcome"] for a in attempts] == ["truncated", "abstention", "format_error", "success"]
+    row = metrics[0]
+    assert row["truncated_rate"] == 0.25 and row["abstention_rate"] == 0.25
+    assert row["format_error_rate"] == 0.25 and row["malformed_output_rate"] == 0.0
+    assert row["truncated_rate_n"] == 4
+
+
+def test_decision_model_hallucination_rate_is_na(release_dir):
+    legal = get_engine("2x2").legal_moves()
+    _, scramble = get_engine("2x2").scramble(1, 1)
+    inverse = {"": "'", "'": "", "2": "2"}
+    solve = scramble[0][0] + inverse[scramble[0][1:]]
+    good = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}}},
+            {"answers": {"next_move": {"choice": "done"}}}]
+    bad = [{"answers": {"next_move": {"choice": "done"}}}]
+    records = [
+        raw("2x2-d1-001", n, json.dumps(calls), "x", model="jev", decision=True, setup=setup)
+        for setup in ("no_model", "descriptive") for n, calls in ((1, good), (2, bad))]
+    prices = {"jev": PRICES["M"]}
+    attempts, metrics, summary = compute(records, release_dir, prices)
+    assert {a["outcome"] for a in attempts} == {"success", "failure"}
+    assert all(a["decision"] for a in attempts)
+    assert metrics[0]["hallucination_rate"] == "n/a" and metrics[0]["hallucination_rate_n"] == 0
+    assert summary[0]["hallucination_rate"] == "n/a"
+    assert not any(r["metric"] == "hallucination_rate" and r["model"] == "jev"
+                   for r in paired_tests(attempts))
+    assert any(r["metric"] == "success_rate" for r in paired_tests(attempts))
+
+
+def test_old_records_rescore_without_error(release_dir):
+    legal = get_engine("2x2").legal_moves()
+    _, scramble = get_engine("2x2").scramble(1, 1)
+    inverse = {"": "'", "'": "", "2": "2"}
+    solve = scramble[0][0] + inverse[scramble[0][1:]]
+    calls = [{"answers": {"next_move": {"choice": f"move_{legal.index(solve) + 1}"}}},
+             {"answers": {"next_move": {"choice": "done"}}}]
+    old = raw("2x2-d1-001", 1, "R", "malformed_output", stop_reason="truncated", hallucination=False)
+    decision = raw("2x2-d1-001", 2, json.dumps(calls), "success", model="M", decision=True,
+                   hallucination=False)
+    attempts, _, _ = compute([old, decision], release_dir, PRICES)
+    assert [r["outcome"] for r in attempts] == ["truncated", "success"]
+
+
+def test_corruption_type_reads_old_descriptions():
+    assert corruption_type("twisted corner UFL clockwise") == "twisted corner"
+    assert corruption_type("flipped edge UF") == "flipped edge"
+
+
+def test_corruption_rows_split_by_type():
+    def row(input_id, corruption, mismatch, **over):
+        r = _row(input_id, "invalid", mismatch, **over)
+        r["corruption"] = corruption
+        return r
+    rows = [row("x1", "swapped edges UF UR", True), row("x1", "swapped edges UF UR", False),
+            row("x2", "twisted corner UFL clockwise", True),
+            row("x3", "twisted corner UFR anticlockwise", False),
+            row("x4", "twisted corner UFR clockwise", True, outcome="infrastructure_failure"),
+            _row("v1", "valid", True)]
+    result = corruption_rows(rows, ["m"])
+    assert [(r["corruption_type"], r["detection_rate"], r["detection_rate_n"], r["detection_rate_inputs"])
+            for r in result] == [("twisted corner", 0.5, 2, 2), ("swapped edges", 0.5, 2, 1)]
+    assert result == corruption_rows(rows, ["m"])
+
+
+def test_all_infrastructure_failures_evaluate_with_header_only_csvs(repo, monkeypatch):
+    release_ok(repo, "major")
+    prepare(repo, monkeypatch)
+    for path in (repo / "results/exp/raw").iterdir():
+        lines = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            record = json.loads(line)
+            record.update(outcome="infrastructure_failure", stop_reason="infrastructure_failure",
+                          raw_response="", parsed_moves=[], hallucination=False, mismatch=False)
+            lines.append(json.dumps(record))
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    assert go() == 0
+    for name, header in (("detection", ",".join(DETECTION_COLUMNS)),
+                         ("corruption", ",".join(CORRUPTION_COLUMNS))):
+        assert (repo / f"results/exp/1.0.0.{name}.csv").read_text(encoding="utf-8") == header + "\n"

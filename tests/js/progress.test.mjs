@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const file = fileURLToPath(new URL("../../ui/static/progress.js", import.meta.url));
 const window = {};
 vm.runInNewContext(fs.readFileSync(file, "utf8"), { window, UI: { el: () => null } });
-const { inFlight } = window.Progress;
+const { inFlight, COLORS, OUTCOMES } = window.Progress;
 
 let failed = 0;
 function check(name, got, want) {
@@ -27,5 +27,10 @@ check("fewer left than N", inFlight(snap, "m", 4, (k) => !["m|b|descriptive|1", 
   ["m|b|descriptive|1", "m|b|descriptive|2"]);
 check("nothing left", inFlight(snap, "m", 4, () => true), []);
 check("keyed by model", inFlight(snap, "other", 1, none), ["other|a|no_model|1"]);
+
+for (const [k, c] of [["truncated", "#d68910"], ["abstention", "#7f8c8d"], ["format_error", "#c0392b"]]) {
+  check("colour of " + k, COLORS[k], c);
+  check("outcome listed " + k, OUTCOMES.includes(k), true);
+}
 
 process.exit(failed ? 1 : 0);

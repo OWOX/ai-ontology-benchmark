@@ -2,11 +2,12 @@
 """Cube engine for the 2x2, 3x3, 4x4, and 5x5. Reads nothing and writes nothing.
 
 Stickers are placed in 3D, so a face turn is a rotation of the stickers in one
-layer. All move tables, piece positions, and the 2x2 search tables derive from
-that one placement. The 4x4 and 5x5 add wide turns of the two outer layers on one side.
+layer. All move tables and piece positions derive from that one placement. The 4x4 and 5x5
+add wide turns of the two outer layers on one side.
 """
 
 import random
+import re
 from collections import Counter, deque
 from functools import lru_cache
 
@@ -21,8 +22,10 @@ READING = {"U": ((0, 0, 1), (1, 0, 0)), "R": ((0, -1, 0), (0, 0, -1)),
            "L": ((0, -1, 0), (0, 0, 1)), "B": ((0, -1, 0), (-1, 0, 0))}
 # Corner and edge names list faces in this order, for example UFR and UF.
 NAME_ORDER = {"U": 0, "D": 0, "F": 1, "B": 1, "R": 2, "L": 2}
-# Whole-cube rotations of the 2x2, each written as two face turns.
-ROTATIONS = (("R", "L'"), ("U", "D'"))
+# The shape of a cube move in Singmaster and WCA notation, legal or not: a face letter with an
+# optional layer count and w, or a lower-case wide, slice, or rotation letter; then ' or 2 or both.
+# The layer count goes with face letters only, so the puzzle name 2x2 in prose isn't a move token.
+MOVE_TOKEN = re.compile(r"(?:[0-9]*[URFDLB]w?|[urfdlbMESxyz])(?:2'?|'2?)?")
 
 
 def _cross(u, v):
@@ -254,76 +257,12 @@ def _is_reachable(n, state):
     return _parity(corners[0]) == _parity(edges[0])
 
 
-@lru_cache(maxsize=None)
-def _search_tables():
-    """Return the 2x2 search moves and the pruning tables, built once.
-
-    With the DBL corner fixed, U, R, and F give the same distances in the
-    half-turn metric. A move is (face, source, twist added). The tables hold
-    the distance to solved for corner orientation (3^7) and permutation (7!).
-    """
-    moves = []
-    for face in "URF":
-        for suffix in ("", "'", "2"):
-            permutation, twist = _piece_coords(2, apply_move_to(2, _solved(2), face + suffix), 3)
-            moves.append((face, tuple(permutation), tuple(twist)))
-
-    def distances(start, step):
-        dist, queue = {start: 0}, deque([start])
-        while queue:
-            key = queue.popleft()
-            for _, source, twist in moves:
-                new = step(key, source, twist)
-                if new not in dist:
-                    dist[new] = dist[key] + 1
-                    queue.append(new)
-        return dist
-
-    twist_dist = distances((0,) * 8, lambda k, s, t: tuple((k[s[j]] + t[j]) % 3 for j in range(8)))
-    perm_dist = distances(tuple(range(8)), lambda k, s, t: tuple(k[s[j]] for j in range(8)))
-    return moves, twist_dist, perm_dist
-
-
-def _fix_dbl_corner(state):
-    """Return the whole-cube rotation of a 2x2 state that has the DBL corner home."""
-    solved = _solved(2)
-    dbl = next(p for p in _positions(2, 3) if {_face_of(2, i) for i in p} == {"D", "B", "L"})
-    seen, queue = {state}, deque([state])
-    while queue:
-        current = queue.popleft()
-        if all(current[i] == solved[i] for i in dbl):
-            return current
-        for rotation in ROTATIONS:
-            turned = apply_move_to(2, apply_move_to(2, current, rotation[0]), rotation[1])
-            if turned not in seen:
-                seen.add(turned)
-                queue.append(turned)
-    raise ValueError("no rotation puts the DBL corner home")
-
-
-def _ida_star_2x2(state):
-    moves, twist_dist, perm_dist = _search_tables()
-    permutation, twist = _piece_coords(2, _fix_dbl_corner(state), 3)
-
-    def search(perm, tw, depth, bound, last_face):
-        estimate = max(twist_dist[tw], perm_dist[perm])
-        if depth + estimate > bound:
-            return False
-        if estimate == 0:
-            return True
-        for face, source, added in moves:
-            if face != last_face and search(
-                    tuple(perm[s] for s in source),
-                    tuple((tw[source[j]] + added[j]) % 3 for j in range(8)),
-                    depth + 1, bound, face):
-                return True
-        return False
-
-    perm, tw = tuple(permutation), tuple(twist)
-    bound = max(twist_dist[tw], perm_dist[perm])
-    while not search(perm, tw, 0, bound, ""):
-        bound += 1
-    return bound
+TYPES_2 = ("twisted corner", "recoloured sticker")
+TYPES_3 = ("twisted corner", "flipped edge", "swapped corners", "swapped edges", "recoloured sticker")
+# Swaps are left out of the big cubes: a single swap of two pieces can be reachable there.
+TYPES_4 = ("twisted corner", "flipped wing", "recoloured sticker")
+TYPES_5 = ("twisted corner", "flipped wing", "flipped edge", "recoloured sticker")
+TYPES = {2: TYPES_2, 3: TYPES_3, 4: TYPES_4, 5: TYPES_5}
 
 
 class CubeEngine(Engine):
@@ -371,19 +310,35 @@ class CubeEngine(Engine):
 
     def corrupt(self, state: str, input_seed: int) -> tuple[str, str]:
         rng = random.Random(input_seed)
-        kind = rng.choice({2: (3,), 3: (3, 2), 4: (3, "wing"), 5: (3, 2, "wing")}[self.n])
-        position = rng.choice(_wings(self.n) if kind == "wing" else _positions(self.n, kind))
+        kind = rng.choice(TYPES[self.n])
+        chars = list(state)
+        if kind == "recoloured sticker":
+            centres = {group[0] for group in _cubies(self.n).values() if len(group) == 1}
+            size = self.n * self.n
+            index = rng.choice([i for i in range(len(state)) if i not in centres])
+            old = state[index]
+            colour = rng.choice([c for c in FACES if c != old])
+            chars[index] = colour
+            return "".join(chars), f"recoloured sticker {_face_of(self.n, index)}{index % size + 1} {old} to {colour}"
+        if kind in ("swapped corners", "swapped edges"):
+            size = 3 if kind == "swapped corners" else 2
+            first, second = rng.sample(_positions(self.n, size), 2)
+            for i, j in zip(first, second):
+                chars[i], chars[j] = state[j], state[i]
+            names = f"{_piece_name(self.n, first)} {_piece_name(self.n, second)}"
+            return "".join(chars), f"{kind} {names}"
+        if kind == "flipped wing":
+            position = rng.choice(_wings(self.n))
+        else:
+            position = rng.choice(_positions(self.n, 2 if kind == "flipped edge" else 3))
         old = [state[i] for i in position]
-        name = _wing_name(self.n, position) if kind == "wing" else _piece_name(self.n, position)
-        if kind == "wing":
-            new, description = old[::-1], f"flipped wing {name}"
-        elif kind == 2:
-            new, description = old[::-1], f"flipped edge {name}"
+        name = _wing_name(self.n, position) if kind == "flipped wing" else _piece_name(self.n, position)
+        if kind in ("flipped wing", "flipped edge"):
+            new, description = old[::-1], f"{kind} {name}"
         elif rng.random() < 0.5:
             new, description = [old[1], old[2], old[0]], f"twisted corner {name} clockwise"
         else:
             new, description = [old[2], old[0], old[1]], f"twisted corner {name} anticlockwise"
-        chars = list(state)
         for i, colour in zip(position, new):
             chars[i] = colour
         return "".join(chars), description
@@ -397,9 +352,5 @@ class CubeEngine(Engine):
             blocks.append("\n".join([face] + rows))
         return "\n\n".join(blocks)
 
-    def reference_length(self, state: str) -> int:
-        if not _is_reachable(self.n, state):
-            raise ValueError("state cannot be reached from the solved state")
-        if self.n != 2:
-            raise NotImplementedError("no reference solver for this cube yet (AGENTS.md open item 2)")
-        return _ida_star_2x2(state)
+    def is_move_token(self, token: str) -> bool:
+        return MOVE_TOKEN.fullmatch(token) is not None

@@ -5,17 +5,19 @@
   const h = UI.el;
   const NOTE = ExpMetrics.NOTE, pct = ExpMetrics.pct;
   const DIFFERS = "this experiment's settings for the AI model differ from config/models.toml";
-  const RATES = ["success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate", "malformed_output_rate"];
+  const RATES = ["success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate", "malformed_output_rate",
+    "truncated_rate", "abstention_rate", "format_error_rate"];
   const COLUMNS = [
     ["id", "Experiment id"], ["started_at", "Started"], ["model", "AI model"], ["puzzle", "Puzzle"], ["release", "Release"], ["attempts", "Attempts"],
     ["success_rate", "Success rate"], ["hallucination_rate", "Hallucination rate"],
     ["mismatch_detection_rate", "Mismatch detection rate"], ["false_mismatch_rate", "False mismatch rate"],
-    ["malformed_output_rate", "Malformed output rate"], ["infrastructure_failures", "Infrastructure failures"],
+    ["malformed_output_rate", "Malformed output rate"], ["truncated_rate", "Truncation rate"],
+    ["abstention_rate", "Abstention rate"], ["format_error_rate", "Format error rate"], ["infrastructure_failures", "Infrastructure failures"],
     ["total_tokens", "Total tokens"], ["cost_usd", "Cost"], ["report_version", "Report"],
   ];
   // Hidden when the hash has no `hide` key. `hide=none` in the hash shows every column.
-  const DEFAULT_HIDDEN = ["release", "false_mismatch_rate", "malformed_output_rate", "infrastructure_failures",
-    "total_tokens", "report_version"];
+  const DEFAULT_HIDDEN = ["release", "false_mismatch_rate", "malformed_output_rate", "truncated_rate",
+    "abstention_rate", "format_error_rate", "infrastructure_failures", "total_tokens", "report_version"];
 
   const num = (v) => (typeof v === "number" ? v.toLocaleString() : "n/a");
   const usd = (v) => (typeof v === "number" ? "$" + v.toFixed(2) : "n/a");

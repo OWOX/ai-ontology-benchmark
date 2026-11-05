@@ -275,3 +275,28 @@ def test_every_catalogue_model_has_a_price():
     prices = load_prices("config/prices.toml")
     assert {"jev", "clef", "clef-flash"} <= set(names)
     assert [name for name in names if name not in prices] == []
+
+
+EFFORT_BASE = ('release = "1.3.2"\nattempts = 1\nretry_cap = 0\nmax_output_tokens = 10\n[[models]]\nname = "f"\n'
+               'provider = "fake"\napi_model_id = "f"\nkind = "system-2"\n')
+
+
+def test_reasoning_effort_optional_and_checked():
+    assert "reasoning_effort" not in parse_experiment_config(EFFORT_BASE, "e", "x")
+    config = parse_experiment_config('reasoning_effort = "medium"\n' + EFFORT_BASE, "e", "x")
+    assert config["reasoning_effort"] == "medium"
+    with pytest.raises(ValueError, match="reasoning_effort"):
+        parse_experiment_config('reasoning_effort = "max"\n' + EFFORT_BASE, "e", "x")
+
+
+@pytest.mark.parametrize("key", ["reasoning_effort", "output_config", "thinking_config", "thinking"])
+def test_params_cannot_set_effort(key):
+    with pytest.raises(ValueError, match=key):
+        parse_experiment_config(EFFORT_BASE + f'params = {{{key} = "high"}}\n', "e", "x")
+
+
+def test_experiment_configs_in_the_work_tree_still_parse():
+    configs = sorted(Path("config/experiments").glob("*.toml"))
+    assert configs  # never vacuous: the committed configs are always there
+    for path in configs + sorted(Path("results").glob("*/experiment.toml")):
+        load_experiment_config(path)

@@ -12,8 +12,8 @@ from ui.expdata import all_scope_rates
 from ui.expdata import cell as na_to_none
 
 RATE_METRICS = ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
-                "malformed_output_rate")
-METRICS = (*RATE_METRICS, "efficiency", "consistency", "latency_per_attempt_s", "tokens_per_attempt",
+                "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate")
+METRICS = (*RATE_METRICS, "consistency", "latency_per_attempt_s", "tokens_per_attempt",
            "cost_per_success")
 HIGHER = ("success_rate", "mismatch_detection_rate", "consistency")
 
@@ -22,15 +22,17 @@ def direction(metric: str) -> str:
     return "higher" if metric in HIGHER else "lower"
 
 
-def pooled_rates(done: list[dict], scope: str) -> dict:
-    """Rates over the attempts that are not infrastructure failures, as `all_scope_rates` pools them."""
-    return all_scope_rates(done) if scope == "all" else rates(done, scope)
+def pooled_rates(done: list[dict], scope: str, key: str) -> dict:
+    """Rates over the attempts that are not infrastructure failures, as `all_scope_rates` pools them. An input is
+    one (input set id, input id), so inputs of different sets never merge. `key` seeds each bootstrap."""
+    keyed = [{**r, "input_id": (r["input_set_id"], r["input_id"])} for r in done]
+    return all_scope_rates(keyed, key) if scope == "all" else rates(keyed, scope, key)
 
 
 def rate_cell(stats: dict, metric: str) -> dict:
-    n = stats[metric + "_n"]
     return {"value": na_to_none(stats[metric]), "low": na_to_none(stats[metric + "_low"]),
-            "high": na_to_none(stats[metric + "_high"]), "n": n}
+            "high": na_to_none(stats[metric + "_high"]), "n": stats[metric + "_n"],
+            "inputs": stats[metric + "_inputs"]}
 
 
 def consistency_of(done: list[dict]) -> object:
@@ -39,18 +41,12 @@ def consistency_of(done: list[dict]) -> object:
     return consistency(keyed)
 
 
-def efficiency_ratios(done: list[dict]) -> list[float]:
-    return [r["move_count"] / r["reference_length"] for r in done
-            if r["outcome"] == "success" and r["validity"] == "valid" and r["reference_length"]]
-
-
-def cells(rows: list[dict], scope: str) -> dict[str, dict]:
-    """The cell of every metric for one AI model and puzzle. `rows` are its attempt rows, scope applied."""
+def cells(rows: list[dict], scope: str, key: str) -> dict[str, dict]:
+    """The cell of every metric for one AI model and puzzle. `rows` are its attempt rows, scope applied. `key`
+    names the group for the bootstrap. A hallucination cell is n/a when every attempt is a decision model's."""
     done = [r for r in rows if r["outcome"] != "infrastructure_failure"]
-    stats = pooled_rates(done, scope)
+    stats = pooled_rates(done, scope, key)
     out = {m: rate_cell(stats, m) for m in RATE_METRICS}
-    ratios = efficiency_ratios(done)
-    out["efficiency"] = {"value": na_to_none(mean(ratios)), "n": len(ratios)}
     out["consistency"] = {"value": na_to_none(consistency_of(done)), "n": len(done)}
     latencies = [r["latency_s"] for r in done if r["latency_s"] is not None]
     out["latency_per_attempt_s"] = {"value": na_to_none(mean(latencies)), "n": len(latencies)}
@@ -152,8 +148,10 @@ def row_for(puzzle: str, metric: str, cells_by_model: dict[str, dict], by_model:
     return out
 
 
-def build_rows(attempts: list[dict], models: list[str], puzzles: list[str], scope: str) -> list[dict]:
-    """One row per puzzle and metric, for the puzzles with any attempt. `attempts` are already filtered."""
+def build_rows(attempts: list[dict], models: list[str], puzzles: list[str], scope: str,
+               choice: str) -> list[dict]:
+    """One row per puzzle and metric, for the puzzles with any attempt. `attempts` are already filtered. `choice`
+    names the chosen releases and setups, and goes into each bootstrap key."""
     out = []
     for puzzle in puzzles:
         by_model = {m: [r for r in attempts if r["model"] == m and r["puzzle"] == puzzle
@@ -161,7 +159,8 @@ def build_rows(attempts: list[dict], models: list[str], puzzles: list[str], scop
         by_model = {m: found for m, found in by_model.items() if found}
         if not by_model:
             continue
-        per_model = {m: cells(found, scope) for m, found in by_model.items()}
+        per_model = {m: cells(found, scope, f"benchmarks|{puzzle}|{m}|{scope}|{choice}")
+                     for m, found in by_model.items()}
         for metric in METRICS:
             out.append(row_for(puzzle, metric, {m: per_model[m][metric] for m in per_model}, by_model))
     return out

@@ -11,18 +11,18 @@ Instructions for any coding agent working in this repo. The design is decided. B
 Do not break these. Changing one needs explicit approval from the project owner.
 
 1. API keys come from env vars. Never commit a key.
-2. Scramble count, scramble depths, valid/invalid split, attempts per input, retry cap, and max moves are config parameters, not constants. Config can list several scramble depths.
+2. Scramble count, scramble depths, valid/invalid split, attempts per input, retry cap, max moves, and reasoning effort are config parameters, not constants. Config can list several scramble depths.
 3. Each puzzle uses the standard notation AI models already know: Singmaster for 3x3 and the established equivalent for the others. No invented unified notation.
 4. A deterministic validator judges answers. An AI model never judges an AI model.
 5. `generate` and `run` are separate workflows. `generate` builds scrambles and invalid inputs once, records the seed, and freezes the result. `run` only reads frozen inputs. It never generates, scrambles, or edits them.
 6. Every AI model and every setup sees byte-identical inputs.
 7. Releases are read-only. A new input set means a new major release, a prompt change a new minor release, and an assessment fix a new patch release that mirrors the one before it.
 8. Invalid inputs are extra copies of valid inputs, corrupted by the engine under their own input seed. Every input carries a validity label, and the label is authoritative.
-9. AI model output is either the moves, one per line in the order applied, or the single line `MISMATCH`. Output that is empty after the validator's line rules, is cut off at the token limit, or is a refusal, including a content-filter refusal returned as an API error, gets outcome `malformed_output`, counted apart from failures and hallucinations. A decision model's raw response is instead the JSON array of its calls' answers, and the validator builds the moves from its `next_move` choices and sets the mismatch flag when the choice that ended the attempt is `mismatch`.
+9. AI model output is either the moves, one per line in the order applied, or the single line `MISMATCH`. Output cut off at the token limit gets outcome `truncated`. Output that is empty after the validator's line rules, or a refusal by the API or a content filter, including one returned as an API error, gets outcome `malformed_output`. Output with no move line and no `MISMATCH` line gets outcome `abstention`, and legal moves in any other layout get `format_error`. All four are counted apart from failures and hallucinations. Only a move token that isn't a legal move is a hallucination. A decision model's raw response is instead the JSON array of its calls' answers, and the validator builds the moves from its `next_move` choices and sets the mismatch flag when the choice that ended the attempt is `mismatch`.
 10. Retry only infrastructure failures, up to the retry cap. Never re-ask because an answer is wrong or malformed. When the cap is reached, the attempt still gets a raw record, with outcome `infrastructure_failure`. For a decision model, the retry cap counts retries across all calls of an attempt, and the raw record keeps the calls that completed.
 11. `results/<experiment id>/raw/` holds one raw record per attempt and is append-only. Nothing edits it.
-12. Every report can be recomputed from the experiment's raw records, its release, and config. `evaluate` re-validates every raw response, so an assessment fix means a patch release and a new report under it, never running the AI models again or editing raw records. Metrics, including anything that depends on the reference solver, are never stored in raw records.
-13. Every raw record carries its full context: experiment id, release version, input id, input set id, puzzle, scramble depth, validity label, setup, prompt version, AI model, seed, input seed, attempt number, raw response, parsed moves, outcome, hallucination flag, mismatch flag, move count, input tokens, output tokens, retry input tokens, retry output tokens, latency, stop reason, served model, decision flag, and requested model. For a decision model, tokens and latency are summed over its calls, and the served model joins the distinct values.
+12. Every report can be recomputed from the experiment's raw records, its release, and config. `evaluate` re-validates every raw response, so an assessment fix means a patch release and a new report under it, never running the AI models again or editing raw records. Metrics are never stored in raw records.
+13. Every raw record carries its full context: experiment id, release version, input id, input set id, puzzle, scramble depth, validity label, setup, prompt version, AI model, seed, input seed, attempt number, raw response, parsed moves, outcome, hallucination flag, mismatch flag, move count, input tokens, output tokens, retry input tokens, retry output tokens, latency, stop reason, served model, decision flag, and requested model. For a decision model, tokens and latency are summed over its calls, and the served model joins the distinct values. The hallucination flag of a decision-model attempt is null.
 14. `legal_moves()` in each engine is the only definition of a puzzle's move group. The prescriptive move list is exactly that list, and the validator reads it directly with an exact string match. No second copy exists anywhere.
 15. Raw records store token counts as the API returned them, never a cost. Token prices live in config, and reports compute cost from them, so a price change only means recomputing the reports.
 16. The prompt contains the rendered state and never the scramble.
@@ -48,7 +48,7 @@ Every engine implements:
 6. `scramble(input_seed, depth)` returns the state and the move sequence that produced it. Both go into the frozen input. `generate` derives each input seed from the config seed and passes it in.
 7. `corrupt(state, input_seed)` returns a state that can't be reached from the solved state by legal moves, and a description of the corruption applied.
 8. `render(state)` returns the text form of the state for the prompt.
-9. `reference_length(state)` returns the reference length in the half-turn metric. It accepts valid states only and raises on invalid ones.
+9. `is_move_token(token)` returns true when the token has the shape of a move in the puzzle's notation, whether or not it is legal. The validator uses it only to tell impossible moves from prose; legality is still decided by exact match against `legal_moves()`.
 
 Adding a puzzle means one new engine, one registry entry, one short description in `docs/puzzles/<puzzle>.md`, and its tests. If anything else has to change, the interface is wrong. Stop and ask.
 
@@ -94,7 +94,7 @@ Decided by the project owner on 2026-10-25. The full design is in [docs/specs/ui
 Ask before building anything that depends on these.
 
 1. Resolved: the prompt text for each setup is in `prompts/`, approved by the project owner on 2026-10-23.
-2. Reference solver for each puzzle.
+2. Resolved: no reference solver. Efficiency was dropped on 2026-11-04, because optimal solvers aren't practical for 5x5 and the other puzzles.
 3. Resolved: the output schema is in invariant 9.
 4. The exact octahedral and tetrahedral puzzles, for example the face-turning octahedron (FTO) and the Pyraminx. Tetrahedral itself still needs confirmation.
 5. Resolved for the cubes on 2026-11-03: face turns on the 2x2 and 3x3, face and wide turns on the 4x4 and 5x5, each counting as one move. The cube move groups contain no slice moves and no whole-cube rotations. Still open for the octahedral and tetrahedral puzzles: which moves each move group contains (whole-puzzle rotations, slice moves, and wide moves), and how each counts in the half-turn metric.

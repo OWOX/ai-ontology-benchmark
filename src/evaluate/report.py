@@ -17,6 +17,9 @@ VALID_ROWS = [
     ("Hallucination rate", "hallucination_rate"),
     ("False mismatch rate", "false_mismatch_rate"),
     ("Malformed output rate", "malformed_output_rate"),
+    ("Truncation rate", "truncated_rate"),
+    ("Abstention rate", "abstention_rate"),
+    ("Format error rate", "format_error_rate"),
     ("Cost per success", "cost_per_success"),
 ]
 INVALID_ROWS = [
@@ -24,6 +27,9 @@ INVALID_ROWS = [
     ("Mismatch detection rate", "mismatch_detection_rate"),
     ("Hallucination rate", "hallucination_rate"),
     ("Malformed output rate", "malformed_output_rate"),
+    ("Truncation rate", "truncated_rate"),
+    ("Abstention rate", "abstention_rate"),
+    ("Format error rate", "format_error_rate"),
 ]
 METRIC_COLUMNS = [
     ("Success", "success_rate"),
@@ -31,6 +37,9 @@ METRIC_COLUMNS = [
     ("Mismatch detection", "mismatch_detection_rate"),
     ("False mismatch", "false_mismatch_rate"),
     ("Malformed", "malformed_output_rate"),
+    ("Truncated", "truncated_rate"),
+    ("Abstention", "abstention_rate"),
+    ("Format error", "format_error_rate"),
 ]
 
 
@@ -49,11 +58,23 @@ def p_text(value: object) -> str:
 
 
 def rate_cell(row: dict, name: str) -> str:
-    """Show a rate as `0.42 (0.30–0.55) n=60`."""
+    """Show a rate as `0.42 (0.30–0.55) n=60, 20 inputs`, or `0.42 (n/a) n=60, 1 input` with no interval."""
+    k = row[name + "_inputs"]
+    counts = f"n={row[name + '_n']}, {k} input{'' if k == 1 else 's'}"
     if row[name] == NA:
-        return f"{NA} n={row[name + '_n']}"
+        return f"{NA} {counts}"
     low, high = row[name + "_low"], row[name + "_high"]
-    return f"{row[name]:.2f} ({low:.2f}–{high:.2f}) n={row[name + '_n']}"
+    if low == NA:
+        return f"{row[name]:.2f} ({NA}) {counts}"
+    return f"{row[name]:.2f} ({low:.2f}–{high:.2f}) {counts}"
+
+
+def balanced_cell(row: dict) -> str:
+    """Show balanced accuracy as `0.75 (0.50–1.00)`, or just `0.75` with no interval."""
+    low, high = row["balanced_accuracy_low"], row["balanced_accuracy_high"]
+    if row["balanced_accuracy"] == NA or low == NA:
+        return number(row["balanced_accuracy"], 2)
+    return f"{row['balanced_accuracy']:.2f} ({low:.2f}–{high:.2f})"
 
 
 def value_cell(row: dict, name: str) -> str:
@@ -112,7 +133,8 @@ def experiment_section(link, folder: Path, config: dict, prices: dict, rows: lis
     out += [
         f"Attempts per input, model and setup: {config['attempts']}. "
         f"Retry cap: {config['retry_cap']}. "
-        f"Maximum output tokens: {config['max_output_tokens']}.", "",
+        f"Maximum output tokens: {config['max_output_tokens']}. "
+        f"Reasoning effort: {config.get('reasoning_effort') or 'provider default'}.", "",
         f"First and last attempt: {first} to {last}.", "",
         f"Torn raw lines skipped: {torn}.", "",
         f"Token prices per million tokens, from [prices.toml]({link(folder / 'prices.toml')}):", "",
@@ -190,6 +212,45 @@ def comparison_section(definitions_link: str, config: dict, paired_rows) -> list
     return out
 
 
+def detection_section(definitions_link: str, config: dict, detection_rows) -> list[str]:
+    """Mismatch detection as balanced accuracy: one table per AI model."""
+    out = ["## Mismatch detection", "",
+           f"[Balanced accuracy]({definitions_link}#metrics) is the mean of the detection rate and "
+           "one minus the false mismatch rate. Answering MISMATCH always, or never, scores 0.50.", ""]
+    header = ["Puzzle", "Setup", "Detection rate", "False mismatch rate", "Balanced accuracy"]
+    for model in config["models"]:
+        rows = [r for r in detection_rows if r["model"] == model["name"]]
+        if not rows:
+            continue
+        body = []
+        for puzzle in dict.fromkeys(r["puzzle"] for r in rows):
+            for r in rows:
+                if r["puzzle"] == puzzle:
+                    body.append([puzzle, r["setup"],
+                                 rate_cell(r, "detection_rate"), rate_cell(r, "false_mismatch_rate"),
+                                 balanced_cell(r)])
+            body.append([puzzle, "always MISMATCH (baseline)", "1.00", "1.00", "0.50"])
+        out += [f"### {model['name']}", ""] + table(header, body)
+    return out
+
+
+def config_models(config: dict) -> list[str]:
+    return [m["name"] for m in config["models"]]
+
+
+def corruption_section(models: list[str], corruption_rows) -> list[str]:
+    """Mismatch detection split by corruption type: one table per AI model."""
+    out = ["## Detection by corruption type", "",
+           "The detection rate on invalid inputs, split by the kind of corruption applied.", ""]
+    header = ["Puzzle", "Setup", "Corruption type", "Detection rate"]
+    for model in models:
+        rows = [r for r in corruption_rows if r["model"] == model]
+        if rows:
+            body = [[r["puzzle"], r["setup"], r["corruption_type"], rate_cell(r, "detection_rate")] for r in rows]
+            out += [f"### {model}", ""] + table(header, body)
+    return out
+
+
 def metric_line(r: dict) -> list:
     """One row of a puzzle's metrics table."""
     line = [r["setup"], r["model"], r["scramble_depth"], r["validity"], r["attempts"],
@@ -197,7 +258,7 @@ def metric_line(r: dict) -> list:
     for _, name in METRIC_COLUMNS:
         line.append(rate_cell(r, name))
     line += [
-        number(r["efficiency"], 2), number(r["consistency"], 2),
+        number(r["consistency"], 2),
         number(r["latency_per_attempt_s"], 2), number(r["input_tokens_per_attempt"], 1),
         number(r["output_tokens_per_attempt"], 1), number(r["cost_per_success"], 4),
     ]
@@ -208,7 +269,7 @@ def metrics_section(metric_rows: list[dict]) -> list[str]:
     out = ["## Metrics", ""]
     header = ["Setup", "AI model", "Depth", "Validity", "Attempts", "Infra failures"]
     header += [title for title, _ in METRIC_COLUMNS]
-    header += ["Efficiency", "Consistency", "Latency (s)", "Input tokens", "Output tokens",
+    header += ["Consistency", "Latency (s)", "Input tokens", "Output tokens",
                "Cost per success"]
     puzzles = list(dict.fromkeys(r["puzzle"] for r in metric_rows))
     for puzzle in puzzles:
@@ -251,7 +312,8 @@ def attempts_section(link, release_dir: Path, attempt_rows: list[dict]) -> list[
 
 
 def write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows,
-                 metric_rows, summary_rows, torn_lines: int = 0, paired_rows=()) -> None:
+                 metric_rows, summary_rows, torn_lines: int = 0, paired_rows=(), detection_rows=(),
+                 corruption_rows=()) -> None:
     path, release_dir = Path(path), Path(release_dir)
 
     def link(target: Path) -> str:
@@ -263,6 +325,11 @@ def write_report(path, experiment_id, experiment_config, release_dir, prices, at
     lines += experiment_section(link, path.parent, experiment_config, prices, attempt_rows,
                                 torn_lines)
     lines += summary_section(experiment_config, summary_rows)
+    if detection_rows:
+        definitions = link(release_dir.parent.parent / "docs" / "definitions.md")
+        lines += detection_section(definitions, experiment_config, detection_rows)
+    if corruption_rows:
+        lines += corruption_section(config_models(experiment_config), corruption_rows)
     if paired_rows:
         definitions = link(release_dir.parent.parent / "docs" / "definitions.md")
         lines += comparison_section(definitions, experiment_config, paired_rows)

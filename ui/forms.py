@@ -7,7 +7,7 @@ Reads through Bundles and the work tree's `results/<id>/experiment.toml`. Writes
 import tomllib
 from pathlib import Path
 
-from src.config import parse_experiment_config
+from src.config import EFFORTS, parse_experiment_config
 from ui.bundle import Bundles
 from ui.common import ApiError, check_id
 from ui.experiments import BUDGET_DEFAULTS
@@ -63,10 +63,15 @@ def build_config(bundles: Bundles, form: dict, env: dict) -> dict:
     if not isinstance(budget_form, dict):
         raise ApiError(400, "field 'budget' must be an object")
     budget = {k: float(_number(budget_form, k, float, 0)) for k in BUDGET_DEFAULTS}
-    return {"release": release, "puzzles": puzzles, "attempts": _number(form, "attempts", int, 1),
-            "retry_cap": _number(form, "retry_cap", int, 0),
-            "max_output_tokens": _number(form, "max_output_tokens", int, 1),
-            "models": models, "budget": budget}
+    config = {"release": release, "puzzles": puzzles, "attempts": _number(form, "attempts", int, 1),
+              "retry_cap": _number(form, "retry_cap", int, 0),
+              "max_output_tokens": _number(form, "max_output_tokens", int, 1)}
+    effort = form.get("reasoning_effort")
+    if effort not in (None, *EFFORTS):
+        raise ApiError(400, f"field 'reasoning_effort' must be one of {', '.join(EFFORTS)}")
+    if effort:
+        config["reasoning_effort"] = effort
+    return {**config, "models": models, "budget": budget}
 
 
 def config_text(bundles: Bundles, form: dict, env: dict) -> str:

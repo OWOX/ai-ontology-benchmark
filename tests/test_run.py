@@ -110,6 +110,18 @@ def test_infrastructure_failure_after_cap(exp):
     assert len(models.FAKE_REPLIES) == 1  # 4 calls made
 
 
+def test_infrastructure_errors_are_logged_to_stderr_only(exp, capsys):
+    models.FAKE_REPLIES[:] = [InfrastructureError("boom " + "z" * 400), InfrastructureError("again"),
+                              Reply("U", "ok", "s", 10, 3, 0.5)]
+    go("--model", "A", "--limit", "1")
+    captured = capsys.readouterr()
+    lines = [line for line in captured.err.splitlines() if line.startswith("infrastructure error:")]
+    assert len(lines) == 2 and len(lines[0]) == 300
+    assert lines[0].startswith("infrastructure error: A ") and " no_model attempt 1 call 1: boom" in lines[0]
+    assert lines[1].endswith(" call 2: again")
+    assert "infrastructure error" not in captured.out
+
+
 def test_retry_then_success_sums_retry_tokens(exp):
     models.FAKE_REPLIES[:] = [InfrastructureError("x", 5, 1), Reply("U", "ok", "s", 10, 3, 0.5)]
     go("--model", "A", "--limit", "1")
@@ -502,15 +514,15 @@ def progress_lines(out):
 
 
 def test_plain_progress_line_per_attempt(exp, capsys):
-    models.FAKE_REPLIES[:] = [reply(), reply("X"), Reply("", "ok", "s", 10, 4, 0.1)]
+    models.FAKE_REPLIES[:] = [reply(), reply("M"), Reply("", "ok", "s", 10, 4, 0.1)]
     assert go("--model", "A", "--limit", "3", "--no-commit") == 0
     first, second, third = progress_lines(capsys.readouterr().out)
     assert first.startswith("[1/3] A 2x2 ") and " no_model #1 failure | in 10 out 4 | $0.0000 | " in first
-    assert first.endswith("success 0% hallucination 0% malformed 0%")
+    assert first.endswith("success 0% hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
     assert " no_model #2 hallucination | in 20 out 8 | " in second
-    assert second.endswith("success 0% hallucination 50% malformed 0%")
+    assert second.endswith("success 0% hallucination 50% malformed 0% truncated 0% abstention 0% format error 0%")
     assert " descriptive #1 malformed_output | in 30 out 12 | " in third and third.startswith("[3/3] A ")
-    assert third.endswith("success 0% hallucination 33% malformed 33%")
+    assert third.endswith("success 0% hallucination 33% malformed 33% truncated 0% abstention 0% format error 0%")
 
 
 def test_progress_counts_prior_records(exp, capsys):
@@ -525,8 +537,8 @@ def test_progress_rates_leave_out_infrastructure_failures(exp, capsys):
     models.FAKE_REPLIES[:] = [InfrastructureError("x", 0, 0) for _ in range(4)] + [reply()]
     go("--model", "A", "--limit", "2", "--no-commit")
     first, second = progress_lines(capsys.readouterr().out)
-    assert "infrastructure_failure" in first and first.endswith("success n/a hallucination n/a malformed n/a")
-    assert second.endswith("success 0% hallucination 0% malformed 0%")
+    assert "infrastructure_failure" in first and first.endswith("success n/a hallucination n/a malformed n/a truncated n/a abstention n/a format error n/a")
+    assert second.endswith("success 0% hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
 
 
 def test_no_progress_for_dry_run_and_estimate(exp, capsys):
@@ -747,7 +759,7 @@ def test_decision_model_end_to_end(exp, monkeypatch):
                *[InfrastructureError("x", 5, 1) for _ in range(4)]]
     assert go("--limit", "3") == 0
     solved_row, malformed_row, failed_row = records(exp, "D")
-    assert solved_row["outcome"] == "success" and solved_row["hallucination"] is False
+    assert solved_row["outcome"] == "success" and solved_row["hallucination"] is None
     assert len(json.loads(solved_row["raw_response"])) == len(solved)
     assert solved_row["input_tokens"] == 10 * len(solved) and solved_row["served_model"] == "d-served"
     assert solved_row["latency_s"] == pytest.approx(0.25 * len(solved)) and solved_row["stop_reason"] == "ok"
@@ -764,7 +776,7 @@ def test_decision_model_end_to_end(exp, monkeypatch):
     with open(exp / "results/exp/1.0.0.metrics.csv", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     by_setup = {r["setup"]: r for r in rows if r["model"] == "D"}
-    assert by_setup["no_model"]["success_rate"] == "1.0000" and by_setup["no_model"]["hallucination_rate"] == "0.0000"
+    assert by_setup["no_model"]["success_rate"] == "1.0000" and by_setup["no_model"]["hallucination_rate"] == "n/a"
     assert by_setup["descriptive"]["malformed_output_rate"] == "1.0000"
     assert by_setup["prescriptive"]["infrastructure_failure_count"] == "1"
     assert by_setup["prescriptive"]["success_rate_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
@@ -882,7 +894,7 @@ class Gate:
         self.full, self.release = threading.Event(), threading.Event()
         monkeypatch.setattr(run_module, "call_model", self)
 
-    def __call__(self, model, prompt, max_output_tokens):
+    def __call__(self, model, prompt, max_output_tokens, reasoning_effort=None):
         with self.lock:
             self.calls += 1
             number = self.calls
@@ -899,7 +911,7 @@ class Gate:
                 if self.release.wait(self.block_for):
                     return Reply("x", "ok", "s", 1, 1, 0.1)  # released after the test: touch nothing shared
             time.sleep(self.sleep)
-            return self.real(model, prompt, max_output_tokens)
+            return self.real(model, prompt, max_output_tokens, reasoning_effort)
         finally:
             with self.lock:
                 self.now -= 1
@@ -938,7 +950,7 @@ def test_a_finished_attempt_is_replaced_by_the_next_pending_in_loop_order(exp, m
     real, lock, order = run_module.call_model, threading.Lock(), []
     two_arrived, third_arrived, free_first, free_rest = (threading.Event() for _ in range(4))
 
-    def call(model, prompt, max_output_tokens):
+    def call(model, prompt, max_output_tokens, reasoning_effort=None):
         with lock:
             order.append((model["name"], prompt))
             number = len(order)
@@ -950,7 +962,7 @@ def test_a_finished_attempt_is_replaced_by_the_next_pending_in_loop_order(exp, m
             free_first.wait(5)  # the first attempt finishes while the second is still in flight
         elif number == 2:
             free_rest.wait(5)
-        return real(model, prompt, max_output_tokens)
+        return real(model, prompt, max_output_tokens, reasoning_effort)
 
     third_started_alone = []
 
@@ -1069,7 +1081,7 @@ def test_a_reservation_grows_with_the_tokens_its_attempt_has_paid(tmp_path):
 
 
 def test_a_worker_failure_that_is_not_an_exception_ends_the_run(exp, monkeypatch):
-    def boom(model, prompt, max_output_tokens):
+    def boom(model, prompt, max_output_tokens, reasoning_effort=None):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(run_module, "call_model", boom)
@@ -1153,3 +1165,35 @@ def test_latest_line_that_does_not_match_once_refused(exp, capsys):
     err = capsys.readouterr().err
     assert "exp.toml" in err and "'release'" in err
     assert not (exp / "results/exp").exists()
+
+
+def test_run_passes_the_experiment_reasoning_effort_to_the_model(exp, monkeypatch):
+    seen = []
+
+    def call(model, prompt, max_output_tokens, reasoning_effort=None):
+        seen.append(reasoning_effort)
+        return Reply("U", "ok", "s", 1, 1, 0.1)
+
+    monkeypatch.setattr(run_module, "call_model", call)
+    assert stdin_run(exp, monkeypatch, 'reasoning_effort = "high"\n' + EXPERIMENT, "--limit", "1") == 0
+    assert seen and set(seen) == {"high"}
+
+
+def test_infrastructure_error_log_is_one_line(capsys):
+    models.log_infrastructure_error("A in-1", 1, InfrastructureError("first\r\nsecond\nthird"))
+    assert capsys.readouterr().err == "infrastructure error: A in-1 call 1: first  second third\n"
+
+
+def test_live_hallucination_rate_is_na_for_decision_records():
+    from src.run.progress import Tally
+    base = {"input_tokens": 0, "retry_input_tokens": 0, "output_tokens": 0, "retry_output_tokens": 0,
+            "validity": "valid", "mismatch": False, "hallucination": False, "outcome": "success"}
+    price = {"price_input_per_mtok": 1.0, "price_output_per_mtok": 1.0}
+    decision_only, mixed, empty = Tally(), Tally(), Tally()
+    for record in (dict(base, decision=True), dict(base, decision=True, outcome="infrastructure_failure")):
+        decision_only.add(record, price)
+    for record in (dict(base, decision=True), dict(base, decision=False, outcome="hallucination")):
+        mixed.add(record, price)
+    assert decision_only.hallucination() == "n/a"
+    assert mixed.hallucination() == "50%"
+    assert empty.hallucination() == "n/a"

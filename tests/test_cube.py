@@ -3,12 +3,12 @@
 
 import hashlib
 import random
-from collections import deque
 
 import pytest
 
-from src.puzzles.cube import CubeEngine, _positions, _wings
+from src.puzzles.cube import TYPES, CubeEngine, _cubies, _positions, _wings
 from src.puzzles.engine import IllegalMoveError, ValidityMismatchError
+from src.puzzles.registry import get_engine
 
 E2, E3, E4, E5 = CubeEngine(2), CubeEngine(3), CubeEngine(4), CubeEngine(5)
 BIG = [E4, E5]
@@ -111,14 +111,15 @@ def test_corrupt_fails_and_scramble_passes_reachability(engine):
         with pytest.raises(ValidityMismatchError):
             engine.load_state({"state": bad, "validity": "valid"})
         assert engine.load_state({"state": bad, "validity": "invalid"}) == bad
-        assert description.startswith(("twisted corner ", "flipped edge ", "flipped wing "))
+        assert description.startswith(tuple(t + " " for t in TYPES[engine.n]))
 
 
 def test_corrupt_descriptions_and_edge_choice():
     descriptions = {E3.corrupt(E3.solved_state(), s)[1] for s in range(200)}
     assert any(d.startswith("flipped edge") for d in descriptions)
     assert any(d == "twisted corner UFR clockwise" for d in descriptions)
-    assert all(E2.corrupt(E2.solved_state(), s)[1].startswith("twisted corner") for s in range(50))
+    assert all(E2.corrupt(E2.solved_state(), s)[1].startswith(("twisted corner", "recoloured sticker"))
+               for s in range(50))
 
 
 @pytest.mark.parametrize("engine", [E2, E3, E4, E5])
@@ -145,8 +146,6 @@ def test_malformed_strings_are_invalid():
         with pytest.raises(ValidityMismatchError):
             E3.load_state({"state": case, "validity": "valid"})
         assert E3.load_state({"state": case, "validity": "invalid"}) == case
-        with pytest.raises(ValueError):
-            E3.reference_length(case)
     with pytest.raises(ValidityMismatchError):
         E2.load_state({"state": "U" * 24, "validity": "valid"})
 
@@ -158,42 +157,55 @@ def test_render():
     assert E3.render(E3.solved_state()).split("\n\n")[1] == "R\nR R R\nR R R\nR R R"
 
 
-def test_reference_length_unsolved_cubes():
-    with pytest.raises(NotImplementedError):
-        E3.reference_length(E3.scramble(1, 5)[0])
-    with pytest.raises(ValueError):
-        E2.reference_length(E2.corrupt(E2.solved_state(), 3)[0])
-    assert E2.reference_length(E2.solved_state()) == 0
-    assert E2.reference_length(E2.apply_move(E2.solved_state(), "R2")) == 1
+@pytest.mark.parametrize("puzzle", ["2x2", "3x3"])
+@pytest.mark.parametrize("token", ["R", "U'", "F2", "r", "Rw", "Rw2", "3Fw'", "M", "E2", "S'", "x", "y2", "z'", "R2'", "u"])
+def test_move_shaped_tokens(puzzle, token):
+    assert get_engine(puzzle).is_move_token(token)
 
 
-def breadth_first_distance(state):
-    seen, queue = {state}, deque([(state, 0)])
-    while queue:
-        current, dist = queue.popleft()
-        if E2.is_solved(current):
-            return dist
-        for move in E2.legal_moves():
-            new = E2.apply_move(current, move)
-            if new not in seen:
-                seen.add(new)
-                queue.append((new, dist + 1))
+@pytest.mark.parametrize("puzzle", ["2x2", "3x3"])
+@pytest.mark.parametrize("token", ["", "I", "can't", "MISMATCH", "2x2", "R,", "(R", "R3", "Q", "RU", "R''", " R", "R ", "R\u2019", "a", "The"])
+def test_prose_tokens(puzzle, token):
+    assert not get_engine(puzzle).is_move_token(token)
 
 
-def test_ida_star_matches_breadth_first():
-    rng = random.Random(0)
-    for _ in range(20):
-        depth = rng.randint(1, 4)
-        state, _ = E2.scramble(rng.randrange(10**6), depth)
-        assert 1 <= E2.reference_length(state) <= depth
-        assert E2.reference_length(state) == breadth_first_distance(state)
+@pytest.mark.parametrize("puzzle", ["2x2", "3x3", "4x4", "5x5"])
+def test_every_legal_move_is_a_move_token(puzzle):
+    engine = get_engine(puzzle)
+    assert all(engine.is_move_token(m) for m in engine.legal_moves())
 
 
-def test_ida_star_on_deep_scrambles():
-    for seed in range(10):
-        state, _ = E2.scramble(seed, 14)
-        assert 1 <= E2.reference_length(state) <= 11
+def test_engine_has_no_reference_length():
+    assert not hasattr(get_engine("2x2"), "reference_length")
 
+
+@pytest.mark.parametrize("puzzle,types", [
+    ("2x2", {"twisted corner", "recoloured sticker"}),
+    ("3x3", {"twisted corner", "flipped edge", "swapped corners", "swapped edges", "recoloured sticker"}),
+    ("4x4", {"twisted corner", "flipped wing", "recoloured sticker"}),
+    ("5x5", {"twisted corner", "flipped wing", "flipped edge", "recoloured sticker"})])
+def test_corruption_types_cover_and_stay_unreachable(puzzle, types):
+    engine = get_engine(puzzle)
+    assert set(TYPES[engine.n]) == types
+    state, _ = engine.scramble(1, 10)
+    seen = set()
+    for seed in range(600):
+        new, description = engine.corrupt(state, seed)
+        seen.add(" ".join(description.split()[:2]))
+        with pytest.raises(ValidityMismatchError):
+            engine.load_state({"state": new, "validity": "valid"})
+    assert seen == types
+
+
+@pytest.mark.parametrize("engine", BIG)
+def test_recoloured_sticker_never_touches_a_centre(engine):
+    centres = {group[0] for group in _cubies(engine.n).values() if len(group) == 1}
+    state, _ = engine.scramble(2, 10)
+    for seed in range(600):
+        new, description = engine.corrupt(state, seed)
+        if description.startswith("recoloured sticker"):
+            changed = [i for i in range(len(state)) if state[i] != new[i]]
+            assert len(changed) == 1 and changed[0] not in centres
 
 def digest(text):
     return hashlib.sha256(text.encode()).hexdigest()[:12]
@@ -208,9 +220,6 @@ SMALL_CUBE_PINS = {
             2: ("U' R' U' F2 B' U2 L2 B D' B' R' F' L R L U L D' U2 D", "e72d46192e0f"),
             3: ("F' L F2 U2 F2 B2 D F' L' D U' L U B2 L' F' R' D2 R F", "ac79fea8d32e"),
         },
-        "corrupts": {(1, 1): ("twisted corner UBR clockwise", "adff17501505"),
-                     (1, 11): ("twisted corner DBL clockwise", "31cb9aa41b4f"),
-                     (2, 12): ("twisted corner DFR anticlockwise", "db4a97663e4d")},
         "all_moves": "80cce0b2dc23", "render": "0900562d705c",
     },
     3: {
@@ -219,9 +228,6 @@ SMALL_CUBE_PINS = {
             2: ("U' R' U' F2 B' U2 L2 B D' B' R' F' L R L U L D' U2 D", "7663cc4c1189"),
             3: ("F' L F2 U2 F2 B2 D F' L' D U' L U B2 L' F' R' D2 R F", "1f5eec3783b4"),
         },
-        "corrupts": {(1, 1): ("twisted corner UBR clockwise", "628512d436d2"),
-                     (1, 11): ("flipped edge DF", "859c77130ebe"),
-                     (2, 12): ("flipped edge FR", "a3d68b6f4566")},
         "all_moves": "f12a7a39061d", "render": "05c25137b7d2",
     },
 }
@@ -234,9 +240,13 @@ def test_small_cubes_unchanged(n):
     for seed, (moves, state_digest) in pins["scrambles"].items():
         state, got = engine.scramble(seed, 20)
         assert " ".join(got) == moves and digest(state) == state_digest
-    for (scramble_seed, corrupt_seed), (description, state_digest) in pins["corrupts"].items():
-        bad, got = engine.corrupt(engine.scramble(scramble_seed, 20)[0], corrupt_seed)
-        assert (got, digest(bad)) == (description, state_digest)
+    # Corruptions changed on purpose with the new corruption types, so invalid inputs are
+    # checked for being unreachable and typed instead of pinned byte for byte.
+    for seed in range(1, 40):
+        bad, got = engine.corrupt(engine.scramble(1, 20)[0], seed)
+        assert got.startswith(tuple(t + " " for t in TYPES[n]))
+        with pytest.raises(ValidityMismatchError):
+            engine.load_state({"state": bad, "validity": "valid"})
     state, _ = engine.scramble(1, 20)
     assert digest("".join(engine.apply_move(state, m) for m in engine.legal_moves())) == pins["all_moves"]
     assert digest(engine.render(state)) == pins["render"]
@@ -300,8 +310,6 @@ def test_impossible_wings_and_centres_are_invalid(engine):
     for bad in (flipped, duplicated, recoloured, solved[:-1], "X" + solved[1:]):
         with pytest.raises(ValidityMismatchError):
             engine.load_state({"state": bad, "validity": "valid"})
-        with pytest.raises(ValueError):
-            engine.reference_length(bad)
 
 
 @pytest.mark.parametrize("engine", BIG)
@@ -312,10 +320,3 @@ def test_corrupt_descriptions_per_size(engine):
     assert len(wings) == 24 and "flipped wing UF near R" in wings and "flipped wing UF near L" in wings
     assert any(d.startswith("flipped edge ") for d in descriptions) == (engine is E5)
 
-
-@pytest.mark.parametrize("engine", BIG)
-def test_reference_length_is_not_available_yet(engine):
-    with pytest.raises(NotImplementedError):
-        engine.reference_length(engine.scramble(1, 5)[0])
-    with pytest.raises(ValueError):
-        engine.reference_length(engine.corrupt(engine.solved_state(), 3)[0])
