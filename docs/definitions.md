@@ -104,6 +104,7 @@ Every term below means the same thing in code, configs, records, reports, and do
     7. `success`: the expected result is reached.
     8. `failure`: every move was legal and the layout was right, but the expected result is missed. That means a valid input left unsolved or flagged, or an invalid input left unflagged.
 15. **Call.** One request inside an attempt. An attempt by a [decision model](#setups) is a loop of calls, one per move, and every other attempt is one call plus its retries. Retries of a call count against the [retry cap](#attempts-and-outcomes) of the attempt.
+16. **False MISMATCH.** A claim that a solvable puzzle can't be solved: the mismatch flag is on for an attempt on a valid input. Its outcome is `failure`. It is a wrong answer, not a hallucination, because `MISMATCH` is one of the two answers the prompt offers, and a bare `MISMATCH` gives no reason that could be checked.
 
 ## Recorded values
 
@@ -139,7 +140,7 @@ Every rate is reported with its denominator `n`, the number of attempts, the num
 1. **Success rate.** The share of attempts, on valid and invalid inputs, with outcome `success`. Reports split it by validity label.
 2. **Hallucination rate.** The share of attempts with outcome `hallucination`. n/a for decision models, which can't return an impossible move.
 3. **Mismatch detection rate.** The share of attempts on invalid inputs where the mismatch flag is on, whatever the outcome. Truncated output, malformed output, abstention, and format errors count as not detected. The flag is enough. The AI model doesn't have to say what is wrong.
-4. **False mismatch rate.** The share of attempts on valid inputs where the mismatch flag is on. Truncated output, malformed output, abstention, and format errors count as not flagged.
+4. **False mismatch rate.** The share of attempts on valid inputs that are a [false MISMATCH](#attempts-and-outcomes). Truncated output, malformed output, abstention, and format errors count as not flagged.
 5. **Malformed output rate.** The share of attempts with outcome `malformed_output`. Malformed output never counts as a hallucination.
 6. **Truncation rate.** The share of attempts with outcome `truncated`.
 7. **Abstention rate.** The share of attempts with outcome `abstention`.
