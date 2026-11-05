@@ -40,7 +40,10 @@
     });
     const entries = d.model_entries;
     const providerOf = (m) => (entries.find((e) => e.name === m) || {}).provider || "";
-    const providers = [...new Set(c.models.map(providerOf))];
+    // Provider columns in the catalogue order, as on New Experiment.
+    const order = bundle.providers.map((p) => p.name);
+    const rank = (p) => (order.includes(p) ? order.indexOf(p) : order.length);
+    const providers = [...new Set(c.models.map(providerOf))].sort((a, b) => rank(a) - rank(b));
     const cols = providers.map((name) => h("div", { class: "model-col" },
       h("label", { class: "provider-head" }, tick(true), h("span", { text: name })),
       ...c.models.filter((m) => providerOf(m) === name).map((m) => {
