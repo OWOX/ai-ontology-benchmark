@@ -6,6 +6,7 @@ Writes nothing. A build, including its fetch, runs under one lock.
 
 import copy
 import json
+import re
 import threading
 import tomllib
 from pathlib import Path
@@ -25,6 +26,16 @@ from ui.puzzleinfo import build_puzzle
 NO_KEY = "no API key: add it under Models"
 NO_ACCOUNT = "no account id: add it under Models"
 CACHE_LIMIT = 16
+
+
+def metric_definitions(markdown: str | None) -> dict[str, str]:
+    """Each numbered item under `## Metrics` in docs/definitions.md, keyed by its bold term, as plain text:
+    links keep their text and backticks are dropped."""
+    section = re.search(r"^## Metrics\n(.*?)(?=^## |\Z)", markdown or "", re.M | re.S)
+    out = {}
+    for term, text in re.findall(r"^\d+\. \*\*(.+?)\.\*\* (.+)$", section.group(1) if section else "", re.M):
+        out[term] = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text).replace("`", "")
+    return out
 
 
 def is_mirror(release: str, other: str | None, manifests: dict[str, dict | None]) -> bool:
@@ -171,10 +182,13 @@ class Bundles(BranchReaders):
         rows_cache: dict = {}  # attempt rows per (experiment, model file), shared by the puzzles of this build
         puzzles = [build_puzzle(self.git, main, link, release, manifest, name, inputs_by_release[release],
                                 experiments, rows_cache) for name in names]
-        return {"schema": 2, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
+        definitions = link("docs/definitions.md")
+        return {"schema": 3, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
                 "repo": base, "main_sha": main_sha, "defaults": DEFAULTS,
                 "providers": build_providers(catalogue, self._prices(), experiments), "puzzles": puzzles, "experiments": rows,
-                "about": {"markdown": self.git.show(main, "README.md"), "source": link("README.md")}}
+                "about": {"markdown": self.git.show(main, "README.md"), "source": link("README.md")},
+                "metric_definitions": {"terms": metric_definitions(self.git.show(main, "docs/definitions.md")),
+                                       "source": definitions and definitions + "#metrics"}}
 
     # --- benchmarks ------------------------------------------------------------------------
 

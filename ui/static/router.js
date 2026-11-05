@@ -58,7 +58,7 @@
       // `bundle:last` remembers the newest release returned; it stands in when the hash names none.
       const key = "bundle:" + (release || store.get("bundle:last") || "");
       const cached = key === "bundle:" ? null : store.get(key);
-      if (cached && cached.schema !== 2) store.drop(key);
+      if (cached && cached.schema !== 3) store.drop(key);
       else if (cached && onCached) onCached(cached);
       const q = new URLSearchParams();
       if (release) q.set("release", release);
@@ -143,7 +143,9 @@
     const r = src.getBoundingClientRect();
     const left = Math.max(12, Math.min(r.left - 6, window.innerWidth - 12 - tip.offsetWidth));
     tip.style.left = left + "px";
-    tip.style.top = (r.bottom + 6) + "px";
+    // Below the source, or above it when the panel would run past the bottom of the window and there is more room above.
+    const below = r.bottom + 6 + tip.offsetHeight <= window.innerHeight - 12 || window.innerHeight - r.bottom >= r.top;
+    tip.style.top = (below ? r.bottom + 6 : Math.max(12, r.top - 6 - tip.offsetHeight)) + "px";
   }
   UI.tipOn($("conn"));
 
