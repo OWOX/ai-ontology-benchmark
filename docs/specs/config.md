@@ -42,7 +42,7 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
    per_experiment_usd = 50.00
    ```
 
-   [Budgets](../definitions.md#baseline-and-prices) limit what the experiment can spend. `[budget]` and each of its fields are optional. A missing field takes the default shown. It is the only part of an experiment config that may change after the experiment starts, so a stopped run can resume with a higher budget.
+   [Budgets](../definitions.md#prices) limit what the experiment can spend. `[budget]` and each of its fields are optional. A missing field takes the default shown. It is the only part of an experiment config that may change after the experiment starts, so a stopped run can resume with a higher budget.
 
    `kind` says whether the AI model is a [system-1 or system-2 model](../definitions.md#setups). It is optional in an experiment config, because experiments committed before the field existed have none and must still evaluate.
 
