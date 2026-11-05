@@ -1,5 +1,5 @@
 seed = 20261017
-puzzles = ["2x2", "3x3"]
+puzzles = ["2x2", "3x3", "4x4", "5x5"]
 scramble_depths = [5, 10, 20]
 scramble_count = 10
 valid_invalid_split = 0.5
