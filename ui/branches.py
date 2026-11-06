@@ -4,8 +4,8 @@ puzzles, an experiment's stored config, and one experiment branch. Reads `main` 
 through GitData. Writes nothing.
 """
 
-from ui.catalogue import build_providers
 from ui import expdata
+from ui.catalogue import build_providers
 from ui.common import ApiError
 from ui.gitdata import LOCAL_RESULTS, REMOTE_RESULTS
 
