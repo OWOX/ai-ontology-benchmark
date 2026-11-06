@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
+import { loadRouter } from "./load_router.mjs";
 
 const file = fileURLToPath(new URL("../../ui/static/expmetrics.js", import.meta.url));
 const el = (tag, props = {}, ...kids) => {
@@ -11,7 +12,7 @@ const el = (tag, props = {}, ...kids) => {
   return node;
 };
 const window = {};
-vm.runInNewContext(fs.readFileSync(file, "utf8"), { window, UI: { el } });
+vm.runInNewContext(fs.readFileSync(file, "utf8"), { window, UI: { el, usd: loadRouter().UI.usd } });
 const { summary, NOTE, SUMMARY_NOTE } = window.ExpMetrics;
 
 const text = (n) => (typeof n === "string" ? n : [n.props?.text ?? "", ...n.kids.map(text)].join("|"));

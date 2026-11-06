@@ -40,7 +40,7 @@
     box.append(table(["AI model", "Total tokens", "Cost"], models.map((m) => {
       const rows = own.filter((r) => r.model === m);
       const sum = (k) => (rows.length && rows.every((r) => typeof r[k] === "number") ? rows.reduce((a, r) => a + r[k], 0) : null);
-      return [m, grouped(sum("total_tokens")), sum("cost_usd") === null ? "n/a" : "$" + sum("cost_usd").toFixed(2)];
+      return [m, grouped(sum("total_tokens")), sum("cost_usd") === null ? "n/a" : UI.usd(sum("cost_usd"), { fixed: 2 })];
     })));
     box.append(h("p", { class: "muted small", text: computed ? NOTE : SUMMARY_NOTE }));
     return box;
