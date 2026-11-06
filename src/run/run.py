@@ -385,7 +385,7 @@ class Attempt:
             then = self.snapshot["settled"]
             spent = {n: cost + settled.get(n, 0.0) - then.get(n, 0.0) for n, cost in spent.items()}
         spent = {n: cost + reserved.get(n, 0.0) for n, cost in spent.items()}
-        check_spend(self.config, self.prices, self.results / "raw", name, self.worst + paid, self.left, spent)
+        check_spend(self.config, name, self.worst + paid, self.left, spent)
         self.flight.reserve(self.seq, name, self.worst + paid)  # what it has paid is not in any file yet
 
     def call(self) -> None:
