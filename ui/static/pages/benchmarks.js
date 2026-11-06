@@ -39,8 +39,7 @@
   let seq = 0;
   let reopen = null;  // "<picker>|<value>" of the checkbox just toggled
 
-  document.addEventListener("click", (e) => {  // a click outside an open picker or experiments panel closes it
-    for (const d of document.querySelectorAll("details.col-picker[open]")) if (!d.contains(e.target)) d.open = false;
+  document.addEventListener("click", (e) => {  // a click outside an experiments panel closes it (router.js closes the pickers)
     if (!e.target.closest(".cell-pop, .cell-link")) closePop();
   });
   document.addEventListener("keydown", (e) => {

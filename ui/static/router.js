@@ -101,18 +101,14 @@
     return { name, top, parts: rest, query, release: query.release || "" };
   }
 
-  // Menu links always lead to the newest release: with no release select, a `?release=` picked up from one
-  // link would otherwise stick to every page.
-  function menuHref(name) {
-    return "#/" + name;
-  }
-
   function drawMenu() {
     const b = st.bundle;
     if (!b) return;
     const current = st.params.top;
+    // Menu links always lead to the newest release: with no release select, a `?release=` picked up from one
+    // link would otherwise stick to every page.
     $("links").replaceChildren(...MENU.map(([name, label]) => {
-      const a = Object.assign(document.createElement("a"), { href: menuHref(name), textContent: label });
+      const a = Object.assign(document.createElement("a"), { href: "#/" + name, textContent: label });
       if (name === current) a.className = "current";
       return a;
     }));
@@ -159,8 +155,8 @@
     $("termbox").hidden = st.params.name !== "about";
     const page = pages[st.params.name];
     const main = $("main");
-    if (!page) { main.replaceChildren(); return; }
     main.replaceChildren();
+    if (!page) return;
     page.render(b, st.params, main);
   }
 
@@ -248,8 +244,11 @@
     if (atBottom) term.scrollTop = term.scrollHeight;
   }
 
+  document.addEventListener("click", (e) => {  // a click outside an open column or release picker closes it
+    for (const d of document.querySelectorAll("details.col-picker[open]")) if (!d.contains(e.target)) d.open = false;
+  });
   $("refresh").addEventListener("click", () => UI.reload(true));
-  $("new-exp").addEventListener("click", () => UI.go(menuHref("new")));
+  $("new-exp").addEventListener("click", () => UI.go("#/new"));
   $("btn-clear").addEventListener("click", () => $("terminal").replaceChildren());
   window.addEventListener("hashchange", route);
   document.addEventListener("DOMContentLoaded", () => { route(); pollLog(); });

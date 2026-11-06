@@ -136,10 +136,6 @@
     return h("div", { class: "small" }, "Releases", pick);  // not a label: a click would reach the first checkbox
   }
 
-  document.addEventListener("click", (e) => {  // a click outside the open column picker closes it
-    for (const d of document.querySelectorAll("details.col-picker[open]")) if (!d.contains(e.target)) d.open = false;
-  });
-
   UI.registerPage("experiments", {
     render(bundle, params, el) {
       const query = params.query, validity = query.validity || "all";
