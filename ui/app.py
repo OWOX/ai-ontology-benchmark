@@ -126,17 +126,21 @@ class App:
         project.check_clean(self.root)
         return self.project_job("release", ["src.release.release", "--bump", bump, "--note", note.strip()])
 
-    def push(self) -> dict:
-        project.check_branch(self.root)
-        (job,) = self.jobs.register("", ["push"], inline=True, exclusive=True)
+    def _inline(self, experiment_id: str, name: str, work, exclusive: bool = False) -> dict:
+        """Run work(root, emit) as an inline job, echoing its output and recording how it ended."""
+        (job,) = self.jobs.register(experiment_id, [name], inline=True, exclusive=exclusive)
         try:
-            result = project.push(self.root, lambda s, t: self.jobs.say("", "push", s, t))
+            result = work(self.root, lambda s, t: self.jobs.say(experiment_id, name, s, t))
         except BaseException as error:
-            self.jobs.say("", "push", "stderr", getattr(error, "message", str(error)))
+            self.jobs.say(experiment_id, name, "stderr", getattr(error, "message", str(error)))
             self.jobs.finish(job, 1)
             raise
         self.jobs.finish(job, 0)
         return result
+
+    def push(self) -> dict:
+        project.check_branch(self.root)
+        return self._inline("", "push", project.push, exclusive=True)
 
     def guard_commit(self, experiment_id: str) -> None:
         if self.jobs.alive(experiment_id):
@@ -145,15 +149,7 @@ class App:
     def commit(self, body: dict) -> dict:
         experiment_id = check_id(body.get("id"))
         self.guard_commit(experiment_id)
-        (job,) = self.jobs.register(experiment_id, ["commit"], inline=True)
-        try:
-            result = commit_module.commit(self.root, experiment_id, lambda s, t: self.jobs.say(experiment_id, "commit", s, t))
-        except BaseException as error:
-            self.jobs.say(experiment_id, "commit", "stderr", getattr(error, "message", str(error)))
-            self.jobs.finish(job, 1)
-            raise
-        self.jobs.finish(job, 0)
-        return result
+        return self._inline(experiment_id, "commit", lambda root, emit: commit_module.commit(root, experiment_id, emit))
 
     def get(self, path: str, query: dict) -> dict:
         parts = path.strip("/").split("/")
