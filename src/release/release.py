@@ -52,7 +52,7 @@ def assessment_sha256() -> str:
 
 
 def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list[dict]]:
-    """Check the release against its manifest and the working tree. Return (manifest, inputs).
+    """Check the release against its manifest and the checkout. Return (manifest, inputs).
     A release without decision_prompt_versions is checked as before, and is refused only when
     needs_decision is true."""
     manifest_path = folder / "manifest.json"
