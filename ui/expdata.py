@@ -17,6 +17,7 @@ from src.evaluate.metrics import (KEY, NA, EvalError, group_metrics, input_cells
                                   metric_sort_key, rate_columns, rates, sorted_keys, summary_sort_key)
 from src.puzzles.registry import ENGINES
 from src.run.models import DECISION_PROVIDERS
+from src.run.raw import parse_raw_text
 from src.release.release import parse_version
 from ui.gitdata import GitData
 from ui.pooling import RATES, pooled_rates, pooled_summary, total
@@ -25,22 +26,6 @@ SCOPES = ("all", "valid", "invalid")
 REPORT_CSV = re.compile(r"(\d+\.\d+\.\d+)\.metrics\.csv")
 TEXT_COLUMNS = ("puzzle", "setup", "model", "validity")
 NO_PRICE = {"price_input_per_mtok": 0.0, "price_output_per_mtok": 0.0}
-
-
-def parse_raw(text: str) -> tuple[list[dict], int]:
-    """Same rules as `src.run.raw.read_raw`, on text: lines that are not JSON objects are skipped and counted."""
-    records, skipped = [], 0
-    for line in text.splitlines():
-        try:
-            record = json.loads(line)
-        except ValueError:
-            skipped += 1
-            continue
-        if isinstance(record, dict):
-            records.append(record)
-        else:
-            skipped += 1
-    return records, skipped
 
 
 def read_inputs(git: GitData, ref: str, release: str) -> list[dict]:
@@ -84,7 +69,7 @@ def load_experiment(git: GitData, experiment_id: str, ref: str, main_ref: str) -
         exp["prices"] = tomllib.loads(saved if saved is not None
                                       else git.show(main_ref, "config/prices.toml") or "")
         for name in sorted(n for n in git.ls(ref, f"{base}/raw") if n.endswith(".jsonl")):
-            found, torn = parse_raw(git.show(ref, f"{base}/raw/{name}") or "")
+            found, torn = parse_raw_text(git.show(ref, f"{base}/raw/{name}") or "")
             exp["skipped"] += torn
             for record in found:
                 missing = [f for f in REQUIRED if f not in record]

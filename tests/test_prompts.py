@@ -233,3 +233,21 @@ def test_every_puzzle_has_a_template_under_each_setup():
             text = (root / setup / f"{puzzle}.txt").read_text(encoding="utf-8")
             assert "{state}" in text
             assert ("{legal_moves}" in text) == (setup == "prescriptive")
+
+
+def test_template_is_read_once_and_reread_after_an_edit(templates, monkeypatch):
+    reads = []
+    original = Path.read_text
+
+    def counting(self, *args, **kwargs):
+        reads.append(self)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counting)
+    inp = next(i for i in INPUTS if i["puzzle"] == "2x2")
+    first = build_prompt(templates, inp, "descriptive")
+    assert build_prompt(templates, inp, "descriptive") == first
+    assert len(reads) == 1
+    path = templates / "descriptive" / "2x2.txt"
+    path.write_text(path.read_text(encoding="utf-8") + "Extra line.\n", encoding="utf-8")
+    assert build_prompt(templates, inp, "descriptive") == first + "Extra line.\n"

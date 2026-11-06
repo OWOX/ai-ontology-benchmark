@@ -248,14 +248,23 @@ DECORATED = {
     "dashes": ("- R - U", ["R", "U"], "format_error"),
     "bracketed numbers": ("1) R, 2) U'", ["R", "U'"], "format_error"),
     "lettered marker": ("b) R U", ["R", "U"], "format_error"),
+    "glued number after a bullet": ("- 1.R", ["R"], "format_error"),
+    "glued paren number after a bullet": ("* 2)U", ["U"], "format_error"),
+    "spaced number after a bullet": ("- 1. R", ["R"], "format_error"),
+    "lettered marker after a bullet": ("- b) R", ["R"], "format_error"),
+    "move with full stop then move": ("R. U", ["R", "U"], "format_error"),
+    "lettered marker after a number": ("1. b) R", ["R"], "format_error"),
+    "capital move after a bullet": ("- B. R", ["B", "R"], "format_error"),
     "lettered lines": ("a. R\nb. U", ["R", "U"], "format_error"),
     "move with full stop": ("R.", ["R"], "format_error"),
+    "impossible move glued after a bullet": ("- 1.M", ["M"], "hallucination"),
     "illegal in a numbered list": ("1. M", ["M"], "hallucination"),
     "illegal among commas": ("R, M", ["R", "M"], "hallucination"),
     "mismatch with a full stop": ("MISMATCH.", [], "format_error"),
     "bold mismatch": ("**MISMATCH**", [], "format_error"),
     "mismatch with trailing space": ("MISMATCH ", [], "format_error"),
     "backticked mismatch": ("`MISMATCH`", [], "format_error"),
+    "mismatch glued after a bullet": ("- 1.MISMATCH", [], "format_error"),
 }
 
 

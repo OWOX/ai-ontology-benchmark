@@ -38,16 +38,14 @@ def run_decision_attempt(model: dict, prompt: str, legal: list[str], questions: 
     served: list[str] = []
     stop = "ok"
     budget_stop = None
-    started = False
     while True:
         try:
             can_afford(retry_in + tokens_in, retry_out + tokens_out)
         except BudgetError as error:
-            if not started:
+            if not requests:
                 raise
             stop, budget_stop = "infrastructure_failure", error
             break
-        started = True
         requests += 1
         try:
             reply = call_decision(model, decision_state(prompt, moves), asked)

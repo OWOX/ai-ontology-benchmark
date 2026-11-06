@@ -16,19 +16,16 @@ def is_decision_record(record: dict, decision_models) -> bool:
     return flag if isinstance(flag, bool) else record["model"] in decision_models
 
 
-def read_raw(path: Path) -> tuple[list[dict], int]:
-    """Return (records, skipped line count) for one raw file.
+def parse_raw_text(text: str) -> tuple[list[dict], int]:
+    """Return (records, skipped line count) for the text of one raw file.
 
     A line that does not parse as a JSON object is skipped and counted. A stopped write
     leaves such a line, and a later run ends it with a newline, so it can sit anywhere in
-    the file. A missing file gives no records.
+    the file.
     """
-    path = Path(path)
-    if not path.is_file():
-        return [], 0
     records: list[dict] = []
     skipped = 0
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         try:
             record = json.loads(line)
         except ValueError:
@@ -39,3 +36,11 @@ def read_raw(path: Path) -> tuple[list[dict], int]:
         else:
             skipped += 1
     return records, skipped
+
+
+def read_raw(path: Path) -> tuple[list[dict], int]:
+    """Return (records, skipped line count) for one raw file. A missing file gives no records."""
+    path = Path(path)
+    if not path.is_file():
+        return [], 0
+    return parse_raw_text(path.read_text(encoding="utf-8"))

@@ -1213,3 +1213,11 @@ def test_live_hallucination_rate_is_na_for_decision_records():
     assert decision_only.hallucination() == "n/a"
     assert mixed.hallucination() == "100%"  # the decision record is left out: 1 of the 1 text record that gave moves
     assert empty.hallucination() == "n/a"
+
+
+def test_parse_raw_text_counts_the_same_lines_as_read_raw(tmp_path):
+    from src.run.raw import parse_raw_text
+    text = '{"a": 1}\n{"b": \n[1]\n{"d": 3}\n'
+    path = tmp_path / "m.jsonl"
+    path.write_text(text, encoding="utf-8")
+    assert parse_raw_text(text) == read_raw(path) == ([{"a": 1}, {"d": 3}], 2)

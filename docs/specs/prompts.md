@@ -24,7 +24,7 @@ Turn one input and one [setup](../definitions.md#setups) into the exact prompt t
 7. `decision_questions(questions, legal) -> dict`. The request's `questions` object: `next_move` of type `choice` whose `criteria` map `move_<n>` (the move's position in `legal` from 1) to the move string, then `done` and `mismatch` to their descriptions from the file. It holds no other question.
 8. `decision_prompt_versions(templates_dir, inputs) -> {setup: {puzzle: version}}`. For each setup and puzzle, the [decision prompt version](../definitions.md#setups): the first 12 hex characters of one sha256 over the questions file's bytes, then, for every input in order, `decision_state(prompt, [])` and `json.dumps(decision_questions(questions, legal), sort_keys=True)`, each followed by a newline. A change to `questions.txt`, to the suffix `decision_state` adds, or to the request's structure changes the decision versions and no LLM version.
 
-`build_prompt` and `prompt_versions` raise `ValueError` if a template is missing, has an unknown placeholder, lacks `{state}`, or (for the prescriptive setup) lacks `{legal_moves}`. Templates are read as UTF-8.
+`build_prompt` and `prompt_versions` raise `ValueError` if a template is missing, has an unknown placeholder, lacks `{state}`, or (for the prescriptive setup) lacks `{legal_moves}`. Templates are read as UTF-8. Each template file is read once per process: the cache is keyed on the resolved path, the file's modification time, size, inode, and change time, and the setup, so an edited or replaced file is read again.
 
 ## How to test
 

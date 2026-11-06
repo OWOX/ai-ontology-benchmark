@@ -19,7 +19,6 @@ from src.run.raw import is_decision_record
 from src.validator import validate
 
 NA = "n/a"
-Z = 1.96  # 95% confidence, used by `wilson`, which only the UI display path still calls
 BOOTSTRAP_DRAWS = 2000
 BOOTSTRAP_SEED = "bootstrap-v1"
 PAIRED_METRICS = ("success_rate", "hallucination_rate", "mismatch_detection_rate")
@@ -28,20 +27,11 @@ PAIRED_COLUMNS = (
     "model", "puzzle", "validity", "metric", "setup_a", "setup_b", "inputs_paired", "a_higher",
     "b_higher", "mean_difference", "p_value", "p_holm", "significant")
 KEY = ("puzzle", "setup", "model", "scramble_depth", "validity")
+PUZZLE_ORDER = list(ENGINES)  # the report sort order of puzzles
 
 
 class EvalError(Exception):
     """A checked error. The message names the file or field at fault."""
-
-
-def wilson(hits: int, n: int) -> tuple:
-    """Return (rate, low, high) with a 95% Wilson score interval, or n/a when n is 0."""
-    if n == 0:
-        return NA, NA, NA
-    p = hits / n
-    spread = Z * math.sqrt(p * (1 - p) / n + Z * Z / (4 * n * n)) / (1 + Z * Z / n)
-    centre = (p + Z * Z / (2 * n)) / (1 + Z * Z / n)
-    return p, max(0.0, centre - spread), min(1.0, centre + spread)
 
 
 def mean(values: list) -> object:
@@ -206,6 +196,11 @@ def make_attempt_rows(raw_records, inputs, prices, decision_models=frozenset()) 
     return rows
 
 
+def model_order(rows: list[dict], models: list[str] | None) -> list[str]:
+    """The AI model sort order: config order when given, else the names found in `rows`."""
+    return models or sorted({r["model"] for r in rows})
+
+
 def model_rank(order: list[str], name: str) -> tuple:
     return (order.index(name) if name in order else len(order), name)
 
@@ -218,7 +213,7 @@ def attempt_sort_key(row: dict, order: list[str]) -> tuple:
 def metric_sort_key(key: tuple, order: list[str]) -> tuple:
     """Key is (puzzle, setup, model, depth, validity)."""
     puzzle, setup, model, depth, validity = key
-    return (list(ENGINES).index(puzzle), SETUPS.index(setup), model_rank(order, model),
+    return (PUZZLE_ORDER.index(puzzle), SETUPS.index(setup), model_rank(order, model),
             depth, validity != "valid")
 
 
@@ -240,7 +235,7 @@ def compute(raw_records: list[dict], release_dir: Path, prices: dict,
     lines = (Path(release_dir) / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
     inputs = [json.loads(line) for line in lines]
     rows = make_attempt_rows(raw_records, inputs, prices, decision_models)
-    order = models or sorted({r["model"] for r in rows})
+    order = model_order(rows, models)
     decorated = [(attempt_sort_key(r, order), r) for r in rows]
     decorated.sort(key=itemgetter(0))
     rows = [row for _, row in decorated]
@@ -312,11 +307,11 @@ def compare_setups(shares: dict, setup_a: str, setup_b: str) -> dict:
 
 def paired_tests(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
     """Return the paired setup test rows, pooled over scramble depths and never over validity."""
-    order = models or sorted({r["model"] for r in attempt_rows})
+    order = model_order(attempt_rows, models)
     groups = defaultdict(list)
     for r in attempt_rows:
         groups[(r["model"], r["puzzle"], r["validity"])].append(r)
-    keys = sorted(groups, key=lambda k: (model_rank(order, k[0]), list(ENGINES).index(k[1]),
+    keys = sorted(groups, key=lambda k: (model_rank(order, k[0]), PUZZLE_ORDER.index(k[1]),
                                          k[2] != "valid"))
     pairs = list(combinations(SETUPS, 2))
     result = []
@@ -371,12 +366,12 @@ DETECTION_COLUMNS = (
 
 def detection_rows(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
     """Return one mismatch detection row per AI model, puzzle, and setup, pooled over depths."""
-    order = models or sorted({r["model"] for r in attempt_rows})
+    order = model_order(attempt_rows, models)
     groups = defaultdict(list)
     for r in attempt_rows:
         if r["outcome"] != "infrastructure_failure":
             groups[(r["model"], r["puzzle"], r["setup"])].append(r)
-    keys = sorted(groups, key=lambda k: (model_rank(order, k[0]), list(ENGINES).index(k[1]),
+    keys = sorted(groups, key=lambda k: (model_rank(order, k[0]), PUZZLE_ORDER.index(k[1]),
                                          SETUPS.index(k[2])))
     result = []
     for model, puzzle, setup in keys:
@@ -411,7 +406,7 @@ def corruption_type(description: str) -> str:
 
 def corruption_rows(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
     """Return one detection row per AI model, puzzle, setup, and corruption type, over invalid inputs."""
-    order = models or sorted({r["model"] for r in attempt_rows})
+    order = model_order(attempt_rows, models)
     groups = defaultdict(list)
     for r in attempt_rows:
         if r["validity"] == "invalid" and r["outcome"] != "infrastructure_failure" and r.get("corruption"):
@@ -419,7 +414,7 @@ def corruption_rows(attempt_rows: list[dict], models: list[str] | None = None) -
 
     def sort_key(k):
         kind = CORRUPTION_TYPES.index(k[3]) if k[3] in CORRUPTION_TYPES else len(CORRUPTION_TYPES)
-        return (model_rank(order, k[0]), list(ENGINES).index(k[1]), SETUPS.index(k[2]), kind, k[3])
+        return (model_rank(order, k[0]), PUZZLE_ORDER.index(k[1]), SETUPS.index(k[2]), kind, k[3])
 
     result = []
     for key in sorted(groups, key=sort_key):

@@ -8,7 +8,6 @@ It shows live progress through src/run/progress.py.
 """
 
 import argparse
-import hashlib
 import json
 import os
 import queue
@@ -24,15 +23,14 @@ from pathlib import Path
 
 from src.config import load_experiment_config, load_prices, max_moves, parse_experiment_config
 from src.evaluate.metrics import attempt_cost
-from src.release.release import assessment_sha256, latest_version
+from src.release.release import ReleaseError, latest_version, load_release
 from src.run.branch import BranchError, ResultsBranch, branch_copy
 from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
                             print_estimate, spent_by_model, worst_case_request_cost, worst_request)
 from src.run.decision import DecisionResult, run_decision_attempt
 from src.run.models import DECISION_PROVIDERS, InfrastructureError, RequestError, call_model, log_infrastructure_error
 from src.run.progress import Progress
-from src.run.prompts import (SETUPS, both_prompt_versions, build_prompt, decision_questions, decision_state,
-                             load_questions, prompt_versions)
+from src.run.prompts import SETUPS, build_prompt, decision_questions, decision_state, load_questions
 from src.run.raw import read_raw
 from src.puzzles.registry import get_engine
 from src.validator import validate
@@ -40,45 +38,6 @@ from src.validator import validate
 
 class RunError(Exception):
     """A checked error. The message names the file or field at fault."""
-
-
-def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list[dict]]:
-    """Check the release against its manifest and the working tree. Return (manifest, inputs).
-    A release without decision_prompt_versions is checked as before, and is refused only when
-    needs_decision is true."""
-    manifest_path = folder / "manifest.json"
-    if not manifest_path.is_file():
-        raise RunError(f"{manifest_path}: file not found")
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except ValueError:
-        raise RunError(f"{manifest_path}: not valid JSON") from None
-    for field in ("files", "assessment_sha256", "prompt_versions", "input_set_id", "release_config"):
-        if field not in manifest:
-            raise RunError(f"{manifest_path}: field '{field}' is missing")
-    if needs_decision and "decision_prompt_versions" not in manifest:
-        raise RunError(f"{manifest_path}: field 'decision_prompt_versions' is missing; "
-                       "decision models need a release cut after they were added")
-    if "seed" not in manifest["release_config"]:
-        raise RunError(f"{manifest_path}: field 'release_config.seed' is missing")
-    for name, digest in manifest["files"].items():
-        path = folder / name
-        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
-            raise RunError(f"{path}: does not match its sha256 in manifest.json (field 'files')")
-    if assessment_sha256() != manifest["assessment_sha256"]:
-        raise RunError(f"{manifest_path}: field 'assessment_sha256' differs from the assessment files in the checkout")
-    lines = (folder / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
-    inputs = [json.loads(line) for line in lines]
-    if "decision_prompt_versions" in manifest:
-        plain, decision = both_prompt_versions(folder / "prompts", inputs)
-    else:
-        plain, decision = prompt_versions(folder / "prompts", inputs), None
-    if plain != manifest["prompt_versions"]:
-        raise RunError(f"{manifest_path}: field 'prompt_versions' differs from the prompts the working tree renders")
-    if decision is not None and decision != manifest["decision_prompt_versions"]:
-        raise RunError(
-            f"{manifest_path}: field 'decision_prompt_versions' differs from the prompts the working tree renders")
-    return manifest, inputs
 
 
 def without_budget(data: bytes) -> dict:
@@ -527,7 +486,7 @@ def main(argv: list[str] | None = None) -> int:
         previous = None
     try:
         return run(args)
-    except (RunError, BudgetError, BranchError, RequestError, ValueError) as error:
+    except (RunError, ReleaseError, BudgetError, BranchError, RequestError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     finally:

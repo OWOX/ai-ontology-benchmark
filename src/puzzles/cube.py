@@ -163,25 +163,13 @@ def _piece_coords(n, state, size):
     return permutation, orientation
 
 
-@lru_cache(maxsize=None)
-def _destinations(n):
-    """Return, for each move, where every sticker goes."""
-    out = []
-    for source in _moves(n).values():
-        destination = [0] * len(source)
-        for j, i in enumerate(source):
-            destination[i] = j
-        out.append(tuple(destination))
-    return out
-
-
 def _orbit(n, start, step):
-    """Return everything reachable from start by applying step(item, destination) for each move."""
+    """Return everything reachable from start by applying step(item, table) for each move."""
     seen, queue = {start}, deque([start])
     while queue:
         item = queue.popleft()
-        for destination in _destinations(n):
-            new = step(item, destination)
+        for table in _moves(n).values():  # closed under inversion, so the source tables reach the same orbit as their inverses
+            new = step(item, table)
             if new not in seen:
                 seen.add(new)
                 queue.append(new)
@@ -272,10 +260,12 @@ class CubeEngine(Engine):
         if n not in (2, 3, 4, 5):
             raise ValueError(f"unsupported cube size {n}")
         self.n = n
+        turns = list(FACES) + ([face + "w" for face in FACES] if n >= 4 else [])
+        self._legal = [turn + suffix for turn in turns for suffix in ("", "'", "2")]
+        self._legal_set = frozenset(self._legal)
 
     def legal_moves(self) -> list[str]:
-        turns = list(FACES) + ([face + "w" for face in FACES] if self.n >= 4 else [])
-        return [turn + suffix for turn in turns for suffix in ("", "'", "2")]
+        return list(self._legal)
 
     def solved_state(self) -> str:
         return _solved(self.n)
@@ -287,7 +277,7 @@ class CubeEngine(Engine):
         return state
 
     def apply_move(self, state: str, move: str) -> str:
-        if move not in self.legal_moves():
+        if move not in self._legal_set:
             raise IllegalMoveError(f"not a legal move: {move!r}")
         return apply_move_to(self.n, state, move)
 
