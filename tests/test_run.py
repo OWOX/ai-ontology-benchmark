@@ -217,7 +217,9 @@ def test_each_prompt_is_rendered_once(exp, monkeypatch, extra):
 
     monkeypatch.setattr(run_module, "build_prompt", counting)
     assert go(*extra) == 0
-    assert rendered and len(rendered) == len(set(rendered))  # two AI models and attempts share one rendering
+    rows = [json.loads(x) for x in (exp / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    expected = {(row["input_id"], setup) for row in rows for setup in run_module.SETUPS}  # a fresh run: everything is pending
+    assert rendered and len(rendered) == len(set(rendered)) and set(rendered) == expected  # two AI models and attempts share one rendering
 
 
 def test_torn_last_line_resumes(exp):
