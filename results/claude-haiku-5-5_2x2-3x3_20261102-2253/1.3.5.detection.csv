@@ -1,0 +1,5 @@
+model,puzzle,setup,detection_rate,detection_rate_low,detection_rate_high,detection_rate_n,detection_rate_inputs,false_mismatch_rate,false_mismatch_rate_low,false_mismatch_rate_high,false_mismatch_rate_n,false_mismatch_rate_inputs,balanced_accuracy,balanced_accuracy_low,balanced_accuracy_high
+claude-haiku-5-5,2x2,no_model,0.9556,0.8889,1.0000,45,15,0.0444,0.0111,0.0889,90,30,0.9556,0.9167,0.9889
+claude-haiku-5-5,2x2,descriptive,0.8889,0.8000,0.9778,45,15,0.0222,0.0000,0.0556,90,30,0.9333,0.8889,0.9722
+claude-haiku-5-5,2x2,prescriptive,0.5778,0.3778,0.7556,45,15,0.0333,0.0000,0.0667,90,30,0.7722,0.6778,0.8667
+claude-haiku-5-5,3x3,no_model,n/a,n/a,n/a,0,0,0.3333,n/a,n/a,3,1,n/a,n/a,n/a
