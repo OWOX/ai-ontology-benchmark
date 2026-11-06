@@ -17,6 +17,7 @@ from src.config import load_experiment_config, load_prices
 from src.evaluate.metrics import EvalError, compute, CORRUPTION_COLUMNS, DETECTION_COLUMNS, corruption_rows, detection_rows, paired_tests
 from src.evaluate.report import write_report
 from src.release.release import parse_version
+from src.run.budget import BudgetError, check_prices
 from src.run.models import DECISION_PROVIDERS
 from src.run.raw import read_raw
 from src.run.run import RunError, load_release
@@ -93,13 +94,6 @@ def csv_text(metric_rows: list[dict], exact: tuple = (), columns: tuple = ()) ->
     return buffer.getvalue()
 
 
-def check_prices(prices: dict, prices_path: Path, config: dict) -> None:
-    """Every AI model in the experiment config needs a price, whether or not it has records."""
-    for model in config["models"]:
-        if model["name"] not in prices:
-            raise EvalError(f"{prices_path}: no prices for model {model['name']!r}")
-
-
 def evaluate(args: argparse.Namespace) -> None:
     results = args.results / args.experiment
     config = load_experiment_config(results / "experiment.toml")
@@ -110,7 +104,10 @@ def evaluate(args: argparse.Namespace) -> None:
     saved_prices = results / "prices.toml"
     prices_path = saved_prices if saved_prices.exists() else args.prices
     prices = load_prices(prices_path)
-    check_prices(prices, prices_path, config)
+    try:
+        check_prices(config, prices, prices_path)  # every AI model needs a price, with records or not
+    except BudgetError as error:
+        raise EvalError(error.reason) from None
     names = [m["name"] for m in config["models"]]
     decision_models = {m["name"] for m in config["models"] if m["provider"] in DECISION_PROVIDERS}
     attempt_rows, metric_rows, summary_rows = compute(records, release_dir, prices, names, decision_models)

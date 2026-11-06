@@ -48,6 +48,7 @@ def worst_case_request_cost(prompt: str, max_output_tokens: int, price: dict) ->
 
 
 def check_prices(config: dict, prices: dict, prices_path: Path) -> None:
+    """Every AI model in the experiment config needs a price, whether or not it has records."""
     for model in config["models"]:
         if model["name"] not in prices:
             raise BudgetError(f"{prices_path}: no prices for model {model['name']!r}")
