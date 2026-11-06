@@ -1068,3 +1068,19 @@ def test_bundle_build_scores_each_experiment_once(ui_repo, samples, monkeypatch)
     bundles.get(None, True, set(), {}, set())
     bundles.benchmarks(bench_query(), set())
     assert scored == ["e"]
+
+
+def test_all_scope_rates_equal_the_three_call_computation(ui_repo, samples):
+    from src.evaluate.metrics import rates
+    _, _, records = samples
+    exp, inputs = open_experiment(ui_repo, "e", files_for(records))
+    done = [r for r in expdata.attempt_rows(exp, inputs) if r["outcome"] != "infrastructure_failure"]
+    assert {r["validity"] for r in done} == {"valid", "invalid"}
+    key = "ui|example-model|2x2|all"
+    expected = rates(done, "valid", key)
+    invalid = rates([r for r in done if r["validity"] == "invalid"], "invalid", key)
+    valid = rates([r for r in done if r["validity"] == "valid"], "valid", key)
+    expected.update({k: v for k, v in invalid.items() if k.startswith("mismatch_detection_rate")})
+    expected.update({k: v for k, v in valid.items() if k.startswith("false_mismatch_rate")})
+    actual = expdata.all_scope_rates(done, key)
+    assert actual == expected and list(actual) == list(expected)

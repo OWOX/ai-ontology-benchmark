@@ -13,8 +13,8 @@ from collections import defaultdict
 
 from src.config import parse_experiment_config
 from src.evaluate.evaluate import REQUIRED
-from src.evaluate.metrics import (KEY, NA, EvalError, group_metrics, make_attempt_rows,
-                                  metric_sort_key, rates, sorted_keys, summary_sort_key)
+from src.evaluate.metrics import (KEY, NA, EvalError, group_metrics, input_cells, make_attempt_rows,
+                                  metric_sort_key, rate_columns, rates, sorted_keys, summary_sort_key)
 from src.puzzles.registry import ENGINES
 from src.run.models import DECISION_PROVIDERS
 from src.release.release import parse_version
@@ -131,10 +131,9 @@ def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
 def all_scope_rates(done: list[dict], key: str) -> dict:
     """Pooled over valid and invalid: detection over the invalid rows, false mismatch over the valid ones."""
     out = rates(done, "valid", key)
-    invalid = rates([r for r in done if r["validity"] == "invalid"], "invalid", key)
-    valid = rates([r for r in done if r["validity"] == "valid"], "valid", key)
-    out.update({k: v for k, v in invalid.items() if k.startswith("mismatch_detection_rate")})
-    out.update({k: v for k, v in valid.items() if k.startswith("false_mismatch_rate")})
+    flagged = lambda r: r["mismatch"]
+    rate_columns(out, "mismatch_detection_rate", input_cells([r for r in done if r["validity"] == "invalid"], flagged), key)
+    rate_columns(out, "false_mismatch_rate", input_cells([r for r in done if r["validity"] == "valid"], flagged), key)
     return out
 
 
