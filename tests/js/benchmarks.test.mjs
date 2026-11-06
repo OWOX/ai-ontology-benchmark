@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const file = fileURLToPath(new URL("../../ui/static/pages/benchmarks.js", import.meta.url));
 const window = {};
-const UI = { el: () => null, registerPage: () => {}, jobs: [], onJobs: () => () => {} };
+const UI = { el: () => null, registerPage: () => {}, jobs: [], validityOptions: () => [], onJobs: () => () => {} };
 vm.runInNewContext(fs.readFileSync(file, "utf8"), { window, UI, document: { addEventListener: () => {} } });
 const { verdict, chosenModels } = window.Benchmarks;
 
