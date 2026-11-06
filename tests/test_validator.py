@@ -253,6 +253,8 @@ DECORATED = {
     "spaced number after a bullet": ("- 1. R", ["R"], "format_error"),
     "lettered marker after a bullet": ("- b) R", ["R"], "format_error"),
     "move with full stop then move": ("R. U", ["R", "U"], "format_error"),
+    "lettered marker after a number": ("1. b) R", ["R"], "format_error"),
+    "capital move after a bullet": ("- B. R", ["B", "R"], "format_error"),
     "lettered lines": ("a. R\nb. U", ["R", "U"], "format_error"),
     "move with full stop": ("R.", ["R"], "format_error"),
     "illegal in a numbered list": ("1. M", ["M"], "hallucination"),

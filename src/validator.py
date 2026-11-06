@@ -63,7 +63,7 @@ DECORATION = "`*_.)("
 
 
 def _strip_token(token: str, first: bool = False) -> str:
-    """Strip a list marker glued to the first token of a line and surrounding decoration from one
+    """Strip a list marker glued to the first token left after dropped markers and surrounding decoration from one
     token, for classification only."""
     if first:
         token = LIST_MARKER.sub("", token)
