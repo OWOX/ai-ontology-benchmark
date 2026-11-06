@@ -285,7 +285,8 @@ def run(args: argparse.Namespace) -> int:
     try:
         safe_commit(branch, f"Results: experiment {config['experiment_id']}, start")
         with progress or nullcontext():
-            play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress)
+            play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress,
+                 cap, questions)
     finally:
         if branch:
             finish(branch, config["experiment_id"])
@@ -410,10 +411,8 @@ def dry_run(config, folder, pending, questions) -> None:
             print(prompt)
 
 
-def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress) -> None:
-    cap = max_moves(config, manifest["release_config"])
-    questions = load_questions(folder / "prompts") if any(
-        m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending) else None  # once per run
+def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress,
+         cap, questions) -> None:
     if args.dry_run:
         dry_run(config, folder, pending, questions)
         return
