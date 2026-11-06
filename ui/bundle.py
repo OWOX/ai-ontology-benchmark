@@ -127,7 +127,7 @@ class Bundles(BranchReaders):
             provider["key"] = {"source": info["source"], "tail": info["tail"], "configured": info["configured"]} if info else None
             if info and "account" in info:
                 provider["key"]["account"] = {"variable": info["account"]["variable"], "source": info["account"]["source"]}
-            have = info is None or info["configured"] or (bool(env.get(provider["variable"])) and "account" not in info)
+            have = info is None or info["configured"] or (bool((env.get(provider["variable"]) or "").strip()) and "account" not in info)
             for model in provider["models"]:
                 if model["disabled_reason"] is None and not have:
                     model["disabled_reason"] = NO_ACCOUNT if info["source"] != "missing" else NO_KEY

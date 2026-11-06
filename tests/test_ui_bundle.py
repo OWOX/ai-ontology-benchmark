@@ -393,6 +393,19 @@ def test_cloudflare_reason_names_what_is_missing(ui_repo, monkeypatch):
     assert reason() is None
 
 
+def test_whitespace_only_key_in_env_counts_as_missing(ui_repo, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    bundles = make_bundles(ui_repo)
+
+    def reason(value):
+        provider = {"name": "anthropic", "variable": "ANTHROPIC_API_KEY", "models": [{"disabled_reason": None}]}
+        env = {"ANTHROPIC_API_KEY": value}
+        return bundles._fill_keys({"providers": [provider]}, env)["providers"][0]["models"][0]["disabled_reason"]
+
+    assert reason("   ") == "no API key: add it under Models"
+    assert reason("sk-real") is None  # set outside inspect's view only in env: still usable
+
+
 def test_model_matching(ui_repo, samples):
     _, _, records = samples
     renamed = EXP_TOML.replace('name = "example-model"', 'name = "renamed"')
