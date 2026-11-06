@@ -163,24 +163,12 @@ def _piece_coords(n, state, size):
     return permutation, orientation
 
 
-@lru_cache(maxsize=None)
-def _destinations(n):
-    """Return, for each move, where every sticker goes."""
-    out = []
-    for source in _moves(n).values():
-        destination = [0] * len(source)
-        for j, i in enumerate(source):
-            destination[i] = j
-        out.append(tuple(destination))
-    return out
-
-
 def _orbit(n, start, step):
     """Return everything reachable from start by applying step(item, destination) for each move."""
     seen, queue = {start}, deque([start])
     while queue:
         item = queue.popleft()
-        for destination in _destinations(n):
+        for destination in _moves(n).values():
             new = step(item, destination)
             if new not in seen:
                 seen.add(new)
