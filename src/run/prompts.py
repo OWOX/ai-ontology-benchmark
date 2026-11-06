@@ -20,14 +20,14 @@ _TEMPLATES: dict[tuple, str] = {}
 def _read_template(templates_dir: Path, setup: str, puzzle: str) -> str:
     """Return the template text, or raise ValueError if it is missing, has an unknown placeholder,
     or lacks a required one ({state} always, {legal_moves} for the prescriptive setup).
-    Each file is read once per process: the cache key holds the resolved path, the file's mtime
-    and size, and the setup, so an edited file is read again."""
+    Each file is read once per process: the cache key holds the resolved path, the file's mtime,
+    size, inode and ctime, and the setup, so an edited or replaced file is read again."""
     path = Path(templates_dir) / setup / f"{puzzle}.txt"
     try:
         stat = path.stat()
     except FileNotFoundError:
         raise ValueError(f"{path}: template not found") from None
-    key = (str(path.resolve()), stat.st_mtime_ns, stat.st_size, setup)
+    key = (str(path.resolve()), stat.st_mtime_ns, stat.st_size, stat.st_ino, stat.st_ctime_ns, setup)
     if key in _TEMPLATES:
         return _TEMPLATES[key]
     try:
