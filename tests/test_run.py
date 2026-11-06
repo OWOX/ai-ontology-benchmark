@@ -533,7 +533,7 @@ def test_plain_progress_line_per_attempt(exp, capsys):
     assert " no_model #2 hallucination | in 20 out 8 | " in second
     assert second.endswith("success 0% hallucination 50% malformed 0% truncated 0% abstention 0% format error 0%")
     assert " descriptive #1 malformed_output | in 30 out 12 | " in third and third.startswith("[3/3] A ")
-    assert third.endswith("success 0% hallucination 33% malformed 33% truncated 0% abstention 0% format error 0%")
+    assert third.endswith("success 0% hallucination 50% malformed 33% truncated 0% abstention 0% format error 0%")
 
 
 def test_progress_counts_prior_records(exp, capsys):
@@ -1198,13 +1198,16 @@ def test_infrastructure_error_log_is_one_line(capsys):
 def test_live_hallucination_rate_is_na_for_decision_records():
     from src.run.progress import Tally
     base = {"input_tokens": 0, "retry_input_tokens": 0, "output_tokens": 0, "retry_output_tokens": 0,
-            "validity": "valid", "mismatch": False, "hallucination": False, "outcome": "success"}
+            "validity": "valid", "mismatch": False, "hallucination": False, "outcome": "success",
+            "parsed_moves": ["R"]}
     price = {"price_input_per_mtok": 1.0, "price_output_per_mtok": 1.0}
     decision_only, mixed, empty = Tally(), Tally(), Tally()
     for record in (dict(base, decision=True), dict(base, decision=True, outcome="infrastructure_failure")):
         decision_only.add(record, price)
-    for record in (dict(base, decision=True), dict(base, decision=False, outcome="hallucination")):
+    for record in (dict(base, decision=True), dict(base, decision=False, outcome="hallucination"),
+                   dict(base, decision=False, outcome="abstention", parsed_moves=[]),
+                   dict(base, decision=False, mismatch=True, parsed_moves=[])):
         mixed.add(record, price)
     assert decision_only.hallucination() == "n/a"
-    assert mixed.hallucination() == "50%"
+    assert mixed.hallucination() == "50%"  # 1 of the 2 records that gave moves
     assert empty.hallucination() == "n/a"

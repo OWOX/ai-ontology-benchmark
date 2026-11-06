@@ -103,6 +103,11 @@ def count_outcome(rows: list[dict], outcome: str) -> int:
     return sum(1 for r in rows if r["outcome"] == outcome)
 
 
+def gave_moves(row: dict) -> bool:
+    """True when the attempt returned at least one parsed move: the denominator of the hallucination rate."""
+    return bool(row.get("parsed_moves"))
+
+
 def rates(rows: list[dict], validity: str, key: str) -> dict:
     """Rates over the attempts that are not infrastructure failures (`rows` holds only those).
     `key` names the group, and seeds each rate's bootstrap."""
@@ -118,7 +123,7 @@ def rates(rows: list[dict], validity: str, key: str) -> dict:
     add("success_rate", outcome_is("success"))
     # a decision model can't return an impossible move
     decision = bool(rows) and all(r["decision"] for r in rows)
-    add("hallucination_rate", outcome_is("hallucination"), [] if decision else rows)
+    add("hallucination_rate", outcome_is("hallucination"), [] if decision else [r for r in rows if gave_moves(r)])
     flagged = lambda r: r["mismatch"]
     add("mismatch_detection_rate", flagged, rows if validity == "invalid" else [])
     add("false_mismatch_rate", flagged, [] if validity == "invalid" else rows)
@@ -283,10 +288,11 @@ def is_hit(row: dict, metric: str) -> bool:
 
 
 def input_shares(rows: list[dict], metric: str) -> dict:
-    """Share of hits per (input, setup), leaving out infrastructure failures."""
+    """Share of hits per (input, setup), leaving out infrastructure failures. The hallucination rate also leaves
+    out attempts that gave no moves, so an (input, setup) with none has no share."""
     counts = defaultdict(lambda: [0, 0])
     for r in rows:
-        if r["outcome"] == "infrastructure_failure":
+        if r["outcome"] == "infrastructure_failure" or (metric == "hallucination_rate" and not gave_moves(r)):
             continue
         cell = counts[(r["input_id"], r["setup"])]
         cell[0] += is_hit(r, metric)

@@ -175,7 +175,7 @@ def test_computed_rows_equal_compute(ui_repo, samples):
     assert by["invalid"]["false_mismatch_rate"] is None
     assert by["invalid"]["mismatch_detection_rate"] == pytest.approx(0.5)
     assert by["all"]["success_rate"] == pytest.approx(0.25)
-    assert by["all"]["hallucination_rate"] == pytest.approx(0.25)
+    assert by["all"]["hallucination_rate"] == pytest.approx(0.5)  # 1 of the 2 attempts that gave moves
     assert by["all"]["false_mismatch_rate"] == 0
     assert by["all"]["total_tokens"] == 4 * 20
     assert by["all"]["cost_usd"] == pytest.approx(4 * 2.7e-5)
@@ -782,9 +782,10 @@ def test_benchmarks_broken_experiment_is_skipped(ui_repo, samples):
 
 
 def synthetic(model, input_id, outcome, set_id="1", puzzle="2x2", validity="valid", mismatch=False, setup="no_model",
-              decision=False):
+              decision=False, moves=("R",)):
     return {"model": model, "input_id": input_id, "input_set_id": set_id, "puzzle": puzzle, "validity": validity,
-            "outcome": outcome, "mismatch": mismatch, "setup": setup, "decision": decision, "move_count": 3,
+            "outcome": outcome, "mismatch": mismatch, "setup": setup, "decision": decision, "move_count": len(moves),
+            "parsed_moves": list(moves),
             "latency_s": 1.0, "input_tokens": 1, "output_tokens": 1, "retry_input_tokens": 0,
             "retry_output_tokens": 0, "cost": 0.5, "experiment": "e"}
 
@@ -795,6 +796,18 @@ def test_pairing_uses_input_set_id():
     b = [synthetic("b", "i1", "failure", set_id="2"), synthetic("b", "i2", "failure")]
     test = bm.paired_model_test(a, b, "success_rate")
     assert test["inputs_paired"] == 1          # i1 under set 2 is another input
+
+
+def test_model_pair_hallucination_shares_use_attempts_that_gave_moves():
+    from ui import benchmarks as bm
+    a = [synthetic("a", "i1", "hallucination"), synthetic("a", "i2", "abstention", moves=()),
+         synthetic("a", "i3", "success")]
+    b = [synthetic("b", "i1", "success"), synthetic("b", "i2", "hallucination"),
+         synthetic("b", "i3", "failure", mismatch=True, moves=())]
+    assert set(bm.shares(a, "hallucination_rate")) == {("1", "i1"), ("1", "i3")}
+    test = bm.paired_model_test(a, b, "hallucination_rate")
+    assert test["inputs_paired"] == 1
+    assert bm.shares(a + b, "success_rate").keys() >= {("1", "i2")}
 
 
 def test_ties_and_holm_over_distinct_tests():

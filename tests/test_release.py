@@ -32,10 +32,10 @@ def commit_all(repo: Path, message: str = "change") -> None:
     git(repo, "commit", "-m", message)
 
 
-def run_release(repo: Path, bump: str, note: str = "a note") -> subprocess.CompletedProcess:
+def run_release(repo: Path, bump: str, note: str = "a note", *extra: str) -> subprocess.CompletedProcess:
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     return subprocess.run(
-        [sys.executable, "-m", "src.release.release", "--bump", bump, "--note", note],
+        [sys.executable, "-m", "src.release.release", "--bump", bump, "--note", note, *extra],
         cwd=repo, env=env, capture_output=True, text=True,
     )
 
@@ -292,6 +292,58 @@ def test_failing_commit_leaves_nothing_behind(repo):
     assert git(repo, "status", "--porcelain") == ""
     hook.unlink()
     release_ok(repo, "major")
+
+
+def older_line_repo(repo: Path) -> Path:
+    """Releases 1.0.0, 1.1.0 (after a template edit), 1.1.1, and 2.0.0, then a validator edit."""
+    release_ok(repo, "major")
+    edit_template(repo)
+    release_ok(repo, "minor")
+    edit_validator(repo)
+    release_ok(repo, "patch")
+    release_ok(repo, "major")
+    edit_validator(repo)
+    return repo
+
+
+def test_patch_with_base_mirrors_an_older_line(repo):
+    older_line_repo(repo)
+    result = run_release(repo, "patch", "a note", "--base", "1.1.1")
+    assert result.returncode == 0, result.stderr
+    assert manifest_of(repo, "1.1.2")["release_version"] == "1.1.2"
+    assert manifest_of(repo, "1.1.2")["input_set_id"] == "1"
+    assert (repo / "releases/1.1.2/inputs.jsonl").read_bytes() == (
+        repo / "releases/1.1.1/inputs.jsonl").read_bytes()
+    assert manifest_of(repo, "1.1.2")["assessment_sha256"] != manifest_of(repo, "1.1.1")["assessment_sha256"]
+    assert "(../1.1.1/README.md)" in (repo / "releases/1.1.2/README.md").read_text(encoding="utf-8")
+    assert git(repo, "rev-parse", "release-1.1.2") == git(repo, "rev-parse", "HEAD")
+    changed = git(repo, "show", "--name-only", "--format=", "release-1.1.2").splitlines()
+    assert changed and all(line.startswith("releases/1.1.2/") for line in changed)
+
+
+def test_base_must_be_the_newest_on_its_line(repo):
+    older_line_repo(repo)
+    result = run_release(repo, "patch", "a note", "--base", "1.1.0")
+    assert result.returncode == 1
+    assert "1.1.1" in result.stderr
+    assert not (repo / "releases/1.1.2").exists()
+
+
+@pytest.mark.parametrize("bump", ["major", "minor"])
+def test_base_needs_a_patch_bump(repo, bump):
+    older_line_repo(repo)
+    result = run_release(repo, bump, "a note", "--base", "1.1.1")
+    assert result.returncode == 1
+    assert "--base" in result.stderr
+    assert not (repo / "releases/1.2.0").exists() and not (repo / "releases/3.0.0").exists()
+
+
+def test_base_to_a_missing_release_fails(repo):
+    older_line_repo(repo)
+    result = run_release(repo, "patch", "a note", "--base", "1.5.0")
+    assert result.returncode == 1
+    assert "1.5.0" in result.stderr
+    assert not (repo / "releases/1.5.1").exists()
 
 
 def test_assessment_hash_matches_the_newest_release_manifest():
