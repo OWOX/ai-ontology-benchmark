@@ -69,15 +69,7 @@ def load_release_config(path: Path) -> dict:
     config = _read(path)
     seed = _get(path, config, "seed", int)
     _check_min(path, "seed", seed, 1)
-    puzzles = _get(path, config, "puzzles", list)
-    for puzzle in puzzles:
-        if not isinstance(puzzle, str):
-            _fail(path, "puzzles", "must hold only strings")
-        if puzzle not in ENGINES:
-            known = ", ".join(ENGINES)
-            _fail(path, "puzzles", f"has unknown puzzle {puzzle!r}; known puzzles: {known}")
-    if not puzzles:
-        _fail(path, "puzzles", "must not be empty")
+    _check_puzzles(path, config)
     depths = _get(path, config, "scramble_depths", list)
     if not depths:
         _fail(path, "scramble_depths", "must not be empty")

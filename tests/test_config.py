@@ -80,6 +80,7 @@ RELEASE_CASES = [
     ("seed", bad(RELEASE, "seed = 1", "seed = 0")),
     ("puzzles", bad(RELEASE, '["2x2"]', '["6x6"]')),
     ("puzzles", bad(RELEASE, '["2x2"]', "[]")),
+    ("puzzles", bad(RELEASE, '["2x2"]', '["2x2", "2x2"]')),
     ("scramble_depths", bad(RELEASE, "[5]", "[0]")),
     ("scramble_depths", bad(RELEASE, "[5]", '["a"]')),
     ("scramble_count", bad(RELEASE, "scramble_count = 2", "scramble_count = 0")),
