@@ -219,13 +219,17 @@ def run(args: argparse.Namespace) -> int:
     cap = max_moves(config, manifest["release_config"])
     questions = load_questions(folder / "prompts") if any(
         m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending) else None
+    prompts = {}  # rendered once, reused by the budget check, the estimate, the dry run, and every attempt
+    for row, _, setup, _ in pending:
+        if (row["input_id"], setup) not in prompts:
+            prompts[row["input_id"], setup] = build_prompt(folder / "prompts", row, setup)
     for row, model, setup, _ in pending:
-        prompt = build_prompt(folder / "prompts", row, setup)
+        prompt = prompts[row["input_id"], setup]
         if model["provider"] in DECISION_PROVIDERS:  # the longest request any call of the attempt sends
             prompt = worst_request(prompt, get_engine(row["puzzle"]).legal_moves(), cap, questions)
         check_request_budget(source, config, model, prompt, prices)
     if args.estimate:
-        print_estimate(config, pending, prices, folder / "prompts", results / "raw", cap)
+        print_estimate(config, pending, prices, folder / "prompts", results / "raw", cap, prompts)
         return 0
     versions = manifest["prompt_versions"]
     branch = None
@@ -244,8 +248,8 @@ def run(args: argparse.Namespace) -> int:
     try:
         safe_commit(branch, f"Results: experiment {config['experiment_id']}, start")
         with progress or nullcontext():
-            play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress,
-                 cap, questions)
+            play(args, config, manifest, results, prices, versions, pending, outcomes, branch, progress,
+                 cap, questions, prompts)
     finally:
         if branch:
             finish(branch, config["experiment_id"])
@@ -313,8 +317,8 @@ class Attempt:
 
     def __init__(self, seq, left, row, model, setup, number, play_context) -> None:
         self.seq, self.left, self.row, self.model, self.setup, self.number = seq, left, row, model, setup, number
-        self.config, self.prices, self.results, self.flight, self.cap, self.questions, templates = play_context
-        self.prompt = build_prompt(templates, row, setup)
+        self.config, self.prices, self.results, self.flight, self.cap, self.questions, prompts = play_context
+        self.prompt = prompts[row["input_id"], setup]
         self.label = f"{model['name']} {row['input_id']} {setup} attempt {number}"
         self.is_decision = model["provider"] in DECISION_PROVIDERS
         self.legal = get_engine(row["puzzle"]).legal_moves() if self.is_decision else []
@@ -359,9 +363,9 @@ class Attempt:
                 self.model, self.prompt, self.config, self.can_afford, self.label)
 
 
-def dry_run(config, folder, pending, questions) -> None:
+def dry_run(pending, questions, prompts) -> None:
     for row, model, setup, number in pending:
-        prompt = build_prompt(folder / "prompts", row, setup)
+        prompt = prompts[row["input_id"], setup]
         print(f"--- {row['input_id']} {setup} {model['name']} attempt {number}")
         if model["provider"] in DECISION_PROVIDERS:
             asked = decision_questions(questions, get_engine(row["puzzle"]).legal_moves())
@@ -370,17 +374,17 @@ def dry_run(config, folder, pending, questions) -> None:
             print(prompt)
 
 
-def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress,
-         cap, questions) -> None:
+def play(args, config, manifest, results, prices, versions, pending, outcomes, branch, progress,
+         cap, questions, prompts) -> None:
     if args.dry_run:
-        dry_run(config, folder, pending, questions)
+        dry_run(pending, questions, prompts)
         return
     flight = Flight()
 
     def attempts():
         for seq, (left, (row, model, setup, number)) in enumerate(zip(range(len(pending), 0, -1), pending)):
             yield Attempt(seq, left, row, model, setup, number,
-                          (config, prices, results, flight, cap, questions, folder / "prompts"))
+                          (config, prices, results, flight, cap, questions, prompts))
 
     def record_attempt(attempt: Attempt):
         """Main thread only: build, write, count, show, and commit the record. Return a budget stop or None."""

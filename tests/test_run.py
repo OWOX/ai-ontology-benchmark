@@ -206,6 +206,20 @@ def test_dry_run_and_estimate_write_and_call_nothing(exp, capsys):
     assert f"total: {2 * full} attempts" in out and f"A: {full} attempts" in out
 
 
+@pytest.mark.parametrize("extra", [("--dry-run",), ("--estimate",), ()])
+def test_each_prompt_is_rendered_once(exp, monkeypatch, extra):
+    models.FAKE_REPLIES[:] = [Reply("x", "ok", "s", 1, 1, 0.1)] * 1000
+    rendered = []
+
+    def counting(templates, row, setup):
+        rendered.append((row["input_id"], setup))
+        return build_prompt(templates, row, setup)
+
+    monkeypatch.setattr(run_module, "build_prompt", counting)
+    assert go(*extra) == 0
+    assert rendered and len(rendered) == len(set(rendered))  # two AI models and attempts share one rendering
+
+
 def test_torn_last_line_resumes(exp):
     go("--model", "A", "--limit", "2")
     path = exp / "results/exp/raw/A.jsonl"
