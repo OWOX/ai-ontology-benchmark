@@ -66,7 +66,7 @@ def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise RunError(f"{path}: does not match its sha256 in manifest.json (field 'files')")
     if assessment_sha256() != manifest["assessment_sha256"]:
-        raise RunError(f"{manifest_path}: field 'assessment_sha256' differs from the assessment files in the working tree")
+        raise RunError(f"{manifest_path}: field 'assessment_sha256' differs from the assessment files in the checkout")
     lines = (folder / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
     inputs = [json.loads(line) for line in lines]
     if "decision_prompt_versions" in manifest:
