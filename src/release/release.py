@@ -52,7 +52,7 @@ def assessment_sha256() -> str:
 
 
 def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list[dict]]:
-    """Check the release against its manifest and the working tree. Return (manifest, inputs).
+    """Check the release against its manifest and the checkout. Return (manifest, inputs).
     A release without decision_prompt_versions is checked as before, and is refused only when
     needs_decision is true."""
     manifest_path = folder / "manifest.json"
@@ -83,10 +83,10 @@ def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list
     else:
         plain, decision = prompt_versions(folder / "prompts", inputs), None
     if plain != manifest["prompt_versions"]:
-        raise ReleaseError(f"{manifest_path}: field 'prompt_versions' differs from the prompts the working tree renders")
+        raise ReleaseError(f"{manifest_path}: field 'prompt_versions' differs from the prompts the checkout renders")
     if decision is not None and decision != manifest["decision_prompt_versions"]:
         raise ReleaseError(
-            f"{manifest_path}: field 'decision_prompt_versions' differs from the prompts the working tree renders")
+            f"{manifest_path}: field 'decision_prompt_versions' differs from the prompts the checkout renders")
     return manifest, inputs
 
 
