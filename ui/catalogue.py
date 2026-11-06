@@ -17,7 +17,6 @@ def config_form(config: dict, release_puzzles: list[str]) -> dict:
             "budget": dict(config["budget"])}
 
 
-
 def build_providers(catalogue: dict[str, dict], prices: dict, experiments: list[dict]) -> list[dict]:
     used: dict[tuple, list[str]] = {}
     for exp in experiments:
