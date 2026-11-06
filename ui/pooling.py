@@ -5,12 +5,25 @@ rate. The CSV holds no per-input cells, so the intervals are Wilson score interv
 attempts, for display only (the UI marks them with `*`). Reads parsed CSV rows and writes nothing.
 """
 
+import math
 from collections import defaultdict
 
-from src.evaluate.metrics import NA, summary_sort_key, sorted_keys, wilson
+from src.evaluate.metrics import NA, summary_sort_key, sorted_keys
+
+Z = 1.96  # 95% confidence, used by `wilson`
 
 RATES = ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
          "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate")
+
+
+def wilson(hits: int, n: int) -> tuple:
+    """Return (rate, low, high) with a 95% Wilson score interval, or n/a when n is 0."""
+    if n == 0:
+        return NA, NA, NA
+    p = hits / n
+    spread = Z * math.sqrt(p * (1 - p) / n + Z * Z / (4 * n * n)) / (1 + Z * Z / n)
+    centre = (p + Z * Z / (2 * n)) / (1 + Z * Z / n)
+    return p, max(0.0, centre - spread), min(1.0, centre + spread)
 
 
 def number(text: object) -> float | None:

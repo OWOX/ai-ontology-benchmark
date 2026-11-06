@@ -19,7 +19,6 @@ from src.run.raw import is_decision_record
 from src.validator import validate
 
 NA = "n/a"
-Z = 1.96  # 95% confidence, used by `wilson`, which only the UI display path still calls
 BOOTSTRAP_DRAWS = 2000
 BOOTSTRAP_SEED = "bootstrap-v1"
 PAIRED_METRICS = ("success_rate", "hallucination_rate", "mismatch_detection_rate")
@@ -33,16 +32,6 @@ PUZZLE_ORDER = list(ENGINES)  # the report sort order of puzzles
 
 class EvalError(Exception):
     """A checked error. The message names the file or field at fault."""
-
-
-def wilson(hits: int, n: int) -> tuple:
-    """Return (rate, low, high) with a 95% Wilson score interval, or n/a when n is 0."""
-    if n == 0:
-        return NA, NA, NA
-    p = hits / n
-    spread = Z * math.sqrt(p * (1 - p) / n + Z * Z / (4 * n * n)) / (1 + Z * Z / n)
-    centre = (p + Z * Z / (2 * n)) / (1 + Z * Z / n)
-    return p, max(0.0, centre - spread), min(1.0, centre + spread)
 
 
 def mean(values: list) -> object:
