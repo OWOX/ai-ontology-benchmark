@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -1095,6 +1096,20 @@ def test_malformed_report_csv_does_not_poison_the_cached_entry(ui_repo, samples)
     assert any(r["error"] for r in bundle["experiments"])  # the list shows the experiment as unreadable
     assert bundles.loaded("e", set())["error"] is None  # but the cached entry holds no error
     assert bundles.benchmarks(bench_query(), set())["experiments"] == ["e"]
+
+
+def test_loaded_does_not_wait_for_a_bundle_build(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    bundles.loaded("e", set())  # warm
+    out = []
+    with bundles._lock:  # a bundle build holds this for a whole fetch
+        worker = threading.Thread(target=lambda: out.append(bundles.loaded("e", set())))
+        worker.start()
+        worker.join(5)
+        assert not worker.is_alive() and out
+    worker.join()
 
 
 def test_loaded_copy_writes_do_not_reach_the_cache(ui_repo, samples):

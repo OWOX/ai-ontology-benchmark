@@ -52,7 +52,8 @@ def is_mirror(release: str, other: str | None, manifests: dict[str, dict | None]
 class Bundles(BranchReaders):
     def __init__(self, root: Path, git: GitData) -> None:
         self.root, self.git = Path(root), git
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()  # held for a whole fetch and build
+        self._scored_lock = threading.Lock()  # guards only gets and sets on `_scored_cache`, never held across a load
         self._cache: dict[tuple, dict] = {}
         self._bench_cache: dict[tuple, dict] = {}
         self._scored_cache: dict[str, dict] = {}  # one entry per experiment id
@@ -137,11 +138,13 @@ class Bundles(BranchReaders):
         experiment id, replaced when its ref sha or the main sha changes, so a new filter reuses it and
         memory follows the number of experiments. Called under the lock."""
         stamp = (self.git.sha(ref), main_sha)
-        held = self._scored_cache.get(experiment_id)
+        with self._scored_lock:
+            held = self._scored_cache.get(experiment_id)
         if held is None or held["stamp"] != stamp:
             held = {"stamp": stamp, "rows": None,
                     "exp": expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref())}
-            self._scored_cache[experiment_id] = held
+            with self._scored_lock:
+                self._scored_cache[experiment_id] = held
         return held
 
     def _load_all(self, refs: dict[str, str], main_sha: str | None) -> list[dict]:
