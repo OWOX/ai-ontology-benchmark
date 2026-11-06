@@ -1,0 +1,7 @@
+model,puzzle,setup,detection_rate,detection_rate_low,detection_rate_high,detection_rate_n,detection_rate_inputs,false_mismatch_rate,false_mismatch_rate_low,false_mismatch_rate_high,false_mismatch_rate_n,false_mismatch_rate_inputs,balanced_accuracy,balanced_accuracy_low,balanced_accuracy_high
+claude-opus-5-5,2x2,no_model,1.0000,1.0000,1.0000,15,5,0.0000,0.0000,0.0000,24,8,1.0000,1.0000,1.0000
+claude-opus-5-5,2x2,descriptive,1.0000,1.0000,1.0000,15,5,0.0417,0.0000,0.1250,24,8,0.9792,0.9375,1.0000
+claude-opus-5-5,2x2,prescriptive,1.0000,1.0000,1.0000,15,5,0.0000,0.0000,0.0000,21,7,1.0000,1.0000,1.0000
+claude-sonnet-5-5,2x2,no_model,1.0000,1.0000,1.0000,15,5,0.0000,0.0000,0.0000,30,10,1.0000,1.0000,1.0000
+claude-sonnet-5-5,2x2,descriptive,1.0000,1.0000,1.0000,15,5,0.0000,0.0000,0.0000,29,10,1.0000,1.0000,1.0000
+claude-sonnet-5-5,2x2,prescriptive,1.0000,1.0000,1.0000,15,5,0.0370,0.0000,0.1111,27,9,0.9815,0.9444,1.0000
