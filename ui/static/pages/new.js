@@ -5,9 +5,9 @@
 // which shows the settings, Progress, Stop, and the terminal.
 (function () {
   const h = UI.el;
-  const NO_KEY = "no API key: add it under Models";
-  const NO_ACCOUNT = "no account id: add it under Models";
-  const keyProblem = (r) => r === NO_KEY || r === NO_ACCOUNT;
+  // The provider's key info decides, as on the Models page: an unconfigured key with a source other than "missing"
+  // is a token whose account id is missing. The wording is shown here and is the same as ui/bundle.py's reasons.
+  const keyProblem = (p) => !p.key || p.key.configured ? null : p.key.source === "missing" ? "no API key: add it under Models" : "no account id: add it under Models";
   const NUMBERS = [["attempts", "Attempts per input and setup: sends the same input N times"],
     ["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
@@ -113,7 +113,7 @@
       });
       const head = h("label", { class: "provider-head" }, all, h("span", { text: p.name }));
       // A missing key shows as a warning sign after the provider name, linking to Models; the reason is its tooltip.
-      const problem = p.models.map((m) => m.disabled_reason).find(keyProblem);
+      const problem = keyProblem(p);
       const tipId = "key-tip-" + p.name;
       const warn = problem ? h("span", { class: "tip-wrap" },
         h("a", { class: "key-warn tip-src", href: "#/models" + rel, "aria-label": `${p.name}: ${problem}`, "aria-describedby": tipId, text: "⚠️" }),
@@ -130,7 +130,7 @@
           sync(); onChange();
         });
         const label = h("label", { class: "model" + (off ? " off" : "") }, box, h("span", { text: m.name }));
-        if (off && !keyProblem(m.disabled_reason)) label.append(h("span", { class: "reason", text: m.disabled_reason }));
+        if (off && !problem) label.append(h("span", { class: "reason", text: m.disabled_reason }));
         col.append(label);
       }
       sync();
