@@ -69,6 +69,11 @@ def test_benchmarks_colouring_gate_and_stale_models_fallback():
     assert run.returncode == 0, run.stderr + run.stdout
 
 
+def test_usd_reproduces_each_pages_former_output():
+    run = subprocess.run([NODE, "tests/js/usd.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
 def test_estimate_patterns_read_runs_estimate_lines(exp, capsys):
     """New Experiment reads `run --estimate` into a table with regexes of its own: keep the two in step."""
     import json
