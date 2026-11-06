@@ -85,7 +85,7 @@
     render(bundle, params, el) {
       el.append(h("h2", { text: "About" }));
       const doc = h("div", { class: "md" });
-      doc.innerHTML = window.renderMarkdown(bundle.about.markdown, bundle.about.source ? bundle.about.source.replace(/[^/]*$/, "") : "");
+      doc.innerHTML = window.renderMarkdown(bundle.about.markdown, UI.mdBase(bundle.about.source));
       el.append(doc);
       const src = UI.sourceLink(bundle.about.source);
       if (src) el.append(h("p", { class: "small" }, src));

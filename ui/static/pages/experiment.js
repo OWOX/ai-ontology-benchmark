@@ -62,7 +62,7 @@
   function reportBox(d) {
     if (!d.report) return h("p", { class: "muted", text: "No report on the branch." });
     const md = h("div", { class: "md" });
-    md.innerHTML = window.renderMarkdown(d.report.markdown, d.report.source ? d.report.source.replace(/[^/]*$/, "") : "");
+    md.innerHTML = window.renderMarkdown(d.report.markdown, UI.mdBase(d.report.source));
     const src = UI.sourceLink(d.report.source);
     return h("div", {}, md, ...(src ? [src] : []));
   }

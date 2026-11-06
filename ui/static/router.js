@@ -68,6 +68,8 @@
       store.set("bundle:last", fresh.release);
       return fresh;
     },
+    // The folder of a Markdown source URL, which resolves its relative links; "" with no URL.
+    mdBase(url) { return url ? url.replace(/[^/]*$/, "") : ""; },
     go(hash) { if (location.hash === hash) route(); else location.hash = hash; },
     registerPage(name, page) { pages[name] = page; },
     // A small "source" link, or null with no GitHub base URL.
