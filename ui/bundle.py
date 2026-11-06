@@ -314,10 +314,10 @@ class Bundles(BranchReaders):
         inputs = expdata.read_inputs(self.git, main, config["release"]) if config else []
         # The scored rows are shared with the benchmarks, so they are only read. `_rows` may set the error on the held
         # entry, so the copy is taken after it.
-        scored = self._rows(held, {config["release"]: self._manifest(config["release"])}, {config["release"]: inputs}) if config else None
+        manifest = self._manifest(config["release"]) if config else None
+        scored = self._rows(held, {config["release"]: manifest}, {config["release"]: inputs}) if config else None
         exp = {**held["exp"]}
         metric_rows, summary_rows, source = expdata.detail_metrics(exp, inputs, scored)
-        manifest = self._manifest(config["release"]) if config else None
         puzzles = list(manifest["release_config"]["puzzles"]) if manifest else []
         version = exp["report_version"]
         report = None if version is None else {
