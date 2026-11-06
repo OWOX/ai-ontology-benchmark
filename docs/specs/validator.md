@@ -11,7 +11,7 @@ The [validator](../definitions.md#workflows). It turns one raw response into par
 1. An input, as one line of `inputs.jsonl`.
 2. `raw_response`: the text the AI model returned. Empty for an infrastructure failure.
 3. `stop_reason`: `ok`, `truncated`, `refused`, or `infrastructure_failure`.
-4. `decision`: a boolean, false by default. [evaluate](evaluate.md) sets it from the AI model's provider, and the validator never guesses it from the text.
+4. `decision`: a boolean, false by default. [evaluate](evaluate.md) reads it from the raw record, and falls back to the AI model's provider for a record without the field. The validator never guesses it from the text.
 
 ## Outputs
 
