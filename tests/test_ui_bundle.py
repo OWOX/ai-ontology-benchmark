@@ -1170,17 +1170,17 @@ def test_slower_load_does_not_overwrite_a_newer_entry(ui_repo, samples, monkeypa
 
     # the same rule through `_scored`
     bundles._scored_cache["e"] = {"stamp": ("old", "m"), "rows": None, "exp": {"id": "e"}}
-    older = {"stamp": ("newer", "m"), "rows": None, "exp": {"id": "e"}}
+    faster = {"stamp": ("newer", "m"), "rows": None, "exp": {"id": "e"}}
 
     def slow_again(*args):
         loaded = real_load(*args)
         with bundles._scored_lock:
-            bundles._scored_cache["e"] = older
+            bundles._scored_cache["e"] = faster
         return loaded
 
     monkeypatch.setattr(expdata, "load_experiment", slow_again)
     bundles._scored("e", ref, "m0")
-    assert bundles._scored_cache["e"] is older
+    assert bundles._scored_cache["e"] is faster
 
 
 def test_detail_requests_for_an_unchanged_ref_validate_once(ui_repo, samples, monkeypatch):
