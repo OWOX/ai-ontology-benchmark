@@ -1,5 +1,6 @@
 # Spec: docs/specs/ui.md (How to test)
 """Checks the page scripts with node: a syntax check of every ui/static/**/*.js and the markdown renderer's tests."""
+import os
 import re
 import shutil
 import subprocess
@@ -70,7 +71,8 @@ def test_benchmarks_colouring_gate_and_stale_models_fallback():
 
 
 def test_usd_reproduces_each_pages_former_output():
-    run = subprocess.run([NODE, "tests/js/usd.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    env = {**os.environ, "LC_ALL": "de_DE.UTF-8"}  # the Models page formats in the browser's locale
+    run = subprocess.run([NODE, "tests/js/usd.test.mjs"], cwd=ROOT, capture_output=True, text=True, env=env)
     assert run.returncode == 0, run.stderr + run.stdout
 
 

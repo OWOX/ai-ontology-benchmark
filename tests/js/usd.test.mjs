@@ -22,12 +22,13 @@ cases("benchmarks", { fixed: 2 }, [
   [0, "$0.00"], [0.0042, "$0.00"], [1.5, "$1.50"], [12.345, "$12.35"], [1234567.891, "$1234567.89"], [-3.5, "$-3.50"],
 ]);
 
-// Models: the browser's own locale, 2 to 4 places, so the expectation is built the same way here.
-const models = (v) => "$" + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-for (const v of [0, 0.0042, 1.5, 12.345, 1234567.891, -3.5, 0.00005, "0.0042", "2.5", NaN, Infinity, -Infinity]) {
-  check(`models: ${String(v)}`, UI.usd(v, { locale: undefined, maxDecimals: 4 }), models(v));
-}
-check("models: 0.0042 keeps 4 places", UI.usd(0.0042, { locale: undefined, maxDecimals: 4 }).slice(-6), "0.0042");
+// Models: the browser's own locale. The pytest wrapper runs this script with LC_ALL=de_DE.UTF-8, so a fixed en-GB
+// would show here as "1,234,567.891" instead of "1.234.567,891".
+if (Intl.NumberFormat().resolvedOptions().locale !== "de-DE") { failed++; console.error("FAIL run with LC_ALL=de_DE.UTF-8"); }
+cases("models", { locale: "browser", maxDecimals: 4 }, [
+  [0, "$0,00"], [0.0042, "$0,0042"], [1.5, "$1,50"], [12.345, "$12,345"], [1234567.891, "$1.234.567,891"], [-3.5, "$-3,50"],
+  [0.00005, "$0,0001"], ["0.0042", "$0,0042"], ["2.5", "$2,50"], [NaN, "$NaN"], [Infinity, "$∞"], [-Infinity, "$-∞"],
+]);
 
 // New Experiment: en-GB, 2 places (4 below one), and the amount as printed for inf, nan, and amounts too small for 4 places.
 cases("new", { verbatim: true, maxBelowOne: 4 }, [

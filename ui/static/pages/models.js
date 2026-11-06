@@ -3,7 +3,7 @@
 (function () {
   const h = UI.el;
 
-  const usd = (v) => UI.usd(v, { locale: undefined, maxDecimals: 4 });
+  const usd = (v) => UI.usd(v, { locale: "browser", maxDecimals: 4 });
 
   const SVG = {
     edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
