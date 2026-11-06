@@ -7,7 +7,6 @@ releases/<version>/ folder (read-only files), then makes a git commit and tag.
 import argparse
 import hashlib
 import json
-import re
 import shutil
 import subprocess
 import sys
@@ -15,11 +14,10 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.config import load_release_config
+from src.config import RELEASE_PATTERN, load_release_config
 from src.generate.generate import build_inputs
 from src.run.prompts import both_prompt_versions
 
-VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 # Globs for the assessment. src/evaluate/report.py is left out on purpose.
 ASSESSMENT_PATTERNS = [
     "src/validator.py", "src/puzzles/*.py", "src/run/raw.py", "src/evaluate/evaluate.py",
@@ -62,7 +60,7 @@ def latest_version(releases: Path) -> str | None:
     """Return the highest version folder name, compared numerically."""
     if not releases.is_dir():
         return None
-    names = [p.name for p in releases.iterdir() if p.is_dir() and VERSION_PATTERN.fullmatch(p.name)]
+    names = [p.name for p in releases.iterdir() if p.is_dir() and RELEASE_PATTERN.fullmatch(p.name)]
     return max(names, key=parse_version) if names else None
 
 
@@ -164,10 +162,10 @@ def check_base(base: str, bump: str, releases: Path) -> None:
     """Raise ReleaseError unless base is a patch bump's target: the newest release on its MAJOR.MINOR line."""
     if bump != "patch":
         raise ReleaseError("--base: only a patch bump can name a base")
-    if not VERSION_PATTERN.fullmatch(base) or not (releases / base / "manifest.json").is_file():
+    if not RELEASE_PATTERN.fullmatch(base) or not (releases / base / "manifest.json").is_file():
         raise ReleaseError(f"{releases / base}: no such release")
     line = parse_version(base)[:2]
-    newest = max((p.name for p in releases.iterdir() if p.is_dir() and VERSION_PATTERN.fullmatch(p.name)
+    newest = max((p.name for p in releases.iterdir() if p.is_dir() and RELEASE_PATTERN.fullmatch(p.name)
                   and parse_version(p.name)[:2] == line), key=parse_version)
     if newest != base:
         raise ReleaseError(f"--base: {base} is not the newest on its line, {newest} is")
