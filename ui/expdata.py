@@ -48,6 +48,17 @@ def read_inputs(git: GitData, ref: str, release: str) -> list[dict]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
+def find_input(git: GitData, release: str, input_id: str) -> dict | None:
+    """The input of the release on main with this id, or None."""
+    return next((r for r in read_inputs(git, git.main_ref(), release) if r["input_id"] == input_id), None)
+
+
+def find_record(records: list[dict], input_id: str, setup: str, attempt_number: int) -> dict | None:
+    """The raw record of one attempt, or None."""
+    return next((r for r in records if r.get("input_id") == input_id and r.get("setup") == setup
+                 and r.get("attempt_number") == attempt_number), None)
+
+
 def csv_value(column: str, text: str) -> object:
     if column in TEXT_COLUMNS or text == NA:
         return text

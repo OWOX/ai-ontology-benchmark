@@ -49,12 +49,10 @@ def replay(bundles, experiment_id: str, live_ids: set[str], query: dict) -> dict
         raise ApiError(400, exp["error"])
     if model not in [m["name"] for m in config["models"]]:
         raise ApiError(404, f"model {model} is not in experiment {experiment_id}")
-    record = next((r for r in exp["records"].get(model, []) if r.get("input_id") == input_id
-                   and r.get("setup") == setup and r.get("attempt_number") == attempt), None)
+    record = expdata.find_record(exp["records"].get(model, []), input_id, setup, attempt)
     if record is None:
         raise ApiError(404, "no such record")
-    git = bundles.git
-    row = next((r for r in expdata.read_inputs(git, git.main_ref(), config["release"]) if r["input_id"] == input_id), None)
+    row = expdata.find_input(bundles.git, config["release"], input_id)
     if row is None:
         raise ApiError(404, f"input {input_id} is not in release {config['release']}")
     moves = list(record.get("parsed_moves") or [])
