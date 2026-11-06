@@ -403,7 +403,7 @@ def test_whitespace_only_key_in_env_counts_as_missing(ui_repo, monkeypatch):
         return bundles._fill_keys({"providers": [provider]}, env)["providers"][0]["models"][0]["disabled_reason"]
 
     assert reason("   ") == "no API key: add it under Models"
-    assert reason("sk-real") is None  # set outside inspect's view only in env: still usable
+    assert reason("sk-real") is None  # a key present only in env, as merged_env passes it, still counts
 
 
 def test_model_matching(ui_repo, samples):
@@ -1167,6 +1167,20 @@ def test_slower_load_does_not_overwrite_a_newer_entry(ui_repo, samples, monkeypa
     monkeypatch.setattr(expdata, "load_experiment", slow_load)
     bundles._loaded_entry("e", ref)
     assert bundles._scored_cache["e"] is newer
+
+    # the same rule through `_scored`
+    bundles._scored_cache["e"] = {"stamp": ("old", "m"), "rows": None, "exp": {"id": "e"}}
+    older = {"stamp": ("newer", "m"), "rows": None, "exp": {"id": "e"}}
+
+    def slow_again(*args):
+        loaded = real_load(*args)
+        with bundles._scored_lock:
+            bundles._scored_cache["e"] = older
+        return loaded
+
+    monkeypatch.setattr(expdata, "load_experiment", slow_again)
+    bundles._scored("e", ref, "m0")
+    assert bundles._scored_cache["e"] is older
 
 
 def test_detail_requests_for_an_unchanged_ref_validate_once(ui_repo, samples, monkeypatch):
