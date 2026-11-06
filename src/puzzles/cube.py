@@ -164,12 +164,12 @@ def _piece_coords(n, state, size):
 
 
 def _orbit(n, start, step):
-    """Return everything reachable from start by applying step(item, destination) for each move."""
+    """Return everything reachable from start by applying step(item, table) for each move."""
     seen, queue = {start}, deque([start])
     while queue:
         item = queue.popleft()
-        for destination in _moves(n).values():
-            new = step(item, destination)
+        for table in _moves(n).values():  # closed under inversion, so the source tables reach the same orbit as their inverses
+            new = step(item, table)
             if new not in seen:
                 seen.add(new)
                 queue.append(new)
