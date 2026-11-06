@@ -1039,3 +1039,32 @@ def test_metric_definitions_cover_benchmarks():
 
 def test_bundle_without_definitions(ui_repo):
     assert make_bundles(ui_repo).get(None, True, set(), {}, set())["metric_definitions"] == {"terms": {}, "source": None}
+
+
+def test_loaded_is_read_once_per_ref_sha(ui_repo, samples, monkeypatch):
+    valid, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    first = bundles.loaded("e", set())
+    reads = []
+    real_show = bundles.git.show
+    monkeypatch.setattr(bundles.git, "show", lambda ref, path: reads.append((ref, path)) or real_show(ref, path))
+    assert bundles.loaded("e", set()) is first
+    assert not [r for r in reads if r[1].startswith("results/")]  # the branch was not read again
+    push_results(ui_repo, "e", files_for(records + [record(valid, "no_model", 2, SUCCESS)]), force=True)
+    bundles.git.fetch(force=True)
+    moved = bundles.loaded("e", set())
+    assert moved is not first and len(moved["records"]["example-model"]) == len(first["records"]["example-model"]) + 1
+    assert any(r[1].startswith("results/") for r in reads)
+
+
+def test_bundle_build_scores_each_experiment_once(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    scored = []
+    real_rows = expdata.attempt_rows
+    monkeypatch.setattr(expdata, "attempt_rows", lambda *a, **k: scored.append(a[0]["id"]) or real_rows(*a, **k))
+    bundles = make_bundles(ui_repo)
+    bundles.get(None, True, set(), {}, set())
+    bundles.benchmarks(bench_query(), set())
+    assert scored == ["e"]

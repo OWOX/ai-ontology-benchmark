@@ -150,18 +150,19 @@ def cell(value: object) -> object:
     return None if value == NA else value
 
 
-def experiment_rows(exp: dict, inputs: list[dict]) -> list[dict]:
-    """One row per model, puzzle, and scope; any failure while building them gives the error rows instead."""
+def experiment_rows(exp: dict, inputs: list[dict], scored: list[dict] | None = None) -> list[dict]:
+    """One row per model, puzzle, and scope; any failure while building them gives the error rows instead.
+    `scored` holds the experiment's attempt rows when the caller has them already."""
     try:
-        return _experiment_rows(exp, inputs)
+        return _experiment_rows(exp, inputs, scored)
     except Exception as error:
         exp["error"] = f"results/{exp['id']}: {type(error).__name__}: {error}"
-        return _experiment_rows(exp, inputs)
+        return _experiment_rows(exp, inputs, scored)
 
 
-def _experiment_rows(exp: dict, inputs: list[dict]) -> list[dict]:
+def _experiment_rows(exp: dict, inputs: list[dict], scored: list[dict] | None) -> list[dict]:
     config = exp["config"]
-    rows = attempt_rows(exp, inputs)
+    rows = attempt_rows(exp, inputs) if scored is None else scored
     source = "report" if exp["csv_rows"] is not None else "computed"
     models = {m["name"]: m for m in config["models"]} if config else {}
     times = [r["created_at"] for found in exp["records"].values() for r in found

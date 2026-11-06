@@ -29,22 +29,16 @@ def first_paragraph(text: str) -> str | None:
     return " ".join(paragraph) or None
 
 
-def impossible_seen(puzzle: str, legal: list[str], experiments: list[dict], inputs: list[dict],
-                    cache: dict) -> list[dict]:
-    """Impossible moves from the re-validated attempt rows, one model file at a time.
-    `cache` holds the rows of each (experiment, model file) for the whole build."""
+def impossible_seen(puzzle: str, legal: list[str], experiments: list[dict],
+                    rows_by_exp: dict[str, list[dict]]) -> list[dict]:
+    """Impossible moves from the re-validated attempt rows of each experiment, which the build has scored already."""
     seen: dict[str, dict] = defaultdict(lambda: {"count": 0, "models": set(), "experiments": set()})
     for exp in experiments:
         if exp["error"]:
             continue
         try:
-            found = []
-            for name, records in exp["records"].items():
-                if (exp["id"], name) not in cache:  # attempt_rows flags errors on its own copy
-                    cache[exp["id"], name] = expdata.attempt_rows({**exp, "records": {name: records}}, inputs)
-                rows = cache[exp["id"], name]
-                found += [(m, name) for r in rows if r["puzzle"] == puzzle
-                          for m in expdata.impossible_moves(r, legal)]
+            found = [(m, r["model"]) for r in rows_by_exp.get(exp["id"], []) if r["puzzle"] == puzzle
+                     for m in expdata.impossible_moves(r, legal)]
         except Exception:
             continue  # one unreadable experiment never blocks the bundle
         for move, model in found:
@@ -58,7 +52,7 @@ def impossible_seen(puzzle: str, legal: list[str], experiments: list[dict], inpu
 
 
 def build_puzzle(git: GitData, main: str, link: Link, release: str, manifest: dict, name: str,
-                 inputs: list[dict], experiments: list[dict], cache: dict) -> dict:
+                 inputs: list[dict], experiments: list[dict], rows_by_exp: dict[str, list[dict]]) -> dict:
     mine = [r for r in inputs if r["puzzle"] == name]
     text = git.show(main, f"docs/puzzles/{name}.md")
     description = first_paragraph(text) if text is not None else None
@@ -79,5 +73,5 @@ def build_puzzle(git: GitData, main: str, link: Link, release: str, manifest: di
             "description": {"text": description, "source": link(f"docs/puzzles/{name}.md") if text is not None else None},
             "prompts": prompts, "legal_moves": legal,
             "legal_moves_source": link(type(engine).__module__.replace(".", "/") + ".py") if engine else None,
-            "impossible_seen": impossible_seen(name, legal, experiments, inputs, cache) if legal is not None else [],
+            "impossible_seen": impossible_seen(name, legal, experiments, rows_by_exp) if legal is not None else [],
             "inputs_source": link(f"releases/{release}/inputs.jsonl")}

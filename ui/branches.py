@@ -4,14 +4,13 @@ puzzles, an experiment's stored config, and one experiment branch. Reads `main` 
 through GitData. Writes nothing.
 """
 
-from ui import expdata
 from ui.catalogue import build_providers
 from ui.common import ApiError
 from ui.gitdata import LOCAL_RESULTS, REMOTE_RESULTS
 
 
 class BranchReaders:
-    """Mixin for Bundles: needs `git`, `_manifest`, `_catalogue`, `_prices`, and `_fill_keys`."""
+    """Mixin for Bundles: needs `git`, `_lock`, `_scored`, `_manifest`, `_catalogue`, `_prices`, and `_fill_keys`."""
 
     def models(self, env: dict) -> dict[str, dict]:
         """The catalogue on main by name, each model with its provider, `disabled_reason`, and the rest of its entry."""
@@ -36,7 +35,8 @@ class BranchReaders:
     def loaded(self, experiment_id: str, live_ids: set[str]) -> dict:
         """One experiment branch read by `expdata`, from the local ref when its id is live. 404 when it has none."""
         ref = self.git.results_refs(live_ids).get(experiment_id)
-        exp = expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref()) if ref else None
+        with self._lock:  # the scored cache is keyed by the ref's sha, so a live branch that moved is read again
+            exp = self._scored(experiment_id, ref, self.git.sha(self.git.main_ref()))["exp"] if ref else None
         if exp is None or (exp["config"] is None and (exp["error"] or "").endswith("file not found")):
             raise ApiError(404, f"experiment '{experiment_id}' not found")
         return exp
