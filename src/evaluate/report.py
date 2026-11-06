@@ -116,8 +116,7 @@ def experiment_section(link, folder: Path, config: dict, prices: dict, rows: lis
                        torn: int) -> list[str]:
     served = defaultdict(set)
     for row in rows:
-        if row["served_model"]:
-            served[row["model"]].add(row["served_model"])
+        served[row["model"]].update(filter(None, row["served_model"].split(",")))
     models = []
     for m in config["models"]:
         served_ids = ", ".join(sorted(served[m["name"]]))
