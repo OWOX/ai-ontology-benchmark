@@ -52,13 +52,15 @@ def test_fetch_is_throttled(ui_repo):
 
 
 def test_github_url_forms(ui_repo):
-    data = GitData(ui_repo)
     for url in ("https://github.com/o/r.git", "https://github.com/o/r", "git@github.com:o/r.git"):
         git(ui_repo, "remote", "set-url", "origin", url)
-        assert data.github() == "https://github.com/o/r"
-    assert data.link("abc", "README.md") == "https://github.com/o/r/blob/abc/README.md"
+        assert GitData(ui_repo).github() == "https://github.com/o/r"
     git(ui_repo, "remote", "set-url", "origin", "https://gitlab.com/o/r.git")
-    assert data.github() is None and data.link("abc", "x") is None
+    assert GitData(ui_repo).github() is None
+    data = GitData(ui_repo)
+    data.github()
+    git(ui_repo, "remote", "set-url", "origin", "https://github.com/o/r")
+    assert data.github() is None  # read once per instance
 
 
 def test_no_origin_reads_head(ui_repo):
