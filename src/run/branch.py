@@ -51,7 +51,7 @@ def stale_files(root: Path, parent: str, results_dir: str, models: set[str] | No
             continue
         size = int(size)
         with open(local, "rb") as handle:
-            if blob_id(handle.read(size), len(sha)) != sha or local.stat().st_size < size:
+            if blob_id(handle.read(size), len(sha)) != sha:
                 stale.append(path)
     return stale
 
