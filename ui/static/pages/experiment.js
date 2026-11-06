@@ -5,7 +5,7 @@
 (function () {
   const h = UI.el;
   // Jobs of this experiment only: the log's job id is the experiment id.
-  const mine = (id, pred) => UI.jobs.some((j) => j.id === id && j.state === "running" && pred(j.job));
+  const mine = UI.mine;
   const snapRunning = (snap, pred) => !!snap && Object.entries(snap.jobs).some(([j, s]) => s === "running" && pred(j));
 
   function header(d) {
@@ -62,7 +62,7 @@
   function reportBox(d) {
     if (!d.report) return h("p", { class: "muted", text: "No report on the branch." });
     const md = h("div", { class: "md" });
-    md.innerHTML = window.renderMarkdown(d.report.markdown, d.report.source ? d.report.source.replace(/[^/]*$/, "") : "");
+    md.innerHTML = window.renderMarkdown(d.report.markdown, UI.mdBase(d.report.source));
     const src = UI.sourceLink(d.report.source);
     return h("div", {}, md, ...(src ? [src] : []));
   }

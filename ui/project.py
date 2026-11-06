@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 
 from src.release.release import latest_version
-from ui.commit import Emit, open_pr_url, sh
-from ui.common import ApiError, merged_env
+from ui.commit import Emit, create_pr, gh_binary, open_pr_url, sh
+from ui.common import ApiError
 
 PACKAGES = {"anthropic": "anthropic", "openai": "openai", "google-genai": "google.genai", "pytest": "pytest"}
 
@@ -50,7 +50,7 @@ def info(root: Path) -> dict:
     return {"branch": current_branch(root), "clean": status.returncode == 0 and not status.stdout.strip(),
             "latest_release": latest_version(root / "releases"), "python": sys.version.split()[0],
             "packages": {name: installed(module) for name, module in PACKAGES.items()},
-            "gh": shutil.which(merged_env(root).get("UI_GH") or "gh") is not None}
+            "gh": shutil.which(gh_binary(root)) is not None}
 
 
 def push(root: Path, emit: Emit) -> dict:
@@ -62,7 +62,5 @@ def push(root: Path, emit: Emit) -> dict:
         sh(root, ["git", "push", "origin", *tags], emit)
     url = open_pr_url(root, branch, emit)
     if not url:
-        gh = merged_env(root).get("UI_GH") or "gh"
-        made = sh(root, [gh, "pr", "create", "--base", "main", "--head", branch, "--fill"], emit)
-        url = made.stdout.strip().splitlines()[-1] if made.stdout.strip() else ""
+        url = create_pr(root, emit, "--head", branch, "--fill")
     return {"branch": branch, "pr_url": url}

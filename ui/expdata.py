@@ -13,8 +13,8 @@ from collections import defaultdict
 
 from src.config import parse_experiment_config
 from src.evaluate.evaluate import REQUIRED
-from src.evaluate.metrics import (KEY, NA, EvalError, group_metrics, make_attempt_rows,
-                                  metric_sort_key, rates, sorted_keys, summary_sort_key)
+from src.evaluate.metrics import (KEY, NA, EvalError, group_metrics, input_cells, make_attempt_rows,
+                                  metric_sort_key, rate_columns, rates, sorted_keys, summary_sort_key)
 from src.puzzles.registry import ENGINES
 from src.run.models import DECISION_PROVIDERS
 from src.release.release import parse_version
@@ -46,6 +46,17 @@ def parse_raw(text: str) -> tuple[list[dict], int]:
 def read_inputs(git: GitData, ref: str, release: str) -> list[dict]:
     text = git.show(ref, f"releases/{release}/inputs.jsonl") or ""
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def find_input(git: GitData, release: str, input_id: str) -> dict | None:
+    """The input of the release on main with this id, or None."""
+    return next((r for r in read_inputs(git, git.main_ref(), release) if r["input_id"] == input_id), None)
+
+
+def find_record(records: list[dict], input_id: str, setup: str, attempt_number: int) -> dict | None:
+    """The raw record of one attempt, or None."""
+    return next((r for r in records if r.get("input_id") == input_id and r.get("setup") == setup
+                 and r.get("attempt_number") == attempt_number), None)
 
 
 def csv_value(column: str, text: str) -> object:
@@ -120,10 +131,9 @@ def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
 def all_scope_rates(done: list[dict], key: str) -> dict:
     """Pooled over valid and invalid: detection over the invalid rows, false mismatch over the valid ones."""
     out = rates(done, "valid", key)
-    invalid = rates([r for r in done if r["validity"] == "invalid"], "invalid", key)
-    valid = rates([r for r in done if r["validity"] == "valid"], "valid", key)
-    out.update({k: v for k, v in invalid.items() if k.startswith("mismatch_detection_rate")})
-    out.update({k: v for k, v in valid.items() if k.startswith("false_mismatch_rate")})
+    flagged = lambda r: r["mismatch"]
+    rate_columns(out, "mismatch_detection_rate", input_cells([r for r in done if r["validity"] == "invalid"], flagged), key)
+    rate_columns(out, "false_mismatch_rate", input_cells([r for r in done if r["validity"] == "valid"], flagged), key)
     return out
 
 
@@ -139,18 +149,19 @@ def cell(value: object) -> object:
     return None if value == NA else value
 
 
-def experiment_rows(exp: dict, inputs: list[dict]) -> list[dict]:
-    """One row per model, puzzle, and scope; any failure while building them gives the error rows instead."""
+def experiment_rows(exp: dict, inputs: list[dict], scored: list[dict] | None = None) -> list[dict]:
+    """One row per model, puzzle, and scope; any failure while building them gives the error rows instead.
+    `scored` holds the experiment's attempt rows when the caller has them already."""
     try:
-        return _experiment_rows(exp, inputs)
+        return _experiment_rows(exp, inputs, scored)
     except Exception as error:
         exp["error"] = f"results/{exp['id']}: {type(error).__name__}: {error}"
-        return _experiment_rows(exp, inputs)
+        return _experiment_rows(exp, inputs, scored)
 
 
-def _experiment_rows(exp: dict, inputs: list[dict]) -> list[dict]:
+def _experiment_rows(exp: dict, inputs: list[dict], scored: list[dict] | None) -> list[dict]:
     config = exp["config"]
-    rows = attempt_rows(exp, inputs)
+    rows = attempt_rows(exp, inputs) if scored is None else scored
     source = "report" if exp["csv_rows"] is not None else "computed"
     models = {m["name"]: m for m in config["models"]} if config else {}
     times = [r["created_at"] for found in exp["records"].values() for r in found

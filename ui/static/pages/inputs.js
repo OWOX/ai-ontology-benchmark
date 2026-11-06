@@ -24,7 +24,7 @@
         ...info.depths.map((d) => h("option", { value: String(d), text: `depth ${d}` })));
       depth.value = params.query.depth || "";
       const validity = h("select", { "aria-label": "Validity" },
-        ...[["", "all inputs"], ["valid", "valid only"], ["invalid", "invalid only"]].map(([v, t]) => h("option", { value: v, text: t })));
+        ...UI.validityOptions("").map(([v, t]) => h("option", { value: v, text: t })));
       validity.value = params.query.validity || "";
       // Filters live in the hash next to release; replaceState does not fire hashchange, so nothing redraws.
       const keepInHash = () => {

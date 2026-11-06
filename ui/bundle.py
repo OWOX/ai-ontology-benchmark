@@ -52,7 +52,8 @@ def is_mirror(release: str, other: str | None, manifests: dict[str, dict | None]
 class Bundles(BranchReaders):
     def __init__(self, root: Path, git: GitData) -> None:
         self.root, self.git = Path(root), git
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()  # held for a whole fetch and build
+        self._scored_lock = threading.Lock()  # guards only gets and sets on `_scored_cache`, never held across a load
         self._cache: dict[tuple, dict] = {}
         self._bench_cache: dict[tuple, dict] = {}
         self._scored_cache: dict[str, dict] = {}  # one entry per experiment id
@@ -137,16 +138,19 @@ class Bundles(BranchReaders):
         experiment id, replaced when its ref sha or the main sha changes, so a new filter reuses it and
         memory follows the number of experiments. Called under the lock."""
         stamp = (self.git.sha(ref), main_sha)
-        held = self._scored_cache.get(experiment_id)
+        with self._scored_lock:
+            held = self._scored_cache.get(experiment_id)
         if held is None or held["stamp"] != stamp:
             held = {"stamp": stamp, "rows": None,
                     "exp": expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref())}
-            self._scored_cache[experiment_id] = held
+            with self._scored_lock:
+                self._scored_cache[experiment_id] = held
         return held
 
-    def _load_all(self, refs: dict[str, str], main: str) -> list[dict]:
-        loaded = (expdata.load_experiment(self.git, i, ref, main) for i, ref in sorted(refs.items()))
-        return [e for e in loaded if not (e["config"] is None and (e["error"] or "").endswith("file not found"))]
+    def _load_all(self, refs: dict[str, str], main_sha: str | None) -> list[dict]:
+        """The scored-cache entries of every experiment that has a config file or an error to show. Called under the lock."""
+        held = (self._scored(i, ref, main_sha) for i, ref in sorted(refs.items()))
+        return [h for h in held if not (h["exp"]["config"] is None and (h["exp"]["error"] or "").endswith("file not found"))]
 
     def _build(self, release: str | None, versions: list[str], refs: dict[str, str], main_sha: str | None) -> dict:
         main, base = self.git.main_ref(), self.git.github()
@@ -161,17 +165,21 @@ class Bundles(BranchReaders):
         experiments, rows = [], []
         # The Experiments list picks its releases on the page, so rows cover every release on main. Everything
         # else in the bundle reads only this release and its mirrors.
-        for exp in self._load_all(refs, main):
-            config = exp["config"]
+        rows_by_exp: dict[str, list[dict]] = {}  # validated attempt rows per experiment, shared with the puzzles
+        for held in self._load_all(refs, main_sha):
+            config = held["exp"]["config"]
             if config is not None and config["release"] not in manifests:
                 continue
-            if config is None or is_mirror(release, config["release"], manifests):
-                experiments.append(exp)
             if config and config["release"] not in inputs_by_release:
                 inputs_by_release[config["release"]] = expdata.read_inputs(self.git, main, config["release"])
             inputs = inputs_by_release[config["release"]] if config else []
+            scored = self._rows(held, manifests, inputs_by_release) if config else None
+            exp = {**held["exp"]}  # callers below write `error` into it, which must not reach the cached entry
+            if config is None or is_mirror(release, config["release"], manifests):
+                experiments.append(exp)
             branch = f"{base}/tree/{exp['sha']}/results/{exp['id']}" if base and exp["sha"] else None
-            for row in expdata.experiment_rows(exp, inputs):
+            rows_by_exp[exp["id"]] = scored or []
+            for row in expdata.experiment_rows(exp, inputs, scored):
                 entry = next((m for m in config["models"] if m["name"] == row["model"]), None) if config else None
                 known = catalogue.get(row["model"])
                 differs = entry is not None and (known is None or any(
@@ -182,9 +190,8 @@ class Bundles(BranchReaders):
         names = list(manifest["release_config"]["puzzles"]) if manifest else []
         if names and release not in inputs_by_release:
             inputs_by_release[release] = expdata.read_inputs(self.git, main, release)
-        rows_cache: dict = {}  # attempt rows per (experiment, model file), shared by the puzzles of this build
         puzzles = [build_puzzle(self.git, main, link, release, manifest, name, inputs_by_release[release],
-                                experiments, rows_cache) for name in names]
+                                experiments, rows_by_exp) for name in names]
         definitions = link("docs/definitions.md")
         return {"schema": 3, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
                 "repo": base, "main_sha": main_sha, "defaults": DEFAULTS,

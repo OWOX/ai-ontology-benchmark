@@ -15,6 +15,7 @@ import pytest
 
 from src.evaluate import evaluate as evaluate_module
 from src.puzzles.registry import get_engine
+from src.release import release as release_module
 from src.run import budget as budget_module, models, run as run_module
 from src.run.models import InfrastructureError, Reply
 from src.run.budget import worst_request, worst_state
@@ -45,6 +46,7 @@ def exp(repo, monkeypatch):
     (repo / "config" / "experiments" / "exp.toml").write_text(EXPERIMENT, encoding="utf-8")
     (repo / "config" / "prices.toml").write_text(PRICES, encoding="utf-8")
     monkeypatch.chdir(repo)
+    monkeypatch.setattr(release_module, "REPO_ROOT", repo)  # the assessment is the copy's, not this checkout's
     monkeypatch.setattr(models, "FAKE_REPLIES", [])
     return repo
 
@@ -1209,5 +1211,5 @@ def test_live_hallucination_rate_is_na_for_decision_records():
                    dict(base, decision=False, mismatch=True, parsed_moves=[])):
         mixed.add(record, price)
     assert decision_only.hallucination() == "n/a"
-    assert mixed.hallucination() == "50%"  # 1 of the 2 records that gave moves
+    assert mixed.hallucination() == "100%"  # the decision record is left out: 1 of the 1 text record that gave moves
     assert empty.hallucination() == "n/a"

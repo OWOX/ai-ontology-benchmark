@@ -26,6 +26,8 @@ class GitData:
         self.fetched_at: str | None = None
         self.fetch_error: str | None = None
         self._last_fetch: float | None = None
+        self._github: str | None = None
+        self._github_read = False
 
     def _git(self, *args: str, timeout: float | None = None) -> subprocess.CompletedProcess:
         env = {k: v for k, v in os.environ.items() if k not in GIT_VARIABLES}
@@ -89,10 +91,9 @@ class GitData:
         return refs
 
     def github(self) -> str | None:
-        done = self._git("remote", "get-url", "origin")
-        found = re.fullmatch(GITHUB_URL, done.stdout.strip()) if done.returncode == 0 else None
-        return f"https://github.com/{found.group(1)}/{found.group(2)}" if found else None
-
-    def link(self, sha: str | None, path: str) -> str | None:
-        base = self.github()
-        return f"{base}/blob/{sha}/{path}" if base and sha else None
+        if not self._github_read:
+            done = self._git("remote", "get-url", "origin")
+            found = re.fullmatch(GITHUB_URL, done.stdout.strip()) if done.returncode == 0 else None
+            self._github = f"https://github.com/{found.group(1)}/{found.group(2)}" if found else None
+            self._github_read = True
+        return self._github

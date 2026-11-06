@@ -18,7 +18,7 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
 
    Before the first call, `run` checks:
    1. Every file in the release matches its sha256 in `manifest.json`.
-   2. The assessment files in the working tree hash to the release's `assessment_sha256`, so the validator that writes the raw records is the one the release pins.
+   2. The assessment files in the checkout hash to the release's `assessment_sha256`, so the validator that writes the raw records is the one the release pins.
    3. `prompt_versions()` over the release's inputs and templates equals the manifest's `prompt_versions`, so the engine code in the working tree renders exactly the prompts the release froze.
    4. If `results/<ID>/experiment.toml` exists, it equals the experiment config apart from the `[budget]` table. An experiment never changes once it starts, except that its budget can be raised to resume.
    5. Every AI model in the experiment has a price in `config/prices.toml`.

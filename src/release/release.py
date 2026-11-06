@@ -7,7 +7,6 @@ releases/<version>/ folder (read-only files), then makes a git commit and tag.
 import argparse
 import hashlib
 import json
-import re
 import shutil
 import subprocess
 import sys
@@ -15,16 +14,16 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.config import load_release_config
+from src.config import RELEASE_PATTERN, load_release_config
 from src.generate.generate import build_inputs
 from src.run.prompts import both_prompt_versions
 
-VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 # Globs for the assessment. src/evaluate/report.py is left out on purpose.
 ASSESSMENT_PATTERNS = [
     "src/validator.py", "src/puzzles/*.py", "src/run/raw.py", "src/evaluate/evaluate.py",
     "src/evaluate/metrics.py", "src/run/decision.py", "src/run/prompts.py",
 ]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 PROMPTS_DIR = Path("prompts")
 RELEASE_CONFIG = Path("config/release.toml")
 
@@ -41,7 +40,7 @@ def assessment_files() -> list[Path]:
     """Return the assessment files that exist, in sorted path order."""
     found = set()
     for pattern in ASSESSMENT_PATTERNS:
-        found.update(Path(".").glob(pattern))
+        found.update(REPO_ROOT.glob(pattern))
     return sorted(found)
 
 
@@ -57,11 +56,16 @@ def parse_version(text: str) -> tuple[int, int, int]:
     return major, minor, patch
 
 
+def version_folders(releases: Path) -> list[str]:
+    """Return the names of the version folders in `releases`, empty when it does not exist."""
+    if not releases.is_dir():
+        return []
+    return [p.name for p in releases.iterdir() if p.is_dir() and RELEASE_PATTERN.fullmatch(p.name)]
+
+
 def latest_version(releases: Path) -> str | None:
     """Return the highest version folder name, compared numerically."""
-    if not releases.is_dir():
-        return None
-    names = [p.name for p in releases.iterdir() if p.is_dir() and VERSION_PATTERN.fullmatch(p.name)]
+    names = version_folders(releases)
     return max(names, key=parse_version) if names else None
 
 
@@ -163,11 +167,11 @@ def check_base(base: str, bump: str, releases: Path) -> None:
     """Raise ReleaseError unless base is a patch bump's target: the newest release on its MAJOR.MINOR line."""
     if bump != "patch":
         raise ReleaseError("--base: only a patch bump can name a base")
-    if not VERSION_PATTERN.fullmatch(base) or not (releases / base / "manifest.json").is_file():
+    if not RELEASE_PATTERN.fullmatch(base) or not (releases / base / "manifest.json").is_file():
         raise ReleaseError(f"{releases / base}: no such release")
     line = parse_version(base)[:2]
-    newest = max((p.name for p in releases.iterdir() if p.is_dir() and VERSION_PATTERN.fullmatch(p.name)
-                  and parse_version(p.name)[:2] == line), key=parse_version)
+    newest = max((name for name in version_folders(releases) if parse_version(name)[:2] == line),
+                 key=parse_version)
     if newest != base:
         raise ReleaseError(f"--base: {base} is not the newest on its line, {newest} is")
 

@@ -10,10 +10,9 @@ from fractions import Fraction
 from src.evaluate.metrics import consistency, gave_moves, holm, is_hit, mean, rates, sign_test
 from ui.expdata import all_scope_rates
 from ui.expdata import cell as na_to_none
+from ui.pooling import RATES
 
-RATE_METRICS = ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
-                "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate")
-METRICS = (*RATE_METRICS, "consistency", "latency_per_attempt_s", "tokens_per_attempt",
+METRICS = (*RATES, "consistency", "latency_per_attempt_s", "tokens_per_attempt",
            "cost_per_success")
 HIGHER = ("success_rate", "mismatch_detection_rate", "consistency")
 
@@ -22,7 +21,7 @@ def direction(metric: str) -> str:
     return "higher" if metric in HIGHER else "lower"
 
 
-def pooled_rates(done: list[dict], scope: str, key: str) -> dict:
+def bootstrap_rates(done: list[dict], scope: str, key: str) -> dict:
     """Rates over the attempts that are not infrastructure failures, as `all_scope_rates` pools them. An input is
     one (input set id, input id), so inputs of different sets never merge. `key` seeds each bootstrap."""
     keyed = [{**r, "input_id": (r["input_set_id"], r["input_id"])} for r in done]
@@ -45,8 +44,8 @@ def cells(rows: list[dict], scope: str, key: str) -> dict[str, dict]:
     """The cell of every metric for one AI model and puzzle. `rows` are its attempt rows, scope applied. `key`
     names the group for the bootstrap. A hallucination cell is n/a when every attempt is a decision model's."""
     done = [r for r in rows if r["outcome"] != "infrastructure_failure"]
-    stats = pooled_rates(done, scope, key)
-    out = {m: rate_cell(stats, m) for m in RATE_METRICS}
+    stats = bootstrap_rates(done, scope, key)
+    out = {m: rate_cell(stats, m) for m in RATES}
     out["consistency"] = {"value": na_to_none(consistency_of(done)), "n": len(done)}
     latencies = [r["latency_s"] for r in done if r["latency_s"] is not None]
     out["latency_per_attempt_s"] = {"value": na_to_none(mean(latencies)), "n": len(latencies)}
@@ -125,7 +124,7 @@ def row_for(puzzle: str, metric: str, cells_by_model: dict[str, dict], by_model:
     order = ranking(cells_by_model, metric)
     values = {m: cells_by_model[m]["value"] for m in order}
     picks = {"best": pick(order, values, 0), "worst": pick(order, values, -1)}
-    tested = metric in RATE_METRICS
+    tested = metric in RATES
     out = {"puzzle": puzzle, "metric": metric, "direction": direction(metric), "tested": tested,
            "cells": cells_by_model, "best": None, "worst": None}
     if not tested:

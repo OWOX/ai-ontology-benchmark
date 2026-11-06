@@ -31,7 +31,7 @@
     const box = h("div", {}, h("h4", { text: "Description" }, footnote(d.source)));
     if (!d.text) { box.append(h("p", { class: "muted", text: "no description on main" })); return box; }
     const body = h("div", { class: "md plain" });
-    body.innerHTML = window.renderMarkdown(d.text, d.source ? d.source.replace(/[^/]*$/, "") : "");
+    body.innerHTML = window.renderMarkdown(d.text, UI.mdBase(d.source));
     box.append(body);
     return box;
   }

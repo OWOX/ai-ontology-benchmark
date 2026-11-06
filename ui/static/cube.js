@@ -17,9 +17,10 @@ const ISO_FACES = {
 };
 const ISO_OUTLINE = "#111111";
 
-function svg(tag, attrs) {
+function svg(tag, attrs, ...kids) {
   const node = document.createElementNS(SVGNS, tag);
   for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+  for (const kid of kids) if (kid != null) node.append(kid);
   return node;
 }
 

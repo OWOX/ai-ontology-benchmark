@@ -15,6 +15,7 @@ from typing import Callable
 from src.config import parse_experiment_config
 from src.run.branch import BranchError, stale_files, stale_message
 from ui.common import ApiError, merged_env
+from ui.gitdata import GIT_VARIABLES
 
 Emit = Callable[[str, str], None]  # (stream, text)
 
@@ -22,7 +23,7 @@ Emit = Callable[[str, str], None]  # (stream, text)
 def sh(root: Path, argv: list[str], emit: Emit, extra_env: dict | None = None, check: bool = True):
     """Run one command in the root, echo it and its output, and return the result."""
     emit("cmd", " ".join(argv))
-    base = {k: v for k, v in merged_env(root).items() if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")}
+    base = {k: v for k, v in merged_env(root).items() if k not in GIT_VARIABLES}
     result = subprocess.run(argv, cwd=root, env={**base, **(extra_env or {})},
                             capture_output=True, text=True, stdin=subprocess.DEVNULL)
     for stream, text in (("stdout", result.stdout), ("stderr", result.stderr)):
@@ -108,10 +109,19 @@ def pr_body(config: dict, experiment_id: str) -> str:
             f"Report: results/{experiment_id}/{config['release']}.md\n")
 
 
+def gh_binary(root: Path) -> str:
+    return merged_env(root).get("UI_GH") or "gh"
+
+
+def create_pr(root: Path, emit: Emit, *args: str) -> str:
+    """Run `gh pr create` with the arguments and return the URL on the last line of its output."""
+    made = sh(root, [gh_binary(root), "pr", "create", "--base", "main", *args], emit)
+    return made.stdout.strip().splitlines()[-1] if made.stdout.strip() else ""
+
+
 def open_pr_url(root: Path, branch: str, emit: Emit) -> str:
     """The URL of the open pull request for the branch, or "". Closed and merged ones don't count."""
-    gh = merged_env(root).get("UI_GH") or "gh"
-    found = sh(root, [gh, "pr", "view", branch, "--json", "url,state"], emit, check=False)
+    found = sh(root, [gh_binary(root), "pr", "view", branch, "--json", "url,state"], emit, check=False)
     try:
         data = json.loads(found.stdout) if found.returncode == 0 else {}
     except ValueError:
@@ -136,8 +146,6 @@ def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
         raise ApiError(409, "nothing to commit")
     if not url:  # a retry after a failed PR step finds the branch already pushed
         config = load_config(root, experiment_id)
-        gh = merged_env(root).get("UI_GH") or "gh"
-        made = sh(root, [gh, "pr", "create", "--base", "main", "--head", branch, "--title",
-                         f"Results: experiment {experiment_id}", "--body", pr_body(config, experiment_id)], emit)
-        url = made.stdout.strip().splitlines()[-1] if made.stdout.strip() else ""
+        url = create_pr(root, emit, "--head", branch, "--title", f"Results: experiment {experiment_id}",
+                        "--body", pr_body(config, experiment_id))
     return {"branch": branch, "commit": sha, "pr_url": url}

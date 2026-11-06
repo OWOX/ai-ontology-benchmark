@@ -70,12 +70,10 @@ def spent_by_model(config: dict, prices: dict, raw_dir: Path) -> dict[str, float
     return spent
 
 
-def check_spend(config: dict, prices: dict, raw_dir: Path, model_name: str,
-                next_cost: float, attempts_left: int, spent: dict[str, float] | None = None) -> None:
+def check_spend(config: dict, model_name: str, next_cost: float, attempts_left: int,
+                spent: dict[str, float]) -> None:
     """Raise BudgetError if the next worst-case request could pass the model or experiment budget.
-    `spent` is a reading from spent_by_model; without it the raw files are read now."""
-    if spent is None:
-        spent = spent_by_model(config, prices, raw_dir)
+    `spent` is a reading from spent_by_model."""
     budget = config["budget"]
     if spent[model_name] + next_cost > budget["per_model_usd"] + TOLERANCE:
         raise BudgetError(

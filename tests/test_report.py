@@ -225,3 +225,14 @@ def test_detection_by_corruption_type_sits_after_mismatch_detection(tree):
 def test_experiment_section_names_the_reasoning_effort(tree):
     assert "Reasoning effort: provider default." in build(tree)
     assert "Reasoning effort: medium." in build(tree, config=dict(CONFIG, reasoning_effort="medium"))
+
+
+def test_decision_served_models_are_listed_one_by_one(tree):
+    root, _ = tree
+    release, path = root / "releases" / "1.0.0", root / "results" / "exp" / "1.0.0.md"
+    recs = records()
+    recs[0]["served_model"] = "a,b"
+    recs[1]["served_model"] = "b"
+    rows = compute(recs, release, PRICES, ["M"])
+    write_report(path, "exp", CONFIG, release, PRICES, *rows, torn_lines=0)
+    assert "| M | fake | m-1 | system-2 | a, b, m-1 | temperature=0.5 |" in path.read_text(encoding="utf-8")

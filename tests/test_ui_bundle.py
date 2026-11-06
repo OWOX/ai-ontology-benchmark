@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -52,13 +53,15 @@ def test_fetch_is_throttled(ui_repo):
 
 
 def test_github_url_forms(ui_repo):
-    data = GitData(ui_repo)
     for url in ("https://github.com/o/r.git", "https://github.com/o/r", "git@github.com:o/r.git"):
         git(ui_repo, "remote", "set-url", "origin", url)
-        assert data.github() == "https://github.com/o/r"
-    assert data.link("abc", "README.md") == "https://github.com/o/r/blob/abc/README.md"
+        assert GitData(ui_repo).github() == "https://github.com/o/r"
     git(ui_repo, "remote", "set-url", "origin", "https://gitlab.com/o/r.git")
-    assert data.github() is None and data.link("abc", "x") is None
+    assert GitData(ui_repo).github() is None
+    data = GitData(ui_repo)
+    data.github()
+    git(ui_repo, "remote", "set-url", "origin", "https://github.com/o/r")
+    assert data.github() is None  # read once per instance
 
 
 def test_no_origin_reads_head(ui_repo):
@@ -88,7 +91,7 @@ class Reply:
 def record(input_row, setup, attempt, reply, model="example-model"):
     """A raw record as `run` writes it; `reply` is text, or None for an infrastructure failure."""
     config = {"experiment_id": "x", "release": "1.0.0"}
-    made = make_record(config, MANIFEST, input_row, {"name": model, "api_model_id": "ex-1"}, setup, attempt, "", VERSIONS,
+    made = make_record(config, MANIFEST, input_row, {"name": model, "api_model_id": "ex-1"}, setup, attempt, VERSIONS,
                        None if reply is None else Reply(reply), 3, 2)
     made["created_at"] = "2026-10-25T00:00:00Z"
     return made
@@ -1037,3 +1040,98 @@ def test_metric_definitions_cover_benchmarks():
 
 def test_bundle_without_definitions(ui_repo):
     assert make_bundles(ui_repo).get(None, True, set(), {}, set())["metric_definitions"] == {"terms": {}, "source": None}
+
+
+def test_loaded_is_read_once_per_ref_sha(ui_repo, samples, monkeypatch):
+    valid, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    first = bundles.loaded("e", set())
+    reads = []
+    real_show = bundles.git.show
+    monkeypatch.setattr(bundles.git, "show", lambda ref, path: reads.append((ref, path)) or real_show(ref, path))
+    assert bundles.loaded("e", set())["records"] is first["records"]
+    assert not [r for r in reads if r[1].startswith("results/")]  # the branch was not read again
+    push_results(ui_repo, "e", files_for(records + [record(valid, "no_model", 2, SUCCESS)]), force=True)
+    bundles.git.fetch(force=True)
+    moved = bundles.loaded("e", set())
+    assert moved["records"] is not first["records"] and len(moved["records"]["example-model"]) == len(first["records"]["example-model"]) + 1
+    assert any(r[1].startswith("results/") for r in reads)
+
+
+def test_bundle_build_scores_each_experiment_once(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    scored = []
+    real_rows = expdata.attempt_rows
+    monkeypatch.setattr(expdata, "attempt_rows", lambda *a, **k: scored.append(a[0]["id"]) or real_rows(*a, **k))
+    bundles = make_bundles(ui_repo)
+    bundles.get(None, True, set(), {}, set())
+    bundles.benchmarks(bench_query(), set())
+    assert scored == ["e"]
+
+
+def test_all_scope_rates_equal_the_three_call_computation(ui_repo, samples):
+    from src.evaluate.metrics import rates
+    _, _, records = samples
+    exp, inputs = open_experiment(ui_repo, "e", files_for(records))
+    done = [r for r in expdata.attempt_rows(exp, inputs) if r["outcome"] != "infrastructure_failure"]
+    assert {r["validity"] for r in done} == {"valid", "invalid"}
+    key = "ui|example-model|2x2|all"
+    expected = rates(done, "valid", key)
+    invalid = rates([r for r in done if r["validity"] == "invalid"], "invalid", key)
+    valid = rates([r for r in done if r["validity"] == "valid"], "valid", key)
+    expected.update({k: v for k, v in invalid.items() if k.startswith("mismatch_detection_rate")})
+    expected.update({k: v for k, v in valid.items() if k.startswith("false_mismatch_rate")})
+    actual = expdata.all_scope_rates(done, key)
+    assert actual == expected and list(actual) == list(expected)
+
+
+def test_malformed_report_csv_does_not_poison_the_cached_entry(ui_repo, samples):
+    _, _, records = samples
+    header = "puzzle,setup,model,scramble_depth,infrastructure_failure_count,success_rate,success_rate_n\n"
+    push_results(ui_repo, "e", files_for(records, **{"results/e/1.0.0.metrics.csv": header + "2x2,no_model,example-model,5,0,0.5,2\n"}))
+    bundles = make_bundles(ui_repo)
+    bundle = bundles.get(None, True, set(), {}, set())
+    assert any(r["error"] for r in bundle["experiments"])  # the list shows the experiment as unreadable
+    assert bundles.loaded("e", set())["error"] is None  # but the cached entry holds no error
+    assert bundles.benchmarks(bench_query(), set())["experiments"] == ["e"]
+
+
+def test_loaded_does_not_wait_for_a_bundle_build(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    bundles.loaded("e", set())  # warm
+    out = []
+    with bundles._lock:  # a bundle build holds this for a whole fetch
+        worker = threading.Thread(target=lambda: out.append(bundles.loaded("e", set())))
+        worker.start()
+        worker.join(5)
+        assert not worker.is_alive() and out
+    worker.join()
+
+
+def test_loaded_copy_writes_do_not_reach_the_cache(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    bundles.loaded("e", set())["error"] = "boom"
+    assert bundles.loaded("e", set())["error"] is None
+
+
+def test_loaded_live_ref_commit_invalidates_the_entry(ui_repo, samples):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    tip = "refs/remotes/origin/results/e"
+    ahead = git(ui_repo, "commit-tree", f"{tip}^{{tree}}", "-p", tip, "-m", "local record").strip()
+    git(ui_repo, "update-ref", "refs/heads/results/e", ahead)
+    first = bundles.loaded("e", {"e"})
+    assert first["ref"] == "refs/heads/results/e" and first["sha"] == ahead
+    again = bundles.loaded("e", {"e"})
+    assert again["records"] is first["records"]  # unchanged local ref: served from the cache
+    newer = git(ui_repo, "commit-tree", f"{ahead}^{{tree}}", "-p", ahead, "-m", "next record").strip()
+    git(ui_repo, "update-ref", "refs/heads/results/e", newer)
+    moved = bundles.loaded("e", {"e"})
+    assert moved["sha"] == newer and moved["records"] is not first["records"]

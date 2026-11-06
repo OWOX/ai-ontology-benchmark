@@ -11,7 +11,7 @@ from ui.gitdata import LOCAL_RESULTS, REMOTE_RESULTS
 
 
 class BranchReaders:
-    """Mixin for Bundles: needs `git`, `_manifest`, `_catalogue`, `_prices`, and `_fill_keys`."""
+    """Mixin for Bundles: needs `git`, `_lock`, `_scored_lock`, `_scored`, `_manifest`, `_catalogue`, `_prices`, and `_fill_keys`."""
 
     def models(self, env: dict) -> dict[str, dict]:
         """The catalogue on main by name, each model with its provider, `disabled_reason`, and the rest of its entry."""
@@ -34,9 +34,25 @@ class BranchReaders:
         return None
 
     def loaded(self, experiment_id: str, live_ids: set[str]) -> dict:
-        """One experiment branch read by `expdata`, from the local ref when its id is live. 404 when it has none."""
+        """One experiment branch read by `expdata`, from the local ref when its id is live. 404 when it has none.
+        Returns a copy of the scored-cache entry's experiment, so a caller's writes never reach the cache."""
         ref = self.git.results_refs(live_ids).get(experiment_id)
-        exp = expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref()) if ref else None
+        exp = self._loaded_entry(experiment_id, ref) if ref else None
         if exp is None or (exp["config"] is None and (exp["error"] or "").endswith("file not found")):
             raise ApiError(404, f"experiment '{experiment_id}' not found")
-        return exp
+        return {**exp}
+
+    def _loaded_entry(self, experiment_id: str, ref: str) -> dict:
+        """The cached experiment for the ref's sha, read from git outside the locks when it is missing or stale.
+        A concurrent load of the same stamp is allowed: the first to store wins."""
+        stamp = (self.git.sha(ref), self.git.sha(self.git.main_ref()))
+        with self._scored_lock:
+            held = self._scored_cache.get(experiment_id)
+            if held is not None and held["stamp"] == stamp:
+                return held["exp"]
+        exp = expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref())
+        with self._scored_lock:
+            held = self._scored_cache.get(experiment_id)
+            if held is None or held["stamp"] != stamp:
+                held = self._scored_cache[experiment_id] = {"stamp": stamp, "rows": None, "exp": exp}
+            return held["exp"]

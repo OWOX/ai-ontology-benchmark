@@ -28,7 +28,7 @@ def attempt(bundles, experiment_id: str, live_ids: set[str], query: dict) -> dic
     if model is None:
         raise ApiError(404, f"model {model_name} is not in experiment {experiment_id}")
     git, release = bundles.git, config["release"]
-    row = next((r for r in expdata.read_inputs(git, git.main_ref(), release) if r["input_id"] == input_id), None)
+    row = expdata.find_input(git, release, input_id)
     if row is None:
         raise ApiError(404, f"input {input_id} is not in release {release}")
     folder = f"releases/{release}/prompts"
@@ -46,6 +46,5 @@ def attempt(bundles, experiment_id: str, live_ids: set[str], query: dict) -> dic
             raise ApiError(404, str(error)) from None
         asked = decision_questions(questions, get_engine(row["puzzle"]).legal_moves())
         prompt = f"{decision_state(prompt, [])}\n--- questions\n{json.dumps(asked, indent=2)}"
-    record = next((r for r in exp["records"].get(model_name, []) if r.get("input_id") == input_id
-                   and r.get("setup") == setup and r.get("attempt_number") == number), None)
+    record = expdata.find_record(exp["records"].get(model_name, []), input_id, setup, number)
     return {"prompt": prompt, "raw_response": record.get("raw_response") if record else None, "record": record}

@@ -66,7 +66,7 @@ def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise RunError(f"{path}: does not match its sha256 in manifest.json (field 'files')")
     if assessment_sha256() != manifest["assessment_sha256"]:
-        raise RunError(f"{manifest_path}: field 'assessment_sha256' differs from the assessment files in the working tree")
+        raise RunError(f"{manifest_path}: field 'assessment_sha256' differs from the assessment files in the checkout")
     lines = (folder / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
     inputs = [json.loads(line) for line in lines]
     if "decision_prompt_versions" in manifest:
@@ -171,7 +171,7 @@ def call_with_retries(model: dict, prompt: str, config: dict, can_afford, label:
     return None, retry_in, retry_out, None
 
 
-def make_record(config, manifest, row, model, setup, number, prompt, versions,
+def make_record(config, manifest, row, model, setup, number, versions,
                 reply, retry_in: int, retry_out: int, decision: DecisionResult | None = None) -> dict:
     """Build the raw record of one attempt from the reply (None after an infrastructure failure).
     A decision model passes its DecisionResult instead, and the raw response is the array of its calls."""
@@ -285,7 +285,8 @@ def run(args: argparse.Namespace) -> int:
     try:
         safe_commit(branch, f"Results: experiment {config['experiment_id']}, start")
         with progress or nullcontext():
-            play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress)
+            play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress,
+                 cap, questions)
     finally:
         if branch:
             finish(branch, config["experiment_id"])
@@ -385,7 +386,7 @@ class Attempt:
             then = self.snapshot["settled"]
             spent = {n: cost + settled.get(n, 0.0) - then.get(n, 0.0) for n, cost in spent.items()}
         spent = {n: cost + reserved.get(n, 0.0) for n, cost in spent.items()}
-        check_spend(self.config, self.prices, self.results / "raw", name, self.worst + paid, self.left, spent)
+        check_spend(self.config, name, self.worst + paid, self.left, spent)
         self.flight.reserve(self.seq, name, self.worst + paid)  # what it has paid is not in any file yet
 
     def call(self) -> None:
@@ -410,10 +411,8 @@ def dry_run(config, folder, pending, questions) -> None:
             print(prompt)
 
 
-def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress) -> None:
-    cap = max_moves(config, manifest["release_config"])
-    questions = load_questions(folder / "prompts") if any(
-        m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending) else None  # once per run
+def play(args, config, manifest, folder, results, prices, versions, pending, outcomes, branch, progress,
+         cap, questions) -> None:
     if args.dry_run:
         dry_run(config, folder, pending, questions)
         return
@@ -427,7 +426,7 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
     def record_attempt(attempt: Attempt):
         """Main thread only: build, write, count, show, and commit the record. Return a budget stop or None."""
         row, model, setup, number = attempt.row, attempt.model, attempt.setup, attempt.number
-        record = make_record(config, manifest, row, model, setup, number, attempt.prompt,
+        record = make_record(config, manifest, row, model, setup, number,
                              manifest["decision_prompt_versions"] if attempt.is_decision else versions,
                              attempt.reply, attempt.retry_in, attempt.retry_out, attempt.result)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)
