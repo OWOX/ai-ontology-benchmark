@@ -23,7 +23,7 @@
   const ESTIMATE_MODEL = /^(.+?): (\d+) attempts, ~(\d+) input tokens, worst case \$(\S+); spent \$(\S+) of per_model_usd (\S+)$/;
   const ESTIMATE_TOTAL = /^total: (\d+) attempts, worst case \$(\S+); spent \$(\S+) of per_experiment_usd (\S+); per_request_usd (\S+)$/;
 
-  const mine = (id, pred) => UI.jobs.some((j) => j.id === id && j.state === "running" && pred(j.job));
+  const mine = UI.mine;
 
   // A bundle cached in the browser from before the field existed has no default, and the fresh bundle of the same
   // release never calls reset() again. So the effort is filled here whenever it is unset: "" is a loaded experiment

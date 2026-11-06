@@ -85,6 +85,8 @@
     onJobs(fn) { return listen(st.listeners, fn); },
     onLines(fn) { return listen(st.lineListeners, fn); },
     get jobs() { return st.jobs; },
+    // True when a running job of the experiment `id` has a job name that `pred` accepts (the log's job id is the experiment id).
+    mine(id, pred) { return st.jobs.some((j) => j.id === id && j.state === "running" && pred(j.job)); },
     // Every log line received so far (at most 5,000, like the server), so a page can draw the history on mount.
     get lines() { return st.lines; },
     get bundleNow() { return st.bundle; },

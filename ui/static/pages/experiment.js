@@ -5,7 +5,7 @@
 (function () {
   const h = UI.el;
   // Jobs of this experiment only: the log's job id is the experiment id.
-  const mine = (id, pred) => UI.jobs.some((j) => j.id === id && j.state === "running" && pred(j.job));
+  const mine = UI.mine;
   const snapRunning = (snap, pred) => !!snap && Object.entries(snap.jobs).some(([j, s]) => s === "running" && pred(j));
 
   function header(d) {
