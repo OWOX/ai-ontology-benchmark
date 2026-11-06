@@ -83,10 +83,10 @@ def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list
     else:
         plain, decision = prompt_versions(folder / "prompts", inputs), None
     if plain != manifest["prompt_versions"]:
-        raise ReleaseError(f"{manifest_path}: field 'prompt_versions' differs from the prompts the working tree renders")
+        raise ReleaseError(f"{manifest_path}: field 'prompt_versions' differs from the prompts the checkout renders")
     if decision is not None and decision != manifest["decision_prompt_versions"]:
         raise ReleaseError(
-            f"{manifest_path}: field 'decision_prompt_versions' differs from the prompts the working tree renders")
+            f"{manifest_path}: field 'decision_prompt_versions' differs from the prompts the checkout renders")
     return manifest, inputs
 
 
