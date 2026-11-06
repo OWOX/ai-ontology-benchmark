@@ -4,7 +4,6 @@
 // significance and metrics changes only redraw. Every choice that differs from its default lives in the hash.
 (function () {
   const h = UI.el;
-  const SVG = "http://www.w3.org/2000/svg";
   const METRICS = [
     ["success_rate", "Success rate"], ["hallucination_rate", "Hallucination rate"],
     ["mismatch_detection_rate", "Mismatch detection rate"], ["false_mismatch_rate", "False mismatch rate"],
@@ -178,12 +177,6 @@
     return parts.join(" ");
   }
 
-  function svg(tag, attrs, ...kids) {
-    const n = document.createElementNS(SVG, tag);
-    for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, String(v));
-    for (const kid of kids) if (kid != null) n.append(kid);
-    return n;
-  }
   const svgText = (attrs, text) => { const t = svg("text", attrs); t.textContent = text; return t; };
 
   // The metric's name with an (i) after it: hovering or focusing shows its definition from docs/definitions.md
