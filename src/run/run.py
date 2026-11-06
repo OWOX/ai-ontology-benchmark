@@ -171,7 +171,7 @@ def call_with_retries(model: dict, prompt: str, config: dict, can_afford, label:
     return None, retry_in, retry_out, None
 
 
-def make_record(config, manifest, row, model, setup, number, prompt, versions,
+def make_record(config, manifest, row, model, setup, number, versions,
                 reply, retry_in: int, retry_out: int, decision: DecisionResult | None = None) -> dict:
     """Build the raw record of one attempt from the reply (None after an infrastructure failure).
     A decision model passes its DecisionResult instead, and the raw response is the array of its calls."""
@@ -427,7 +427,7 @@ def play(args, config, manifest, folder, results, prices, versions, pending, out
     def record_attempt(attempt: Attempt):
         """Main thread only: build, write, count, show, and commit the record. Return a budget stop or None."""
         row, model, setup, number = attempt.row, attempt.model, attempt.setup, attempt.number
-        record = make_record(config, manifest, row, model, setup, number, attempt.prompt,
+        record = make_record(config, manifest, row, model, setup, number,
                              manifest["decision_prompt_versions"] if attempt.is_decision else versions,
                              attempt.reply, attempt.retry_in, attempt.retry_out, attempt.result)
         append_record(results / "raw" / f"{model['name']}.jsonl", record)

@@ -88,7 +88,7 @@ class Reply:
 def record(input_row, setup, attempt, reply, model="example-model"):
     """A raw record as `run` writes it; `reply` is text, or None for an infrastructure failure."""
     config = {"experiment_id": "x", "release": "1.0.0"}
-    made = make_record(config, MANIFEST, input_row, {"name": model, "api_model_id": "ex-1"}, setup, attempt, "", VERSIONS,
+    made = make_record(config, MANIFEST, input_row, {"name": model, "api_model_id": "ex-1"}, setup, attempt, VERSIONS,
                        None if reply is None else Reply(reply), 3, 2)
     made["created_at"] = "2026-10-25T00:00:00Z"
     return made
