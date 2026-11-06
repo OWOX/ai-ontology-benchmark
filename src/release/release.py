@@ -25,6 +25,7 @@ ASSESSMENT_PATTERNS = [
     "src/validator.py", "src/puzzles/*.py", "src/run/raw.py", "src/evaluate/evaluate.py",
     "src/evaluate/metrics.py", "src/run/decision.py", "src/run/prompts.py",
 ]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 PROMPTS_DIR = Path("prompts")
 RELEASE_CONFIG = Path("config/release.toml")
 
@@ -41,7 +42,7 @@ def assessment_files() -> list[Path]:
     """Return the assessment files that exist, in sorted path order."""
     found = set()
     for pattern in ASSESSMENT_PATTERNS:
-        found.update(Path(".").glob(pattern))
+        found.update(REPO_ROOT.glob(pattern))
     return sorted(found)
 
 

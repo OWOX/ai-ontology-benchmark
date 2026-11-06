@@ -13,6 +13,7 @@ import pytest
 from src.evaluate import evaluate as evaluate_module
 from src.evaluate.metrics import CORRUPTION_COLUMNS, DETECTION_COLUMNS, bootstrap_interval, compute, corruption_rows, corruption_type, detection_rows, holm, paired_tests, rates, sign_test
 from src.puzzles.registry import get_engine
+from src.release import release as release_module
 from src.run import models, run as run_module
 from test_release import commit_all, edit, release_ok, repo  # noqa: F401  (repo is a fixture)
 
@@ -424,6 +425,7 @@ def prepare(repo, monkeypatch, release="1.0.0"):
     (repo / "config" / "experiments" / "exp.toml").write_text(EXPERIMENT.format(release=release), encoding="utf-8")
     (repo / "config" / "prices.toml").write_text(PRICE_FILE.format(price=1.0), encoding="utf-8")
     monkeypatch.chdir(repo)
+    monkeypatch.setattr(release_module, "REPO_ROOT", repo)  # the assessment is the copy's, not this checkout's
     monkeypatch.setattr(models, "FAKE_REPLIES", [])
     assert run_module.main(["--experiment", "exp"]) == 0
 
