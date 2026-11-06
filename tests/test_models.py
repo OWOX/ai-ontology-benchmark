@@ -484,6 +484,13 @@ def test_padded_cloudflare_account_id_is_sent_stripped(monkeypatch):
     assert sent["account_id"] == "a"
 
 
+@pytest.mark.parametrize("stub,model", [(_cloudflare_stub, CLOUDFLARE_MODEL), (_typesafe_stub, TYPESAFE_MODEL)])
+def test_padded_decision_key_is_sent_stripped(monkeypatch, stub, model):
+    stub(monkeypatch, (lambda: dict(API_REPLY)) if model is CLOUDFLARE_MODEL else _typesafe_ok)
+    monkeypatch.setenv(models.KEY_VARIABLES[model["provider"]], "  " + ("t" if model is CLOUDFLARE_MODEL else "k") + "\n")
+    models.call_decision(model, "S", {"q": 1})  # the stub client asserts the stripped key
+
+
 @pytest.mark.parametrize("model", [CLOUDFLARE_MODEL, TYPESAFE_MODEL])
 def test_blank_decision_key_is_missing(monkeypatch, model):
     variable = models.KEY_VARIABLES[model["provider"]]
