@@ -74,6 +74,11 @@ def test_usd_reproduces_each_pages_former_output():
     assert run.returncode == 0, run.stderr + run.stdout
 
 
+def test_dropdown_and_check_picker_behaviour():
+    run = subprocess.run([NODE, "tests/js/pickers.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
 def test_estimate_patterns_read_runs_estimate_lines(exp, capsys):
     """New Experiment reads `run --estimate` into a table with regexes of its own: keep the two in step."""
     import json

@@ -13,6 +13,7 @@ function node(tag) {
     setAttribute(k, v) { this.attrs[k] = String(v); if (k === "value") this.value = String(v); },
     append(...kids) { for (const k of kids) this.children.push(typeof k === "string" ? { tag: "#text", textContent: k, children: [] } : k); },
     addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+    focus() { this.focused = true; },
     fire(ev) { for (const fn of this.listeners[ev] || []) fn({ target: this, preventDefault() {} }); },
     get firstChild() { return this.children[0] || null; },
     get textContent() { return this._text !== "" ? this._text : this.children.map((c) => c.textContent).join(""); },
