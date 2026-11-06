@@ -682,7 +682,8 @@ def test_stop_and_stop_all(server):
 
 
 def test_server_stops_its_jobs_on_sigterm(ui_repo):
-    slow_fake(SimpleNamespace(root=ui_repo), 2)  # 9 attempts take 18 s, so a loaded machine can't finish them before SIGTERM
+    delay = 2  # 9 attempts take 18 s, so a loaded machine can't finish them before SIGTERM
+    slow_fake(SimpleNamespace(root=ui_repo), delay)
     root = Path(__file__).resolve().parent.parent
     proc = subprocess.Popen([sys.executable, "-m", "ui.server", "--port", "0", "--root", str(ui_repo)], cwd=root,
                             stdout=subprocess.PIPE, text=True)
@@ -701,7 +702,7 @@ def test_server_stops_its_jobs_on_sigterm(ui_repo):
         proc.send_signal(signal.SIGTERM)
         assert proc.wait(timeout=30) == 0
         count = len(raw.read_text().splitlines())
-        time.sleep(1.5)
+        time.sleep(delay + 1)  # longer than one attempt, so an orphaned run would append a record
         assert len(raw.read_text().splitlines()) == count < 9  # the run died with the server
     finally:
         if proc.poll() is None:
