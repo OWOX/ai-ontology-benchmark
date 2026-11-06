@@ -248,8 +248,9 @@ def run(args: argparse.Namespace) -> int:
     try:
         safe_commit(branch, f"Results: experiment {config['experiment_id']}, start")
         with progress or nullcontext():
-            play(args, config, manifest, results, prices, versions, pending, outcomes, branch, progress,
-                 cap, questions, prompts)
+            play(args, config=config, manifest=manifest, results=results, prices=prices, versions=versions,
+                 pending=pending, outcomes=outcomes, branch=branch, progress=progress, cap=cap,
+                 questions=questions, prompts=prompts)
     finally:
         if branch:
             finish(branch, config["experiment_id"])
@@ -374,7 +375,7 @@ def dry_run(pending, questions, prompts) -> None:
             print(prompt)
 
 
-def play(args, config, manifest, results, prices, versions, pending, outcomes, branch, progress,
+def play(args, *, config, manifest, results, prices, versions, pending, outcomes, branch, progress,
          cap, questions, prompts) -> None:
     if args.dry_run:
         dry_run(pending, questions, prompts)
