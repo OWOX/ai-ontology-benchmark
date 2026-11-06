@@ -16,7 +16,7 @@ from pathlib import Path
 
 from src.config import RELEASE_PATTERN, load_release_config
 from src.generate.generate import build_inputs
-from src.run.prompts import both_prompt_versions
+from src.run.prompts import both_prompt_versions, prompt_versions
 
 # Globs for the assessment. src/evaluate/report.py is left out on purpose.
 ASSESSMENT_PATTERNS = [
@@ -49,6 +49,45 @@ def assessment_sha256() -> str:
     for path in assessment_files():
         digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def load_release(folder: Path, needs_decision: bool = False) -> tuple[dict, list[dict]]:
+    """Check the release against its manifest and the working tree. Return (manifest, inputs).
+    A release without decision_prompt_versions is checked as before, and is refused only when
+    needs_decision is true."""
+    manifest_path = folder / "manifest.json"
+    if not manifest_path.is_file():
+        raise ReleaseError(f"{manifest_path}: file not found")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except ValueError:
+        raise ReleaseError(f"{manifest_path}: not valid JSON") from None
+    for field in ("files", "assessment_sha256", "prompt_versions", "input_set_id", "release_config"):
+        if field not in manifest:
+            raise ReleaseError(f"{manifest_path}: field '{field}' is missing")
+    if needs_decision and "decision_prompt_versions" not in manifest:
+        raise ReleaseError(f"{manifest_path}: field 'decision_prompt_versions' is missing; "
+                       "decision models need a release cut after they were added")
+    if "seed" not in manifest["release_config"]:
+        raise ReleaseError(f"{manifest_path}: field 'release_config.seed' is missing")
+    for name, digest in manifest["files"].items():
+        path = folder / name
+        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise ReleaseError(f"{path}: does not match its sha256 in manifest.json (field 'files')")
+    if assessment_sha256() != manifest["assessment_sha256"]:
+        raise ReleaseError(f"{manifest_path}: field 'assessment_sha256' differs from the assessment files in the checkout")
+    lines = (folder / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
+    inputs = [json.loads(line) for line in lines]
+    if "decision_prompt_versions" in manifest:
+        plain, decision = both_prompt_versions(folder / "prompts", inputs)
+    else:
+        plain, decision = prompt_versions(folder / "prompts", inputs), None
+    if plain != manifest["prompt_versions"]:
+        raise ReleaseError(f"{manifest_path}: field 'prompt_versions' differs from the prompts the working tree renders")
+    if decision is not None and decision != manifest["decision_prompt_versions"]:
+        raise ReleaseError(
+            f"{manifest_path}: field 'decision_prompt_versions' differs from the prompts the working tree renders")
+    return manifest, inputs
 
 
 def parse_version(text: str) -> tuple[int, int, int]:

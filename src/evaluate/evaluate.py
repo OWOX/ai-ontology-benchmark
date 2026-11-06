@@ -16,11 +16,10 @@ from pathlib import Path
 from src.config import load_experiment_config, load_prices
 from src.evaluate.metrics import EvalError, compute, CORRUPTION_COLUMNS, DETECTION_COLUMNS, corruption_rows, detection_rows, paired_tests
 from src.evaluate.report import write_report
-from src.release.release import parse_version
+from src.release.release import ReleaseError, load_release, parse_version
 from src.run.budget import BudgetError, check_prices
 from src.run.models import DECISION_PROVIDERS
 from src.run.raw import read_raw
-from src.run.run import RunError, load_release
 
 
 REQUIRED = (
@@ -142,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prices", default="config/prices.toml", type=Path)
     try:
         evaluate(parser.parse_args(argv))
-    except (EvalError, RunError, ValueError) as error:
+    except (EvalError, ReleaseError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     return 0
