@@ -682,7 +682,7 @@ def test_stop_and_stop_all(server):
 
 
 def test_server_stops_its_jobs_on_sigterm(ui_repo):
-    slow_fake(SimpleNamespace(root=ui_repo), 0.5)
+    slow_fake(SimpleNamespace(root=ui_repo), 2)  # 9 attempts take 18 s, so a loaded machine can't finish them before SIGTERM
     root = Path(__file__).resolve().parent.parent
     proc = subprocess.Popen([sys.executable, "-m", "ui.server", "--port", "0", "--root", str(ui_repo)], cwd=root,
                             stdout=subprocess.PIPE, text=True)
