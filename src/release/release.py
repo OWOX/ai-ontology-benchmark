@@ -1,6 +1,6 @@
 # Spec: docs/specs/release.md
 """Freezes a new release. Reads config/release.toml (major bump only), prompts/,
-the assessment files, and the latest folder in the releases folder. Writes a new
+the assessment files, and the latest folder in the releases folder (or the one named by --base). Writes a new
 releases/<version>/ folder (read-only files), then makes a git commit and tag.
 """
 
@@ -159,10 +159,25 @@ def write_release(folder: Path, inputs_text: str, manifest: dict, readme: str) -
             path.chmod(0o444)
 
 
-def release(bump: str, note: str, releases: Path) -> str:
+def check_base(base: str, bump: str, releases: Path) -> None:
+    """Raise ReleaseError unless base is a patch bump's target: the newest release on its MAJOR.MINOR line."""
+    if bump != "patch":
+        raise ReleaseError("--base: only a patch bump can name a base")
+    if not VERSION_PATTERN.fullmatch(base) or not (releases / base / "manifest.json").is_file():
+        raise ReleaseError(f"{releases / base}: no such release")
+    line = parse_version(base)[:2]
+    newest = max((p.name for p in releases.iterdir() if p.is_dir() and VERSION_PATTERN.fullmatch(p.name)
+                  and parse_version(p.name)[:2] == line), key=parse_version)
+    if newest != base:
+        raise ReleaseError(f"--base: {base} is not the newest on its line, {newest} is")
+
+
+def release(bump: str, note: str, releases: Path, base: str | None = None) -> str:
     if git("status", "--porcelain").strip():
         raise ReleaseError("git: the working tree has uncommitted changes")
-    latest = latest_version(releases)
+    if base is not None:
+        check_base(base, bump, releases)
+    latest = base or latest_version(releases)
     version = next_version(latest, bump)
     if (releases / version).exists():
         raise ReleaseError(f"{releases / version}: folder already exists")
@@ -224,9 +239,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bump", required=True, choices=["major", "minor", "patch"])
     parser.add_argument("--note", required=True, help="one line saying why this release exists")
     parser.add_argument("--releases", default="releases", type=Path)
+    parser.add_argument("--base", help="patch bump only: the release to mirror, the newest on its MAJOR.MINOR line")
     args = parser.parse_args(argv)
     try:
-        version = release(args.bump, args.note, args.releases)
+        version = release(args.bump, args.note, args.releases, args.base)
     except (ReleaseError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

@@ -1,0 +1,20 @@
+This is a 5x5 cube, written in WCA notation.
+
+The puzzle: a cube with six faces, Up (U), Down (D), Right (R), Left (L), Front (F), and Back (B). Each face is a 5x5 grid of stickers. It has 8 corner pieces with three stickers each, 36 edge pieces with two stickers each (12 middle edges and 24 others, three on each edge of the cube), 6 centres that never move relative to each other, and 48 other centre pieces (eight on each face).
+
+The state is written as one block per face, headed by the face's letter. Each sticker is written as the letter of the face whose colour it has when the cube is solved. Rows are read top to bottom and stickers left to right, with each face seen from outside the cube: U with B at the top, D with F at the top, and R, F, L, and B with U at the top.
+
+Moves: a face letter alone, for example R, turns that face a quarter turn clockwise as seen looking at that face. A letter followed by an apostrophe, for example R', turns it a quarter turn anticlockwise. A letter followed by 2, for example R2, turns it a half turn. A face letter followed by w, for example Rw, turns the two outer layers on that side together, in the same direction as R, and takes the same ' and 2 endings: Rw' and Rw2. A turn of the outer layer moves the stickers of that face and the outer row of stickers on each of the four faces next to it, and a turn of two layers also moves the second row of stickers on each of those four faces.
+
+The goal: a sequence of moves after which every face shows a single colour. The orientation of the whole cube does not matter.
+
+Allowed moves: {legal_moves}
+
+Every move you return must be one of the allowed moves, written exactly as listed.
+
+Solve the cube. Here is its current state:
+
+{state}
+
+If the state cannot be reached from the solved state by legal moves, reply with the single line MISMATCH and nothing else.
+Otherwise reply with the moves that solve it, in the order they are applied, one move per line, and nothing else.
