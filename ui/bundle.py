@@ -164,17 +164,17 @@ class Bundles(BranchReaders):
         # else in the bundle reads only this release and its mirrors.
         rows_by_exp: dict[str, list[dict]] = {}  # validated attempt rows per experiment, shared with the puzzles
         for held in self._load_all(refs, main_sha):
-            exp = held["exp"]
-            config = exp["config"]
+            config = held["exp"]["config"]
             if config is not None and config["release"] not in manifests:
                 continue
-            if config is None or is_mirror(release, config["release"], manifests):
-                experiments.append(exp)
             if config and config["release"] not in inputs_by_release:
                 inputs_by_release[config["release"]] = expdata.read_inputs(self.git, main, config["release"])
             inputs = inputs_by_release[config["release"]] if config else []
-            branch = f"{base}/tree/{exp['sha']}/results/{exp['id']}" if base and exp["sha"] else None
             scored = self._rows(held, manifests, inputs_by_release) if config else None
+            exp = {**held["exp"]}  # callers below write `error` into it, which must not reach the cached entry
+            if config is None or is_mirror(release, config["release"], manifests):
+                experiments.append(exp)
+            branch = f"{base}/tree/{exp['sha']}/results/{exp['id']}" if base and exp["sha"] else None
             rows_by_exp[exp["id"]] = scored or []
             for row in expdata.experiment_rows(exp, inputs, scored):
                 entry = next((m for m in config["models"] if m["name"] == row["model"]), None) if config else None
