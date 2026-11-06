@@ -16,7 +16,7 @@
   const LABEL = Object.fromEntries(METRICS);
   const RATES = METRICS.slice(0, 8).map((m) => m[0]);
   const SETUPS = [["no_model", "no model"], ["descriptive", "descriptive"], ["prescriptive", "prescriptive"]];
-  const VALIDITY = [["all", "all inputs"], ["valid", "valid only"], ["invalid", "invalid only"]];
+  const VALIDITY = UI.validityOptions("all");
   const SIG = [["all", "All (no test)"], ["weak", "Weak (p < 0.10)"], ["significant", "Significant (p < 0.05)"], ["strong", "Strong (p < 0.01)"]];
   const THRESHOLD = { weak: 0.10, significant: 0.05, strong: 0.01 };
   const UNTESTED_NOTE = "Consistency, latency, tokens, and cost have no significance test, so they are coloured only under All.";
@@ -36,7 +36,7 @@
   let defaultReleases = [];  // the releases the server chose when the hash names none
   const cache = new Map();
   let seq = 0;
-  let reopen = null;  // "<picker>|<value>" of the checkbox just toggled
+  const reopen = { key: null };  // "<picker>|<value>" of the checkbox just toggled
 
   document.addEventListener("click", (e) => {  // a click outside an experiments panel closes it (router.js closes the pickers)
     if (!e.target.closest(".cell-pop, .cell-link")) closePop();
@@ -127,36 +127,8 @@
     return cache.get(key);
   }
 
-  // A dropdown of checkboxes with the column picker's look. The last ticked box can't be cleared.
-  function picker(name, options, selected, onChange, allText) {
-    const boxes = options.map(([value, text]) => {
-      const box = h("input", { type: "checkbox" });
-      box.checked = selected.includes(value);
-      box.disabled = box.checked && selected.length === 1;
-      box.addEventListener("change", () => {
-        reopen = name + "|" + value;
-        onChange(options.map((o) => o[0]).filter((o) => (o === value ? box.checked : selected.includes(o))));
-      });
-      return h("label", {}, box, " " + text);
-    });
-    const summary = selected.length === options.length ? (allText || "all")
-      : selected.length === 1 ? (options.find((o) => o[0] === selected[0]) || [0, selected[0]])[1] : `${selected.length} of ${options.length}`;
-    const pick = h("details", { class: "col-picker" }, h("summary", { text: summary }), h("div", { class: "col-menu" }, ...boxes));
-    if (reopen && reopen.startsWith(name + "|")) {
-      pick.open = true;
-      const at = options.findIndex(([v]) => v === reopen.slice(name.length + 1));
-      if (at >= 0) requestAnimationFrame(() => boxes[at].firstChild.focus());
-      reopen = null;
-    }
-    return h("div", { class: "small" }, name, pick);  // not a label: a click would reach the first checkbox
-  }
-
-  function dropdown(name, value, options, onChange) {
-    const s = h("select", { "aria-label": name }, ...options.map(([v, t]) => h("option", { value: v, text: t })));
-    s.value = value;
-    s.addEventListener("change", () => onChange(s.value));
-    return h("label", { class: "small" }, name + " ", s);
-  }
+  const picker = (name, options, selected, onChange, allText) => UI.checkPicker(name, options, selected, onChange, reopen, allText);
+  const dropdown = UI.dropdown;
 
   // Which cells of a row are coloured on one side, each with the sentence for its tooltip.
   function verdict(row, side, sig) {

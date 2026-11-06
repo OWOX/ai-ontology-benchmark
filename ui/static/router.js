@@ -70,6 +70,39 @@
     },
     // The folder of a Markdown source URL, which resolves its relative links; "" with no URL.
     mdBase(url) { return url ? url.replace(/[^/]*$/, "") : ""; },
+    // The validity filter's options as [value, text] pairs. `all` is the value of "all inputs" ("all" or "").
+    validityOptions(all) { return [[all, "all inputs"], ["valid", "valid only"], ["invalid", "invalid only"]]; },
+    // A labelled <select> over [value, text] options; onChange gets the chosen value.
+    dropdown(name, value, options, onChange) {
+      const s = el("select", { "aria-label": name }, ...options.map(([v, t]) => el("option", { value: v, text: t })));
+      s.value = value;
+      s.addEventListener("change", () => onChange(s.value));
+      return el("label", { class: "small" }, name + " ", s);
+    },
+    // A dropdown of checkboxes with the column picker's look. The last ticked box can't be cleared. A toggle redraws the
+    // page, so `state.key` ("<name>|<value>") remembers the box just toggled and the new picker opens again on it.
+    checkPicker(name, options, selected, onChange, state, allText) {
+      const boxes = options.map(([value, text]) => {
+        const box = el("input", { type: "checkbox" });
+        box.checked = selected.includes(value);
+        box.disabled = box.checked && selected.length === 1;
+        box.addEventListener("change", () => {
+          state.key = name + "|" + value;
+          onChange(options.map((o) => o[0]).filter((o) => (o === value ? box.checked : selected.includes(o))));
+        });
+        return el("label", {}, box, " " + text);
+      });
+      const summary = selected.length === options.length ? (allText || "all")
+        : selected.length === 1 ? (options.find((o) => o[0] === selected[0]) || [0, selected[0]])[1] : `${selected.length} of ${options.length}`;
+      const pick = el("details", { class: "col-picker" }, el("summary", { text: summary }), el("div", { class: "col-menu" }, ...boxes));
+      if (state.key && state.key.startsWith(name + "|")) {
+        pick.open = true;
+        const at = options.findIndex(([v]) => v === state.key.slice(name.length + 1));
+        if (at >= 0) requestAnimationFrame(() => boxes[at].firstChild.focus());
+        state.key = null;
+      }
+      return el("div", { class: "small" }, name, pick);  // not a label: a click would reach the first checkbox
+    },
     go(hash) { if (location.hash === hash) route(); else location.hash = hash; },
     registerPage(name, page) { pages[name] = page; },
     // A small "source" link, or null with no GitHub base URL.

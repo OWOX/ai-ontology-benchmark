@@ -29,13 +29,7 @@
     return `${p.year}, ${p.month} ${p.day} ${p.hour}:${p.minute}`;
   }
 
-  function select(label, value, options, onChange) {
-    const s = h("select", { "aria-label": label }, h("option", { value: "", text: "all" }),
-      ...options.map((o) => h("option", { value: o, text: o })));
-    s.value = value;
-    s.addEventListener("change", () => onChange(s.value));
-    return h("label", { class: "small" }, label + " ", s);
-  }
+  const select = (label, value, options, onChange) => UI.dropdown(label, value, [["", "all"], ...options.map((o) => [o, o])], onChange);
 
   function compare(a, b) {  // empty values sort last in either direction (handled by the caller's sign)
     if (typeof a === "number" && typeof b === "number") return a - b;
@@ -77,7 +71,7 @@
 
   // A dropdown of checkboxes, one per column. The experiment id always shows, because it is the row's link.
   // A toggle re-renders the page, so the new picker opens again to let several columns change in a row.
-  let reopen = null;  // the key of the checkbox just toggled
+  const reopen = { key: null };  // the key of the checkbox just toggled
   function columnPicker(hidden, onChange) {
     const boxes = COLUMNS.map(([k, t]) => {
       const box = h("input", { type: "checkbox" });
@@ -85,7 +79,7 @@
       box.disabled = k === "id";
       box.addEventListener("change", () => {
         const off = COLUMNS.map(([c]) => c).filter((c) => c !== k ? hidden.has(c) : !box.checked);
-        reopen = k;
+        reopen.key = k;
         onChange(off.join(",") || "none");
       });
       return h("label", {}, box, " " + t);
@@ -94,12 +88,12 @@
     const picker = h("details", { class: "col-picker" },
       h("summary", { text: count === COLUMNS.length ? "all" : `${count} of ${COLUMNS.length}` }),
       h("div", { class: "col-menu" }, ...boxes));
-    if (reopen) {  // the release picker, drawn first, has taken its own key
+    if (reopen.key) {  // the release picker, drawn first, has taken its own key
       picker.open = true;
-      const box = boxes[COLUMNS.findIndex(([k]) => k === reopen)].firstChild;
+      const box = boxes[COLUMNS.findIndex(([k]) => k === reopen.key)].firstChild;
       requestAnimationFrame(() => box.focus());
     }
-    reopen = null;
+    reopen.key = null;
     return h("div", { class: "small" }, "Columns", picker);  // not a label: a click would reach the first checkbox
   }
 
@@ -115,26 +109,8 @@
     return releases.filter((v, i) => i <= at || minor(v) === minor(releases[at]));
   }
 
-  function releasePicker(releases, selected, onChange) {
-    const boxes = releases.map((v) => {
-      const box = h("input", { type: "checkbox" });
-      box.checked = selected.includes(v);
-      box.disabled = box.checked && selected.length === 1;
-      box.addEventListener("change", () => {
-        reopen = "release|" + v;
-        onChange(releases.filter((o) => (o === v ? box.checked : selected.includes(o))));
-      });
-      return h("label", {}, box, " " + v);
-    });
-    const summary = selected.length === releases.length ? "all" : selected.length === 1 ? selected[0] : `${selected.length} of ${releases.length}`;
-    const pick = h("details", { class: "col-picker" }, h("summary", { text: summary }), h("div", { class: "col-menu" }, ...boxes));
-    if (reopen && reopen.startsWith("release|")) {
-      const at = releases.indexOf(reopen.slice(8));
-      if (at >= 0) { pick.open = true; requestAnimationFrame(() => boxes[at].firstChild.focus()); }
-      reopen = null;
-    }
-    return h("div", { class: "small" }, "Releases", pick);  // not a label: a click would reach the first checkbox
-  }
+  const releasePicker = (releases, selected, onChange) =>
+    UI.checkPicker("Releases", releases.map((v) => [v, v]), selected, onChange, reopen);
 
   UI.registerPage("experiments", {
     render(bundle, params, el) {
@@ -161,9 +137,7 @@
         releasePicker(releases, chosen, (v) => go({ releases: same(v, fallback) ? "" : v.join(",") })),
         select("AI model", query.model || "", uniq("model"), (v) => go({ model: v })),
         select("Puzzle", query.puzzle || "", uniq("puzzle"), (v) => go({ puzzle: v })),
-        h("label", { class: "small" }, "Validity ", Object.assign(h("select", { "aria-label": "Validity" },
-          ...[["all", "all inputs"], ["valid", "valid only"], ["invalid", "invalid only"]].map(([v, t]) => h("option", { value: v, text: t }))),
-        { value: validity, onchange: (e) => go({ validity: e.target.value === "all" ? "" : e.target.value }) })),
+        UI.dropdown("Validity", validity, UI.validityOptions("all"), (v) => go({ validity: v === "all" ? "" : v })),
         columnPicker(hidden, (v) => go({ hide: v })));
       const head = h("tr", {}, ...COLUMNS.filter(([k]) => !hidden.has(k)).map(([k, t]) => {
         const on = query.sort === k;
