@@ -1167,3 +1167,30 @@ def test_slower_load_does_not_overwrite_a_newer_entry(ui_repo, samples, monkeypa
     monkeypatch.setattr(expdata, "load_experiment", slow_load)
     bundles._loaded_entry("e", ref)
     assert bundles._scored_cache["e"] is newer
+
+
+def test_detail_requests_for_an_unchanged_ref_validate_once(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    scored = []
+    real_rows = expdata.attempt_rows
+    monkeypatch.setattr(expdata, "attempt_rows", lambda *a, **k: scored.append(a[0]["id"]) or real_rows(*a, **k))
+    bundles = make_bundles(ui_repo)
+    first = bundles.experiment("e", set(), set())
+    assert bundles.experiment("e", set(), set()) == first and scored == ["e"]
+    exp = bundles.loaded("e", set())
+    inputs = expdata.read_inputs(bundles.git, bundles.git.main_ref(), exp["config"]["release"])
+    metric_rows, summary_rows, source = expdata.detail_metrics(exp, inputs)
+    assert (first["metric_rows"], first["summary_rows"], first["metrics_source"]) == (metric_rows, summary_rows, source)
+    assert metric_rows and first["error"] is None
+
+
+def test_detail_of_an_unscoreable_experiment_reports_the_error(ui_repo, samples):
+    _, _, records = samples
+    bad = [dict(r) for r in records]
+    del bad[0]["raw_response"]
+    push_results(ui_repo, "e", files_for(bad))
+    bundles = make_bundles(ui_repo)
+    first = bundles.experiment("e", set(), set())
+    assert first["error"] and first["metric_rows"] == []
+    assert bundles.experiment("e", set(), set())["error"] == first["error"]

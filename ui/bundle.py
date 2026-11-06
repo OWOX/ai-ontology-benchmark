@@ -309,10 +309,14 @@ class Bundles(BranchReaders):
     # --- the other routes ------------------------------------------------------------------
 
     def experiment(self, experiment_id: str, live_ids: set[str], running: set[str]) -> dict:
-        exp, main = self.loaded(experiment_id, live_ids), self.git.main_ref()
-        config, base = exp["config"], self.git.github()
+        held, main = self.loaded_entry(experiment_id, live_ids), self.git.main_ref()
+        config, base = held["exp"]["config"], self.git.github()
         inputs = expdata.read_inputs(self.git, main, config["release"]) if config else []
-        metric_rows, summary_rows, source = expdata.detail_metrics(exp, inputs)
+        # The scored rows are shared with the benchmarks, so they are only read. `_rows` may set the error on the held
+        # entry, so the copy is taken after it.
+        scored = self._rows(held, {config["release"]: self._manifest(config["release"])}, {config["release"]: inputs}) if config else None
+        exp = {**held["exp"]}
+        metric_rows, summary_rows, source = expdata.detail_metrics(exp, inputs, scored)
         manifest = self._manifest(config["release"]) if config else None
         puzzles = list(manifest["release_config"]["puzzles"]) if manifest else []
         version = exp["report_version"]
