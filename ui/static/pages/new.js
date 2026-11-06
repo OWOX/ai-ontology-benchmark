@@ -7,7 +7,10 @@
   const h = UI.el;
   // The provider's key info decides, as on the Models page: an unconfigured key with a source other than "missing"
   // is a token whose account id is missing. The wording is shown here and is the same as ui/bundle.py's reasons.
-  const keyProblem = (p) => !p.key || p.key.configured ? null : p.key.source === "missing" ? "no API key: add it under Models" : "no account id: add it under Models";
+  function keyProblem(p) {
+    if (!p.key || p.key.configured) return null;
+    return p.key.source === "missing" ? "no API key: add it under Models" : "no account id: add it under Models";
+  }
   const NUMBERS = [["attempts", "Attempts per input and setup: sends the same input N times"],
     ["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
@@ -130,7 +133,7 @@
           sync(); onChange();
         });
         const label = h("label", { class: "model" + (off ? " off" : "") }, box, h("span", { text: m.name }));
-        if (off && !problem) label.append(h("span", { class: "reason", text: m.disabled_reason }));
+        if (off && (!problem || m.disabled_reason !== problem)) label.append(h("span", { class: "reason", text: m.disabled_reason }));
         col.append(label);
       }
       sync();

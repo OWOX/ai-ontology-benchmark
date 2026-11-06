@@ -101,6 +101,19 @@ def test_new_experiment_fills_the_reasoning_effort_a_stale_cached_bundle_lacks()
     assert json.loads(run.stdout) == ["medium", "high", "", "low"]
 
 
+def test_new_experiment_key_warning_follows_the_providers_key_info():
+    import json
+    import re
+    source = (ROOT / "ui" / "static" / "pages" / "new.js").read_text(encoding="utf-8")
+    body = re.search(r"  function keyProblem\(p\) \{.*?\n  \}\n", source, re.S).group(0)
+    providers = [{}, {"key": None}, {"key": {"configured": True, "source": "env"}}, {"key": {"configured": False, "source": "missing"}},
+                 {"key": {"configured": False, "source": "file", "account": {"source": "missing"}}}]
+    run = subprocess.run([NODE, "-e", body + f"console.log(JSON.stringify({json.dumps(providers)}.map(keyProblem)));"],
+                         capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout) == [None, None, None, "no API key: add it under Models", "no account id: add it under Models"]
+
+
 def test_experiments_default_columns_follow_the_spec():
     source = (ROOT / "ui" / "static" / "pages" / "experiments.js").read_text()
     columns = re.findall(r'\["(\w+)", "[^"]+"\]', source[source.index("const COLUMNS"):source.index("// Hidden when")])
