@@ -32,7 +32,7 @@ class Tally:
         if record["outcome"] == "infrastructure_failure":
             return  # left out of every rate
         self.decision_counted += bool(record.get("decision"))
-        self.gave_moves += bool(record.get("parsed_moves"))
+        self.gave_moves += bool(record.get("parsed_moves")) and not record.get("decision")
         if record["validity"] == "invalid":
             self.invalid += 1
             self.flagged_invalid += bool(record["mismatch"])

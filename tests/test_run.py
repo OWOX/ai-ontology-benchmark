@@ -1209,5 +1209,5 @@ def test_live_hallucination_rate_is_na_for_decision_records():
                    dict(base, decision=False, mismatch=True, parsed_moves=[])):
         mixed.add(record, price)
     assert decision_only.hallucination() == "n/a"
-    assert mixed.hallucination() == "50%"  # 1 of the 2 records that gave moves
+    assert mixed.hallucination() == "100%"  # the decision record is left out: 1 of the 1 text record that gave moves
     assert empty.hallucination() == "n/a"
