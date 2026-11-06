@@ -88,7 +88,7 @@ def _decorated_tokens(line: str, engine) -> list[str]:
     A token that is only a numeric or bullet marker is dropped wherever it is, and one glued to the
     first token left after those is stripped from it. A single letter and a full stop or bracket,
     as in `b)`, is a lettered list marker only as that first token, and is kept when it is a
-    capital letter that is a move, as in `R.`."""
+    capital letter that is a move token, as in `R.`."""
     tokens = []
     first = True
     for raw in line.replace(",", " ").split():
