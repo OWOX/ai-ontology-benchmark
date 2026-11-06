@@ -1,0 +1,4 @@
+model,puzzle,setup,corruption_type,detection_rate,detection_rate_low,detection_rate_high,detection_rate_n,detection_rate_inputs
+claude-haiku-5-5,2x2,no_model,twisted corner,0.9556,0.8889,1.0000,45,15
+claude-haiku-5-5,2x2,descriptive,twisted corner,0.8889,0.8000,0.9556,45,15
+claude-haiku-5-5,2x2,prescriptive,twisted corner,0.5778,0.3778,0.7556,45,15
