@@ -44,15 +44,24 @@ class BranchReaders:
 
     def _loaded_entry(self, experiment_id: str, ref: str) -> dict:
         """The cached experiment for the ref's sha, read from git outside the locks when it is missing or stale.
-        A concurrent load of the same stamp is allowed: the first to store wins."""
+        Concurrent loads are allowed: see `_store_scored` for which one is kept."""
         stamp = (self.git.sha(ref), self.git.sha(self.git.main_ref()))
         with self._scored_lock:
             held = self._scored_cache.get(experiment_id)
             if held is not None and held["stamp"] == stamp:
                 return held["exp"]
         exp = expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref())
+        return self._store_scored(experiment_id, stamp, held and held["stamp"], exp)["exp"]
+
+    def _store_scored(self, experiment_id: str, stamp: tuple, seen: tuple | None, exp: dict) -> dict:
+        """Put a freshly loaded experiment in the scored cache and return the entry to use. An entry with the same
+        stamp wins (the first to store). Otherwise the load is stored only when the held entry is missing or still
+        the one seen before loading, so a slower load never overwrites a newer entry; it is then returned unstored."""
+        entry = {"stamp": stamp, "rows": None, "exp": exp}
         with self._scored_lock:
             held = self._scored_cache.get(experiment_id)
-            if held is None or held["stamp"] != stamp:
-                held = self._scored_cache[experiment_id] = {"stamp": stamp, "rows": None, "exp": exp}
-            return held["exp"]
+            if held is not None and held["stamp"] == stamp:
+                return held
+            if held is None or held["stamp"] == seen:
+                self._scored_cache[experiment_id] = entry
+        return entry

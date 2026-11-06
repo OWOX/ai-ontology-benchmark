@@ -141,10 +141,8 @@ class Bundles(BranchReaders):
         with self._scored_lock:
             held = self._scored_cache.get(experiment_id)
         if held is None or held["stamp"] != stamp:
-            held = {"stamp": stamp, "rows": None,
-                    "exp": expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref())}
-            with self._scored_lock:
-                self._scored_cache[experiment_id] = held
+            exp = expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref())
+            held = self._store_scored(experiment_id, stamp, held and held["stamp"], exp)
         return held
 
     def _load_all(self, refs: dict[str, str], main_sha: str | None) -> list[dict]:

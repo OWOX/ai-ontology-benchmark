@@ -1148,3 +1148,22 @@ def test_loaded_live_ref_commit_invalidates_the_entry(ui_repo, samples):
     git(ui_repo, "update-ref", "refs/heads/results/e", newer)
     moved = bundles.loaded("e", {"e"})
     assert moved["sha"] == newer and moved["records"] is not first["records"]
+
+
+def test_slower_load_does_not_overwrite_a_newer_entry(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    ref = bundles.git.results_refs(set())["e"]
+    real_load = expdata.load_experiment
+    newer = {"stamp": ("newer", "m"), "rows": None, "exp": {"id": "e"}}
+
+    def slow_load(*args):
+        loaded = real_load(*args)
+        with bundles._scored_lock:  # a faster request stored a newer entry while this one was reading
+            bundles._scored_cache["e"] = newer
+        return loaded
+
+    monkeypatch.setattr(expdata, "load_experiment", slow_load)
+    bundles._loaded_entry("e", ref)
+    assert bundles._scored_cache["e"] is newer
