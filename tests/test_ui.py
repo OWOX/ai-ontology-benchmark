@@ -219,6 +219,12 @@ def test_empty_account_env_var_does_not_hide_a_saved_id(tmp_path, monkeypatch):
     assert key_store.inspect(tmp_path)["cloudflare"]["account"]["source"] == "file"
 
 
+def test_whitespace_env_value_does_not_shadow_the_saved_key(tmp_path, monkeypatch):
+    key_store.save(tmp_path, "anthropic", KEY)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "   ")
+    assert merged_env(tmp_path)["ANTHROPIC_API_KEY"] == KEY
+
+
 def test_account_id_route(server, monkeypatch):
     for variable in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
         monkeypatch.delenv(variable, raising=False)

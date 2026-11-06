@@ -30,5 +30,5 @@ def merged_env(root: Path) -> dict[str, str]:
     from ui import secrets  # here, because ui.secrets imports ApiError from this module
 
     saved_names = {*KEY_VARIABLES.values(), *ACCOUNT_VARIABLES.values()}
-    real = {name: value for name, value in os.environ.items() if value or name not in saved_names}
+    real = {name: value for name, value in os.environ.items() if value.strip() or name not in saved_names}
     return {**secrets.env(root), **real}
