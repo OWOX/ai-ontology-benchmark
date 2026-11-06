@@ -15,6 +15,7 @@ from typing import Callable
 from src.config import parse_experiment_config
 from src.run.branch import BranchError, stale_files, stale_message
 from ui.common import ApiError, merged_env
+from ui.gitdata import GIT_VARIABLES
 
 Emit = Callable[[str, str], None]  # (stream, text)
 
@@ -22,7 +23,7 @@ Emit = Callable[[str, str], None]  # (stream, text)
 def sh(root: Path, argv: list[str], emit: Emit, extra_env: dict | None = None, check: bool = True):
     """Run one command in the root, echo it and its output, and return the result."""
     emit("cmd", " ".join(argv))
-    base = {k: v for k, v in merged_env(root).items() if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")}
+    base = {k: v for k, v in merged_env(root).items() if k not in GIT_VARIABLES}
     result = subprocess.run(argv, cwd=root, env={**base, **(extra_env or {})},
                             capture_output=True, text=True, stdin=subprocess.DEVNULL)
     for stream, text in (("stdout", result.stdout), ("stderr", result.stderr)):
