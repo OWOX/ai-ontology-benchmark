@@ -1,0 +1,7 @@
+model,puzzle,setup,detection_rate,detection_rate_low,detection_rate_high,detection_rate_n,detection_rate_inputs,false_mismatch_rate,false_mismatch_rate_low,false_mismatch_rate_high,false_mismatch_rate_n,false_mismatch_rate_inputs,balanced_accuracy,balanced_accuracy_low,balanced_accuracy_high
+gemini-4-argon,2x2,no_model,n/a,n/a,n/a,0,0,0.0000,n/a,n/a,1,1,n/a,n/a,n/a
+gemini-4-argon,2x2,descriptive,n/a,n/a,n/a,0,0,0.0000,n/a,n/a,1,1,n/a,n/a,n/a
+gemini-3.8-flash,2x2,no_model,n/a,n/a,n/a,0,0,0.0000,n/a,n/a,1,1,n/a,n/a,n/a
+gemini-3.8-flash,2x2,descriptive,n/a,n/a,n/a,0,0,0.0000,n/a,n/a,1,1,n/a,n/a,n/a
+gemini-3.5-flash-lite,2x2,no_model,n/a,n/a,n/a,0,0,1.0000,n/a,n/a,1,1,n/a,n/a,n/a
+gemini-3.5-flash-lite,2x2,descriptive,n/a,n/a,n/a,0,0,0.0000,n/a,n/a,1,1,n/a,n/a,n/a
