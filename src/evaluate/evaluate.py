@@ -104,7 +104,7 @@ def evaluate(args: argparse.Namespace) -> None:
     prices_path = saved_prices if saved_prices.exists() else args.prices
     prices = load_prices(prices_path)
     try:
-        check_prices(config, prices, prices_path)  # every AI model needs a price, with records or not
+        check_prices(config, prices, prices_path)
     except BudgetError as error:
         raise EvalError(error.reason) from None
     names = [m["name"] for m in config["models"]]
