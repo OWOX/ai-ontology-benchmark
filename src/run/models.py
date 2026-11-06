@@ -291,7 +291,7 @@ def _typesafe(model: dict, state: str, questions: dict, key: str) -> DecisionRep
 def _cloudflare(model: dict, state: str, questions: dict, key: str) -> DecisionReply:
     import cloudflare
 
-    account = os.environ.get(ACCOUNT_VARIABLES["cloudflare"])
+    account = (os.environ.get(ACCOUNT_VARIABLES["cloudflare"]) or "").strip()
     if not account:
         raise ValueError(f"missing account id: set the env var {ACCOUNT_VARIABLES['cloudflare']}")
     client = _cloudflare_client(api_token=key, max_retries=0)
@@ -346,7 +346,7 @@ def call_decision(model: dict, state: str, questions: dict) -> DecisionReply:
     if provider == "fake_decision":
         return _fake_decision()
     variable = KEY_VARIABLES[provider]
-    key = os.environ.get(variable)
+    key = (os.environ.get(variable) or "").strip()
     if not key:
         raise ValueError(f"missing API key: set the env var {variable}")
     functions = {"typesafe": _typesafe, "cloudflare": _cloudflare}
@@ -362,7 +362,7 @@ def call_model(model: dict, prompt: str, max_output_tokens: int, reasoning_effor
     if provider == "fake":
         return _fake()
     variable = KEY_VARIABLES[provider]
-    key = os.environ.get(variable)
+    key = (os.environ.get(variable) or "").strip()
     if not key:
         raise ValueError(f"missing API key: set the env var {variable}")
     functions = {"anthropic": _anthropic, "openai": _openai, "google": _google}
