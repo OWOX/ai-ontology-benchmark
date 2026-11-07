@@ -22,7 +22,7 @@ The [`release`](../definitions.md#workflows) workflow. Freeze the current input 
 1. A new folder `releases/<MAJOR.MINOR.PATCH>/`, every file set read-only once written:
    1. `inputs.jsonl`. For a major bump, built by [generate](generate.md). Otherwise a byte-for-byte copy from the base release: the latest release, or the one named by `--base`.
    2. `prompts/<setup>/<puzzle>.txt` and `prompts/decision/questions.txt`. A copy of the working templates.
-   3. `manifest.json`. It holds the release version, the input set id, the release config, the note, the creation time, the git commit it was built from, the sha256 of every other file in the folder, `prompt_versions` and `decision_prompt_versions` from [prompts](prompts.md), and `assessment_sha256`. That last one is the sha256 of the assessment files' contents, taken in sorted path order. `load_release(folder, needs_decision)` in the same module checks a release folder against its manifest and the checkout, and `run` and `evaluate` both use it.
+   3. `manifest.json`. It holds the release version, the input set id, the release config, the note, the creation time, the git commit it was built from, the sha256 of every other file in the folder, `prompt_versions` and `decision_prompt_versions` from [prompts](prompts.md), `mismatch_reasons` from `uses_mismatch_reasons()` in [prompts](prompts.md), and `assessment_sha256`. That last one is the sha256 of the assessment files' contents, taken in sorted path order. `load_release(folder, needs_decision)` in the same module checks a release folder against its manifest and the checkout, and `run` and `evaluate` both use it.
    4. `README.md`, for people. It holds the version, the note, and the date, a table of input counts by puzzle, depth, and validity, a table of prompt versions and a table of decision prompt versions by setup and puzzle, the assessment hash, and a link to the release before it.
 2. A local git commit holding only the new folder, with the message `Release <version>: <note>`, and a local tag `release-<version>` on it. Nothing is pushed.
 
@@ -33,6 +33,8 @@ Bump rules, compared with the base release (the latest release, or the one named
 | major | new input set, input set id = new major | any | any |
 | minor | copied | at least one, in either table, differs | any |
 | patch | copied | all equal in both tables | differs |
+
+A patch bump also needs the same `mismatch_reasons` as the base, read as false when the base lacks it. Adding `{mismatch_reasons}` to the templates changes every prompt version, so it is a minor or major bump.
 
 Against an old release without `decision_prompt_versions`, a missing field counts as different for a minor bump, so it is accepted on that field alone. A patch bump compares only `prompt_versions` there, so an assessment fix can still be released as a patch.
 
@@ -55,3 +57,4 @@ All tests use a temporary releases folder inside a temporary git repo.
 11. A patch bump against an old manifest without `decision_prompt_versions`, with unchanged LLM prompts and a changed assessment, is accepted.
 12. A patch bump with `--base` on an older line, after a validator edit, writes that line's next patch (`1.1.1` while `2.0.0` exists). Its inputs are copied from the base, its README links to the base, and `2.0.0` is untouched.
 13. `--base` with a release that isn't the newest on its line, with a version that has no folder, or with a major or minor bump, exits with code 1 and writes nothing.
+14. The manifest holds `mismatch_reasons` true when every template holds `{mismatch_reasons}`, false when none does, and `release` exits with code 1 when only some do.

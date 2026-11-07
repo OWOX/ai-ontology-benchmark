@@ -34,6 +34,8 @@ The nine interface methods:
    7. The description starts with the two-word type. It then names the pieces and the change: `"twisted corner UFR clockwise"`, `"flipped edge UF"`, `"flipped wing UF near R"`, `"swapped edges UF UR"`, and `"recoloured sticker F3 R to U"`. A wing is an edge piece off the middle of its edge, so each edge has two. The wing is named by its edge, then the face whose end of the edge it is nearer: `UF near R` and `UF near L` are the two wings of the UF edge. The edge name lists faces in the order U or D, then F or B, then R or L.
 8. `render(state)` returns a text net of the six faces, one face block per label, with the colour letters spaced out.
 9. `is_move_token(token)` returns true when `MOVE_TOKEN` matches the whole token: a face letter with an optional layer count and an optional `w`, or a lower-case face letter, a slice letter (`M`, `E`, or `S`), or a rotation letter (`x`, `y`, or `z`), then an optional `'`, `2`, or both. The layer count goes with face letters only. It is true for every legal move and for shapes the puzzle doesn't allow, such as `r` or `3Fw'`.
+10. `mismatch_reasons()` returns, on every size, `twisted corner`, `flipped edge`, `flipped wing`, `swapped corners`, `swapped edges`, `recoloured sticker`, and `twisted centre`: the corruption types of all four cubes in `CORRUPTION_TYPES` order, then the decoy. The list is the same on every size, so a 2x2 is offered edges and wings it doesn't have.
+11. `decoy_reasons()` returns `twisted centre`. A centre piece shows one sticker on every size, so no state shows its twist.
 
 ## Reachability
 

@@ -14,15 +14,25 @@ Puzzles: 2x2, 3x3, 4x4, and 5x5 cubes, an octahedral puzzle, and a tetrahedral p
 
 The [setup](definitions.md#setups) is the experimental variable, alongside the AI model and the input. Every input goes through all three setups: no model, descriptive model, and prescriptive model. All three ask the same question about the same input. The only thing that changes is how much of the ontology model the prompt carries.
 
-[Decision models](definitions.md#setups) answer through a loop of [calls](definitions.md#attempts-and-outcomes) with a fixed set of options, so four things differ in their results. Their hallucination rate is n/a, because the [decision options](definitions.md#setups) are exactly the legal moves, `done`, and `mismatch`, so they can't return an impossible move and there is nothing to judge. Their hallucination flag is null, and reports show the rate as n/a. This page explains why. The move list is offered under every setup, including no model, so the setups differ less for them and a setup effect is harder to see. A network failure never counts against the success rate, because the attempt is `infrastructure_failure` and every rate leaves it out. A long loop is more likely to reach the retry cap than a single call, so these models may show more infrastructure failures.
+[Decision models](definitions.md#setups) answer through a loop of [calls](definitions.md#attempts-and-outcomes) with a fixed set of options, so four things differ in their results. Their hallucination rate is n/a, because the [decision options](definitions.md#setups) are exactly the legal moves, `done`, and one `mismatch_<n>` option per [mismatch reason](definitions.md#attempts-and-outcomes), so they can't return an impossible move. Reports show the rate as n/a, and this page explains why. They can still choose the [decoy reason](definitions.md#attempts-and-outcomes), so their reason hallucination rate is measured as for any other AI model. The move list is offered under every setup, including no model, so the setups differ less for them and a setup effect is harder to see. A network failure never counts against the success rate, because the attempt is `infrastructure_failure` and every rate leaves it out. A long loop is more likely to reach the retry cap than a single call, so these models may show more infrastructure failures.
 
 ## Measurement
 
 1. [`generate`](definitions.md#workflows) builds and freezes an input set once.
 2. [`run`](definitions.md#workflows) sends every input to every AI model under every setup, as many attempts as config says. The validator gives each attempt one [outcome](definitions.md#attempts-and-outcomes), and `run` appends one raw record per attempt.
-3. [`evaluate`](definitions.md#workflows) re-validates every attempt from its raw response and computes the [metrics](definitions.md#metrics) from raw records, frozen inputs, and config, including the [balanced accuracy](definitions.md#metrics) and the mismatch detection rate by [corruption type](definitions.md#puzzles). No AI model takes part.
+3. [`evaluate`](definitions.md#workflows) re-validates every attempt from its raw response and computes the [metrics](definitions.md#metrics) from raw records, frozen inputs, and config, including the [balanced accuracy](definitions.md#metrics), the mismatch detection rate by [corruption type](definitions.md#puzzles), the diagnosis rate, the diagnostic balanced accuracy, and the reason hallucination rate. No AI model takes part.
 
 Setups are compared with the [paired setup test](definitions.md#metrics) on the same inputs.
+
+## Mismatch reasons
+
+A bare `MISMATCH` can't tell an inference from a guess, and an AI model that answers `MISMATCH` to every input gets a detection rate of 1.0. So the prompt asks for the [mismatch reason](definitions.md#attempts-and-outcomes) too, chosen from a closed list that the engine defines, and the validator judges it by exact match, as it judges moves.
+
+1. The list holds every corruption type of the puzzle's [shape](definitions.md#puzzles), so on a 2x2 it names edges and wings that the 2x2 doesn't have. Naming one of those is a wrong reason.
+2. The list also holds a [decoy reason](definitions.md#attempts-and-outcomes) that no state can show. Choosing it is a hallucination.
+3. The right reason on an invalid input is a [diagnosis](definitions.md#attempts-and-outcomes). [Diagnostic balanced accuracy](definitions.md#metrics) counts a false MISMATCH against the AI model as much as a missed diagnosis.
+4. The success rate and the mismatch detection rate still read only the mismatch flag, so a wrong reason doesn't change them.
+5. The list tells every setup, including no model, which kinds of defect exist. Detection rates under a release with mismatch reasons are therefore not comparable with releases 1.x and 2.x, which ask for a bare `MISMATCH`.
 
 ## Development and held-out inputs
 
