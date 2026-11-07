@@ -219,6 +219,12 @@ def test_empty_account_env_var_does_not_hide_a_saved_id(tmp_path, monkeypatch):
     assert key_store.inspect(tmp_path)["cloudflare"]["account"]["source"] == "file"
 
 
+def test_whitespace_env_value_does_not_shadow_the_saved_key(tmp_path, monkeypatch):
+    key_store.save(tmp_path, "anthropic", KEY)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "   ")
+    assert merged_env(tmp_path)["ANTHROPIC_API_KEY"] == KEY
+
+
 def test_account_id_route(server, monkeypatch):
     for variable in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
         monkeypatch.delenv(variable, raising=False)
@@ -676,7 +682,8 @@ def test_stop_and_stop_all(server):
 
 
 def test_server_stops_its_jobs_on_sigterm(ui_repo):
-    slow_fake(SimpleNamespace(root=ui_repo), 0.5)
+    delay = 2  # 9 attempts take 18 s, so a loaded machine can't finish them before SIGTERM
+    slow_fake(SimpleNamespace(root=ui_repo), delay)
     root = Path(__file__).resolve().parent.parent
     proc = subprocess.Popen([sys.executable, "-m", "ui.server", "--port", "0", "--root", str(ui_repo)], cwd=root,
                             stdout=subprocess.PIPE, text=True)
@@ -695,7 +702,7 @@ def test_server_stops_its_jobs_on_sigterm(ui_repo):
         proc.send_signal(signal.SIGTERM)
         assert proc.wait(timeout=30) == 0
         count = len(raw.read_text().splitlines())
-        time.sleep(1.5)
+        time.sleep(delay + 1)  # longer than one attempt, so an orphaned run would append a record
         assert len(raw.read_text().splitlines()) == count < 9  # the run died with the server
     finally:
         if proc.poll() is None:

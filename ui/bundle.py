@@ -127,7 +127,7 @@ class Bundles(BranchReaders):
             provider["key"] = {"source": info["source"], "tail": info["tail"], "configured": info["configured"]} if info else None
             if info and "account" in info:
                 provider["key"]["account"] = {"variable": info["account"]["variable"], "source": info["account"]["source"]}
-            have = info is None or info["configured"] or (bool(env.get(provider["variable"])) and "account" not in info)
+            have = info is None or info["configured"] or (bool((env.get(provider["variable"]) or "").strip()) and "account" not in info)
             for model in provider["models"]:
                 if model["disabled_reason"] is None and not have:
                     model["disabled_reason"] = NO_ACCOUNT if info["source"] != "missing" else NO_KEY
@@ -141,10 +141,8 @@ class Bundles(BranchReaders):
         with self._scored_lock:
             held = self._scored_cache.get(experiment_id)
         if held is None or held["stamp"] != stamp:
-            held = {"stamp": stamp, "rows": None,
-                    "exp": expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref())}
-            with self._scored_lock:
-                self._scored_cache[experiment_id] = held
+            exp = expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref())
+            held = self._store_scored(experiment_id, stamp, held and held["stamp"], exp)
         return held
 
     def _load_all(self, refs: dict[str, str], main_sha: str | None) -> list[dict]:
@@ -311,11 +309,15 @@ class Bundles(BranchReaders):
     # --- the other routes ------------------------------------------------------------------
 
     def experiment(self, experiment_id: str, live_ids: set[str], running: set[str]) -> dict:
-        exp, main = self.loaded(experiment_id, live_ids), self.git.main_ref()
-        config, base = exp["config"], self.git.github()
+        held, main = self.loaded_entry(experiment_id, live_ids), self.git.main_ref()
+        config, base = held["exp"]["config"], self.git.github()
         inputs = expdata.read_inputs(self.git, main, config["release"]) if config else []
-        metric_rows, summary_rows, source = expdata.detail_metrics(exp, inputs)
+        # The scored rows are shared with the benchmarks, so they are only read. `_rows` may set the error on the held
+        # entry, so the copy is taken after it.
         manifest = self._manifest(config["release"]) if config else None
+        scored = self._rows(held, {config["release"]: manifest}, {config["release"]: inputs}) if config else None
+        exp = {**held["exp"]}
+        metric_rows, summary_rows, source = expdata.detail_metrics(exp, inputs, scored)
         puzzles = list(manifest["release_config"]["puzzles"]) if manifest else []
         version = exp["report_version"]
         report = None if version is None else {

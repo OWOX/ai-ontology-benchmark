@@ -26,7 +26,7 @@
   const FORMAT = {
     consistency: (v) => v.toFixed(2),
     latency_per_attempt_s: (v) => v.toFixed(1) + " s", tokens_per_attempt: (v) => Math.round(v).toLocaleString("en-GB"),
-    cost_per_success: (v) => "$" + v.toFixed(2),
+    cost_per_success: (v) => UI.usd(v, { fixed: 2 }),
   };
   const fmt = (metric, v) => (RATES.includes(metric) ? pct(v) : FORMAT[metric](v));
   const pval = (p) => (p < 0.001 ? "<0.001" : p.toFixed(3));

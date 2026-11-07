@@ -1,5 +1,6 @@
 # Spec: docs/specs/ui.md (How to test)
 """Checks the page scripts with node: a syntax check of every ui/static/**/*.js and the markdown renderer's tests."""
+import os
 import re
 import shutil
 import subprocess
@@ -66,6 +67,20 @@ def test_in_flight_attempts_are_the_first_n_without_a_record():
 
 def test_benchmarks_colouring_gate_and_stale_models_fallback():
     run = subprocess.run([NODE, "tests/js/benchmarks.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
+def test_usd_reproduces_each_pages_former_output():
+    env = {**os.environ, "LC_ALL": "de_DE.UTF-8"}  # the Models page formats in the browser's locale
+    probe = subprocess.run([NODE, "-p", "new Intl.NumberFormat().resolvedOptions().locale"], capture_output=True, text=True, env=env)
+    if probe.stdout.strip() != "de-DE":
+        pytest.skip(f"node does not honour LC_ALL=de_DE.UTF-8 here (small-icu, Windows, or no Intl): it resolved {probe.stdout.strip() or probe.stderr.strip()!r}")
+    run = subprocess.run([NODE, "tests/js/usd.test.mjs"], cwd=ROOT, capture_output=True, text=True, env=env)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
+def test_dropdown_and_check_picker_behaviour():
+    run = subprocess.run([NODE, "tests/js/pickers.test.mjs"], cwd=ROOT, capture_output=True, text=True)
     assert run.returncode == 0, run.stderr + run.stdout
 
 

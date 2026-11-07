@@ -20,7 +20,7 @@
     "abstention_rate", "format_error_rate", "infrastructure_failures", "total_tokens", "report_version"];
 
   const num = (v) => (typeof v === "number" ? v.toLocaleString() : "n/a");
-  const usd = (v) => (typeof v === "number" ? "$" + v.toFixed(2) : "n/a");
+  const usd = (v) => UI.usd(v, { fixed: 2 });
 
   function started(iso) {  // "2026, Nov 4 14:30" in the browser's time zone
     if (!iso) return "";

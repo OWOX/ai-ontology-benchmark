@@ -11,7 +11,7 @@ from pathlib import Path
 from src.evaluate.metrics import attempt_cost
 from src.puzzles.registry import get_engine
 from src.run.models import DECISION_PROVIDERS
-from src.run.prompts import build_prompt, decision_questions, decision_state, load_questions
+from src.run.prompts import decision_questions, decision_state, load_questions
 from src.run.raw import read_raw
 
 TOLERANCE = 1e-9  # keeps float rounding from stopping a run that sits exactly on a limit
@@ -88,7 +88,7 @@ def check_spend(config: dict, model_name: str, next_cost: float, attempts_left: 
 
 
 def print_estimate(config: dict, pending: list, prices: dict, templates: Path, raw_dir: Path,
-                   cap: int = 0) -> None:
+                   cap: int, prompts: dict) -> None:
     """A decision model's attempt makes up to cap calls, each as long as the longest state plus
     the questions object."""
     questions = load_questions(templates) if any(
@@ -100,17 +100,17 @@ def print_estimate(config: dict, pending: list, prices: dict, templates: Path, r
         name = model["name"]
         is_decision = model["provider"] in DECISION_PROVIDERS
         calls = cap if is_decision else 1
-        prompts = []
+        requests = []
         for row, m, setup, _ in pending:
             if m["name"] == name:
-                prompt = build_prompt(templates, row, setup)
+                prompt = prompts[row["input_id"], setup]
                 if is_decision:
                     prompt = worst_request(prompt, get_engine(row["puzzle"]).legal_moves(), cap, questions)
-                prompts.append(prompt)
-        cost = calls * sum(worst_case_request_cost(p, config["max_output_tokens"], prices[name]) for p in prompts)
-        tokens_in = calls * sum(math.ceil(len(p) / 4) for p in prompts)
+                requests.append(prompt)
+        cost = calls * sum(worst_case_request_cost(p, config["max_output_tokens"], prices[name]) for p in requests)
+        tokens_in = calls * sum(math.ceil(len(p) / 4) for p in requests)
         total += cost
-        print(f"{name}: {len(prompts)} attempts, ~{tokens_in} input tokens, worst case ${cost:.4f}; "
+        print(f"{name}: {len(requests)} attempts, ~{tokens_in} input tokens, worst case ${cost:.4f}; "
               f"spent ${spent[name]:.4f} of per_model_usd {budget['per_model_usd']}")
     print(f"total: {len(pending)} attempts, worst case ${total:.4f}; "
           f"spent ${sum(spent.values()):.4f} of per_experiment_usd {budget['per_experiment_usd']}; "

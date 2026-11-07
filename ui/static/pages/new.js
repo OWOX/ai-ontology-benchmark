@@ -256,12 +256,8 @@
       // Estimate's table: one row per AI model line, and the total line as its footer. Built empty and shown with
       // its first row, so a failed estimate shows only the terminal.
       function estimateTable() {
-        const usd = (v) => {
-          const n = Number(v);
-          // inf, nan, and amounts too small for 4 places (1e-05) show as printed.
-          if (!Number.isFinite(n) || (n > 0 && n < 0.00005)) return "$" + v;
-          return "$" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: n > 0 && n < 1 ? 4 : 2 });
-        };
+        // inf, nan, and amounts too small for 4 places (1e-05) show as printed.
+        const usd = (v) => UI.usd(v, { verbatim: true, maxBelowOne: 4 });
         const count = (v) => Number(v).toLocaleString("en-GB");
         const cells = (tag, values) => h("tr", {}, ...values.map(([text, cls, title], i) =>
           h(tag, { class: (i ? "n " : "") + (cls || ""), text, ...(title ? { title } : {}) })));

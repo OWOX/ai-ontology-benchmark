@@ -393,6 +393,19 @@ def test_cloudflare_reason_names_what_is_missing(ui_repo, monkeypatch):
     assert reason() is None
 
 
+def test_whitespace_only_key_in_env_counts_as_missing(ui_repo, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    bundles = make_bundles(ui_repo)
+
+    def reason(value):
+        provider = {"name": "anthropic", "variable": "ANTHROPIC_API_KEY", "models": [{"disabled_reason": None}]}
+        env = {"ANTHROPIC_API_KEY": value}
+        return bundles._fill_keys({"providers": [provider]}, env)["providers"][0]["models"][0]["disabled_reason"]
+
+    assert reason("   ") == "no API key: add it under Models"
+    assert reason("sk-real") is None  # a key present only in env, as merged_env passes it, still counts
+
+
 def test_model_matching(ui_repo, samples):
     _, _, records = samples
     renamed = EXP_TOML.replace('name = "example-model"', 'name = "renamed"')
@@ -1135,3 +1148,63 @@ def test_loaded_live_ref_commit_invalidates_the_entry(ui_repo, samples):
     git(ui_repo, "update-ref", "refs/heads/results/e", newer)
     moved = bundles.loaded("e", {"e"})
     assert moved["sha"] == newer and moved["records"] is not first["records"]
+
+
+def test_slower_load_does_not_overwrite_a_newer_entry(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    ref = bundles.git.results_refs(set())["e"]
+    real_load = expdata.load_experiment
+    newer = {"stamp": ("newer", "m"), "rows": None, "exp": {"id": "e"}}
+
+    def slow_load(*args):
+        loaded = real_load(*args)
+        with bundles._scored_lock:  # a faster request stored a newer entry while this one was reading
+            bundles._scored_cache["e"] = newer
+        return loaded
+
+    monkeypatch.setattr(expdata, "load_experiment", slow_load)
+    bundles._loaded_entry("e", ref)
+    assert bundles._scored_cache["e"] is newer
+
+    # the same rule through `_scored`
+    bundles._scored_cache["e"] = {"stamp": ("old", "m"), "rows": None, "exp": {"id": "e"}}
+    faster = {"stamp": ("newer", "m"), "rows": None, "exp": {"id": "e"}}
+
+    def slow_again(*args):
+        loaded = real_load(*args)
+        with bundles._scored_lock:
+            bundles._scored_cache["e"] = faster
+        return loaded
+
+    monkeypatch.setattr(expdata, "load_experiment", slow_again)
+    bundles._scored("e", ref, "m0")
+    assert bundles._scored_cache["e"] is faster
+
+
+def test_detail_requests_for_an_unchanged_ref_validate_once(ui_repo, samples, monkeypatch):
+    _, _, records = samples
+    push_results(ui_repo, "e", files_for(records))
+    scored = []
+    real_rows = expdata.attempt_rows
+    monkeypatch.setattr(expdata, "attempt_rows", lambda *a, **k: scored.append(a[0]["id"]) or real_rows(*a, **k))
+    bundles = make_bundles(ui_repo)
+    first = bundles.experiment("e", set(), set())
+    assert bundles.experiment("e", set(), set()) == first and scored == ["e"]
+    exp = bundles.loaded("e", set())
+    inputs = expdata.read_inputs(bundles.git, bundles.git.main_ref(), exp["config"]["release"])
+    metric_rows, summary_rows, source = expdata.detail_metrics(exp, inputs)
+    assert (first["metric_rows"], first["summary_rows"], first["metrics_source"]) == (metric_rows, summary_rows, source)
+    assert metric_rows and first["error"] is None
+
+
+def test_detail_of_an_unscoreable_experiment_reports_the_error(ui_repo, samples):
+    _, _, records = samples
+    bad = [dict(r) for r in records]
+    del bad[0]["raw_response"]
+    push_results(ui_repo, "e", files_for(bad))
+    bundles = make_bundles(ui_repo)
+    first = bundles.experiment("e", set(), set())
+    assert first["error"] and first["metric_rows"] == []
+    assert bundles.experiment("e", set(), set())["error"] == first["error"]

@@ -284,6 +284,25 @@ def test_missing_key_names_the_variable(monkeypatch, provider):
     create.assert_not_called()
 
 
+@pytest.mark.parametrize("provider", RESPONSES)
+@pytest.mark.parametrize("value", ["", "  \t\n"])
+def test_blank_key_is_missing(monkeypatch, provider, value):
+    monkeypatch.setenv(KEYS[provider], value)
+    create = install(monkeypatch, provider, None)
+    with pytest.raises(ValueError, match=KEYS[provider]):
+        call_model(entry(provider), "prompt", 50)
+    create.assert_not_called()
+
+
+@pytest.mark.parametrize("provider,module,name", [("anthropic", anthropic, "Anthropic"), ("openai", openai, "OpenAI"),
+                                                  ("google", genai, "Client")])
+def test_padded_key_is_sent_stripped(monkeypatch, provider, module, name):
+    monkeypatch.setenv(KEYS[provider], "  secret\n")
+    install(monkeypatch, provider, RESPONSES[provider][0]())
+    call_model(entry(provider), "prompt", 50)
+    assert getattr(module, name).call_args.kwargs["api_key"] == "secret"
+
+
 # Decision models.
 
 ANSWERS = {"next_move": {"type": "choice", "choice": "done", "confidence": 1.0, "probabilities": {"done": 1.0}},
@@ -449,6 +468,35 @@ def test_missing_cloudflare_account_id_names_the_variable(monkeypatch):
     monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID")
     with pytest.raises(ValueError, match="CLOUDFLARE_ACCOUNT_ID"):
         models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+
+
+def test_blank_cloudflare_account_id_is_missing(monkeypatch):
+    _cloudflare_stub(monkeypatch, lambda: dict(API_REPLY))
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "  ")
+    with pytest.raises(ValueError, match="CLOUDFLARE_ACCOUNT_ID"):
+        models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+
+
+def test_padded_cloudflare_account_id_is_sent_stripped(monkeypatch):
+    sent = _cloudflare_stub(monkeypatch, lambda: dict(API_REPLY))
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", " a\n")
+    models.call_decision(CLOUDFLARE_MODEL, "S", {"q": 1})
+    assert sent["account_id"] == "a"
+
+
+@pytest.mark.parametrize("stub,model", [(_cloudflare_stub, CLOUDFLARE_MODEL), (_typesafe_stub, TYPESAFE_MODEL)])
+def test_padded_decision_key_is_sent_stripped(monkeypatch, stub, model):
+    stub(monkeypatch, (lambda: dict(API_REPLY)) if model is CLOUDFLARE_MODEL else _typesafe_ok)
+    monkeypatch.setenv(models.KEY_VARIABLES[model["provider"]], "  " + ("t" if model is CLOUDFLARE_MODEL else "k") + "\n")
+    models.call_decision(model, "S", {"q": 1})  # the stub client asserts the stripped key
+
+
+@pytest.mark.parametrize("model", [CLOUDFLARE_MODEL, TYPESAFE_MODEL])
+def test_blank_decision_key_is_missing(monkeypatch, model):
+    variable = models.KEY_VARIABLES[model["provider"]]
+    monkeypatch.setenv(variable, " ")
+    with pytest.raises(ValueError, match=variable):
+        models.call_decision(model, "S", {"q": 1})
 
 
 @pytest.mark.parametrize("model", [CLOUDFLARE_MODEL, TYPESAFE_MODEL])

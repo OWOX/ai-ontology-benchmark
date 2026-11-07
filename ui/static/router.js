@@ -70,6 +70,19 @@
     },
     // The folder of a Markdown source URL, which resolves its relative links; "" with no URL.
     mdBase(url) { return url ? url.replace(/[^/]*$/, "") : ""; },
+    // A dollar amount. With `fixed`, a number to that many places by toFixed and `na` (default "n/a") for anything else.
+    // Otherwise the value is formatted for `locale` (default "en-GB"; "browser" for the browser's own) with
+    // `minDecimals` to `maxDecimals` places (default 2 to 2), `maxBelowOne` places between 0 and 1, and with
+    // `verbatim` set, inf, nan, and amounts too small for `maxBelowOne` places are printed as given.
+    usd(value, o = {}) {
+      if (o.fixed !== undefined) return typeof value === "number" ? "$" + value.toFixed(o.fixed) : (o.na === undefined ? "n/a" : o.na);
+      const min = o.minDecimals === undefined ? 2 : o.minDecimals;  // a maximum below the minimum would make toLocaleString throw
+      const n = Number(value), max = Math.max(min, o.maxDecimals === undefined ? 2 : o.maxDecimals);
+      const below = Math.max(min, o.maxBelowOne === undefined ? max : o.maxBelowOne);
+      if (o.verbatim && (!Number.isFinite(n) || (n > 0 && n < 0.5 * 10 ** -below))) return "$" + value;
+      return "$" + n.toLocaleString(o.locale === "browser" ? undefined : o.locale === undefined ? "en-GB" : o.locale,
+        { minimumFractionDigits: min, maximumFractionDigits: n > 0 && n < 1 ? below : max });
+    },
     // The validity filter's options as [value, text] pairs. `all` is the value of "all inputs" ("all" or "").
     validityOptions(all) { return [[all, "all inputs"], ["valid", "valid only"], ["invalid", "invalid only"]]; },
     // A labelled <select> over [value, text] options; onChange gets the chosen value.

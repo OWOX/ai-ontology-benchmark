@@ -191,18 +191,19 @@ def numbers(exp: dict, model: str, puzzle: str, scope: str, part: list[dict]) ->
             "served_models": sorted({r["served_model"] for r in part if r["served_model"]})}
 
 
-def detail_metrics(exp: dict, inputs: list[dict]) -> tuple[list[dict], list[dict], str]:
-    """(metric_rows, summary_rows, metrics_source): the report CSV when there is one, else computed."""
+def detail_metrics(exp: dict, inputs: list[dict], scored: list[dict] | None = None) -> tuple[list[dict], list[dict], str]:
+    """(metric_rows, summary_rows, metrics_source): the report CSV when there is one, else computed.
+    `scored` holds the experiment's attempt rows when the caller has them already."""
     try:
-        return _detail_metrics(exp, inputs)
+        return _detail_metrics(exp, inputs, scored)
     except Exception as error:
         exp["error"] = f"results/{exp['id']}: {type(error).__name__}: {error}"
         return [], [], "computed"
 
 
-def _detail_metrics(exp: dict, inputs: list[dict]) -> tuple[list[dict], list[dict], str]:
+def _detail_metrics(exp: dict, inputs: list[dict], scored: list[dict] | None) -> tuple[list[dict], list[dict], str]:
     order = model_names(exp)
-    rows = attempt_rows(exp, inputs)
+    rows = attempt_rows(exp, inputs) if scored is None else scored
     if exp["csv_rows"] is not None:
         return exp["csv_rows"], pooled_summary(exp["csv_rows"], order, rows), "report"
     groups, pooled = defaultdict(list), defaultdict(list)

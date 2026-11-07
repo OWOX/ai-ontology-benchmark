@@ -36,23 +36,37 @@ class BranchReaders:
     def loaded(self, experiment_id: str, live_ids: set[str]) -> dict:
         """One experiment branch read by `expdata`, from the local ref when its id is live. 404 when it has none.
         Returns a copy of the scored-cache entry's experiment, so a caller's writes never reach the cache."""
+        return {**self.loaded_entry(experiment_id, live_ids)["exp"]}
+
+    def loaded_entry(self, experiment_id: str, live_ids: set[str]) -> dict:
+        """The scored-cache entry of `loaded`, itself and not a copy. Only `_rows` may write to it. 404 when none."""
         ref = self.git.results_refs(live_ids).get(experiment_id)
-        exp = self._loaded_entry(experiment_id, ref) if ref else None
+        held = self._loaded_entry(experiment_id, ref) if ref else None
+        exp = held["exp"] if held else None
         if exp is None or (exp["config"] is None and (exp["error"] or "").endswith("file not found")):
             raise ApiError(404, f"experiment '{experiment_id}' not found")
-        return {**exp}
+        return held
 
     def _loaded_entry(self, experiment_id: str, ref: str) -> dict:
-        """The cached experiment for the ref's sha, read from git outside the locks when it is missing or stale.
-        A concurrent load of the same stamp is allowed: the first to store wins."""
+        """The cached entry for the ref's sha, read from git outside the locks when it is missing or stale.
+        Concurrent loads are allowed: see `_store_scored` for which one is kept."""
         stamp = (self.git.sha(ref), self.git.sha(self.git.main_ref()))
         with self._scored_lock:
             held = self._scored_cache.get(experiment_id)
             if held is not None and held["stamp"] == stamp:
-                return held["exp"]
+                return held
         exp = expdata.load_experiment(self.git, experiment_id, ref, self.git.main_ref())
+        return self._store_scored(experiment_id, stamp, held and held["stamp"], exp)
+
+    def _store_scored(self, experiment_id: str, stamp: tuple, seen: tuple | None, exp: dict) -> dict:
+        """Put a freshly loaded experiment in the scored cache and return the entry to use. An entry with the same
+        stamp wins (the first to store). Otherwise the load is stored only when the held entry is missing or still
+        the one seen before loading, so a slower load never overwrites a newer entry; it is then returned unstored."""
+        entry = {"stamp": stamp, "rows": None, "exp": exp}
         with self._scored_lock:
             held = self._scored_cache.get(experiment_id)
-            if held is None or held["stamp"] != stamp:
-                held = self._scored_cache[experiment_id] = {"stamp": stamp, "rows": None, "exp": exp}
-            return held["exp"]
+            if held is not None and held["stamp"] == stamp:
+                return held
+            if held is None or held["stamp"] == seen:
+                self._scored_cache[experiment_id] = entry
+        return entry
