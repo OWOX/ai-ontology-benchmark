@@ -1,0 +1,29 @@
+release = "2.0.3"
+puzzles = ["4x4", "5x5"]
+attempts = 3
+retry_cap = 3
+max_output_tokens = 32000
+reasoning_effort = "medium"
+
+[[models]]
+name = "claude-opus-5-5"
+provider = "anthropic"
+api_model_id = "claude-opus-5-5"
+kind = "system-2"
+
+[[models]]
+name = "gpt-6-astra"
+provider = "openai"
+api_model_id = "gpt-6-astra"
+kind = "system-2"
+
+[[models]]
+name = "gemini-4-argon"
+provider = "google"
+api_model_id = "gemini-4-argon"
+kind = "system-2"
+
+[budget]
+per_request_usd = 2.0
+per_model_usd = 20.0
+per_experiment_usd = 50.0
