@@ -511,6 +511,16 @@ def test_puzzles_and_inputs_per_depth_together():
     assert kept == [r for r in rows if r in kept]
 
 
+def test_interleaved_unsorted_input_keeps_the_first_k_per_depth_in_release_order():
+    five, ten = group("2x2", 5, 8, 2), group("2x2", 10, 8, 2)
+    rows = [r for pair in zip(reversed(five), reversed(ten)) for r in pair]  # depths alternate, and ids run backwards
+    kept = run_module.experiment_inputs({"inputs_per_depth": 4}, rows)
+    assert [counts([r for r in kept if r["scramble_depth"] == d]) for d in (5, 10)] == [(4, 1), (4, 1)]
+    assert kept == [r for r in rows if r in kept]
+    # the first four valid rows of each depth, as they appear: the backwards ids v7 to v4
+    assert [r["input_id"] for r in kept if r["validity"] == "valid" and r["scramble_depth"] == 5] == [f"2x2-5-v{i}" for i in (7, 6, 5, 4)]
+
+
 def test_inputs_per_depth_limits_the_attempts_run(repo, monkeypatch):
     two_puzzle_exp(repo, monkeypatch, "inputs_per_depth = 1\n")
     assert go() == 0
