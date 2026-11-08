@@ -1,0 +1,43 @@
+/* The cube drawing and the text buttons of the /cube solver, shared with /ai-ontology-benchmark: the drawing is wrapped in .cube-solver there too.
+   Moved here from src/pages/_cube.astro unchanged (only :global() dropped), so the two pages have one source. */
+.cube-solver .views { display: grid; grid-template-columns: 1fr; gap: 1rem; align-items: center; }
+.cube-solver .sticker { stroke: var(--cube-gap); stroke-width: 0.06; transition: fill 0.3s; }
+/* The player keys polygons by sticker index, so when a turn ends the layer polygons jump home still wearing the old colours;
+   a fill fade would read as a revert and a cross-fade. */
+.cube-stage .sticker { transition: none; }
+.cube-solver .sticker.pending { stroke-dasharray: 0.12 0.08; }
+/* The 3D drawing is 3 units wide at every size, so CubeView scales the outline with the pitch; the net is one unit per cell and keeps the defaults. */
+.cube-view .sticker { stroke-width: var(--sticker-stroke, 0.06); }
+.cube-view .sticker.pending { stroke-dasharray: var(--sticker-dash, 0.12 0.08); }
+.cube-solver .cut { fill: var(--cube-gap); stroke: var(--cube-gap); stroke-width: var(--sticker-stroke, 0.06); }
+.cube-solver .cut.core { fill: var(--cube-core); stroke: var(--cube-core); }
+.cube-solver .turning { animation: cube-turn 1.2s ease-in-out infinite; }
+.cube-solver .move-arrow-halo { fill: none; stroke: var(--text-inv); stroke-width: 0.19; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.cube-solver .move-arrow { fill: none; stroke: var(--text); stroke-width: 0.09; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.cube-solver .move-arrow-head { fill: var(--text); stroke: var(--text-inv); stroke-width: 0.06; stroke-linejoin: round; paint-order: stroke; pointer-events: none; }
+/* Every text button takes the site's Subscribe look (.nl-button). The icon buttons and the selection squares keep their own rules. */
+.cube-solver button:not(.redo):not(.switch):not(.square) { padding: 0.35rem 0.7rem; cursor: pointer; font-family: var(--font-figtree), system-ui, sans-serif; font-size: 0.9rem; font-weight: 800; color: var(--text); background: var(--code-rule); border: 1px solid var(--code-rule); border-radius: 3px; }
+/* Everything in a title row is the circle's height (a long Confirm label or a Megaminx's twelve colours wrap to more rows on a phone): the folded step's summary, and Confirm, Edit, Redo, Replay and Play. */
+.cube-solver .steps .title button:not(.square), .cube-solver.benchmark button:not(.redo):not(.switch):not(.square) { display: inline-flex; align-items: center; min-height: 1.6rem; padding: 0.2rem 0.6rem; line-height: 1.1; text-align: left; }
+.cube-solver button.primary:not(.redo):not(.switch):not(.square) { background: var(--text); border-color: var(--text); color: var(--text-inv); }
+.cube-solver button:not(.redo):not(.switch):not(.square):disabled { opacity: 0.5; cursor: default; }
+.cube-view { width: min(80%, 20rem); overflow: visible; touch-action: none; cursor: grab; transition: filter 0.3s, opacity 0.3s; }
+.cube-view.lost { filter: grayscale(1); }
+.cube-view:active { cursor: grabbing; }
+/* No focus ring on the drawings: the user asked for none (2026-10-13). Keyboard use still works; the ring is only not drawn. */
+.cube-view:focus, .cube-view .sticker:focus, .cube-net .sticker:focus { outline: none; }
+@keyframes cube-turn { 50% { opacity: 0.55; } }
+/* The numbered steps (src/components/islands/cube/ui/Steps.tsx), shared with the /ai-ontology-benchmark filter. Moved from src/pages/_cube.astro unchanged (only :global() dropped), in the same order. */
+.cube-solver .steps { display: grid; gap: 2rem; list-style: none; margin: 0; padding: 0; }
+.cube-solver .steps li { color: var(--muted); }
+/* The step 4 scroll would otherwise land its title under the sticky site header. */
+.cube-solver .steps li { scroll-margin-top: calc(var(--header-h) + 1rem); }
+.cube-solver .steps .title { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; font-family: var(--font-figtree), system-ui, sans-serif; font-weight: 800; font-size: 1rem; }
+/* Indent = the circle width plus the title gap, so the body lines up with the label, plus 2px so a square's or button's outline is not flush with the label. */
+.cube-solver .steps .body { margin-left: calc(1.6rem + 0.4rem); padding-left: 2px; margin-top: 0.45rem; display: grid; gap: 0.75rem; }
+.cube-solver .steps .num { display: inline-flex; width: 1.6rem; height: 1.6rem; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid var(--rule); font-size: 0.9rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.cube-solver .steps .current { color: var(--text); }
+.cube-solver .steps .current .num { border-color: var(--text); }
+.cube-solver .steps .failed .num { border-color: var(--danger); color: var(--danger); }
+.cube-solver .steps .done { color: var(--text); }
+.cube-solver .steps .done .num { background: var(--text); border-color: var(--text); color: var(--text-inv); }
