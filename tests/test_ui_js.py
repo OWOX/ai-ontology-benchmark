@@ -39,6 +39,11 @@ def test_definition_icon_label_and_focus_after_a_rebuild():
     assert run.returncode == 0, run.stderr + run.stdout
 
 
+def test_tooltip_panel_delay_hover_and_single_open():
+    run = subprocess.run([NODE, "tests/js/tips.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
 def test_named_net_follows_the_net_order():
     run = subprocess.run([NODE, "tests/js/cube.test.mjs"], cwd=ROOT, capture_output=True, text=True)
     assert run.returncode == 0, run.stderr + run.stdout

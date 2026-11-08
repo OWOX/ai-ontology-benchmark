@@ -302,9 +302,10 @@
         if (ref.card.hidden) return;
         const wait = S.pending ? "Estimating…" : "";
         ref.body.classList.toggle("pending", S.pending);
-        if (!e) { ref.formula.textContent = wait; ref.body.replaceChildren(); return; }
+        if (!e) { ref.formula.textContent = wait; Defs.dropRedraw(ref.body); ref.body.replaceChildren(); return; }
         if (e.error) {
           ref.formula.textContent = wait;
+          Defs.dropRedraw(ref.body);
           ref.body.replaceChildren(h("p", { class: "msg err", role: "alert", text: e.error }));
           return;
         }
@@ -312,26 +313,34 @@
         const formula = `${count(c.inputs)} inputs × ${c.models} AI models × ${c.setups} setups × ${e.attempts} attempts = ${count(c.planned)} attempts`
           + (c.done ? `, ${count(c.done)} done, ${count(c.to_run)} to run` : "");
         ref.formula.textContent = wait ? `${formula}. ${wait}` : formula;
-        const cells = (tag, values) => h("tr", {}, ...values.map(([text, cls, title], i) =>
-          h(tag, { class: (i ? "n " : "") + (cls || ""), text, ...(title ? { title } : {}) })));
+        const cells = (tag, values) => h("tr", {}, ...values.map(([text, cls, title, sub], i) =>
+          h(tag, { class: (i ? "n " : "") + (cls || ""), ...(title ? { title } : {}) }, text,
+            ...(sub ? [h("div", { class: "muted small", text: sub })] : []))));
         const over = (flag, reason) => flag ? ["over", reason] : [];
         const REQUEST_OVER = "The longest worst-case request exceeds the request budget: the run refuses it.";
         const MODEL_OVER = "Spent plus the worst case exceeds the model budget: the run stops when spending reaches it.";
         const EXPERIMENT_OVER = "Spent plus the worst case exceeds the experiment budget: the run stops when spending reaches it.";
-        const rows = d.models.map((m) => cells("td", [[m.name], [count(m.attempts)], [usd(m.worst_case_usd), ...over(m.over, m.max_request_usd > d.per_request_usd ? REQUEST_OVER : MODEL_OVER)], [usd(m.spent_usd)],
+        const rows = d.models.map((m) => cells("td", [[m.name], [count(m.attempts)], [usd(m.worst_case_usd), ...over(m.over, m.max_request_usd > d.per_request_usd ? REQUEST_OVER : MODEL_OVER)], [m.expected_cost_usd === null ? "no cost history yet" : usd(m.expected_cost_usd), m.expected_cost_usd === null ? "muted" : "", "",
+            m.expected_cost_usd === null || !m.attempts ? "" : `${usd(m.cost_per_attempt_usd)} × ${count(m.attempts)}, n = ${count(m.cost_n)}`], [usd(m.spent_usd)],
           [usd(m.per_model_usd)], m.median_latency_s === null ? ["no timing data yet", "muted"] : [`${m.median_latency_s.toFixed(1)} s (n = ${count(m.latency_n)})`],
           m.time_s === null ? ["no timing data yet", "muted"] : [UI.fmtTime(m.time_s)]]));
         const t = d.total;
-        const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over, EXPERIMENT_OVER)], [usd(t.spent_usd)], [usd(t.per_experiment_usd)], [""],
-          t.time_s === null ? ["partial: no timing data for some AI models", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
-        const backToIcon = Defs.keepFocus(ref.body);
-        ref.body.replaceChildren(
+        const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over, EXPERIMENT_OVER)], t.expected_cost_usd === null ? ["no cost history yet", "muted"] : [usd(t.expected_cost_usd) + (d.expected === "partial" ? " (partial)" : "")],
+          [usd(t.spent_usd)], [usd(t.per_experiment_usd)], [""],
+          t.time_s === null ? ["no timing data yet", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
+        const table = [
           h("div", { class: "estimate" }, h("table", { class: "estimate-table", "data-table": "estimate" },
-            h("thead", {}, h("tr", {}, ...["AI model", "Attempts to run", "Worst case", "Spent", "Model budget", "Median latency", "Time"].map((t, i) =>
+            h("thead", {}, h("tr", {}, ...["AI model", "Attempts to run", "Worst case", "Expected cost", "Spent", "Model budget", "Median latency", "Time"].map((t, i) =>
               h("th", { class: i ? "n" : "" }, t, ...Defs.info(bundle.definitions, t))))),
             h("tbody", {}, ...rows), h("tfoot", {}, total))),
-          h("p", { class: "muted small", text: `Experiment budget is in the Total row. Request budget: ${usd(d.per_request_usd)}. Time runs the AI models side by side, ${budget.parallel} requests at once each.` }));
-        backToIcon();
+          h("p", { class: "muted small", text: `Experiment budget is in the Total row. Request budget: ${usd(d.per_request_usd)}. Time runs the AI models side by side, ${budget.parallel} requests at once each. The expected cost comes from past attempts on any puzzle, so it can be lower for deeper inputs.` })];
+        // A redraw that would detach an open tooltip panel waits until it closes.
+        Defs.holdRedraw(ref.body, () => {
+          if (dead) return;
+          const backToIcon = Defs.keepFocus(ref.body);
+          ref.body.replaceChildren(...table);
+          backToIcon();
+        });
       }
       function schedule() {
         clearTimeout(timer);
@@ -453,7 +462,8 @@
           h("section", {}, h("h2", { text: "New Experiment" }), branchField()),
           h("section", { class: "step" }, h("h3", {}, "Puzzles", ...Defs.info(bundle.definitions, "Puzzles")), puzzleCards(bundle, choose)),
           h("section", { class: "step" }, h("h3", {}, "AI models", ...Defs.info(bundle.definitions, "AI models")), modelList(bundle, choose)),
-          ref.section = h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(bundle, schedule),
+          h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(bundle, schedule)),
+          ref.section = h("section", { class: "step" }, h("h3", { text: "Estimation" }),
             ref.card = h("div", { class: "estimate-card" }, ref.formula = h("p", { class: "estimate-formula", "aria-live": "polite" }), ref.body = h("div")), h("div", { class: "actions" }, ref.dry, ref.run), msg));
         if (S.result) showResult(S.result.label, S.result.job, S.result.id, S.result.after);
         controls();

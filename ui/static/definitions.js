@@ -12,7 +12,7 @@
     "Reasoning effort": "Reasoning effort", "Parallel requests": "Parallel requests",
     // the live estimate table
     "Attempts to run": "Attempt", "Spent": "Cost", "Model budget": "Model budget",
-    "Median latency": "Latency",
+    "Median latency": "Latency", "Expected cost": "Expected cost",
     // the score card, the Experiments list, and the Summary and Full metrics tables
     "Balanced precision": "Balanced precision", "Coverage": "Coverage", "Hallucination": "Hallucination rate",
     "Hallucination rate": "Hallucination rate", "Reason hallucination": "Reason hallucination rate",
@@ -61,5 +61,25 @@
     };
   }
 
-  window.Defs = { TERMS, infoTerm, info, keepFocus };
+  // Runs `fn`, a redraw of `container` that detaches its icons, now, or when the open tooltip panel inside `container`
+  // closes (and the pointer has left it), so a poll never pulls a panel from under the pointer. Only the newest
+  // waiting redraw of a container runs.
+  const waiting = new WeakMap();
+  function holdRedraw(container, fn) {
+    if (!UI.tipHolds(container)) { waiting.delete(container); fn(); return; }
+    const first = !waiting.has(container);
+    waiting.set(container, fn);
+    if (first) UI.afterTipClose(function again() {
+      const next = waiting.get(container);
+      if (!next) return;
+      if (UI.tipHolds(container)) { UI.afterTipClose(again); return; }
+      waiting.delete(container);
+      next();
+    });
+  }
+
+  // Drops the redraw waiting for `container`, for a caller that is about to draw something else there at once.
+  function dropRedraw(container) { waiting.delete(container); }
+
+  window.Defs = { TERMS, infoTerm, info, keepFocus, holdRedraw, dropRedraw };
 })();

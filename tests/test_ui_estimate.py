@@ -138,8 +138,71 @@ def test_latency_median_and_timing(server):
     assert body["timing"] == "full" and body["total"]["time_s"] == m["time_s"]
     both = {**FORM, "models": ["example-model", "cloud-model"]}
     body = call(server, "POST", URL, {"form": both, "parallel": 2})[1]
-    assert body["timing"] == "partial" and body["total"]["time_s"] is None
+    assert body["timing"] == "partial" and body["total"]["time_s"] == m["time_s"]
     assert body["models"][1]["time_s"] is None and body["models"][1]["latency_n"] == 0
+
+
+def push_other(server, records, name="other"):
+    put_branch(server.root, name, {f"results/{name}/experiment.toml": dumps_config(config_of(FORM, server)),
+                                   **{k.replace("/t1/", f"/{name}/"): v for k, v in raw_files(records).items()}},
+               where="remote")
+
+
+def test_expected_cost_from_pushed_history(server):
+    ids = [r["input_id"] for r in inputs_of(server)]
+    # Prices are 1.0 in and 2.0 out per Mtok: 1000 tokens each way cost 0.003, 3000 cost 0.009, a failure with none 0.
+    push_other(server, [record("example-model", ids[0], "no_model", tokens=1000),
+                        record("example-model", ids[0], "descriptive", tokens=3000),
+                        {**record("example-model", ids[1], "no_model", tokens=0), "outcome": "infrastructure_failure"}])
+    body = call(server, "POST", URL, LIVE)[1]
+    m = body["models"][0]
+    assert m["cost_n"] == 3  # the infrastructure failure counts
+    assert abs(m["cost_per_attempt_usd"] - 0.004) < 1e-12
+    assert abs(m["expected_cost_usd"] - m["attempts"] * 0.004) < 1e-9
+    assert body["total"]["expected_cost_usd"] == m["expected_cost_usd"] and body["expected"] == "full"
+
+
+def test_expected_cost_is_cached_by_the_refs_and_main(server):
+    ids = [r["input_id"] for r in inputs_of(server)]
+    push_other(server, [record("example-model", ids[0], "no_model")])
+    first = call(server, "POST", URL, LIVE)[1]
+    est, reads = server.app.live_estimate, []
+    original = est._experiment
+    est._experiment = lambda experiment_id, ref, sha: (reads.append(ref), original(experiment_id, ref, sha))[1]
+    again = call(server, "POST", URL, {**LIVE, "form": {**FORM, "attempts": 2}})[1]
+    assert not [r for r in reads if r.endswith("/other")]  # neither the medians nor the costs read the branch again
+    assert again["models"][0]["cost_per_attempt_usd"] == first["models"][0]["cost_per_attempt_usd"]
+    push_other(server, [record("example-model", ids[0], "no_model", tokens=5000)], "more")  # a new ref
+    changed = call(server, "POST", URL, LIVE)[1]
+    assert any(r.endswith("/more") for r in reads)
+    assert changed["models"][0]["cost_per_attempt_usd"] > first["models"][0]["cost_per_attempt_usd"]
+
+
+def test_expected_cost_leaves_out_a_bad_token_record(server):
+    ids = [r["input_id"] for r in inputs_of(server)]
+    bad = {**record("example-model", ids[0], "no_model", tokens=9000), "input_tokens": "many"}
+    push_other(server, [bad, record("example-model", ids[0], "descriptive", tokens=1000)])
+    m = call(server, "POST", URL, LIVE)[1]["models"][0]
+    assert m["cost_n"] == 1 and abs(m["cost_per_attempt_usd"] - 0.003) < 1e-12
+
+
+def test_expected_cost_without_history_is_null(server):
+    body = call(server, "POST", URL, LIVE)[1]
+    m = body["models"][0]
+    assert m["expected_cost_usd"] is None and m["cost_per_attempt_usd"] is None and m["cost_n"] == 0
+    assert body["total"]["expected_cost_usd"] is None and body["expected"] == "partial"
+
+
+def test_partial_totals_sum_the_known_models(server):
+    ids = [r["input_id"] for r in inputs_of(server)]
+    push_other(server, [record("example-model", ids[0], "no_model", latency=2.0, tokens=1000)])
+    both = {**FORM, "models": ["example-model", "cloud-model"]}
+    body = call(server, "POST", URL, {"form": both, "parallel": 2})[1]
+    known, unknown = body["models"]
+    assert unknown["expected_cost_usd"] is None and unknown["time_s"] is None
+    assert body["expected"] == "partial" and body["timing"] == "partial"
+    assert body["total"]["expected_cost_usd"] == known["expected_cost_usd"] > 0
+    assert body["total"]["time_s"] == known["time_s"] > 0
 
 
 def test_errors(server):

@@ -44,6 +44,7 @@ class LiveEstimate:
         self._releases: dict[tuple, dict] = {}  # (release, tree sha) -> inputs, templates, prompts, questions
         self._experiments: dict[tuple, dict] = {}  # (id, sha) -> the experiment as expdata loads it
         self._latency: tuple | None = None  # (key, medians)
+        self._cost: tuple | None = None  # (key, mean cost per attempt and record count of each AI model)
 
     # --- caches ---------------------------------------------------------------------------
 
@@ -128,7 +129,7 @@ class LiveEstimate:
         if held is None:
             git = self.bundles.git
             held = {"missing": git.show(ref, f"results/{experiment_id}/experiment.toml") is None,
-                    "error": None, "bad": None, "keys": {}, "tokens": {}, "latencies": []}
+                    "error": None, "bad": None, "keys": {}, "tokens": {}, "counts": {}, "latencies": []}
             exp = ({"error": None, "records": {}} if held["missing"]
                    else expdata.load_experiment(git, experiment_id, ref, git.main_ref()))
             held["error"] = exp["error"]
@@ -143,6 +144,7 @@ class LiveEstimate:
                                                                r.get("attempt_number")))
                     tin, tout = held["tokens"].get(model, (0, 0))
                     held["tokens"][model] = (tin + fields[0] + fields[2], tout + fields[1] + fields[3])
+                    held["counts"][model] = held["counts"].get(model, 0) + 1
                     if timed(r):
                         held["latencies"].append((model, r["latency_s"]))
             with self._lock:
@@ -166,6 +168,29 @@ class LiveEstimate:
         found = {m: (median(v), len(v)) for m, v in values.items()}
         with self._lock:
             self._latency = (key, found)
+        return found
+
+    def costs(self, remote: dict[str, str], main_sha: str | None, prices: dict) -> dict[str, tuple[float, int]]:
+        """The mean cost per attempt and the record count of each AI model over every pushed experiment, at the
+        prices of `main`, infrastructure failures included. Cached by the shas of the refs read and of `main`. A branch
+        that does not load adds what it could read, and a record with a token field that is not a number is left out,
+        as in `medians`."""
+        key = (tuple(sorted(remote.items())), main_sha)
+        with self._lock:
+            if self._cost and self._cost[0] == key:
+                return self._cost[1]
+        sums: dict[str, list[float]] = {}
+        for experiment_id, sha in sorted(remote.items()):
+            held = self._experiment(experiment_id, REMOTE_RESULTS + experiment_id, sha)
+            for model, (tin, tout) in held["tokens"].items():
+                if model in prices:
+                    total = sums.setdefault(model, [0.0, 0])
+                    total[0] += attempt_cost({"input_tokens": tin, "output_tokens": tout, "retry_input_tokens": 0,
+                                              "retry_output_tokens": 0}, prices[model])
+                    total[1] += held["counts"][model]
+        found = {m: (c / n, n) for m, (c, n) in sums.items() if n}
+        with self._lock:
+            self._cost = (key, found)
         return found
 
     # --- the estimate ---------------------------------------------------------------------
@@ -209,7 +234,7 @@ class LiveEstimate:
         caps = {p: max_moves(config, release_config, p) for p in release_config["puzzles"]}
         result = estimate(config, pending, prices, questions, None, caps, prompts,
                           bool(manifest.get("mismatch_reasons", False)), {n: spent.get(n, 0.0) for n in names})
-        return self._finish(result, config, parallel, len(rows), len(pending), remote)
+        return self._finish(result, config, parallel, len(rows), len(pending), remote, main_sha, prices)
 
     def _branch(self, config: dict, experiment_id: str, prices: dict, local: dict, remote: dict
                 ) -> tuple[set, dict[str, float]]:
@@ -234,22 +259,33 @@ class LiveEstimate:
                                         "retry_output_tokens": 0}, prices[name])
         return done, spent
 
-    def _finish(self, result: dict, config: dict, parallel: int, inputs: int, to_run: int, remote: dict) -> dict:
+    def _finish(self, result: dict, config: dict, parallel: int, inputs: int, to_run: int, remote: dict,
+                main_sha: str | None, prices: dict) -> dict:
         medians = self.medians(remote)
+        history = self.costs(remote, main_sha, prices)
         budget = config["budget"]
-        times = []
+        times, expected = [], []
         for m in result["models"]:
             found = medians.get(m["name"])
             m["median_latency_s"], m["latency_n"] = (found[0], found[1]) if found else (None, 0)
             m["time_s"] = 0.0 if m["attempts"] == 0 else (
                 m["attempts"] * found[0] / parallel if found else None)
+            seen = history.get(m["name"])
+            m["cost_per_attempt_usd"], m["cost_n"] = (seen[0], seen[1]) if seen else (None, 0)
+            m["expected_cost_usd"] = 0.0 if m["attempts"] == 0 else (m["attempts"] * seen[0] if seen else None)
+            expected.append(m["expected_cost_usd"])
             m["over"] = (m["worst_case_usd"] + m["spent_usd"] > budget["per_model_usd"] + 1e-9
                          or m["max_request_usd"] > budget["per_request_usd"] + 1e-9)
             times.append(m["time_s"])
         total = result["total"]
-        partial = any(t is None for t in times)
-        total["time_s"] = None if partial else max(times, default=0.0)
+        known = [t for t in times if t is not None]
+        partial = len(known) < len(times)
+        total["time_s"] = max(known, default=0.0) if known or not partial else None
         total["over"] = total["worst_case_usd"] + total["spent_usd"] > budget["per_experiment_usd"] + 1e-9
+        have = [v for v in expected if v is not None]
+        missing = len(have) < len(expected)
+        total["expected_cost_usd"] = sum(have) if have or not missing else None
+        result["expected"] = "partial" if missing else "full"
         result["timing"] = "partial" if partial else "full"
         planned = inputs * len(config["models"]) * len(SETUPS) * config["attempts"]
         result["counts"] = {"inputs": inputs, "models": len(config["models"]), "setups": len(SETUPS),
