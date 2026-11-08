@@ -223,3 +223,32 @@ def test_a_push_to_main_outside_the_release_keeps_the_prompts(server):
     git(server.root, "push", "-q", "origin", "HEAD:refs/heads/main")
     assert call(server, "POST", URL, LIVE)[0] == 200
     assert len(est._releases) == 1 and next(iter(est._releases.values())) is held
+
+
+def test_bad_token_field_gives_400_for_its_branch_and_is_skipped_in_medians(server):
+    ids = [r["input_id"] for r in inputs_of(server)]
+    bad = {**record("example-model", ids[0], "no_model", latency=900.0), "input_tokens": "many"}
+    good = record("example-model", ids[0], "descriptive", latency=4.0)
+    put_branch(server.root, "other", {"results/other/experiment.toml": dumps_config(config_of(FORM, server)),
+                                      **{k.replace("/t1/", "/other/"): v for k, v in raw_files([bad, good]).items()}},
+               where="remote")
+    status, body = call(server, "POST", URL, LIVE)  # t1 has no branch: the bad branch is only read for medians
+    assert status == 200, body
+    assert body["models"][0]["median_latency_s"] == 4.0 and body["models"][0]["latency_n"] == 1
+    put_branch(server.root, "t1", {"results/t1/experiment.toml": dumps_config(config_of(FORM, server)),
+                                   **raw_files([bad])}, where="local")
+    status, body = call(server, "POST", URL, LIVE)
+    assert status == 400 and "t1" in body["error"] and "record 1" in body["error"]
+
+
+def test_branch_without_experiment_toml_is_no_experiment(server):
+    put_branch(server.root, "t1", {"x.txt": "nothing"}, where="local")
+    status, body = call(server, "POST", URL, LIVE)
+    assert status == 200 and body["counts"]["done"] == 0
+
+
+def test_release_is_read_from_the_cached_tree(server):
+    est = server.app.live_estimate
+    assert call(server, "POST", URL, LIVE)[0] == 200
+    held = next(iter(est._releases.values()))
+    assert held["tree"] and held["inputs"] and held["manifest"]["release_config"]

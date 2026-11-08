@@ -4,6 +4,7 @@ been started, plus the time each AI model needs. Reads the release, prompts, and
 experiment's branch through Bundles and GitData. Caches rendered prompts and latencies in memory. Writes nothing.
 """
 
+import json
 import threading
 from statistics import median
 
@@ -21,6 +22,7 @@ from ui.gitdata import LOCAL_RESULTS, REMOTE_RESULTS
 CACHE_LIMIT = 8
 RELEASE_LIMIT = 4  # each holds every rendered prompt of a release
 EXPERIMENT_LIMIT = 64
+TOKEN_FIELDS = ("input_tokens", "output_tokens", "retry_input_tokens", "retry_output_tokens")
 
 
 class _View:
@@ -46,59 +48,73 @@ class LiveEstimate:
     # --- caches ---------------------------------------------------------------------------
 
     def _at(self, main_sha: str | None) -> dict:
-        """The catalogue, prices, and manifests of `main` at one sha, read once."""
+        """The catalogue, prices, and manifests of `main` at one sha, read once. The git reads are made outside the
+        lock, so a slow read never blocks another call; a race reads twice and keeps the first."""
         with self._lock:
-            if main_sha not in self._main:
-                if len(self._main) >= CACHE_LIMIT:
-                    self._main.pop(next(iter(self._main)))
-                manifests = {}
+            held = self._main.get(main_sha)
+        if held is not None:
+            return held
+        manifests = {}
 
-                def puzzles(release: str):
-                    if release not in manifests:
-                        manifests[release] = self.bundles._manifest(release)
-                    found = manifests[release]
-                    return list(found["release_config"]["puzzles"]) if found else None
+        def puzzles(release: str):
+            if release not in manifests:
+                manifests[release] = self.bundles._manifest(release)
+            found = manifests[release]
+            return list(found["release_config"]["puzzles"]) if found else None
 
-                # Read with the keys the page holds: a model with no key is allowed here, other reasons are not.
-                self._main[main_sha] = {"view": _View(self.bundles.models({}), puzzles), "manifests": manifests,
-                                        "prices": self.bundles._prices()}
-            return self._main[main_sha]
+        # Read with the keys the page holds: a model with no key is allowed here, other reasons are not.
+        held = {"view": _View(self.bundles.models({}), puzzles), "manifests": manifests,
+                "prices": self.bundles._prices()}
+        with self._lock:
+            if len(self._main) >= CACHE_LIMIT:
+                self._main.pop(next(iter(self._main)))
+            return self._main.setdefault(main_sha, held)
 
-    def _release(self, release: str, tree: str, manifest: dict) -> dict:
+    def _release(self, release: str, tree: str | None) -> dict:
         """What a release holds on `main`, kept per release and the sha of its tree, so a push that leaves the
-        release alone keeps the rendered prompts. `lock` is held while prompts are rendered."""
+        release alone keeps the rendered prompts. Everything is read from that tree, never from a later `main`.
+        `lock` is held while prompts are rendered. The reads are made outside the global lock."""
+        if tree is None:
+            raise ApiError(400, f"releases/{release} is not on main")
         key = (release, tree)
         with self._lock:
-            if key not in self._releases:
+            held = self._releases.get(key)
+        if held is None:
+            git = self.bundles.git
+            try:
+                manifest = json.loads(git.show(tree, "manifest.json") or "")
+            except ValueError:
+                raise ApiError(400, f"releases/{release}/manifest.json on main cannot be read") from None
+            held = {"tree": tree, "manifest": manifest, "templates": {}, "prompts": {}, "questions": None,
+                    "lock": threading.Lock(), "inputs": [json.loads(line) for line in (git.show(tree, "inputs.jsonl") or "").splitlines()
+                               if line.strip()]}
+            with self._lock:
                 if len(self._releases) >= RELEASE_LIMIT:
                     self._releases.pop(next(iter(self._releases)))
-                git = self.bundles.git
-                self._releases[key] = {"manifest": manifest, "templates": {}, "prompts": {}, "questions": None,
-                                       "lock": threading.Lock(),
-                                       "inputs": expdata.read_inputs(git, git.main_ref(), release)}
-            return self._releases[key]
+                held = self._releases.setdefault(key, held)
+        return held
 
     def _prompt(self, held: dict, release: str, row: dict, setup: str) -> str:
         key = row["input_id"], setup
         if key not in held["prompts"]:
             template_key = row["puzzle"], setup
             if template_key not in held["templates"]:
-                path = f"releases/{release}/prompts/{setup}/{row['puzzle']}.txt"
-                text = self.bundles.git.show(self.bundles.git.main_ref(), path)
+                path = f"prompts/{setup}/{row['puzzle']}.txt"
+                text = self.bundles.git.show(held["tree"], path)
                 if text is None:
-                    raise ApiError(400, f"{path} is not on main")
+                    raise ApiError(400, f"releases/{release}/{path} is not on main")
                 held["templates"][template_key] = text
             held["prompts"][key] = fill_template(held["templates"][template_key], row, setup)
         return held["prompts"][key]
 
     def _questions(self, held: dict, release: str) -> dict:
         if held["questions"] is None:
-            path = f"releases/{release}/prompts/decision/questions.txt"
-            text = self.bundles.git.show(self.bundles.git.main_ref(), path)
+            path = "prompts/decision/questions.txt"
+            text = self.bundles.git.show(held["tree"], path)
             if text is None:
-                raise ApiError(400, f"{path} is not on main")
+                raise ApiError(400, f"releases/{release}/{path} is not on main")
             try:
-                held["questions"] = parse_questions(text, path)
+                held["questions"] = parse_questions(text, f"releases/{release}/{path}")
             except ValueError as error:
                 raise ApiError(400, str(error)) from None
         return held["questions"]
@@ -111,16 +127,22 @@ class LiveEstimate:
             held = self._experiments.get((experiment_id, sha))
         if held is None:
             git = self.bundles.git
-            exp = expdata.load_experiment(git, experiment_id, ref, git.main_ref())
-            held = {"error": exp["error"], "keys": {}, "tokens": {}, "latencies": []}
+            held = {"missing": git.show(ref, f"results/{experiment_id}/experiment.toml") is None,
+                    "error": None, "bad": None, "keys": {}, "tokens": {}, "latencies": []}
+            exp = ({"error": None, "records": {}} if held["missing"]
+                   else expdata.load_experiment(git, experiment_id, ref, git.main_ref()))
+            held["error"] = exp["error"]
             for name, records in exp["records"].items():
-                for r in records:
+                for number, r in enumerate(records, 1):
                     model = r.get("model", name)
+                    fields = [r.get(f) for f in TOKEN_FIELDS]
+                    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in fields):
+                        held["bad"] = held["bad"] or f"record {number} of raw/{name}.jsonl has a token field that is not a number"
+                        continue
                     held["keys"].setdefault(model, set()).add((r.get("input_id"), r.get("setup"), model,
                                                                r.get("attempt_number")))
                     tin, tout = held["tokens"].get(model, (0, 0))
-                    held["tokens"][model] = (tin + r["input_tokens"] + r["retry_input_tokens"],
-                                             tout + r["output_tokens"] + r["retry_output_tokens"])
+                    held["tokens"][model] = (tin + fields[0] + fields[2], tout + fields[1] + fields[3])
                     if r.get("outcome") != "infrastructure_failure" and isinstance(r.get("latency_s"), (int, float)):
                         held["latencies"].append((model, r["latency_s"]))
             with self._lock:
@@ -168,9 +190,9 @@ class LiveEstimate:
                     raise ApiError(400, f"config/prices.toml on main: model {model['name']!r} has no number "
                                         f"for {field}")
         release = config["release"]
-        manifest = at["manifests"][release]
         tree = self.bundles.git.tree_sha(main_sha or "HEAD", f"releases/{release}")
-        held = self._release(release, tree, manifest)
+        held = self._release(release, tree)
+        manifest = held["manifest"]
         names = [m["name"] for m in config["models"]]
         done, spent = self._branch(config, form["id"], prices, local, remote)
         rows = experiment_inputs(config, held["inputs"])
@@ -202,8 +224,10 @@ class LiveEstimate:
         else:
             return set(), {}
         found = self._experiment(experiment_id, ref, sha)
-        if found["error"] and not found["error"].endswith("file not found"):  # no experiment.toml is no experiment
-            raise ApiError(400, f"experiment {experiment_id} cannot be read: {found['error']}")
+        if found["missing"]:  # a branch with no experiment.toml is no experiment
+            return set(), {}
+        if found["error"] or found["bad"]:
+            raise ApiError(400, f"experiment {experiment_id} cannot be read: {found['error'] or found['bad']}")
         done, spent = set(), {}
         for name in (m["name"] for m in config["models"]):
             done |= found["keys"].get(name, set())
