@@ -95,7 +95,7 @@
   }
 
   // A range slider with its value shown beside it. `show` turns the number into the text beside the slider.
-  function slider(label, min, max, value, show, onInput) {
+  function slider(label, min, max, value, show, onInput, icon = []) {
     const input = h("input", { type: "range", min: String(min), max: String(max), step: "1", "aria-label": label });
     input.value = String(Math.min(max, Math.max(min, value)));
     const out = h("output", { class: "slider-value", text: show(Number(input.value)) });
@@ -105,7 +105,7 @@
       input.setAttribute("aria-valuetext", out.textContent);
       onInput(Number(input.value));
     });
-    return h("label", {}, label, h("span", { class: "slider" }, input, out));
+    return h("label", {}, label, ...icon, h("span", { class: "slider" }, input, out));
   }
 
   function puzzleCards(bundle, onChange) {
@@ -173,7 +173,7 @@
     const field = ([key, label]) => {
       const input = h("input", { type: "text", inputmode: "decimal", "aria-label": label, value: String(S.vals[key]) });
       input.addEventListener("input", () => { S.vals[key] = input.value; changed(); });
-      return h("label", {}, label, input);
+      return h("label", {}, label, ...Defs.info(bundle.definitions, label), input);
     };
     // low, medium, or high; "provider default" only appears for a loaded experiment that was saved without one.
     const effort = (() => {
@@ -182,7 +182,7 @@
       for (const v of options) select.append(h("option", { value: v, text: v || "provider default" }));
       select.value = S.vals.reasoning_effort || "";
       select.addEventListener("change", () => { S.vals.reasoning_effort = select.value; changed(); });
-      return h("label", {}, "Reasoning effort: sent to every system-2 model", select);
+      return h("label", {}, "Reasoning effort", ...Defs.info(bundle.definitions, "Reasoning effort"), ": sent to every system-2 model", select);
     })();
     const limit = (() => {
       const input = h("input", { type: "text", inputmode: "numeric", "aria-label": "Limit per model", value: S.limit });
@@ -190,17 +190,18 @@
       return h("label", {}, "Limit per model (optional): stops each AI model after N attempts", input);
     })();
     const attempts = slider("Attempts per input and setup: sends the same input N times", 1, Math.max(10, Number(S.vals.attempts) || 0), Number(S.vals.attempts) || 1,
-      String, (n) => { S.vals.attempts = String(n); changed(); });
+      String, (n) => { S.vals.attempts = String(n); changed(); }, Defs.info(bundle.definitions, "Attempts per input and setup"));
     const top = perDepthMax(bundle);
     const perDepth = slider("Inputs per depth: valid inputs per puzzle and scramble depth", 1, top, perDepthPosition(S.perDepth, top),
-      (n) => n >= top ? "all" : String(n), (n) => { S.perDepth = perDepthFromSlider(n, top, S.perDepthLoaded); changed(); });
+      (n) => n >= top ? "all" : String(n), (n) => { S.perDepth = perDepthFromSlider(n, top, S.perDepthLoaded); changed(); }, Defs.info(bundle.definitions, "Inputs per depth"));
     const parallel = (() => {
       const box = slider("Parallel requests", 1, 16, Number(S.parallel) || 4, String, (n) => { S.parallel = String(n); changed(); });
-      // The definition is on main: linked when the bundle knows the repository, plain text otherwise.
+      // The definition is on main: linked when the bundle knows the repository, plain text otherwise. The slider's
+      // aria-label keeps the plain name.
       const term = bundle.repo && bundle.main_sha
         ? h("a", { href: `${bundle.repo}/blob/${bundle.main_sha}/docs/definitions.md#workflows`, target: "_blank", rel: "noopener", text: "Parallel requests" })
         : document.createTextNode("Parallel requests");
-      box.firstChild.replaceWith(h("span", {}, term, ": attempts in flight at once per AI model. Only the speed changes, never what an attempt sends or records."));
+      box.firstChild.replaceWith(h("span", {}, term, ...Defs.info(bundle.definitions, "Parallel requests"), ": attempts in flight at once per AI model. Only the speed changes, never what an attempt sends or records."));
       return box;
     })();
     const budgets = NUMBERS.filter(([k]) => k.endsWith("_usd")), rest = NUMBERS.filter(([k]) => !k.endsWith("_usd"));
@@ -325,7 +326,8 @@
           t.time_s === null ? ["partial: no timing data for some AI models", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
         ref.body.replaceChildren(
           h("div", { class: "estimate" }, h("table", { class: "estimate-table" },
-            h("thead", {}, cells("th", [["AI model"], ["Attempts to run"], ["Worst case"], ["Spent"], ["Model budget"], ["Median latency"], ["Time"]])),
+            h("thead", {}, h("tr", {}, ...["AI model", "Attempts to run", "Worst case", "Spent", "Model budget", "Median latency", "Time"].map((t, i) =>
+              h("th", { class: i ? "n" : "" }, t, ...Defs.info(bundle.definitions, t))))),
             h("tbody", {}, ...rows), h("tfoot", {}, total))),
           h("p", { class: "muted small", text: `Experiment budget is in the Total row. Request budget: ${usd(d.per_request_usd)}. Time runs the AI models side by side, ${budget.parallel} requests at once each.` }));
       }
@@ -447,8 +449,8 @@
         }
         formBox.replaceChildren(
           h("section", {}, h("h2", { text: "New Experiment" }), branchField()),
-          h("section", { class: "step" }, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
-          h("section", { class: "step" }, h("h3", { text: "AI models" }), modelList(bundle, choose)),
+          h("section", { class: "step" }, h("h3", {}, "Puzzles", ...Defs.info(bundle.definitions, "Puzzles")), puzzleCards(bundle, choose)),
+          h("section", { class: "step" }, h("h3", {}, "AI models", ...Defs.info(bundle.definitions, "AI models")), modelList(bundle, choose)),
           ref.section = h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(bundle, schedule),
             ref.card = h("div", { class: "estimate-card" }, ref.formula = h("p", { class: "estimate-formula", "aria-live": "polite" }), ref.body = h("div")), h("div", { class: "actions" }, ref.dry, ref.run), msg));
         if (S.result) showResult(S.result.label, S.result.job, S.result.id, S.result.after);

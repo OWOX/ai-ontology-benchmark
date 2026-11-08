@@ -9,10 +9,14 @@ const file = fileURLToPath(new URL("../../ui/static/expmetrics.js", import.meta.
 const el = (tag, props = {}, ...kids) => {
   const node = { tag, props, kids: [...kids] };
   node.append = (...more) => node.kids.push(...more);
+  node.addEventListener = () => {};
   return node;
 };
 const window = {};
-vm.runInNewContext(fs.readFileSync(file, "utf8"), { window, UI: { el, usd: loadRouter().UI.usd } });
+const ctx = vm.createContext({ window, UI: { el, usd: loadRouter().UI.usd, tipOn() {} } });
+vm.runInContext(fs.readFileSync(fileURLToPath(new URL("../../ui/static/definitions.js", import.meta.url)), "utf8"), ctx);
+ctx.Defs = window.Defs;
+vm.runInContext(fs.readFileSync(file, "utf8"), ctx);
 const { summary, NOTE, SUMMARY_NOTE } = window.ExpMetrics;
 
 const text = (n) => (typeof n === "string" ? n : [n.props?.text ?? "", ...n.kids.map(text)].join("|"));
@@ -29,4 +33,9 @@ check("report summary shows the Wilson note", fromReport.includes(SUMMARY_NOTE) 
 const computed = text(summary(detail("computed"), []));
 check("computed summary marks the interval", computed.includes("(10.0\u201390.0) n=4 *"));
 check("computed summary shows the computed note", computed.includes(NOTE) && !computed.includes(SUMMARY_NOTE));
+// A header with a definition gets the icon and its tooltip, and one without gets none.
+const defs = { terms: { Precision: { text: "The share of right answers.", source: "https://example.test/d.md#metrics" } } };
+const withIcon = text(summary(detail("report"), [], defs));
+check("a defined header has its tooltip", withIcon.includes("The share of right answers."));
+check("an undefined header has no icon", !text(summary(detail("report"), [], { terms: {} })).includes("|i"));
 process.exit(failed ? 1 : 0);

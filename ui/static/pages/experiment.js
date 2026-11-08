@@ -110,14 +110,15 @@
   };
 
   // The score card from GET /api/scorecard/<id>: one row per AI model, spend against each budget, elapsed, and time left.
-  function scoreCard(d) {
+  function scoreCard(d, defs) {
     const cells = (tag, values) => h("tr", {}, ...values.map((t, i) => h(tag, { class: i ? "n" : "", text: t })));
     const t = d.total;
     const time = (v) => (typeof v === "number" ? UI.fmtTime(v) : "n/a") + " *";
     return h("section", { class: "score-card" },
       h("h3", {}, "Score card ", d.live ? h("span", { class: "live", text: "live" }) : null),
       h("div", { class: "table-wrap" }, h("table", { class: "score-table" },
-        h("thead", {}, cells("th", ["AI model", "Done", ...CARD_COLUMNS.map((c) => c[1])])),
+        h("thead", {}, h("tr", {}, ...["AI model", "Done", ...CARD_COLUMNS.map((c) => c[1])].map((t, i) =>
+          h("th", { class: i ? "n" : "" }, t, ...Defs.info(defs, t))))),
         h("tbody", {}, ...d.models.map((m) => cells("td", [m.name, `${ExpMetrics.grouped(m.done)} of ${ExpMetrics.grouped(m.planned)}`,
           ...CARD_COLUMNS.map(([k, , kind]) => cardValue(m[k], kind))]))))),
       h("div", { class: "spend-rows" }, ...d.models.map((m) => spendBar(`${m.name} against the model budget`, m.cost_usd, t.per_model_usd)),
@@ -166,7 +167,7 @@
         card.busy = true; card.last = Date.now();
         try {
           const d = await UI.api("/api/scorecard/" + encodeURIComponent(id));
-          if (root.isConnected) cardBox.replaceChildren(scoreCard(d));
+          if (root.isConnected) cardBox.replaceChildren(scoreCard(d, bundle.definitions));
         } catch (e) { /* no branch yet, or a read error: the header shows it */ } finally { card.busy = false; }
         if (card.queued && root.isConnected) { card.queued = false; loadCard(); }
       }
@@ -205,8 +206,8 @@
           headBox.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, stopMsg));
           settingsBody.replaceChildren(...settings(d, bundle));
           autoSettings();
-          resultsBox.replaceChildren(block("Summary", ExpMetrics.summary(d, bundle.experiments), false),
-            block("Full metrics", ExpMetrics.full(d), false), block("Report", reportBox(d), false));
+          resultsBox.replaceChildren(block("Summary", ExpMetrics.summary(d, bundle.experiments, bundle.definitions), false),
+            block("Full metrics", ExpMetrics.full(d, bundle.definitions), false), block("Report", reportBox(d), false));
           actions.replaceChildren(...(d.local_results ? [block("Evaluate and commit",
             h("div", {}, h("div", { class: "actions by-field" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit), result), true)] : []));
           controls();
