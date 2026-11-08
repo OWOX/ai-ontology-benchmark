@@ -12,7 +12,7 @@ from src.evaluate.metrics import NA, attempt_cost, gave_moves, is_diagnosis, is_
 from src.run.prompts import SETUPS
 from ui import expdata, experiments
 from ui.expdata import cell
-from ui.common import ApiError
+from ui.common import ApiError, missing_price_field, timed
 
 OWN_LATENCY_MIN = 5  # fewer records of this model than this: use the pushed history instead
 
@@ -50,10 +50,7 @@ def model_values(rows: list[dict], price: dict | None) -> dict:
 
 def priced(prices: dict, name: str) -> dict | None:
     price = prices.get(name)
-    fields = ("price_input_per_mtok", "price_output_per_mtok")
-    ok = isinstance(price, dict) and all(isinstance(price.get(f), (int, float)) and not isinstance(price.get(f), bool)
-                                         for f in fields)
-    return price if ok else None
+    return None if missing_price_field(price) else price
 
 
 def scorecard(bundles, experiment_id: str, live_ids: set[str], job_states: dict, parallels: dict, history,
@@ -88,8 +85,7 @@ def scorecard(bundles, experiment_id: str, live_ids: set[str], job_states: dict,
         models.append({"name": name, "done": done, "planned": planned, "running": is_running,
                        **model_values(mine, priced(prices, name))})
         if is_running:
-            own = [r["latency_s"] for r in mine if r["outcome"] != "infrastructure_failure"
-                   and isinstance(r["latency_s"], (int, float))]
+            own = [r["latency_s"] for r in mine if timed(r)]
             typical = median(own) if len(own) >= OWN_LATENCY_MIN else None
             if typical is None:
                 if pushed is None:

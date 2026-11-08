@@ -16,7 +16,7 @@ from src.run.prompts import SETUPS, fill_template, parse_questions
 from src.run.run import experiment_inputs
 from ui import expdata, forms
 from ui.bundle import Bundles
-from ui.common import ApiError
+from ui.common import ApiError, missing_price_field, timed
 from ui.gitdata import LOCAL_RESULTS, REMOTE_RESULTS
 
 CACHE_LIMIT = 8
@@ -143,7 +143,7 @@ class LiveEstimate:
                                                                r.get("attempt_number")))
                     tin, tout = held["tokens"].get(model, (0, 0))
                     held["tokens"][model] = (tin + fields[0] + fields[2], tout + fields[1] + fields[3])
-                    if r.get("outcome") != "infrastructure_failure" and isinstance(r.get("latency_s"), (int, float)):
+                    if timed(r):
                         held["latencies"].append((model, r["latency_s"]))
             with self._lock:
                 if len(self._experiments) >= EXPERIMENT_LIMIT:
@@ -184,11 +184,9 @@ class LiveEstimate:
         for model in config["models"]:
             if model["name"] not in prices:
                 raise ApiError(400, f"no prices for model {model['name']!r} in config/prices.toml on main")
-            for field in ("price_input_per_mtok", "price_output_per_mtok"):
-                value = prices[model["name"]].get(field) if isinstance(prices[model["name"]], dict) else None
-                if not isinstance(value, (int, float)) or isinstance(value, bool):
-                    raise ApiError(400, f"config/prices.toml on main: model {model['name']!r} has no number "
-                                        f"for {field}")
+            field = missing_price_field(prices[model["name"]])
+            if field:
+                raise ApiError(400, f"config/prices.toml on main: model {model['name']!r} has no number for {field}")
         release = config["release"]
         tree = self.bundles.git.tree_sha(main_sha or "HEAD", f"releases/{release}")
         held = self._release(release, tree)
