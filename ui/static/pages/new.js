@@ -75,14 +75,6 @@
     return n;
   }
 
-  // Times as "1 h 05 min", "12 min", or "40 s".
-  function fmtTime(seconds) {
-    const s = Math.round(seconds);
-    if (s < 60) return `${s} s`;
-    const m = Math.round(s / 60);
-    return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
-  }
-
   // Valid inputs per puzzle and scramble depth: the bundle's, else the most any chosen puzzle holds per depth.
   function perDepthMax(bundle) {
     if (bundle.scramble_count) return bundle.scramble_count;
@@ -327,10 +319,10 @@
         const EXPERIMENT_OVER = "Spent plus the worst case exceeds the experiment budget: the run stops when spending reaches it.";
         const rows = d.models.map((m) => cells("td", [[m.name], [count(m.attempts)], [usd(m.worst_case_usd), ...over(m.over, m.max_request_usd > d.per_request_usd ? REQUEST_OVER : MODEL_OVER)], [usd(m.spent_usd)],
           [usd(m.per_model_usd)], m.median_latency_s === null ? ["no timing data yet", "muted"] : [`${m.median_latency_s.toFixed(1)} s (n = ${count(m.latency_n)})`],
-          m.time_s === null ? ["no timing data yet", "muted"] : [fmtTime(m.time_s)]]));
+          m.time_s === null ? ["no timing data yet", "muted"] : [UI.fmtTime(m.time_s)]]));
         const t = d.total;
         const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over, EXPERIMENT_OVER)], [usd(t.spent_usd)], [usd(t.per_experiment_usd)], [""],
-          t.time_s === null ? ["partial: no timing data for some AI models", "muted"] : [fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
+          t.time_s === null ? ["partial: no timing data for some AI models", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
         ref.body.replaceChildren(
           h("div", { class: "estimate" }, h("table", { class: "estimate-table" },
             h("thead", {}, cells("th", [["AI model"], ["Attempts to run"], ["Worst case"], ["Spent"], ["Model budget"], ["Median latency"], ["Time"]])),

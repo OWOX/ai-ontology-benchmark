@@ -84,10 +84,10 @@ def test_dropdown_and_check_picker_behaviour():
     assert run.returncode == 0, run.stderr + run.stdout
 
 
-def test_new_experiment_formats_estimate_times():
+def test_ui_formats_times():
     import json
     import re
-    source = (ROOT / "ui" / "static" / "pages" / "new.js").read_text(encoding="utf-8")
+    source = (ROOT / "ui" / "static" / "router.js").read_text(encoding="utf-8")
     body = re.search(r"  function fmtTime\(seconds\) \{.*?\n  \}\n", source, re.S).group(0)
     values = [0, 40, 59.6, 60, 720, 3599, 3900, 7384, 36000]
     script = body + f"console.log(JSON.stringify({json.dumps(values)}.map(fmtTime)));"

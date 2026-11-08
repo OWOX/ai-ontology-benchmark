@@ -32,6 +32,14 @@
     return () => { const i = list.indexOf(fn); if (i >= 0) list.splice(i, 1); };
   }
 
+  // Times as "1 h 05 min", "12 min", or "40 s".
+  function fmtTime(seconds) {
+    const s = Math.round(seconds);
+    if (s < 60) return `${s} s`;
+    const m = Math.round(s / 60);
+    return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
+  }
+
   const UI = window.UI = {
     el,
     token: meta ? meta.content : "",
@@ -84,6 +92,7 @@
         { minimumFractionDigits: min, maximumFractionDigits: n > 0 && n < 1 ? below : max });
     },
     // The validity filter's options as [value, text] pairs. `all` is the value of "all inputs" ("all" or "").
+    fmtTime,
     validityOptions(all) { return [[all, "all inputs"], ["valid", "valid only"], ["invalid", "invalid only"]]; },
     // A labelled <select> over [value, text] options; onChange gets the chosen value.
     dropdown(name, value, options, onChange) {
