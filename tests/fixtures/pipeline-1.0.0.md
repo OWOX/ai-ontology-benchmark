@@ -44,20 +44,20 @@ Cost spent, at the prices above (USD):
 
 | Metric | no_model | descriptive | prescriptive |
 |---|---|---|---|
-| Success rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
+| Precision | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
 | Hallucination rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
 | False mismatch rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
 | Malformed output rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
 | Truncation rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
 | Abstention rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
 | Format error rate | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs |
-| Cost per success | n/a | n/a | n/a |
+| Cost per attempt | 0.0000 | 0.0000 | 0.0000 |
 
 #### Invalid inputs
 
 | Metric | no_model | descriptive | prescriptive |
 |---|---|---|---|
-| Success rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
+| Precision | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
 | Mismatch detection rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
 | Hallucination rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
 | Malformed output rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
@@ -100,34 +100,37 @@ Each row is a [paired setup test](../../docs/definitions.md#metrics) of two setu
 
 | Validity | Metric | Setups | Inputs paired | A higher | B higher | Mean difference | p | Holm p | Significant |
 |---|---|---|---|---|---|---|---|---|---|
-| valid | success_rate | no_model vs descriptive | 2 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
-| valid | success_rate | no_model vs prescriptive | 2 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
-| valid | success_rate | descriptive vs prescriptive | 2 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| valid | precision | no_model vs descriptive | 2 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| valid | precision | no_model vs prescriptive | 2 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| valid | precision | descriptive vs prescriptive | 2 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | valid | hallucination_rate | no_model vs descriptive | 2 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | valid | hallucination_rate | no_model vs prescriptive | 2 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | valid | hallucination_rate | descriptive vs prescriptive | 2 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
-| invalid | success_rate | no_model vs descriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
-| invalid | success_rate | no_model vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
-| invalid | success_rate | descriptive vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| invalid | precision | no_model vs descriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| invalid | precision | no_model vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| invalid | precision | descriptive vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | invalid | hallucination_rate | no_model vs descriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | invalid | hallucination_rate | no_model vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | invalid | hallucination_rate | descriptive vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | invalid | mismatch_detection_rate | no_model vs descriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | invalid | mismatch_detection_rate | no_model vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | invalid | mismatch_detection_rate | descriptive vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| invalid | diagnosis_rate | no_model vs descriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| invalid | diagnosis_rate | no_model vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| invalid | diagnosis_rate | descriptive vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 
 ## Metrics
 
 ### 2x2
 
-| Setup | AI model | Depth | Validity | Attempts | Infra failures | Success | Hallucination | Mismatch detection | False mismatch | Malformed | Truncated | Abstention | Format error | Consistency | Latency (s) | Input tokens | Output tokens | Cost per success |
+| Setup | AI model | Depth | Validity | Attempts | Infra failures | Precision | Hallucination | Mismatch detection | False mismatch | Malformed | Truncated | Abstention | Format error | Consistency | Latency (s) | Input tokens | Output tokens | Cost per attempt |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| no_model | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | n/a n=0, 0 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
-| no_model | A | 1 | invalid | 2 | 0 | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
-| descriptive | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | n/a n=0, 0 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
-| descriptive | A | 1 | invalid | 2 | 0 | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
-| prescriptive | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | n/a n=0, 0 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
-| prescriptive | A | 1 | invalid | 2 | 0 | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 1.00 | 0.00 | 0.0 | 0.0 | n/a |
+| no_model | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | n/a n=0, 0 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 1.00 | 0.00 | 0.0 | 0.0 | 0.0000 |
+| no_model | A | 1 | invalid | 2 | 0 | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 1.00 | 0.00 | 0.0 | 0.0 | 0.0000 |
+| descriptive | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | n/a n=0, 0 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 1.00 | 0.00 | 0.0 | 0.0 | 0.0000 |
+| descriptive | A | 1 | invalid | 2 | 0 | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 1.00 | 0.00 | 0.0 | 0.0 | 0.0000 |
+| prescriptive | A | 1 | valid | 4 | 0 | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | n/a n=0, 0 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 0.00 (0.00–0.00) n=4, 2 inputs | 1.00 | 0.00 | 0.0 | 0.0 | 0.0000 |
+| prescriptive | A | 1 | invalid | 2 | 0 | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 1.00 | 0.00 | 0.0 | 0.0 | 0.0000 |
 
 ## Attempts
 

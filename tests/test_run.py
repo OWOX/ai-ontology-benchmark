@@ -806,10 +806,10 @@ def test_decision_model_end_to_end(exp, monkeypatch):
     with open(exp / "results/exp/1.0.0.metrics.csv", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     by_setup = {r["setup"]: r for r in rows if r["model"] == "D"}
-    assert by_setup["no_model"]["success_rate"] == "1.0000" and by_setup["no_model"]["hallucination_rate"] == "n/a"
+    assert by_setup["no_model"]["precision"] == "1.0000" and by_setup["no_model"]["hallucination_rate"] == "n/a"
     assert by_setup["descriptive"]["malformed_output_rate"] == "1.0000"
     assert by_setup["prescriptive"]["infrastructure_failure_count"] == "1"
-    assert by_setup["prescriptive"]["success_rate_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
+    assert by_setup["prescriptive"]["precision_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
 
 
 def test_decision_reply_without_a_model_keeps_served_empty_and_requests_the_entry_id(exp, monkeypatch):
