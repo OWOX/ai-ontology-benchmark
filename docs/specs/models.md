@@ -11,23 +11,33 @@ Send one prompt to one AI model and return the reply in the same shape for every
 1. One `models` entry from the experiment config ([config](config.md)), including its optional `params`.
 2. The prompt text.
 3. `max_output_tokens` and the optional `reasoning_effort` from the experiment config.
-4. The provider's API key, read from its env var: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GOOGLE_API_KEY`. For decision models: `TYPESAFE_API_KEY` for `typesafe`, and `CLOUDFLARE_API_TOKEN` plus the account id in `CLOUDFLARE_ACCOUNT_ID` for `cloudflare`.
+4. The provider's API key, read from its env var: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `OPENROUTER_API_KEY`. For decision models: `TYPESAFE_API_KEY` for `typesafe`, and `CLOUDFLARE_API_TOKEN` plus the account id in `CLOUDFLARE_ACCOUNT_ID` for `cloudflare`.
 
 ## Outputs
 
 `call_model(model, prompt, max_output_tokens, reasoning_effort=None) -> Reply`, where `Reply` has `text`, `stop_reason`, `served_model`, `input_tokens`, `output_tokens`, and `latency_s`.
 
-1. There is one short function per provider: `anthropic`, `openai`, and `google`. Each calls the official SDK with its built-in retries turned off, so that [run](run.md) controls every retry. The Anthropic call streams (`messages.stream` and `get_final_message()`), because the SDK refuses a non-streaming call with a large `max_tokens`. Stream errors map like any other: a connection error, a transport error while reading the stream, HTTP 429, or HTTP 5xx is an `InfrastructureError`. An SSE `error` event arrives as a status error with code 200, so its body's `error.type` decides: `overloaded_error`, `api_error`, and `rate_limit_error` are an `InfrastructureError`, any other type is a `RequestError`.
+1. There is one short function per provider: `anthropic`, `openai`, `google`, and `openrouter`. Each calls the official SDK with its built-in retries turned off, so that [run](run.md) controls every retry. The Anthropic call streams (`messages.stream` and `get_final_message()`), because the SDK refuses a non-streaming call with a large `max_tokens`. Stream errors map like any other: a connection error, a transport error while reading the stream, HTTP 429, or HTTP 5xx is an `InfrastructureError`. An SSE `error` event arrives as a status error with code 200, so its body's `error.type` decides: `overloaded_error`, `api_error`, and `rate_limit_error` are an `InfrastructureError`, any other type is a `RequestError`.
 2. Every request has the same shape: one user message holding the prompt, no system prompt, and no provider JSON mode or output schema. The prompt alone asks for the answer format (moves one per line, or `MISMATCH` and a reason), so every AI model gets the same request. `params` is passed to the SDK call unchanged.
-   [Reasoning effort](../definitions.md#setups) is sent only when `reasoning_effort` is set and the model's `kind` is `system-2`, in the provider's own parameter: `output_config={"effort": effort}` for `anthropic`, `reasoning_effort=effort` for `openai`, and `thinking_config={"thinking_level": EFFORT}` in the `config` for `google`, with the level upper-cased. Provider `fake` ignores it, and decision models never receive it.
+   [Reasoning effort](../definitions.md#setups) is sent only when `reasoning_effort` is set and the model's `kind` is `system-2`, in the provider's own parameter: `output_config={"effort": effort}` for `anthropic`, `reasoning_effort=effort` for `openai`, and `thinking_config={"thinking_level": EFFORT}` in the `config` for `google`, with the level upper-cased, and `reasoning={"effort": effort}` in the body for `openrouter`. Provider `fake` ignores it, and decision models never receive it.
 3. `stop_reason` is `ok` for a complete answer, `truncated` when the answer hit the token limit, and `refused` for a refusal, including a content-filter refusal the API returns as an error.
 4. `served_model` is the model id the API response reports, or `""` when it reports none (a Google response without `model_version`, or an OpenAI content-filter refusal, which has no response). It is never filled in from `api_model_id`. Token counts are copied from the API response as returned. For Google, `output_tokens` is `candidates_token_count + thoughts_token_count`, both as returned, because Gemini bills thoughts as output. The other providers' counts already include reasoning tokens.
 5. `latency_s` is the time from sending the request to receiving the full response.
-6. A network error, timeout, HTTP 429, or HTTP 5xx raises `InfrastructureError`. For `openai`, HTTP 408 and 409 do too. The exception carries any token counts the API reported.
+6. A network error, timeout, HTTP 429, or HTTP 5xx raises `InfrastructureError`. For `openai` and `openrouter`, HTTP 408 and 409 do too. The exception carries any token counts the API reported.
    Any other HTTP error the API returns, such as a 400 for a spent account usage limit, a 401 for a bad key, or a 404 for an unknown model, raises `RequestError`, chained to the SDK error. Its message is one line: `<provider>: HTTP <status>: <message>`, where the message is the one the API sent in its error body (`error.message`, a string `error`, or for `cloudflare` the `errors` messages joined with `; `; for `typesafe`, the message its SDK read from the body), or the SDK's text when the body has none. A stream error event, whose status is the stream's own 200, leaves out `HTTP <status>: `. It is never retried, and [run](run.md) stops on it.
 7. Provider `fake` makes no network call. It returns replies from a list given to it in tests, and raises `InfrastructureError` or `RequestError` when the list says so. When the list is empty, it returns the default reply: text `U`, stop reason `ok`, served model `fake`, zero tokens, and zero latency.
-8. Every request to an LLM provider (`anthropic`, `openai`, `google`) has an explicit timeout, `REQUEST_TIMEOUT_S = 1800` seconds, so that no SDK default decides it: `httpx.Timeout(1800, connect=30)` for `anthropic` and `openai` (the installed SDKs take the `httpx2` class of that name), and `HttpOptions(timeout=1_800_000)` in milliseconds for `google`. The decision providers keep their SDK defaults. A timeout is a connection error, so it is an `InfrastructureError`.
+8. Every request to an LLM provider (`anthropic`, `openai`, `google`, `openrouter`) has an explicit timeout, `REQUEST_TIMEOUT_S = 1800` seconds, so that no SDK default decides it: `httpx.Timeout(1800, connect=30)` for `anthropic`, `openai`, and `openrouter` (the installed SDKs take the `httpx2` class of that name), and `HttpOptions(timeout=1_800_000)` in milliseconds for `google`. The decision providers keep their SDK defaults. A timeout is a connection error, so it is an `InfrastructureError`.
 9. A missing API key raises `ValueError` that names the env var, before any request is sent. The value is stripped of surrounding whitespace first, so a whitespace-only key is missing and a padded key is sent without its padding.
+
+## OpenRouter
+
+Provider `openrouter` sends any AI model that OpenRouter serves through its OpenAI-compatible Chat Completions API. It is set only in an experiment config. The UI catalogue lists no `openrouter` model and the UI keeps no key for it.
+
+1. `api_model_id` is the OpenRouter model id, such as `<vendor>/<model>`. A price row in `config/prices.toml` is still needed under the entry's `name`.
+2. It uses the `openai` SDK with `base_url="https://openrouter.ai/api/v1"`, built-in retries off, and the same timeout as `openai`. The key is read only from `OPENROUTER_API_KEY` (`ENV_KEY_VARIABLES`), never from `secrets/`, so `KEY_VARIABLES`, which the UI reads, leaves it out.
+3. The request has the same shape as for `openai`, except that the token limit is `max_tokens` and the body fields go through `extra_body`: `reasoning={"effort": effort}` for a system-2 model with a reasoning effort, then `params` unchanged. So OpenRouter's own fields, such as `provider` for routing preferences, can be set in `params`.
+4. A reply maps as for `openai`. `finish_reason` `length` is `truncated` and `content_filter` is `refused`. HTTP 403, which OpenRouter returns when its moderation flags the input, is `refused`. A `finish_reason` of `error`, which means the upstream provider failed mid-answer, and a reply with no choices raise `InfrastructureError` carrying the reported token counts. HTTP 402 for spent credits raises `RequestError`.
+5. `served_model` is the response's `model` as returned. Token counts are `usage.prompt_tokens` and `usage.completion_tokens`, which include reasoning tokens, or 0 when the reply has no `usage`.
 
 ## Decision models
 
@@ -49,7 +59,8 @@ No test calls a real API.
    1. A normal reply gives `ok` and the served model id.
    2. A length stop gives `truncated`.
    3. A content-filter error gives `refused`.
-   4. A 429, a 500, and a timeout each raise `InfrastructureError`. For `openai`, a 408 and a 409 do too, and a 401 raises `RequestError`.
+   4. A 429, a 500, and a timeout each raise `InfrastructureError`. For `openai` and `openrouter`, a 408 and a 409 do too, and a 401 raises `RequestError`.
+   8. For `openrouter`: the base URL, `max_tokens`, `params` and the reasoning effort in `extra_body`, a 403 as `refused`, a 401, 402, or 404 as `RequestError`, and a `finish_reason` of `error` or no choices as `InfrastructureError`.
    7. A 400 raises `RequestError` whose message is the API's own, as in `anthropic: HTTP 400: You have reached your specified API usage limits. …`.
    5. The mock receives exactly one user message, no system prompt, and every key from `params`.
    6. The client gets the explicit timeout.
