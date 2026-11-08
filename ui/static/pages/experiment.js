@@ -1,5 +1,5 @@
 // Spec: docs/specs/ui.md (Experiment)
-// One experiment as a workspace: a progress bar across the top, then two columns. Left: header and Stop, the settings
+// One experiment as a workspace: a score card and a progress bar across the top, then two columns. Left: header and Stop, the settings
 // read-only, the Cube panel, the Plan tree, Summary, full metrics, report, and Evaluate and Commit. Right: the terminal.
 // Reads GET /api/experiments/<id> and the bundle; writes through POST /api/stop, /api/evaluate, and /api/commit.
 (function () {
@@ -95,6 +95,37 @@
     dlg.showModal();
   }
 
+  const CARD_NOTE = "* computed by the UI from the raw records, for display only.";
+  const CARD_COLUMNS = [["balanced_precision", "Balanced precision", "pct"], ["coverage", "Coverage", "pct"],
+    ["hallucination_rate", "Hallucination", "pct"], ["reason_hallucination_rate", "Reason hallucination", "pct"],
+    ["critical_thinking", "Critical thinking", "pct"], ["cost_usd", "Cost so far", "usd"], ["cost_efficiency", "Cost efficiency", "usd"]];
+  const cardValue = (v, kind) => (typeof v !== "number" ? "n/a" : kind === "pct" ? ExpMetrics.pct(v) : UI.usd(v, { fixed: kind === "usd" && v < 1 ? 4 : 2 })) + " *";
+  const spendBar = (label, spent, limit) => {
+    const known = typeof spent === "number" && typeof limit === "number" && limit > 0;
+    const part = known ? Math.min(100, (spent / limit) * 100) : 0;
+    const fill = h("div", { class: "spend-fill" + (known && spent > limit ? " over" : "") });
+    fill.style.width = part + "%";
+    return h("div", { class: "spend-row" }, h("span", { class: "small", text: label }), h("div", { class: "spend" }, fill),
+      h("span", { class: "small n", text: `${typeof spent === "number" ? UI.usd(spent, { fixed: 2 }) : "n/a"} of ${typeof limit === "number" ? UI.usd(limit, { fixed: 2 }) : "n/a"} *` }));
+  };
+
+  // The score card from GET /api/scorecard/<id>: one row per AI model, spend against each budget, elapsed, and time left.
+  function scoreCard(d) {
+    const cells = (tag, values) => h("tr", {}, ...values.map((t, i) => h(tag, { class: i ? "n" : "", text: t })));
+    const t = d.total;
+    const time = (v) => (typeof v === "number" ? UI.fmtTime(v) : "n/a") + " *";
+    return h("section", { class: "score-card" },
+      h("h3", {}, "Score card ", d.live ? h("span", { class: "live", text: "live" }) : null),
+      h("div", { class: "table-wrap" }, h("table", { class: "score-table" },
+        h("thead", {}, cells("th", ["AI model", "Done", ...CARD_COLUMNS.map((c) => c[1])])),
+        h("tbody", {}, ...d.models.map((m) => cells("td", [m.name, `${ExpMetrics.grouped(m.done)} of ${ExpMetrics.grouped(m.planned)}`,
+          ...CARD_COLUMNS.map(([k, , kind]) => cardValue(m[k], kind))]))))),
+      h("div", { class: "spend-rows" }, ...d.models.map((m) => spendBar(`${m.name} against the model budget`, m.cost_usd, t.per_model_usd)),
+        spendBar("All AI models against the experiment budget", t.cost_usd, t.per_experiment_usd)),
+      h("p", { class: "small", text: `Elapsed ${time(t.elapsed_s)}. Time left ${time(t.time_left_s)}.` }),
+      h("p", { class: "muted small", text: CARD_NOTE }));
+  }
+
   // A foldable block with an 18px heading. The returned element keeps its open state when its body is replaced.
   function block(title, body, open) {
     const det = h("details", { class: "blk" }, h("summary", { text: title }), body);
@@ -109,9 +140,10 @@
       const headBox = h("div"), bannerBox = h("div"), settingsBody = h("div"), cubeBody = h("div"), planBody = h("div");
       const resultsBox = h("div"), actions = h("div"), result = h("p", { class: "msg", role: "status" });
       const settingsBlock = block("Settings", settingsBody, true);
+      const cardBox = h("div", { class: "score-box" });
       const bar = ProgressView.bar(Progress.COLORS, Progress.OUTCOMES);
       const termBox = h("div", { class: "ws-right" });
-      root.append(bar.node, h("div", { class: "workspace" },
+      root.append(cardBox, bar.node, h("div", { class: "workspace" },
         h("div", { class: "ws-left" }, headBox, bannerBox, settingsBlock, block("Cube", cubeBody, true), block("Plan", planBody, true),
           resultsBox, actions),
         termBox));
@@ -124,6 +156,26 @@
       const stop = h("button", { type: "button", class: "danger", text: "Stop" });
       const stopMsg = h("span", { class: "msg small", role: "status" });
       const commit = h("button", { type: "button", text: "Commit" });
+
+      // The score card loads once, and every 5 seconds while a run job of the experiment is alive. It reads the job
+      // state the page already holds, and loads again when that state changes, so the last poll sees the end.
+      const card = { timer: null, busy: false, running: null };
+      async function loadCard() {
+        if (card.busy) return;
+        card.busy = true;
+        try {
+          const d = await UI.api("/api/scorecard/" + encodeURIComponent(id));
+          if (root.isConnected) cardBox.replaceChildren(scoreCard(d));
+        } catch (e) { /* no branch yet, or a read error: the header shows it */ } finally { card.busy = false; }
+      }
+      function cardSync() {
+        if (!root.isConnected) { clearInterval(card.timer); return; }
+        const run = (j) => j.startsWith("run:");
+        const running = mine(id, run) || snapRunning(state.ctl && state.ctl.snapshot(), run);
+        if (running && !card.timer) card.timer = setInterval(() => (root.isConnected ? loadCard() : clearInterval(card.timer)), 5000);
+        if (!running && card.timer) { clearInterval(card.timer); card.timer = null; }
+        if (running !== card.running) { card.running = running; loadCard(); }
+      }
 
       // Settings fold while a run job is alive and open otherwise, until the user folds or unfolds it by hand.
       // The job state can arrive after the page, so this runs again on every snapshot and job poll.
@@ -192,7 +244,7 @@
       });
       commit.addEventListener("click", () => openCommit(id, result, loadDetail).catch((e) => { result.className = "msg err"; result.textContent = e.message; }));
 
-      const onSnapshot = () => { controls(); autoSettings(); bar.update(state.ctl.totals()); if (state.term) state.term.sync(); };
+      const onSnapshot = () => { controls(); autoSettings(); cardSync(); bar.update(state.ctl.totals()); if (state.term) state.term.sync(); };
       // The terminal replays the log history on mount, before the first snapshot: the host answers empty until then.
       const host = { records: () => (state.ctl ? state.ctl.records() : new Map()), pending: () => (state.ctl ? state.ctl.pending() : {}),
         inputs: () => (state.ctl ? state.ctl.inputs() : new Map()) };
@@ -203,9 +255,10 @@
       state.off = UI.onJobs((jobs, ended) => {
         if (!root.isConnected) { state.off(); state.term.destroy(); return; }
         if (ended && ended.length) { loadDetail(); state.ctl.refresh(); }  // a finished evaluate brings the report
-        controls(); autoSettings();
+        controls(); autoSettings(); cardSync();
       });
       loadDetail();
+      loadCard();
     },
   });
 })();

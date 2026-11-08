@@ -380,3 +380,12 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .estimate-table .muted { color: var(--muted); font-weight: normal; }
 .estimate-card .pending { opacity: 0.5; }
 .estimate-formula { min-height: 1.3em; }
+.score-card { margin: 0 0 12px; }
+.score-card h3 { font-size: 18px; margin: 0 0 6px; }
+.score-card .live { font-size: 12px; font-weight: 600; color: var(--accent, #1a7f37); border: 1px solid currentColor; border-radius: 8px; padding: 0 6px; vertical-align: middle; }
+.score-table .n { text-align: right; font-variant-numeric: tabular-nums; }
+.spend-rows { margin: 8px 0; }
+.spend-row { display: grid; grid-template-columns: 22em 1fr 14em; gap: 8px; align-items: center; margin-bottom: 4px; }
+.spend { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.spend-fill { height: 100%; background: var(--bar, #4a7); }
+.spend-fill.over { background: var(--danger); }

@@ -38,15 +38,20 @@ def load_form(bundles, experiment_id: str) -> dict:
     return config_form(config, bundles.release_puzzles(config["release"]) or [])
 
 
+def planned_inputs(bundles, config: dict) -> list[dict]:
+    """The inputs an experiment plays, in release order: `experiment_inputs` over the release on `main`."""
+    puzzles = config.get("puzzles") or bundles.release_puzzles(config["release"]) or []
+    git = bundles.git
+    return experiment_inputs({**config, "puzzles": puzzles}, expdata.read_inputs(git, git.main_ref(), config["release"]))
+
+
 def snapshot(bundles, experiment_id: str, live_ids: set[str], job_states: dict, parallel: dict | None = None) -> dict:
     """Live state of one experiment: its inputs, the raw records so far, and its job states and each running job's `--parallel`."""
     exp = bundles.loaded(check_id(experiment_id), live_ids)
     config = exp["config"]
     if config is None:
         raise ApiError(400, exp["error"])
-    puzzles = config.get("puzzles") or bundles.release_puzzles(config["release"]) or []
-    git = bundles.git
-    inputs = experiment_inputs({**config, "puzzles": puzzles}, expdata.read_inputs(git, git.main_ref(), config["release"]))
+    inputs = planned_inputs(bundles, config)
     names = [m["name"] for m in config["models"]]
     keys = ("model", "input_id", "setup", "attempt_number", "outcome", "mismatch", "created_at")
     report = f"results/{experiment_id}/{exp['report_version']}.md" if exp["report_md"] is not None else None

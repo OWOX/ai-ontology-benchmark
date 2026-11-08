@@ -14,6 +14,7 @@ from pathlib import Path
 from ui import attempt as attempt_module
 from ui import commit as commit_module
 from ui import experiments, forms
+from ui import scorecard as scorecard_module
 from ui.estimate import LiveEstimate
 from ui import project, replay
 from ui import secrets as key_store
@@ -190,6 +191,9 @@ class App:
             if parts[1] == "state":
                 return experiments.snapshot(self.bundles, experiment_id, live, self.jobs.states(experiment_id),
                                             self.jobs.parallels(experiment_id))
+            if parts[1] == "scorecard":
+                return scorecard_module.scorecard(self.bundles, experiment_id, live, self.jobs.states(experiment_id),
+                                                  self.jobs.parallels(experiment_id), self.live_estimate.medians)
             if parts[1] == "replay":
                 return replay.replay(self.bundles, experiment_id, live, query)
             if parts[1] == "attempt":
