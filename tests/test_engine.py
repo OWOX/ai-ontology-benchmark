@@ -15,6 +15,8 @@ METHODS = [
     "corrupt",
     "render",
     "is_move_token",
+    "mismatch_reasons",
+    "decoy_reasons",
 ]
 
 
@@ -34,7 +36,7 @@ def test_missing_method_raises_type_error(missing: str) -> None:
         make_subclass(skip=missing)()
 
 
-def test_abstract_methods_are_the_nine_in_order() -> None:
+def test_abstract_methods_are_the_eleven_in_order() -> None:
     assert sorted(Engine.__abstractmethods__) == sorted(METHODS)
 
 

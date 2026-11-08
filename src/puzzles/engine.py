@@ -1,7 +1,7 @@
 # Spec: docs/specs/engine.md
 """Defines the puzzle engine interface. Reads nothing and writes nothing.
 
-Every engine subclasses Engine and implements all nine methods. Callers catch
+Every engine subclasses Engine and implements all eleven methods. Callers catch
 IllegalMoveError and ValidityMismatchError by name.
 """
 
@@ -78,4 +78,19 @@ class Engine(ABC):
         """Return true when the token has the shape of a move in the puzzle's notation.
 
         Legal or not. The validator uses it only to tell impossible moves from prose.
+        """
+
+    @abstractmethod
+    def mismatch_reasons(self) -> list[str]:
+        """Return the mismatch reasons the prompt offers, in order.
+
+        The corruption types corrupt() can produce on any puzzle of the same shape, then the
+        decoy reasons. It is the only list of them.
+        """
+
+    @abstractmethod
+    def decoy_reasons(self) -> list[str]:
+        """Return the decoy reasons in mismatch_reasons().
+
+        Reasons that no state of the puzzle can show.
         """

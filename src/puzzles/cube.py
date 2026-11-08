@@ -250,6 +250,12 @@ TYPES_3 = ("twisted corner", "flipped edge", "swapped corners", "swapped edges",
 # Swaps are left out of the big cubes: a single swap of two pieces can be reachable there.
 TYPES_4 = ("twisted corner", "flipped wing", "recoloured sticker")
 TYPES_5 = ("twisted corner", "flipped wing", "flipped edge", "recoloured sticker")
+# The mismatch reasons offered on every cube size, in the order of the corruption types of all four
+# cubes, then the decoy.
+CUBE_CORRUPTION_TYPES = ("twisted corner", "flipped edge", "flipped wing", "swapped corners",
+                         "swapped edges", "recoloured sticker")
+# A centre piece shows one sticker on every size, so no state shows its twist.
+CUBE_DECOYS = ("twisted centre",)
 TYPES = {2: TYPES_2, 3: TYPES_3, 4: TYPES_4, 5: TYPES_5}
 
 
@@ -344,3 +350,9 @@ class CubeEngine(Engine):
 
     def is_move_token(self, token: str) -> bool:
         return MOVE_TOKEN.fullmatch(token) is not None
+
+    def mismatch_reasons(self) -> list[str]:
+        return list(CUBE_CORRUPTION_TYPES + CUBE_DECOYS)
+
+    def decoy_reasons(self) -> list[str]:
+        return list(CUBE_DECOYS)
