@@ -200,6 +200,7 @@
     const sig = JSON.stringify([b, st.params]);
     if (!force && sig === st.drawn) return;
     st.drawn = sig;
+    st.shown = JSON.stringify(st.params);
     st.bundle = b;
     drawMenu();
     $("termbox").hidden = st.params.name !== "about";
@@ -218,19 +219,47 @@
     box.replaceChildren("The server restarted, so this page is out of date. ", link, ".");
   }
 
+  // A page with `fresh: true` loads its own data in render(), so a cached draw followed by the fresh one would load
+  // it twice and make the page jump. It shows a preloader until the server's bundle comes instead.
+  function showPreloader() {
+    st.drawn = st.shown = null;
+    $("termbox").hidden = st.params.name !== "about";
+    $("main").replaceChildren(el("div", { class: "preloader", role: "status" }, el("span", { class: "spinner" }), "Loading…"));
+  }
+
   async function load(release, refresh) {
     const mine = ++st.seq;
     const btn = $("refresh");
     if (refresh) btn.classList.add("spin");
     $("fetch-error").textContent = "";
+    const page = pages[st.params.name], fresh = !!(page && page.fresh);
+    let cached = null;
+    // A reload of a page already drawn here (a job ending) keeps it, and redraws only if the bundle changed.
+    const waiting = fresh && !refresh && st.shown !== JSON.stringify(st.params);
+    if (waiting) showPreloader();
+    st.loading = true;
     try {
-      const b = await UI.bundle(release, refresh, (c) => { if (mine === st.seq) draw(c); });
+      const b = await UI.bundle(release, refresh, (c) => {
+        if (mine !== st.seq) return;
+        st.bundleFor = release;
+        if (!fresh) return draw(c);
+        // The menu still draws at once; only the page waits.
+        cached = st.bundle = c;
+        drawMenu();
+      });
       // ↻ redraws the page even when the bundle brings nothing new, so the page loads its own data again.
-      if (mine === st.seq) draw(b, refresh);
+      if (mine === st.seq) { st.bundleFor = release; draw(b, refresh); }
     } catch (e) {
-      if (mine === st.seq) showFetchError(e);
+      if (mine !== st.seq) return;
+      // A failed request keeps the cached view. A preloader still on screen gives way to the cached bundle of this
+      // release, or to an empty page when there is none.
+      if ($("main").querySelector(":scope > .preloader")) {
+        const fallback = cached || (st.bundle && st.bundleFor === release ? st.bundle : null);
+        if (fallback) draw(fallback); else $("main").replaceChildren();
+      }
+      showFetchError(e);
     } finally {
-      if (mine === st.seq) btn.classList.remove("spin");
+      if (mine === st.seq) { btn.classList.remove("spin"); st.loading = false; }
     }
   }
 
@@ -241,7 +270,9 @@
     if (location.hash === "" || location.hash === "#") history.replaceState(null, "", "#/experiments");
     const reloadLink = $("fetch-error").querySelector("a");
     if (reloadLink) reloadLink.href = location.href;  // the stale-token link keeps pointing at the current view
-    if (st.bundle && prev && prev.release === st.params.release) draw(st.bundle, true);
+    const page = pages[st.params.name];
+    // A fresh page opened while the bundle loads waits for it, which draws the page then.
+    if (st.bundle && prev && prev.release === st.params.release) { if (st.loading && page && page.fresh) showPreloader(); else draw(st.bundle, true); }
     else load(st.params.release, false);
   }
 
