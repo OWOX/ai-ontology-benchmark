@@ -31,11 +31,16 @@ const { title, description } = Astro.props
   <body>
     <main>
       <div class="content">
-        <div class="theme-switch" role="radiogroup" aria-label="Theme">
-          <button type="button" role="radio" aria-checked="false" data-theme-choice="light">Light</button>
-          <button type="button" role="radio" aria-checked="false" data-theme-choice="dark">Dark</button>
-          <button type="button" role="radio" aria-checked="true" data-theme-choice="system">System</button>
-        </div>
+        <slot />
+      </div>
+    </main>
+    <footer>
+      <p>Source: <a href="https://github.com/OWOX/ai-ontology-benchmark">github.com/OWOX/ai-ontology-benchmark</a></p>
+      <div class="theme-switch" role="radiogroup" aria-label="Theme">
+        <button type="button" role="radio" aria-checked="false" data-theme-choice="light">Light</button>
+        <button type="button" role="radio" aria-checked="false" data-theme-choice="dark">Dark</button>
+        <button type="button" role="radio" aria-checked="true" data-theme-choice="system">System</button>
+      </div>
       <script is:inline>
         (function () {
           var radios = Array.prototype.slice.call(document.querySelectorAll('[data-theme-choice]'))
@@ -71,11 +76,6 @@ const { title, description } = Astro.props
           })
         })()
       </script>
-        <slot />
-      </div>
-    </main>
-    <footer>
-      <p>Source: <a href="https://github.com/OWOX/ai-ontology-benchmark">github.com/OWOX/ai-ontology-benchmark</a></p>
     </footer>
   </body>
 </html>
