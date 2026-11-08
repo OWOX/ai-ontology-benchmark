@@ -81,9 +81,11 @@ class GitData:
         done = self._git("for-each-ref", "--format=%(refname)", prefix)
         return {line[len(prefix):] for line in done.stdout.splitlines() if line.startswith(prefix)}
 
-    def results_state(self) -> tuple[str | None, dict[str, str], dict[str, str]]:
-        """(main sha, local result shas, remote result shas), the shas by experiment id, from one `git for-each-ref`.
-        The main sha is that of `main_ref()`, which takes a second call only when the repo has no `origin/main`."""
+    def results_state(self) -> tuple[str | None, dict[str, str], dict[str, tuple[str, str]]]:
+        """(main sha, local result shas by experiment id, pushed experiments), from one `git for-each-ref`, plus two
+        `git ls-tree` calls for the folders on main. The main sha is that of `main_ref()`, which takes a second call
+        only when the repo has no `origin/main`. The pushed experiments are `{id: (ref, key)}`: a `results/<id>`
+        folder on main (key: the sha of the folder), overridden by an `origin/results/<id>` branch (key: its sha)."""
         done = self._git("for-each-ref", "--format=%(objectname) %(refname)", LOCAL_RESULTS, REMOTE_RESULTS,
                          "refs/remotes/origin/main")
         local, remote, main = {}, {}, None
@@ -95,7 +97,28 @@ class GitData:
                 remote[name[len(REMOTE_RESULTS):]] = sha
             elif name.startswith(LOCAL_RESULTS):
                 local[name[len(LOCAL_RESULTS):]] = sha
-        return main or self.sha("HEAD"), local, remote
+        main_ref = "refs/remotes/origin/main" if main else "HEAD"
+        pushed = {i: (main_ref, key) for i, key in self.main_results(main_ref).items()}
+        pushed.update({i: (REMOTE_RESULTS + i, sha) for i, sha in remote.items()})
+        return main or self.sha("HEAD"), local, pushed
+
+    def main_results(self, ref: str | None = None) -> dict[str, str]:
+        """The experiments on main: the sha of each `results/<id>` folder that holds an `experiment.toml`, by id."""
+        ref = ref or self.main_ref()
+        folders = self._git("ls-tree", ref, "results/")
+        if folders.returncode != 0:
+            return {}
+        trees = {}
+        for line in folders.stdout.splitlines():
+            meta, _, path = line.partition("\t")
+            parts = meta.split()
+            if len(parts) == 3 and parts[1] == "tree":
+                trees[path.rsplit("/", 1)[-1]] = parts[2]
+        if not trees:
+            return {}
+        names = self._git("ls-tree", "-r", "--name-only", ref, "results/").stdout.splitlines()
+        held = {n.split("/")[1] for n in names if n.count("/") == 2 and n.endswith("/experiment.toml")}
+        return {i: sha for i, sha in trees.items() if i in held}
 
     def local_ids(self) -> set[str]:
         return self._ids(LOCAL_RESULTS)
@@ -103,13 +126,21 @@ class GitData:
     def remote_ids(self) -> set[str]:
         return self._ids(REMOTE_RESULTS)
 
-    def results_refs(self, local_ids: set[str] = frozenset()) -> dict[str, str]:
-        local = self.local_ids()
-        refs = {i: REMOTE_RESULTS + i for i in self.remote_ids()}
+    def pushed_ids(self) -> set[str]:
+        """The ids of the experiments on origin: branches and folders on main."""
+        return self.remote_ids() | set(self.main_results())
+
+    def results_index(self, local_ids: set[str] = frozenset()) -> dict[str, tuple[str, str]]:
+        """`{id: (ref, key)}` of the pushed experiments, with a local branch in place of the pushed one for each id in
+        `local_ids` that has one. The key is the sha that changes when the experiment does."""
+        _, local, index = self.results_state()
         for i in local_ids:
             if i in local:
-                refs[i] = LOCAL_RESULTS + i
-        return refs
+                index[i] = (LOCAL_RESULTS + i, local[i])
+        return index
+
+    def results_refs(self, local_ids: set[str] = frozenset()) -> dict[str, str]:
+        return {i: ref for i, (ref, _) in self.results_index(local_ids).items()}
 
     def github(self) -> str | None:
         if not self._github_read:

@@ -3,6 +3,8 @@
 400s, and that the numbers equal those of `run --estimate`. Uses the temporary git repo of tests/test_ui.py."""
 
 import json
+import os
+import subprocess
 import time
 
 from src.config import parse_experiment_config
@@ -160,6 +162,44 @@ def test_expected_cost_from_pushed_history(server):
     assert abs(m["cost_per_attempt_usd"] - 0.004) < 1e-12
     assert abs(m["expected_cost_usd"] - m["attempts"] * 0.004) < 1e-9
     assert body["total"]["expected_cost_usd"] == m["expected_cost_usd"] and body["expected"] == "full"
+
+
+def push_main_folder(server, records, name="onmain"):
+    root = server.root
+    index = root / ".git" / "index-main-folder"
+    env = dict(os.environ, GIT_INDEX_FILE=str(index))
+
+    def run(*args, stdin=None):
+        return subprocess.run(["git", *args], cwd=root, env=env, input=stdin, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    files = {f"results/{name}/experiment.toml": dumps_config(config_of(FORM, server)),
+             **{k.replace("/t1/", f"/{name}/"): v for k, v in raw_files(records).items()}}
+    try:
+        tip = run("rev-parse", "refs/remotes/origin/main")
+        run("read-tree", tip)
+        for path, text in files.items():
+            run("update-index", "--add", "--cacheinfo", f"100644,{run('hash-object', '-w', '--stdin', stdin=text)},{path}")
+        commit = run("commit-tree", run("write-tree"), "-p", tip, "-m", "results on main")
+    finally:
+        index.unlink(missing_ok=True)
+    run("push", "-q", "origin", f"{commit}:refs/heads/main")
+
+
+def test_estimate_history_includes_main_folders(server):
+    ids = [r["input_id"] for r in inputs_of(server)]
+    push_main_folder(server, [record("example-model", ids[0], "no_model", tokens=1000, latency=2.0),
+                              record("example-model", ids[0], "descriptive", tokens=3000, latency=4.0)])
+    m = call(server, "POST", URL, LIVE)[1]["models"][0]
+    assert m["cost_n"] == 2 and abs(m["cost_per_attempt_usd"] - 0.006) < 1e-12
+    assert m["latency_n"] == 2 and m["median_latency_s"] == 3.0
+
+
+def test_done_records_fall_back_to_the_main_folder(server):
+    ids = [r["input_id"] for r in inputs_of(server)]
+    push_main_folder(server, [record("example-model", ids[0], "no_model")], name="t1")
+    body = call(server, "POST", URL, LIVE)[1]
+    assert body["counts"]["done"] == 1
 
 
 def test_expected_cost_is_cached_by_the_refs_and_main(server):

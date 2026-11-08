@@ -96,9 +96,15 @@ class Bundles(BranchReaders):
         except tomllib.TOMLDecodeError:
             return {}
 
-    def _pushed(self, exp_id: str, sha: str | None) -> bool:
+    def _pushed(self, exp_id: str, ref: str | None) -> bool:
+        """True when the ref the experiment was read from is on origin: a folder on main, an `origin/results` branch,
+        or a local branch with the same sha as the one on origin."""
+        if ref is None:
+            return False
+        if ref == self.git.main_ref() or ref == REMOTE_RESULTS + exp_id:
+            return True
         remote = self.git.sha(REMOTE_RESULTS + exp_id)
-        return remote is not None and remote == sha
+        return remote is not None and remote == self.git.sha(ref)
 
     # --- the bundle ------------------------------------------------------------------------
 
@@ -111,9 +117,10 @@ class Bundles(BranchReaders):
             if release is not None and release not in versions:
                 raise ApiError(400, f"field 'release' must be one of {', '.join(versions) or '(none)'}")
             release = release or (versions[0] if versions else None)
-            refs = self.git.results_refs(live_ids)
+            index = self.git.results_index(live_ids)
+            refs = {i: ref for i, (ref, _) in index.items()}
             main_sha = self.git.sha(self.git.main_ref())
-            shas = {i: self.git.sha(r) for i, r in refs.items()}
+            shas = {i: sha for i, (_, sha) in index.items()}
             key = (release, main_sha, tuple(sorted(shas.items())))
             if key not in self._cache:
                 if len(self._cache) >= CACHE_LIMIT:
@@ -122,7 +129,7 @@ class Bundles(BranchReaders):
             bundle = copy.deepcopy(self._cache[key])
             bundle["fetched_at"], bundle["fetch_error"] = self.git.fetched_at, self.git.fetch_error
             # Per request, never cached: a job starting or stopping, or a push, changes these, not a ref read.
-            pushed = {i: self._pushed(i, shas.get(i)) for i in {row["id"] for row in bundle["experiments"]}}
+            pushed = {i: self._pushed(i, refs.get(i)) for i in {row["id"] for row in bundle["experiments"]}}
             for row in bundle["experiments"]:
                 row["running"] = row["id"] in running
                 row["pushed"] = pushed[row["id"]]
@@ -214,7 +221,8 @@ class Bundles(BranchReaders):
             if self.git.fetched_at is None:
                 self.git.fetch()
             versions = self.releases()
-            refs = self.git.results_refs(live_ids)
+            index = self.git.results_index(live_ids)
+            refs = {i: ref for i, (ref, _) in index.items()}
             main_sha = self.git.sha(self.git.main_ref())
             asked = query.get("releases")
             chosen = self._choose("releases", asked, versions,
@@ -225,7 +233,7 @@ class Bundles(BranchReaders):
             if scope not in expdata.SCOPES:
                 raise ApiError(400, f"field 'validity' must be one of {', '.join(expdata.SCOPES)}")
             models = list(query.get("models") or [])
-            shas = tuple(sorted((i, self.git.sha(r)) for i, r in refs.items()))
+            shas = tuple(sorted((i, sha) for i, (_, sha) in index.items()))
             key = ("benchmarks", tuple(chosen), tuple(puzzles), tuple(setups), scope, tuple(sorted(models)),
                    main_sha, shas)
             if key not in self._bench_cache:
@@ -349,7 +357,7 @@ class Bundles(BranchReaders):
                 "config": config_form(config, puzzles) if config else None,
                 "model_entries": [{f: m.get(f) for f in ("name", "provider", "api_model_id", "kind", "params")}
                                   for m in config["models"]] if config else [],
-                "pushed": self._pushed(experiment_id, exp["sha"]), "running": experiment_id in running,
+                "pushed": self._pushed(experiment_id, exp["ref"]), "running": experiment_id in running,
                 "branch": f"{base}/tree/{exp['sha']}/results/{experiment_id}" if base and exp["sha"] else None,
                 "metrics_source": source, "report": report,
                 # Work-tree reads (like API 13), with local_report below: Evaluate and Commit need the results on disk.
@@ -369,13 +377,20 @@ class Bundles(BranchReaders):
                 if r["puzzle"] == puzzle]
 
     def branches(self) -> list[dict]:
-        local, remote = self.git.local_ids(), self.git.remote_ids()
+        """Every experiment on a local branch, an origin branch, or a folder on main. `remote` is true for the last
+        two, which are both on origin."""
+        local, remote, main = self.git.local_ids(), self.git.remote_ids(), self.git.main_results()
         out = []
-        for i in sorted(local | remote):
-            texts = {side: self.git.show(prefix + i, f"results/{i}/experiment.toml")
+        for i in sorted(local | remote | set(main)):
+            path = f"results/{i}/experiment.toml"
+            texts = {side: self.git.show(prefix + i, path)
                      for side, ids, prefix in (("local", local, "refs/heads/results/"),
                                                ("remote", remote, REMOTE_RESULTS)) if i in ids}
             texts = {side: t for side, t in texts.items() if t is not None}
+            if "remote" not in texts and i in main:
+                found = self.git.show(self.git.main_ref(), path)
+                if found is not None:
+                    texts["remote"] = found
             if not texts:
                 continue
             try:

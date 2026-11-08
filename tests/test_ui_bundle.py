@@ -40,6 +40,61 @@ def test_results_refs_prefers_local_for_live(ui_repo):
     assert data.results_refs({"a", "b"}) == {"a": "refs/heads/results/a", "b": "refs/heads/results/b"}
 
 
+def push_main(repo, files):
+    """Commit `files` on top of origin/main and push it there, never touching the work tree."""
+    index = repo / ".git" / "index-main-push"
+    env = dict(os.environ, GIT_INDEX_FILE=str(index))
+
+    def run(*args, stdin=None):
+        return subprocess.run(["git", *args], cwd=repo, env=env, input=stdin, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    try:
+        tip = run("rev-parse", "refs/remotes/origin/main")
+        run("read-tree", tip)
+        for path, text in files.items():
+            blob = run("hash-object", "-w", "--stdin", stdin=text)
+            run("update-index", "--add", "--cacheinfo", f"100644,{blob},{path}")
+        commit = run("commit-tree", run("write-tree"), "-p", tip, "-m", "results on main")
+    finally:
+        index.unlink(missing_ok=True)
+    run("push", "-q", "origin", f"{commit}:refs/heads/main")
+
+
+def test_results_refs_lists_main_folders(ui_repo):
+    push_main(ui_repo, {"results/m/experiment.toml": EXP_TOML, "results/m/raw/x.jsonl": "",
+                        "results/nofile/raw/x.jsonl": ""})  # a folder without experiment.toml is no experiment
+    data = GitData(ui_repo); data.fetch(force=True)
+    main = data.main_ref()
+    assert data.results_refs() == {"m": main}
+    assert data.results_index()["m"] == (main, data.tree_sha(main, "results/m"))
+    assert data.pushed_ids() == {"m"} and data.remote_ids() == set()
+
+
+def test_branch_overrides_main_folder_and_live_overrides_both(ui_repo):
+    push_main(ui_repo, {"results/a/experiment.toml": EXP_TOML, "results/b/experiment.toml": EXP_TOML})
+    push_results(ui_repo, "a", {"results/a/experiment.toml": EXP_TOML})
+    git(ui_repo, "branch", "results/a")
+    data = GitData(ui_repo); data.fetch(force=True)
+    assert data.results_refs() == {"a": "refs/remotes/origin/results/a", "b": data.main_ref()}
+    assert data.results_refs({"a", "b"}) == {"a": "refs/heads/results/a", "b": data.main_ref()}
+    _, local, pushed = data.results_state()
+    assert pushed["a"] == ("refs/remotes/origin/results/a", data.sha("refs/remotes/origin/results/a"))
+    assert local == {"a": data.sha("refs/heads/results/a")}
+
+
+def test_main_folder_key_survives_pushes_that_leave_it_alone(ui_repo):
+    push_main(ui_repo, {"results/m/experiment.toml": EXP_TOML})
+    data = GitData(ui_repo); data.fetch(force=True)
+    before = data.results_index()["m"][1]
+    push_main(ui_repo, {"other.txt": "x"})
+    data.fetch(force=True)
+    assert data.results_index()["m"][1] == before
+    push_main(ui_repo, {"results/m/raw/x.jsonl": ""})
+    data.fetch(force=True)
+    assert data.results_index()["m"][1] != before
+
+
 def test_fetch_is_throttled(ui_repo):
     now = [100.0]
     data = GitData(ui_repo, clock=lambda: now[0])
@@ -343,6 +398,46 @@ def test_bundle_reads_refs_only(ui_repo, samples):
         bundles.get("9.9.9", False, set(), {}, set())
     assert caught.value.status == 400 and "'release'" in caught.value.message
 
+
+
+def test_main_folder_is_listed_and_pushed(ui_repo, samples):
+    _, _, records = samples
+    push_main(ui_repo, files_for(records))
+    bundles = make_bundles(ui_repo)
+    bundle = bundles.get(None, True, set(), {}, set())
+    assert exp_ids(bundle) == ["e"]
+    assert {r["pushed"] for r in bundle["experiments"]} == {True}
+    detail = bundles.experiment("e", set(), set())
+    assert detail["pushed"] is True and detail["config"]["release"] == "1.0.0"
+    assert bundles.branch_config("e") == EXP_TOML
+    assert bundles.branches() == [{"id": "e", "release": "1.0.0", "local": False, "remote": True}]
+    assert bundles.benchmarks({}, set())["experiments"] == ["e"]
+
+
+def test_branch_wins_over_main_folder_for_the_same_id(ui_repo, samples):
+    _, _, records = samples
+    push_main(ui_repo, files_for(records[:1]))
+    push_results(ui_repo, "e", files_for(records))
+    bundles = make_bundles(ui_repo)
+    bundle = bundles.get(None, True, set(), {}, set())
+    assert {r["attempts"] for r in bundle["experiments"] if r["validity"] == "all"} == {4}
+    assert bundles.experiment("e", set(), set())["pushed"] is True
+
+
+def test_live_local_branch_wins_over_branch_and_main(ui_repo, samples):
+    _, _, records = samples
+    push_main(ui_repo, files_for(records[:1]))
+    push_results(ui_repo, "e", files_for(records[:2]))
+    git(ui_repo, "fetch", "-q", "origin", "+refs/heads/results/*:refs/remotes/origin/results/*")
+    git(ui_repo, "branch", "results/e", "refs/remotes/origin/results/e")
+    git(ui_repo, "update-ref", "refs/heads/results/e", subprocess.run(
+        ["git", "-C", str(ui_repo), "commit-tree", "refs/remotes/origin/results/e^{tree}", "-p",
+         "refs/remotes/origin/results/e", "-m", "local"], capture_output=True, text=True, check=True).stdout.strip())
+    bundles = make_bundles(ui_repo)
+    bundle = bundles.get(None, True, {"e"}, {}, set())
+    assert {r["pushed"] for r in bundle["experiments"]} == {False}  # the local tip is not on origin
+    assert bundles.experiment("e", {"e"}, set())["pushed"] is False
+    assert bundles.experiment("e", set(), set())["pushed"] is True
 
 def test_bundle_cache_by_sha(ui_repo, samples, monkeypatch):
     _, _, records = samples

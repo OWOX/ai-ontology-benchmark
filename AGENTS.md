@@ -78,7 +78,7 @@ Cube Bench (arXiv 2512.20595, code at github.com/dana-23/cube-bench) is the prio
 
 Decided by the project owner on 2026-10-25. The full design is in [docs/specs/ui.md](docs/specs/ui.md).
 
-1. Git is the only source of persistent data. The UI reads releases, prompts, inputs, docs, the README, and `config/models.toml` from `origin/main`, and experiments from `origin/results/*`, with `git fetch`, `git show`, and `git ls-tree`. It never lists the work tree. The one exception is an experiment with a live job in this server, which is read from its local `results/<experiment id>` branch and marked as not pushed.
+1. Git is the only source of persistent data. The UI reads releases, prompts, inputs, docs, the README, and `config/models.toml` from `origin/main`, and experiments from the `results/<experiment id>/` folders on `origin/main` and from the `origin/results/*` branches (a branch takes precedence over main for the same id), with `git fetch`, `git show`, and `git ls-tree`. It never lists the work tree. The one exception is an experiment with a live job in this server, which is read from its local `results/<experiment id>` branch and marked as not pushed.
 2. `ui/` holds code only. No data file, and no copy of data held elsewhere in the repo, lives there.
 3. The UI process writes only `./secrets/`. Experiment data reaches git through `run`, `evaluate`, and the commit step, which write to the branch `results/<experiment id>`. The UI never writes `config/experiments/<experiment id>.toml`. It passes the experiment config to `run` on stdin.
 4. One experiment is one branch, `results/<experiment id>`. The New Experiment screen names the id from the chosen AI models and puzzles by default, and picking an existing branch loads that experiment.

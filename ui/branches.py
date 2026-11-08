@@ -25,13 +25,13 @@ class BranchReaders:
         return list(manifest["release_config"]["puzzles"]) if manifest else None
 
     def branch_config(self, experiment_id: str) -> str | None:
-        """`results/<id>/experiment.toml` on the local branch if there is one, else on the remote branch."""
+        """`results/<id>/experiment.toml` on the local branch if there is one, else on the remote branch, else on main."""
         path = f"results/{experiment_id}/experiment.toml"
         for prefix, ids in ((LOCAL_RESULTS, self.git.local_ids()), (REMOTE_RESULTS, self.git.remote_ids())):
             text = self.git.show(prefix + experiment_id, path) if experiment_id in ids else None
             if text is not None:
                 return text
-        return None
+        return self.git.show(self.git.main_ref(), path)
 
     def loaded(self, experiment_id: str, live_ids: set[str]) -> dict:
         """One experiment branch read by `expdata`, from the local ref when its id is live. 404 when it has none.

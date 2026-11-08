@@ -55,7 +55,7 @@ def priced(prices: dict, name: str) -> dict | None:
 
 def scorecard(bundles, experiment_id: str, live_ids: set[str], job_states: dict, parallels: dict, history,
               now: datetime | None = None) -> dict:
-    """`history(remote)` gives the pushed (median latency, count) of each AI model (`LiveEstimate.medians`)."""
+    """`history(pushed)` gives the pushed (median latency, count) of each AI model (`LiveEstimate.medians`)."""
     now = now or datetime.now(timezone.utc)
     held = bundles.loaded_entry(experiment_id, live_ids)
     exp, config = held["exp"], held["exp"]["config"]
