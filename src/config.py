@@ -192,6 +192,8 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
         _check_min(path, "max_moves", _get(path, config, "max_moves", int), 1)
     if "puzzles" in config:
         _check_puzzles(path, config)
+    if "inputs_per_depth" in config:
+        _check_min(path, "inputs_per_depth", _get(path, config, "inputs_per_depth", int), 1)
     models = _get(path, config, "models", list)
     if not models:
         _fail(path, "models", "must have at least one entry")
