@@ -1,0 +1,10 @@
+model,puzzle,setup,corruption_type,detection_rate,detection_rate_low,detection_rate_high,detection_rate_n,detection_rate_inputs
+gpt-6-luna,2x2,no_model,twisted corner,0.9778,0.9333,1.0000,45,15
+gpt-6-luna,2x2,descriptive,twisted corner,1.0000,1.0000,1.0000,45,15
+gpt-6-luna,2x2,prescriptive,twisted corner,1.0000,1.0000,1.0000,45,15
+gpt-6-luna,3x3,no_model,twisted corner,1.0000,1.0000,1.0000,9,3
+gpt-6-luna,3x3,no_model,flipped edge,1.0000,1.0000,1.0000,6,2
+gpt-6-luna,3x3,descriptive,twisted corner,1.0000,1.0000,1.0000,9,3
+gpt-6-luna,3x3,descriptive,flipped edge,1.0000,1.0000,1.0000,6,2
+gpt-6-luna,3x3,prescriptive,twisted corner,0.8889,0.6667,1.0000,9,3
+gpt-6-luna,3x3,prescriptive,flipped edge,1.0000,1.0000,1.0000,6,2
