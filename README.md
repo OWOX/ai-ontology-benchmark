@@ -1,4 +1,4 @@
-# ai-ontology-hallucination-research
+# AI Ontology Hallucination Research
 
 ## Abstract
 
