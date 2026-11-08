@@ -433,6 +433,52 @@ def test_puzzles_filter_writes_only_those_puzzles(repo, monkeypatch):
     assert len(rows) == sum(r["puzzle"] == "2x2" for r in inputs) * 3 * 2
 
 
+def group(puzzle, depth, valid, invalid):
+    rows = [{"input_id": f"{puzzle}-{depth}-v{i}", "puzzle": puzzle, "scramble_depth": depth, "validity": "valid"}
+            for i in range(valid)]
+    return rows + [{"input_id": f"{puzzle}-{depth}-x{i}", "puzzle": puzzle, "scramble_depth": depth,
+                    "validity": "invalid", "source_input_id": f"{puzzle}-{depth}-v{i}"} for i in range(invalid)]
+
+
+def counts(rows):
+    return sum(r["validity"] == "valid" for r in rows), sum(r["validity"] == "invalid" for r in rows)
+
+
+@pytest.mark.parametrize("k, expected", [(1, (1, 1)), (4, (4, 1)), (5, (5, 2)), (8, (8, 2)), (40, (40, 10)), (100, (40, 10))])
+def test_inputs_per_depth_keeps_the_invalid_share_rounded_up(k, expected):
+    rows = group("2x2", 5, 40, 10)
+    kept = run_module.experiment_inputs({"inputs_per_depth": k}, rows)
+    assert counts(kept) == expected
+    assert kept == [r for r in rows if r in kept]  # release order
+    assert [r["input_id"] for r in kept if r["validity"] == "valid"] == [f"2x2-5-v{i}" for i in range(expected[0])]
+
+
+def test_inputs_per_depth_with_no_invalid_inputs_keeps_k_valid():
+    assert counts(run_module.experiment_inputs({"inputs_per_depth": 3}, group("2x2", 5, 40, 0))) == (3, 0)
+
+
+def test_no_inputs_per_depth_keeps_everything():
+    rows = group("2x2", 5, 4, 1)
+    assert run_module.experiment_inputs({}, rows) == rows
+
+
+def test_puzzles_and_inputs_per_depth_together():
+    rows = group("2x2", 5, 8, 2) + group("2x2", 10, 8, 2) + group("3x3", 5, 8, 2)
+    kept = run_module.experiment_inputs({"puzzles": ["2x2"], "inputs_per_depth": 4}, rows)
+    assert {r["puzzle"] for r in kept} == {"2x2"}
+    assert [counts([r for r in kept if r["scramble_depth"] == d]) for d in (5, 10)] == [(4, 1), (4, 1)]
+    assert kept == [r for r in rows if r in kept]
+
+
+def test_inputs_per_depth_limits_the_attempts_run(repo, monkeypatch):
+    two_puzzle_exp(repo, monkeypatch, "inputs_per_depth = 1\n")
+    assert go() == 0
+    inputs = [json.loads(x) for x in (repo / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    expected = run_module.experiment_inputs({"inputs_per_depth": 1}, inputs)
+    assert {r["input_id"] for r in records(repo, "A")} == {r["input_id"] for r in expected}
+    assert len(expected) < len(inputs)
+
+
 def test_no_puzzles_runs_every_puzzle(repo, monkeypatch):
     two_puzzle_exp(repo, monkeypatch)
     assert go() == 0

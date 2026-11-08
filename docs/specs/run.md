@@ -29,7 +29,7 @@ The [`run`](../definitions.md#workflows) workflow. Send every input of one relea
 
    It exits with code 1 before any call if a check fails.
 
-   When the config has `puzzles`, `run` plays only the inputs of those puzzles. The attempts still to run, `--estimate`, `--dry-run`, `--limit`, and the budget checks all count only those inputs.
+   `experiment_inputs(config, inputs) -> list[dict]` picks the inputs an experiment plays, in release order, with no IO. When the config has `puzzles`, it keeps only the inputs of those puzzles. When the config has `inputs_per_depth` (k), it then keeps, for each puzzle and scramble depth, the first k valid inputs and the first `ceil(k × invalid / valid)` invalid inputs of that group, where `invalid` and `valid` are the group's counts in the release (after the `puzzles` filter). A group whose valid count is at most k, or with no `inputs_per_depth`, is kept whole. A group with no invalid inputs keeps none. `pending_attempts` uses it, so the attempts still to run, `--estimate`, `--dry-run`, `--limit`, the budget checks, and the progress totals all count only the chosen inputs.
 3. API keys from env vars, through [models](models.md).
 4. Optional flags:
    1. `--model NAME` runs one AI model from the experiment. Separate processes can run different AI models at the same time, because each writes its own file.
@@ -130,6 +130,7 @@ All tests use the `fake` provider and temporary folders.
 18. A model missing from `config/prices.toml` makes `run` exit with code 1 before any call.
 19. On a release with 2x2 and 3x3, `puzzles = ["2x2"]` writes records for 2x2 inputs only, and a config with no `puzzles` writes both.
 20. A `puzzles` name that the release doesn't hold makes `run` exit with code 1 before any call, naming the config path and `puzzles`.
+    1. `experiment_inputs` on a group of 40 valid and 10 invalid inputs with k = 1, 4, 5, 8, 40, and 100 keeps 1+1, 4+1, 5+2, 8+2, 40+10, and 40+10. A group with no invalid inputs keeps k+0. `puzzles` and `inputs_per_depth` together keep the first k valid inputs and their share of invalid inputs in each depth of the named puzzles only, in release order.
 21. After a full run, `refs/heads/results/<ID>` holds every raw file with the same bytes as the work tree, and the work tree status, the index, and `HEAD` are unchanged.
 22. The branch has one commit per new attempt plus the start commit.
 23. With a temporary bare remote as `origin`, the branch is pushed at exit. Without one, `run` exits with code 0 and stderr carries the push warning.

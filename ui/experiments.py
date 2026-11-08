@@ -9,6 +9,7 @@ from datetime import datetime
 from src.config import (DEFAULT_PER_EXPERIMENT_USD, DEFAULT_PER_MODEL_USD, DEFAULT_PER_REQUEST_USD,
                         parse_experiment_config)
 from src.run.prompts import SETUPS
+from src.run.run import experiment_inputs
 from ui import expdata
 from ui.catalogue import config_form
 from ui.common import ApiError, check_id
@@ -45,7 +46,7 @@ def snapshot(bundles, experiment_id: str, live_ids: set[str], job_states: dict, 
         raise ApiError(400, exp["error"])
     puzzles = config.get("puzzles") or bundles.release_puzzles(config["release"]) or []
     git = bundles.git
-    inputs = [row for row in expdata.read_inputs(git, git.main_ref(), config["release"]) if row["puzzle"] in puzzles]
+    inputs = experiment_inputs({**config, "puzzles": puzzles}, expdata.read_inputs(git, git.main_ref(), config["release"]))
     names = [m["name"] for m in config["models"]]
     keys = ("model", "input_id", "setup", "attempt_number", "outcome", "mismatch", "created_at")
     report = f"results/{experiment_id}/{exp['report_version']}.md" if exp["report_md"] is not None else None

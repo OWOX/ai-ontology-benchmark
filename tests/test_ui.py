@@ -458,7 +458,7 @@ def test_branches_and_config_route(server):
         {"id": "loc", "release": "1.0.0", "local": True, "remote": False},
         {"id": "rem", "release": "1.0.0", "local": False, "remote": True}]
     status, form = call(server, "GET", "/api/experiment/rem/config")
-    assert status == 200 and form == dict(FORM, id="rem", reasoning_effort=None)
+    assert status == 200 and form == dict(FORM, id="rem", reasoning_effort=None, inputs_per_depth=None)
     assert call(server, "GET", "/api/experiment/loc/config")[1]["id"] == "loc"
     # the local branch wins over the remote one
     put_branch(server.root, "both", {"results/both/experiment.toml": dumps_config(dict(CONFIG, attempts=5))}, where="local")
@@ -481,7 +481,7 @@ def test_inputs_route(server):
 def test_experiment_detail_route(server):
     put_branch(server.root, "t1", {"results/t1/experiment.toml": dumps_config(CONFIG)})
     status, data = call(server, "GET", "/api/experiments/t1")
-    assert status == 200 and data["id"] == "t1" and data["config"] == dict(FORM, reasoning_effort=None) and data["pushed"] is True
+    assert status == 200 and data["id"] == "t1" and data["config"] == dict(FORM, reasoning_effort=None, inputs_per_depth=None) and data["pushed"] is True
     assert call(server, "GET", "/api/experiments/nope")[0] == 404
 
 
@@ -1235,6 +1235,29 @@ def test_null_reasoning_effort_resumes_a_branch_saved_without_one(server):
     assert "reasoning_effort" not in saved
     assert call(server, "POST", "/api/run", {**FORM, "reasoning_effort": None})[1]["status"] == "unchanged"
     wait_job(server, "run:example-model")
+
+
+def test_inputs_per_depth_reaches_the_config_the_snapshot_and_the_form(server):
+    for bad_value in (0, 1.5, True, "2"):
+        status, data = call(server, "POST", "/api/estimate", {**FORM, "inputs_per_depth": bad_value})
+        assert status == 400 and "inputs_per_depth" in data["error"]
+    assert call(server, "POST", "/api/run", {**FORM, "inputs_per_depth": 1})[1]["status"] == "created"
+    wait_job(server, "run:example-model")
+    saved = git(server.root, "show", "refs/heads/results/t1:results/t1/experiment.toml")
+    assert tomllib.loads(saved)["inputs_per_depth"] == 1
+    status, snap = call(server, "GET", "/api/state/t1")
+    assert status == 200 and len(snap["inputs"]) == 2 and len(snap["records"]) == 6  # 1 valid + 1 invalid of 3
+    assert call(server, "GET", "/api/experiment/t1/config")[1]["inputs_per_depth"] == 1
+    assert call(server, "POST", "/api/run", {**FORM, "inputs_per_depth": 1})[1]["status"] == "unchanged"
+    wait_job(server, "run:example-model")
+
+
+def test_null_inputs_per_depth_means_every_input(server):
+    assert call(server, "POST", "/api/run", {**FORM, "inputs_per_depth": None})[1]["status"] == "created"
+    wait_job(server, "run:example-model")
+    assert "inputs_per_depth" not in git(server.root, "show", "refs/heads/results/t1:results/t1/experiment.toml")
+    assert len(call(server, "GET", "/api/state/t1")[1]["inputs"]) == 3
+    assert call(server, "GET", "/api/experiment/t1/config")[1]["inputs_per_depth"] is None
 
 
 def test_benchmarks_route(server):

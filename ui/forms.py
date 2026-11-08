@@ -71,6 +71,8 @@ def build_config(bundles: Bundles, form: dict, env: dict) -> dict:
         raise ApiError(400, f"field 'reasoning_effort' must be one of {', '.join(EFFORTS)}")
     if effort:
         config["reasoning_effort"] = effort
+    if form.get("inputs_per_depth") is not None:
+        config["inputs_per_depth"] = _number(form, "inputs_per_depth", int, 1)
     return {**config, "models": models, "budget": budget}
 
 

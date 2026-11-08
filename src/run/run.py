@@ -9,6 +9,7 @@ It shows live progress through src/run/progress.py.
 
 import argparse
 import json
+import math
 import os
 import queue
 import re
@@ -92,13 +93,34 @@ def read_done(raw_path: Path) -> set[tuple]:
     return done
 
 
+def experiment_inputs(config: dict, inputs: list[dict]) -> list[dict]:
+    """The inputs an experiment plays, in release order: `puzzles`, then `inputs_per_depth` per puzzle and depth."""
+    rows = [row for row in inputs if "puzzles" not in config or row["puzzle"] in config["puzzles"]]
+    k = config.get("inputs_per_depth")
+    if k is None:
+        return rows
+    totals: dict[tuple, list[int]] = {}
+    for row in rows:
+        totals.setdefault((row["puzzle"], row["scramble_depth"]), [0, 0])[row["validity"] != "valid"] += 1
+    kept: dict[tuple, list[int]] = {}
+    chosen = []
+    for row in rows:
+        key = (row["puzzle"], row["scramble_depth"])
+        valid, invalid = totals[key]
+        limit = (valid, invalid) if k >= valid else (k, math.ceil(k * invalid / valid))
+        side = row["validity"] != "valid"
+        count = kept.setdefault(key, [0, 0])
+        if count[side] < limit[side]:
+            count[side] += 1
+            chosen.append(row)
+    return chosen
+
+
 def pending_attempts(config: dict, inputs: list[dict], raw_dir: Path, only_model: str | None):
     """Yield (input, model, setup, attempt_number) in loop order, skipping recorded attempts."""
     models = [m for m in config["models"] if only_model in (None, m["name"])]
     done = {m["name"]: read_done(raw_dir / f"{m['name']}.jsonl") for m in models}
-    for row in inputs:
-        if "puzzles" in config and row["puzzle"] not in config["puzzles"]:
-            continue
+    for row in experiment_inputs(config, inputs):
         for model in models:
             for setup in SETUPS:
                 for number in range(1, config["attempts"] + 1):
