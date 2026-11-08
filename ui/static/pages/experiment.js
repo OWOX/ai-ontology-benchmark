@@ -165,6 +165,7 @@
       const contLimit = h("input", { type: "text", inputmode: "numeric", class: "num-short", placeholder: "none", "aria-label": "Limit per model" });
       const contBox = h("span", { class: "exp-continue" }, cont, h("label", { class: "small" }, "Parallel requests ", contParallel),
         h("label", { class: "small" }, "Limit per model ", contLimit));
+      const contNote = h("p", { class: "muted small", text: "Continue needs this experiment's results in this checkout: check out its branch first." });
       let starting = false;
       const commit = h("button", { type: "button", text: "Commit" });
 
@@ -208,7 +209,7 @@
         const t = state.ctl ? state.ctl.totals() : { done: 0, planned: 0 };
         contBox.hidden = running || !snap || t.done >= t.planned;
         cont.disabled = starting || mine(id, evalJob) || snapRunning(snap, evalJob) || !(d && d.local_results);
-        cont.title = d && !d.local_results ? `The results of ${id} are not in this checkout; check out its branch first.` : "";
+        contNote.hidden = contBox.hidden || !d || d.local_results;
         // The server's 409s stay the authority; this only keeps the button honest.
         commit.disabled = mine(id, any) || snapRunning(snap, any) || !(d && d.local_results && d.local_report);
       }
@@ -219,7 +220,7 @@
           if (!root.isConnected) return;
           // The settings and inputs come from the bundle, so it must be the experiment's own release.
           if (d.release && d.release !== bundle.release) { UI.go(`#/experiments/${encodeURIComponent(id)}?release=${encodeURIComponent(d.release)}`); return; }
-          headBox.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, contBox, stopMsg));
+          headBox.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, contBox, stopMsg), contNote);
           settingsBody.replaceChildren(...settings(d, bundle));
           autoSettings();
           Defs.holdRedraw(resultsBox, () => {
