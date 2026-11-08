@@ -1,0 +1,7 @@
+model,puzzle,setup,detection_rate,detection_rate_low,detection_rate_high,detection_rate_n,detection_rate_inputs,false_mismatch_rate,false_mismatch_rate_low,false_mismatch_rate_high,false_mismatch_rate_n,false_mismatch_rate_inputs,balanced_accuracy,balanced_accuracy_low,balanced_accuracy_high
+gpt-6.1-sol,2x2,no_model,1.0000,1.0000,1.0000,10,5,0.0000,0.0000,0.0000,22,11,1.0000,1.0000,1.0000
+gpt-6.1-sol,2x2,descriptive,1.0000,1.0000,1.0000,10,5,0.0000,0.0000,0.0000,22,11,1.0000,1.0000,1.0000
+gpt-6.1-sol,2x2,prescriptive,1.0000,1.0000,1.0000,10,5,0.0000,0.0000,0.0000,22,11,1.0000,1.0000,1.0000
+gpt-6-luna,2x2,no_model,1.0000,1.0000,1.0000,30,15,0.8500,0.7667,0.9333,60,30,0.5750,0.5333,0.6167
+gpt-6-luna,2x2,descriptive,0.9667,0.9000,1.0000,30,15,0.6833,0.5667,0.8000,60,30,0.6417,0.5750,0.7000
+gpt-6-luna,2x2,prescriptive,0.9667,0.9000,1.0000,30,15,0.7667,0.6667,0.8667,60,30,0.6000,0.5417,0.6583
