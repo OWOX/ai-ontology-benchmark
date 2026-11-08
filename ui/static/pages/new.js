@@ -289,6 +289,7 @@
       // The live estimate: asked of the server 250 ms after the last change, with an answer older than the newest
       // request dropped. Its errors show in the card, never in the form's message.
       const usd = UI.usdWhole;
+      const typed = (v) => UI.usd(v, { fixed: 2 });
       const count = (v) => Number(v).toLocaleString("en-GB");
       let timer = null;
       const asks = newestOnly();
@@ -309,8 +310,8 @@
         }
         const wait = S.pending ? "Estimating…" : "";
         ref.body.classList.toggle("pending", S.pending);
-        const head = () => h("thead", {}, h("tr", {}, ...COLUMNS.map((t, i) =>
-          h("th", { class: i ? "n" : "" }, t, ...Defs.info(bundle.definitions, t)))));
+        const head = (icons) => h("thead", {}, h("tr", {}, ...COLUMNS.map((t, i) =>
+          h("th", { class: i ? "n" : "" }, t, ...(icons ? Defs.info(bundle.definitions, t) : [])))));
         if (!e && S.pending) {
           // A preview with the same columns and one row per selected AI model, until the first answer lands.
           ref.formula.textContent = wait;
@@ -319,7 +320,7 @@
           const bar = () => h("span", { class: "shimmer" });
           const rows = S.models.map((name) => h("tr", {}, h("td", {}, name), ...COLUMNS.slice(1).map(() => h("td", { class: "n" }, bar()))));
           ref.body.replaceChildren(h("div", { class: "estimate", "aria-hidden": "true" },
-            h("table", { class: "estimate-table estimate-preview", "data-table": "estimate" }, head(), h("tbody", {}, ...rows))));
+            h("table", { class: "estimate-table estimate-preview", "data-table": "estimate" }, head(false), h("tbody", {}, ...rows))));
           return;
         }
         if (!e) { ref.formula.textContent = wait; Defs.dropRedraw(ref.body); ref.body.replaceChildren(); return; }
@@ -336,19 +337,18 @@
         const cells = (tag, values) => h("tr", {}, ...values.map(([text, cls, title], i) =>
           h(tag, { class: (i ? "n " : "") + (cls || ""), ...(title ? { title } : {}) }, text)));
         const over = (flag, reason) => flag ? ["over", reason] : [];
-        const REQUEST_OVER = "The longest worst-case request exceeds the request budget: the run refuses it.";
-        const MODEL_OVER = "Spent plus the worst case exceeds the model budget: the run stops when spending reaches it.";
-        const EXPERIMENT_OVER = "Spent plus the worst case exceeds the experiment budget: the run stops when spending reaches it.";
-        const rows = d.models.map((m) => cells("td", [[m.name], [count(m.attempts)], [usd(m.worst_case_usd), ...over(m.over, m.max_request_usd > d.per_request_usd ? REQUEST_OVER : MODEL_OVER)],
+        const requestOver = (m) => `The longest worst-case request (${typed(m.max_request_usd)}) passes the request budget (${typed(d.per_request_usd)}): the run refuses it.`;
+        const modelOver = (m) => `Already spent (${typed(m.spent_usd)}) plus the worst case (${typed(m.worst_case_usd)}) passes the model budget (${typed(m.per_model_usd)}): the run stops when spending reaches it.`;
+        const rows = d.models.map((m) => cells("td", [[m.name], [count(m.attempts)], [usd(m.worst_case_usd), ...over(m.over, m.max_request_usd > d.per_request_usd ? requestOver(m) : modelOver(m))],
           m.expected_cost_usd === null ? ["no cost history yet", "muted"] : [usd(m.expected_cost_usd)],
           m.time_s === null ? ["no timing data yet", "muted"] : [UI.fmtTime(m.time_s)]]));
         const t = d.total;
-        const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over, EXPERIMENT_OVER)], t.expected_cost_usd === null ? ["no cost history yet", "muted"] : [usd(t.expected_cost_usd) + (d.expected === "partial" ? " (partial)" : "")],
+        const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over, `Already spent (${typed(t.spent_usd)}) plus the worst case (${typed(t.worst_case_usd)}) passes the experiment budget (${typed(t.per_experiment_usd)}): the run stops when spending reaches it.`)], t.expected_cost_usd === null ? ["no cost history yet", "muted"] : [usd(t.expected_cost_usd) + (d.expected === "partial" ? " (partial)" : "")],
           t.time_s === null ? ["no timing data yet", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
         const table = [
           h("div", { class: "estimate" }, h("table", { class: "estimate-table", "data-table": "estimate" },
-            head(), h("tbody", {}, ...rows), h("tfoot", {}, total))),
-          h("p", { class: "muted small", text: `Worst case turns red when it passes a budget. The experiment budget is in the Total row. Request budget: ${usd(d.per_request_usd)}. Time runs the AI models side by side, ${budget.parallel} requests at once each. The expected cost comes from past attempts on any puzzle, so it can be lower for deeper inputs.` })];
+            head(true), h("tbody", {}, ...rows), h("tfoot", {}, total))),
+          h("p", { class: "muted small", text: `Worst case turns red when it passes a budget. The Total row's worst case is checked against the experiment budget. Budgets: request ${typed(d.per_request_usd)}, model ${typed(d.models[0].per_model_usd)} each, experiment ${typed(t.per_experiment_usd)}. Time runs the AI models side by side, ${budget.parallel} requests at once each. The expected cost comes from past attempts on any puzzle, so it can be lower for deeper inputs.` })];
         // A redraw that would detach an open tooltip panel waits until it closes.
         Defs.holdRedraw(ref.body, () => {
           if (dead) return;
