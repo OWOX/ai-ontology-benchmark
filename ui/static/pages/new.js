@@ -14,7 +14,7 @@
   const NUMBERS = [["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
   // The form survives a redraw of the page (a bundle reload after a job) and resets with the release.
-  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", parallel: "4", perDepth: null, estimate: null, pending: false, result: null };
+  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", parallel: "4", perDepth: null, perDepthLoaded: null, estimate: null, pending: false, result: null };
   let cleanup = null;
   let idSeq = 0;
   const mine = UI.mine;
@@ -28,7 +28,7 @@
 
   function reset(bundle) {
     const d = bundle.defaults;
-    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", parallel: "4", perDepth: null, estimate: null, pending: false, result: null,
+    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", parallel: "4", perDepth: null, perDepthLoaded: null, estimate: null, pending: false, result: null,
       vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, reasoning_effort: d.reasoning_effort, ...d.budget } });
   }
 
@@ -93,7 +93,8 @@
   // value at or above the top shows as "all" but stays what the form sends until the slider is moved, so a resumed
   // config is byte-identical.
   function perDepthPosition(perDepth, top) { return perDepth === null || perDepth >= top ? top : perDepth; }
-  function perDepthFromSlider(n, top) { return n >= top ? null : n; }
+  // `loaded` is the value a loaded branch came with (null for none): when it is at or above the top, the top maps back to it.
+  function perDepthFromSlider(n, top, loaded) { return n >= top ? (loaded !== null && loaded !== undefined && loaded >= top ? loaded : null) : n; }
 
   // Hands out numbered requests and says whether one is still the newest, so a late answer can be dropped.
   function newestOnly() {
@@ -200,7 +201,7 @@
       String, (n) => { S.vals.attempts = String(n); changed(); });
     const top = perDepthMax(bundle);
     const perDepth = slider("Inputs per depth: valid inputs per puzzle and scramble depth", 1, top, perDepthPosition(S.perDepth, top),
-      (n) => n >= top ? "all" : String(n), (n) => { S.perDepth = perDepthFromSlider(n, top); changed(); });
+      (n) => n >= top ? "all" : String(n), (n) => { S.perDepth = perDepthFromSlider(n, top, S.perDepthLoaded); changed(); });
     const parallel = (() => {
       const box = slider("Parallel requests", 1, 16, Number(S.parallel) || 4, String, (n) => { S.parallel = String(n); changed(); });
       // The definition is on main: linked when the bundle knows the repository, plain text otherwise.
@@ -277,6 +278,7 @@
             return `${n} is disabled: ${m ? m.disabled_reason : "not in the catalogue"}; resuming needs it enabled`;
           });
           Object.assign(S, { id: value, touched: true, release: cfg.release, puzzles: cfg.puzzles, models: cfg.models.filter((n) => enabled.has(n)), perDepth: cfg.inputs_per_depth === undefined ? null : cfg.inputs_per_depth,
+            perDepthLoaded: cfg.inputs_per_depth === undefined ? null : cfg.inputs_per_depth,
             vals: { attempts: cfg.attempts, retry_cap: cfg.retry_cap, max_output_tokens: cfg.max_output_tokens, reasoning_effort: cfg.reasoning_effort || "", ...cfg.budget } });
           if (cfg.release !== bundle.release) { UI.go("#/new?release=" + encodeURIComponent(cfg.release)); return; }
           paint();
@@ -297,18 +299,26 @@
       const count = (v) => Number(v).toLocaleString("en-GB");
       let timer = null;
       const asks = newestOnly();
+      // The formula line is one element for the life of the page, so its live region is announced as a change in
+      // place. The table below it dims while a new answer is awaited, and "Estimating…" joins the formula line, so
+      // nothing moves.
       function drawCard() {
         if (!ref.card) return;
         const e = S.estimate;
         ref.card.hidden = !(S.puzzles.length && S.models.length);
         if (ref.card.hidden) return;
-        // While a request is scheduled or in flight the last answer stays, with a note above it, so the card is never blank.
-        const wait = S.pending ? [h("p", { class: "muted small", text: "Estimating…" })] : [];
-        if (!e) { ref.card.replaceChildren(h("p", { class: "muted small", text: "Estimating…" })); return; }
-        if (e.error) { ref.card.replaceChildren(...wait, h("p", { class: "msg err", role: "alert", text: e.error })); return; }
+        const wait = S.pending ? "Estimating…" : "";
+        ref.body.classList.toggle("pending", S.pending);
+        if (!e) { ref.formula.textContent = wait; ref.body.replaceChildren(); return; }
+        if (e.error) {
+          ref.formula.textContent = wait;
+          ref.body.replaceChildren(h("p", { class: "msg err", role: "alert", text: e.error }));
+          return;
+        }
         const d = e.data, c = d.counts, budget = e.budget;
         const formula = `${count(c.inputs)} inputs × ${c.models} AI models × ${c.setups} setups × ${e.attempts} attempts = ${count(c.planned)} attempts`
           + (c.done ? `, ${count(c.done)} done, ${count(c.to_run)} to run` : "");
+        ref.formula.textContent = wait ? `${formula}. ${wait}` : formula;
         const cells = (tag, values) => h("tr", {}, ...values.map(([text, cls, title], i) =>
           h(tag, { class: (i ? "n " : "") + (cls || ""), text, ...(title ? { title } : {}) })));
         const over = (flag, reason) => flag ? ["over", reason] : [];
@@ -321,7 +331,7 @@
         const t = d.total;
         const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over, EXPERIMENT_OVER)], [usd(t.spent_usd)], [usd(t.per_experiment_usd)], [""],
           t.time_s === null ? ["partial: no timing data for some AI models", "muted"] : [fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
-        ref.card.replaceChildren(...wait, h("p", { class: "estimate-formula", "aria-live": "polite", text: formula }),
+        ref.body.replaceChildren(
           h("div", { class: "estimate" }, h("table", { class: "estimate-table" },
             h("thead", {}, cells("th", [["AI model"], ["Attempts to run"], ["Worst case"], ["Spent"], ["Model budget"], ["Median latency"], ["Time"]])),
             h("tbody", {}, ...rows), h("tfoot", {}, total))),
@@ -448,7 +458,7 @@
           h("section", { class: "step" }, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
           h("section", { class: "step" }, h("h3", { text: "AI models" }), modelList(bundle, choose)),
           ref.section = h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(bundle, schedule),
-            ref.card = h("div", { class: "estimate-card" }), h("div", { class: "actions" }, ref.dry, ref.run), msg));
+            ref.card = h("div", { class: "estimate-card" }, ref.formula = h("p", { class: "estimate-formula", "aria-live": "polite" }), ref.body = h("div")), h("div", { class: "actions" }, ref.dry, ref.run), msg));
         if (S.result) showResult(S.result.label, S.result.job, S.result.id, S.result.after);
         controls();
         drawCard(); schedule();

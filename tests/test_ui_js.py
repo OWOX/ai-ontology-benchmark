@@ -106,11 +106,12 @@ def test_new_experiment_inputs_per_depth_maps_between_slider_and_form():
     import json
     script = _new_js_functions("perDepthPosition", "perDepthFromSlider") + (
         "console.log(JSON.stringify([perDepthPosition(null, 40), perDepthPosition(40, 40), perDepthPosition(55, 40), perDepthPosition(7, 40),"
-        "perDepthFromSlider(40, 40), perDepthFromSlider(39, 40), perDepthFromSlider(1, 40)]));")
+        "perDepthFromSlider(40, 40, null), perDepthFromSlider(39, 40, null), perDepthFromSlider(1, 40, null),"
+        "perDepthFromSlider(40, 40, 55), perDepthFromSlider(39, 40, 55), perDepthFromSlider(40, 40, 7)]));")
     run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     # The top is "all" (null); a loaded value at or above it shows at the top but is not rewritten by the position alone.
-    assert json.loads(run.stdout) == [40, 40, 40, 7, None, 39, 1]
+    assert json.loads(run.stdout) == [40, 40, 40, 7, None, 39, 1, 55, 39, None]
 
 
 def test_new_experiment_drops_a_stale_estimate_response():
