@@ -272,7 +272,6 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .job-result { margin-top: 10px; }
 .job-result h4 { margin: 0 0 4px; font-size: 13px; }
 .job-result .terminal { height: 200px; border-radius: var(--radius); }
-.job-result .terminal.short { height: auto; max-height: 200px; }
 .estimate { margin-bottom: 8px; overflow-x: auto; }
 .estimate p { margin: 4px 0 0; }
 .estimate-table { border-collapse: collapse; font-size: 13px; background: var(--field); }
@@ -373,3 +372,10 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .cell-pop ul { margin: 0; padding-left: 18px; }
 .cell-pop li { overflow-wrap: anywhere; }
 .bench-table thead tr:last-child th { white-space: nowrap; }
+.slider { display: flex; align-items: center; gap: 8px; }
+.slider input[type=range], .newexp .grid .slider input[type=range] { flex: 1; width: auto; padding: 0; border: 0; background: none; }
+.slider-value { min-width: 3em; text-align: right; font-variant-numeric: tabular-nums; color: var(--text, inherit); }
+.estimate-card { margin: 12px 0 8px; }
+.estimate-card[hidden] { display: none; }
+.estimate-formula { margin: 0 0 6px; font-size: 13px; }
+.estimate-table .muted { color: var(--muted); font-weight: normal; }

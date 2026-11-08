@@ -84,22 +84,16 @@ def test_dropdown_and_check_picker_behaviour():
     assert run.returncode == 0, run.stderr + run.stdout
 
 
-def test_estimate_patterns_read_runs_estimate_lines(exp, capsys):
-    """New Experiment reads `run --estimate` into a table with regexes of its own: keep the two in step."""
+def test_new_experiment_formats_estimate_times():
     import json
     import re
-
-    from test_run import go
-    assert go("--estimate") == 0
-    lines = capsys.readouterr().out.splitlines()
     source = (ROOT / "ui" / "static" / "pages" / "new.js").read_text(encoding="utf-8")
-    patterns = {name: re.search(rf"const {name} = /(.*)/;", source).group(1) for name in ("ESTIMATE_MODEL", "ESTIMATE_TOTAL")}
-    script = (f"const p = {json.dumps(patterns)}, lines = {json.dumps(lines)};"
-              "console.log(JSON.stringify(lines.map((l) => [new RegExp(p.ESTIMATE_MODEL).test(l), new RegExp(p.ESTIMATE_TOTAL).test(l)])));")
+    body = re.search(r"  function fmtTime\(seconds\) \{.*?\n  \}\n", source, re.S).group(0)
+    values = [0, 40, 59.6, 60, 720, 3599, 3900, 7384, 36000]
+    script = body + f"console.log(JSON.stringify({json.dumps(values)}.map(fmtTime)));"
     run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
-    matched = json.loads(run.stdout)
-    assert len(lines) >= 2 and all(m == [True, False] for m in matched[:-1]) and matched[-1] == [False, True], lines
+    assert json.loads(run.stdout) == ["0 s", "40 s", "1 min", "1 min", "12 min", "1 h 00 min", "1 h 05 min", "2 h 03 min", "10 h 00 min"]
 
 
 def test_new_experiment_fills_the_reasoning_effort_a_stale_cached_bundle_lacks():
