@@ -1,8 +1,8 @@
 # Spec: docs/specs/models.md
 """Sends one prompt to one AI model and returns a Reply, or one state and its questions to one
 decision model and returns a DecisionReply. Reads the provider's API key from its env var
-(ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, TYPESAFE_API_KEY, or CLOUDFLARE_API_TOKEN, plus
-CLOUDFLARE_ACCOUNT_ID). Writes nothing.
+(ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, OPENROUTER_API_KEY, TYPESAFE_API_KEY, or
+CLOUDFLARE_API_TOKEN, plus CLOUDFLARE_ACCOUNT_ID). Writes nothing.
 This is the only file that talks to an AI model API.
 """
 
@@ -12,12 +12,14 @@ import time
 from dataclasses import dataclass
 
 KEY_VARIABLES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "google": "GOOGLE_API_KEY",
-                 "typesafe": "TYPESAFE_API_KEY", "cloudflare": "CLOUDFLARE_API_TOKEN"}
+                 "openrouter": "OPENROUTER_API_KEY", "typesafe": "TYPESAFE_API_KEY",
+                 "cloudflare": "CLOUDFLARE_API_TOKEN"}
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # A second variable some providers need besides the key.
 ACCOUNT_VARIABLES = {"cloudflare": "CLOUDFLARE_ACCOUNT_ID"}
 # Providers of decision models, which are called with call_decision() instead of call_model().
 DECISION_PROVIDERS = ("typesafe", "cloudflare", "fake_decision")
-# The longest one request may take, in seconds, for the three LLM providers (anthropic, openai, google).
+# The longest one request may take, in seconds, for the LLM providers (anthropic, openai, google, openrouter).
 # A long reasoning reply can run for many minutes, so it is generous, and it is set so that no SDK
 # default decides it silently. The decision providers (typesafe, cloudflare) keep their SDK defaults.
 REQUEST_TIMEOUT_S = 1800
@@ -146,36 +148,75 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str, effor
                  response.usage.output_tokens, latency)
 
 
-def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+def _openai_client(key: str, base_url: str | None = None):
     import httpx2
     import openai
 
-    client = openai.OpenAI(api_key=key, max_retries=0,
-                           timeout=httpx2.Timeout(REQUEST_TIMEOUT_S, connect=CONNECT_TIMEOUT_S))
+    return openai.OpenAI(api_key=key, max_retries=0, timeout=httpx2.Timeout(REQUEST_TIMEOUT_S, connect=CONNECT_TIMEOUT_S),
+                         **({"base_url": base_url} if base_url else {}))
+
+
+def _moderation_flagged(body) -> bool:
+    """True when an OpenRouter 403 body carries moderation metadata. Other 403s, such as a key over its
+    credit limit, are request errors."""
+    error = body.get("error", body) if isinstance(body, dict) else None
+    metadata = error.get("metadata") if isinstance(error, dict) else None
+    return isinstance(metadata, dict) and ("reasons" in metadata or "flagged_input" in metadata)
+
+
+def _chat(provider: str, client, request: dict) -> Reply:
+    """One Chat Completions call, shared by openai and openrouter, which speaks the same API."""
+    import openai
+
     start = time.perf_counter()
     try:
-        response = client.chat.completions.create(
-            model=model["api_model_id"],
-            max_completion_tokens=max_output_tokens,
-            messages=[{"role": "user", "content": prompt}],
-            **({"reasoning_effort": effort} if effort else {}),
-            **model.get("params", {}),
-        )
+        response = client.chat.completions.create(**request)
     except openai.BadRequestError as error:
         if error.code == "content_filter":
             return Reply("", "refused", "", 0, 0, time.perf_counter() - start)
-        raise _request_error("openai", error) from error
+        raise _request_error(provider, error) from error
     except (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError) as error:
-        raise InfrastructureError(f"openai: {error}") from error
+        raise InfrastructureError(f"{provider}: {error}") from error
     except openai.APIStatusError as error:
         if error.status_code in (408, 409):  # request timeout and conflict, both worth trying again
-            raise InfrastructureError(f"openai: {error}") from error
-        raise _request_error("openai", error) from error
+            raise InfrastructureError(f"{provider}: {error}") from error
+        if provider == "openrouter" and error.status_code == 403 and _moderation_flagged(error.body):
+            return Reply("", "refused", "", 0, 0, time.perf_counter() - start)
+        raise _request_error(provider, error) from error
     latency = time.perf_counter() - start
+    if provider == "openrouter":
+        usage = getattr(response, "usage", None)
+        tokens = (usage.prompt_tokens or 0, usage.completion_tokens or 0) if usage else (0, 0)
+        if not getattr(response, "choices", None):
+            raise InfrastructureError("openrouter: the response has no choices", *tokens)
+        if response.choices[0].finish_reason == "error":  # the upstream provider failed mid-answer
+            raise InfrastructureError("openrouter: the upstream provider ended the answer with an error", *tokens)
+    else:
+        tokens = (response.usage.prompt_tokens, response.usage.completion_tokens)
     choice = response.choices[0]
     stop_reason = {"length": "truncated", "content_filter": "refused"}.get(choice.finish_reason, "ok")
-    return Reply(choice.message.content or "", stop_reason, response.model,
-                 response.usage.prompt_tokens, response.usage.completion_tokens, latency)
+    served = (getattr(response, "model", None) or "") if provider == "openrouter" else response.model
+    return Reply(choice.message.content or "", stop_reason, served, *tokens, latency)
+
+
+def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+    return _chat("openai", _openai_client(key), {
+        "model": model["api_model_id"],
+        "max_completion_tokens": max_output_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+        **({"reasoning_effort": effort} if effort else {}),
+        **model.get("params", {}),
+    })
+
+
+def _openrouter(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+    # params go in the body unchanged, so OpenRouter's own fields, such as provider routing, pass through the SDK.
+    return _chat("openrouter", _openai_client(key, OPENROUTER_BASE_URL), {
+        "model": model["api_model_id"],
+        "max_tokens": max_output_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+        "extra_body": {**({"reasoning": {"effort": effort}} if effort else {}), **model.get("params", {})},
+    })
 
 
 def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
@@ -365,6 +406,6 @@ def call_model(model: dict, prompt: str, max_output_tokens: int, reasoning_effor
     key = (os.environ.get(variable) or "").strip()
     if not key:
         raise ValueError(f"missing API key: set the env var {variable}")
-    functions = {"anthropic": _anthropic, "openai": _openai, "google": _google}
+    functions = {"anthropic": _anthropic, "openai": _openai, "google": _google, "openrouter": _openrouter}
     effort = reasoning_effort if model.get("kind") == "system-2" else None
     return functions[provider](model, prompt, max_output_tokens, key, effort)

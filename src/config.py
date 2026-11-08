@@ -10,7 +10,7 @@ from pathlib import Path
 
 from src.puzzles.registry import ENGINES
 
-PROVIDERS = ("anthropic", "openai", "google", "typesafe", "cloudflare", "fake", "fake_decision")
+PROVIDERS = ("anthropic", "openai", "google", "openrouter", "typesafe", "cloudflare", "fake", "fake_decision")
 KINDS = ("system-1", "system-2")
 # Settings that `models` and the run script set themselves.
 FORBIDDEN_PARAMS = {
@@ -18,7 +18,7 @@ FORBIDDEN_PARAMS = {
     "contents", "max_tokens", "max_output_tokens", "max_completion_tokens",
     "instructions", "system_instruction", "response_format", "response_mime_type",
     "response_schema", "tools", "tool_choice",
-    "reasoning_effort", "output_config", "thinking_config", "thinking",
+    "reasoning_effort", "output_config", "thinking_config", "thinking", "reasoning",
 }
 EFFORTS = ("low", "medium", "high")
 RELEASE_PATTERN = re.compile(r"\d+\.\d+\.\d+")

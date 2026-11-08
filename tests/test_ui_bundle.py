@@ -383,9 +383,10 @@ def test_key_status_not_cached(ui_repo):
     key, model = cloud(bundles.get(None, False, set(), {}, set()))
     assert key["source"] == "file" and key["tail"] == "1234" and model["disabled_reason"] is None
     bundle = bundles.get(None, False, set(), {}, set())
-    assert [p["name"] for p in bundle["providers"]] == ["anthropic", "cloudflare", "fake"]
+    assert [p["name"] for p in bundle["providers"]] == ["anthropic", "openrouter", "cloudflare", "fake"]
     assert next(p for p in bundle["providers"] if p["name"] == "fake")["key"] is None
-    assert all(p["models"] for p in bundle["providers"])
+    assert next(p for p in bundle["providers"] if p["name"] == "openrouter")["key"]["source"] == "missing"
+    assert all(p["models"] for p in bundle["providers"] if p["name"] != "openrouter")
     unpriced = next(m for p in bundle["providers"] for m in p["models"] if m["name"] == "unpriced")
     assert unpriced["disabled_reason"] == "no price in config/prices.toml" and unpriced["price"] is None
 
@@ -636,8 +637,13 @@ def test_experiment_rows_cover_every_release(ui_repo, samples):
 def test_provider_without_catalogue_models_is_left_out():
     from ui.catalogue import PROVIDER_ORDER
     catalogue = {"m": {"name": "m", "provider": "typesafe", "api_model_id": "x"}}
-    assert PROVIDER_ORDER[3:5] == ("typesafe", "cloudflare")
-    assert [p["name"] for p in build_providers(catalogue, {}, [])] == ["typesafe"]
+    assert PROVIDER_ORDER[4:6] == ("typesafe", "cloudflare")
+    assert [p["name"] for p in build_providers(catalogue, {}, [])] == ["openrouter", "typesafe"]
+
+
+def test_openrouter_is_listed_without_catalogue_models_so_its_key_can_be_saved():
+    providers = build_providers({}, {}, [])
+    assert providers == [{"name": "openrouter", "variable": "OPENROUTER_API_KEY", "key": None, "models": []}]
 
 
 def test_decision_model_attempts_are_scored_not_malformed(ui_repo, samples):

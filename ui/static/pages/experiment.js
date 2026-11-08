@@ -135,6 +135,7 @@
   }
 
   UI.registerPage("experiment", {
+    fresh: true,  // render() loads the detail itself, so the router skips the cached draw
     render(bundle, params, el) {
       const id = decodeURIComponent(params.parts[0]);
       const root = h("div", { class: "exp-detail" });
