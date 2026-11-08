@@ -34,6 +34,11 @@ def test_summary_intervals_pooled_from_a_report_are_marked():
     assert run.returncode == 0, run.stderr + run.stdout
 
 
+def test_definition_icon_label_and_focus_after_a_rebuild():
+    run = subprocess.run([NODE, "tests/js/definitions.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
 def test_named_net_follows_the_net_order():
     run = subprocess.run([NODE, "tests/js/cube.test.mjs"], cwd=ROOT, capture_output=True, text=True)
     assert run.returncode == 0, run.stderr + run.stdout
