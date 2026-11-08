@@ -259,6 +259,9 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .exp-detail > div > .step { margin-bottom: 10px; }
 .card.ro { cursor: default; }
 .exp-stop { margin: 0 0 10px; }
+.exp-continue { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.exp-continue[hidden] { display: none; }
+.exp-continue .num-short { width: 5em; margin-left: 4px; }
 .exp-detail .grid input:disabled { color: inherit; }
 .newexp .step .cards { margin-top: 0; }
 .branch-field label { display: flex; flex-direction: column; gap: 3px; color: var(--muted); }

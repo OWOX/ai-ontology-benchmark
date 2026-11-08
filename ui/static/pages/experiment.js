@@ -1,7 +1,8 @@
 // Spec: docs/specs/ui.md (Experiment)
-// One experiment as a workspace: a score card and a progress bar across the top, then two columns. Left: header and Stop, the settings
+// One experiment as a workspace: a score card and a progress bar across the top, then two columns. Left: header, Stop, and Continue, the settings
 // read-only, the Cube panel, the Plan tree, Summary, full metrics, report, and Evaluate and Commit. Right: the terminal.
-// Reads GET /api/experiments/<id> and the bundle; writes through POST /api/stop, /api/evaluate, and /api/commit.
+// Reads GET /api/experiments/<id>, GET /api/experiment/<id>/config, and the bundle; writes through POST /api/stop, /api/run, /api/evaluate,
+// and /api/commit.
 (function () {
   const h = UI.el;
   // Jobs of this experiment only: the log's job id is the experiment id.
@@ -157,6 +158,15 @@
       const evaluate = h("button", { type: "button", text: "Evaluate" });
       const stop = h("button", { type: "button", class: "danger", text: "Stop" });
       const stopMsg = h("span", { class: "msg small", role: "status" });
+      // Continue resumes a stopped run with the config saved on the branch, so the server answers `unchanged` and
+      // `run` skips the attempts that already have a record. Parallel requests and the limit are not part of the config.
+      const cont = h("button", { type: "button", class: "primary", text: "Continue" });
+      const contParallel = h("input", { type: "number", min: "1", max: "16", step: "1", value: "4", class: "num-short", "aria-label": "Parallel requests" });
+      const contLimit = h("input", { type: "text", inputmode: "numeric", class: "num-short", placeholder: "none", "aria-label": "Limit per model" });
+      const contBox = h("span", { class: "exp-continue" }, cont, h("label", { class: "small" }, "Parallel requests ", contParallel),
+        h("label", { class: "small" }, "Limit per model ", contLimit));
+      const contNote = h("p", { class: "muted small", text: "Continue needs this experiment's results in this checkout: check out its branch first." });
+      let starting = false;
       const commit = h("button", { type: "button", text: "Commit" });
 
       // The score card loads once, and again on the snapshot poll at most every 5 seconds while a run job of the
@@ -193,7 +203,13 @@
         const any = () => true, run = (j) => j.startsWith("run:"), evalJob = (j) => run(j) || j === "evaluate";
         const d = state.detail;
         evaluate.disabled = mine(id, evalJob) || snapRunning(snap, evalJob);
-        stop.disabled = !(mine(id, run) || snapRunning(snap, run));
+        const running = mine(id, run) || snapRunning(snap, run);
+        stop.disabled = !running;
+        // Shown once the experiment has attempts left and no run job is alive; the server's 409s stay the authority.
+        const t = state.ctl ? state.ctl.totals() : { done: 0, planned: 0 };
+        contBox.hidden = running || !snap || t.done >= t.planned;
+        cont.disabled = starting || mine(id, evalJob) || snapRunning(snap, evalJob) || !(d && d.local_results);
+        contNote.hidden = contBox.hidden || !d || d.local_results;
         // The server's 409s stay the authority; this only keeps the button honest.
         commit.disabled = mine(id, any) || snapRunning(snap, any) || !(d && d.local_results && d.local_report);
       }
@@ -204,7 +220,7 @@
           if (!root.isConnected) return;
           // The settings and inputs come from the bundle, so it must be the experiment's own release.
           if (d.release && d.release !== bundle.release) { UI.go(`#/experiments/${encodeURIComponent(id)}?release=${encodeURIComponent(d.release)}`); return; }
-          headBox.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, stopMsg));
+          headBox.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, contBox, stopMsg), contNote);
           settingsBody.replaceChildren(...settings(d, bundle));
           autoSettings();
           Defs.holdRedraw(resultsBox, () => {
@@ -249,6 +265,21 @@
           stopMsg.className = "msg small ok";
           stopMsg.textContent = "Stop requested. A request in flight may be paid for and never recorded, so prefer a limit for small runs.";
         } catch (e) { stopMsg.className = "msg small err"; stopMsg.textContent = e.message; }
+      });
+      cont.addEventListener("click", async () => {
+        stopMsg.className = "msg small"; stopMsg.textContent = "";
+        const parallel = Number(contParallel.value.trim());
+        const limitText = contLimit.value.trim(), limit = limitText === "" ? null : Number(limitText);
+        try {
+          if (!Number.isInteger(parallel) || parallel < 1 || parallel > 16) throw new Error("parallel must be a whole number from 1 to 16");
+          if (limit !== null && (!Number.isInteger(limit) || limit < 1)) throw new Error("limit must be a whole number of at least 1");
+          starting = true; controls();
+          const form = await UI.api("/api/experiment/" + encodeURIComponent(id) + "/config");
+          await UI.api("/api/run", { method: "POST", body: { form, limit, parallel } });
+          stopMsg.className = "msg small ok"; stopMsg.textContent = "Continuing the run.";
+          await UI.pollNow();
+        } catch (e) { stopMsg.className = "msg small err"; stopMsg.textContent = e.message; }
+        finally { starting = false; if (root.isConnected) controls(); }
       });
       commit.addEventListener("click", () => openCommit(id, result, loadDetail).catch((e) => { result.className = "msg err"; result.textContent = e.message; }));
 

@@ -404,6 +404,17 @@ def test_config_route_without_puzzles_returns_every_puzzle_of_the_release(server
     assert status == 200 and form["puzzles"] == ["2x2"]
 
 
+def test_continue_posts_the_saved_config_back_and_resumes(server):
+    # The Experiment page's Continue: GET the branch's config, then POST it unchanged with parallel and limit.
+    assert call(server, "POST", "/api/run", FORM)[1]["status"] == "created"
+    wait_job(server, "run:example-model")
+    status, form = call(server, "GET", "/api/experiment/t1/config")
+    assert status == 200
+    status, data = call(server, "POST", "/api/run", {"form": form, "limit": 1, "parallel": 2})
+    assert status == 200 and data["status"] == "unchanged"
+    wait_job(server, "run:example-model")
+
+
 def test_estimate_and_dry_run_refuse_only_their_own_repeat(server, spawned):
     jobs = server.app.jobs
     (job,) = jobs.register("t1", ["run:example-model"])
