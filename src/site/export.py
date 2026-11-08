@@ -31,9 +31,12 @@ def read_jsonl(text: str) -> list[dict]:
 
 def read_inputs(gd: GitData, ref: str, release: str, cache: dict) -> dict:
     if release not in cache:
-        text = gd.show(ref, f"releases/{release}/inputs.jsonl")
-        cache[release] = {r["input_id"]: {"state": r["state"], "corruption": r.get("corruption")}
-                          for r in read_jsonl(text or "")}
+        path = f"releases/{release}/inputs.jsonl"
+        try:
+            cache[release] = {r["input_id"]: {"state": r["state"], "corruption": r.get("corruption")}
+                              for r in read_jsonl(gd.show(ref, path) or "")}
+        except KeyError as error:
+            raise ExportError(f"{ref}:{path}: input has no field {error.args[0]}") from None
     return cache[release]
 
 
@@ -119,9 +122,10 @@ def read_definitions(markdown: str) -> tuple[list[dict], list[str]]:
 
 
 def fetch(gd: GitData, remote: str) -> None:
-    refspec = f"+refs/heads/results/*:refs/remotes/{remote}/results/*"
+    refspecs = [f"+refs/heads/main:refs/remotes/{remote}/main",
+                f"+refs/heads/results/*:refs/remotes/{remote}/results/*"]
     try:
-        done = gd._git("fetch", "--prune", "--quiet", remote, refspec, timeout=FETCH_TIMEOUT_S)
+        done = gd._git("fetch", "--prune", "--quiet", remote, *refspecs, timeout=FETCH_TIMEOUT_S)
     except (OSError, subprocess.SubprocessError) as error:
         raise ExportError(f"git fetch {remote}: {error}") from None
     if done.returncode != 0:

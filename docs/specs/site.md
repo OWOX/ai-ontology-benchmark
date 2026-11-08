@@ -8,7 +8,7 @@
 2. `docs/definitions.md` and `releases/<release version>/inputs.jsonl` at `--ref`.
 3. For each listed experiment, the branch `<remote>/results/<experiment id>` (`--remote`, default `origin`): `results/<id>/experiment.toml` and every `results/<id>/raw/*.jsonl`.
 
-The script runs `git fetch <remote>` first, unless `--no-fetch` is given. It reads git objects only, never the work tree.
+The script first runs `git fetch --prune <remote>` with the refspecs `+refs/heads/main:refs/remotes/<remote>/main` and `+refs/heads/results/*:refs/remotes/<remote>/results/*` and a 60 second timeout, so `<remote>/main` is current and deleted results branches no longer export, unless `--no-fetch` is given. It reads git objects only, never the work tree.
 
 ## Output
 
