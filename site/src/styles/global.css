@@ -2,6 +2,7 @@
    Newsreader for text, Figtree for headings and UI (Astro Fonts API, see astro.config.mjs). */
 
 :root {
+  color-scheme: dark;
   /* Dark-mode tokens of owox.com src/design-system/tokens.css, source token in brackets. */
   --bg: #1a1f2e;               /* ink-900, bg-page */
   --panel: #1f2536;            /* ink-850, bg-elevated */
@@ -22,8 +23,8 @@
   --cube-blue: #1565d8;
   --cube-red: #d32f2f;
   --cube-orange: #f57c00;
-  --cube-unknown: #cfc8b8;
-  --cube-gap: #1a1a1a;
+  --cube-unknown: #4b5570;
+  --cube-gap: #0e1119;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -54,7 +55,7 @@ p { margin: 0 0 1rem; }
 
 a { color: inherit; text-decoration: none; }
 a:hover, a:focus-visible { text-decoration: underline; }
-/* Links in article text are underlined at rest: there's no colour to mark them, and no hover on a phone */
+/* Links in article text are underlined at rest: there's no hover on a phone to reveal them */
 .prose a { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
 
 main {
