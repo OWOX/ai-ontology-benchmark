@@ -8,25 +8,41 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.evaluate.metrics import NA, attempt_cost, make_attempt_rows, mean_of_two, rates
+from src.evaluate.metrics import (NA, attempt_cost, corruption_type, detection_rows, make_attempt_rows,
+                                  mean_of_two, rates)
 from test_ui import FORM, call, put_branch, server, ui_repo  # noqa: F401  (fixtures)
 from test_ui_estimate import config_of, inputs_of, record
 from test_release import repo  # noqa: F401  (fixture)
 from ui import expdata
-from ui.scorecard import cell, model_values, scorecard
+from ui.expdata import cell
+from ui.scorecard import model_values, scorecard
 from ui.tomlw import dumps_config
 
 PRICE = {"price_input_per_mtok": 1.0, "price_output_per_mtok": 2.0}
 RESPONSES = ["R", "R2'", "MISMATCH twisted corner", "sorry, I cannot", "R", "MISMATCH twisted centre", "MISMATCH flipped edge"]
 
 
-def put_records(server, latencies=None, stamps=None):
+def inverse(moves):
+    flip = lambda m: m if m.endswith("2") else (m[:-1] if m.endswith("'") else m + "'")
+    return [flip(m) for m in reversed(moves)]
+
+
+def good_answer(row, setup, n):
+    """Solves valid inputs and diagnoses invalid ones under two setups, and answers badly under the third."""
+    if setup == "prescriptive":
+        return RESPONSES[n % len(RESPONSES)]
+    if row["validity"] == "invalid":
+        return "MISMATCH " + (corruption_type(row["corruption"]) if setup == "no_model" else "flipped edge")
+    return "\n".join(inverse(row["scramble"]))
+
+
+def put_records(server, latencies=None, stamps=None, answer=None):
     """Nine records of example-model, one per input and setup, with varied answers, on a pushed branch."""
-    ids = [r["input_id"] for r in inputs_of(server)]
+    inputs = {r["input_id"]: r for r in inputs_of(server)}
     records = []
-    for n, (input_id, setup) in enumerate((i, s) for i in ids for s in ("no_model", "descriptive", "prescriptive")):
+    for n, (input_id, setup) in enumerate((i, s) for i in inputs for s in ("no_model", "descriptive", "prescriptive")):
         r = record("example-model", input_id, setup, latency=(latencies or [2.0] * 9)[n], tokens=1000 * (n + 1))
-        r["raw_response"] = RESPONSES[n % len(RESPONSES)]
+        r["raw_response"] = answer(inputs[input_id], setup, n) if answer else RESPONSES[n % len(RESPONSES)]
         r["created_at"] = (stamps or [f"2026-11-08T00:00:{n:02d}Z"] * 9)[n]
         records.append(r)
     body = "\n".join(json.dumps(r) for r in records) + "\n"
@@ -44,13 +60,13 @@ def oracle(server, records):
 
 
 def test_values_equal_metrics(server):
-    records = put_records(server)
+    records = put_records(server, answer=good_answer)
     status, body = call(server, "GET", "/api/scorecard/t1")
     assert status == 200, body
     rows, want = oracle(server, records)
     m = body["models"][0]
     assert m["name"] == "example-model" and m["running"] is False and body["live"] is False
-    assert m["balanced_precision"] == want["precision"]
+    assert m["balanced_precision"] == want["precision"] > 0
     assert m["coverage"] == want["coverage"]
     assert m["hallucination_rate"] == want["hallucination_rate"]
     done = [r for r in rows if r["outcome"] != "infrastructure_failure"]
@@ -60,14 +76,24 @@ def test_values_equal_metrics(server):
                                                       rates(side("valid"), "valid", "k")["false_mismatch_rate"], True))
     cost = sum(attempt_cost(r, PRICE) for r in records)
     assert m["cost_usd"] == pytest.approx(cost)
-    precision, coverage = want["precision"], want["coverage"]
-    if isinstance(precision, float) and precision * coverage > 0:
-        assert m["cost_efficiency"] == pytest.approx(cost / len(records) / (precision * coverage))
-    else:
-        assert m["cost_efficiency"] is None
+    assert m["cost_efficiency"] == pytest.approx(cost / len(records) / (want["precision"] * want["coverage"]))
     assert (m["done"], m["planned"]) == (9, 9)
     assert body["total"]["done"] == 9 and body["total"]["cost_usd"] == pytest.approx(cost)
     assert body["total"]["per_model_usd"] == 5.0 and body["total"]["per_experiment_usd"] == 10.0
+
+
+def test_one_puzzle_and_setup_equals_detection_rows(server):
+    records = put_records(server, answer=good_answer)
+    rows, _ = oracle(server, records)
+    for setup in ("no_model", "descriptive"):
+        group = [r for r in rows if r["setup"] == setup]
+        got = model_values(group, PRICE)
+        (want,) = [d for d in detection_rows(rows) if d["puzzle"] == "2x2" and d["setup"] == setup]
+        assert got["balanced_precision"] == want["balanced_precision"] > 0
+        assert got["critical_thinking"] == want["critical_thinking"]
+        assert got["coverage"] == want["coverage"]
+        assert got["cost_efficiency"] == pytest.approx(want["cost_efficiency"])
+    assert model_values([r for r in rows if r["setup"] == "no_model"], PRICE)["critical_thinking"] == 1.0
 
 
 def test_reason_values_equal_metrics():
