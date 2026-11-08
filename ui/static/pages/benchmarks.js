@@ -161,7 +161,11 @@
     return cache.get(key);
   }
 
-  const picker = (name, options, selected, onChange, allText) => UI.checkPicker(name, options, selected, onChange, reopen, allText);
+  // The state the pickers of the toolbar being built use. A toolbar for the "Loading…" draw gets `holding`: it reads
+  // the key and accepts a new one, but its reopening can't clear it, so the toolbar of the final draw reopens too.
+  let pickState = reopen;
+  const holding = { get key() { return reopen.key; }, set key(v) { if (v) reopen.key = v; } };
+  const picker = (name, options, selected, onChange, allText) => UI.checkPicker(name, options, selected, onChange, pickState, allText);
   const dropdown = UI.dropdown;
 
   // Which cells of a row are coloured on one side, each with the sentence for its tooltip.
@@ -328,6 +332,7 @@
   // (mixed when some of its models are selected) with its models indented under it. The last selected model can't be
   // cleared. `state.key` remembers the box just toggled so the redrawn dropdown opens again on it.
   function modelPicker(options, selected, onChange) {
+    const memo = pickState;
     const name = "AI models";
     const all = allModels(options);
     const rows = [];
@@ -337,7 +342,7 @@
       box.indeterminate = state === "mixed";
       if (state === "mixed") box.setAttribute("aria-checked", "mixed");
       box.disabled = disabled;
-      box.addEventListener("change", () => { reopen.key = name + "|" + key; onChange(onToggle(box.checked)); });
+      box.addEventListener("change", () => { memo.key = name + "|" + key; onChange(onToggle(box.checked)); });
       rows.push(box);
       return h("label", { class: cls }, box, " " + text);
     };
@@ -354,11 +359,11 @@
     }
     const pick = h("details", { class: "col-picker" }, h("summary", { text: summaryText(options, selected) }),
       h("div", { class: "col-menu" }, ...items));
-    if (reopen.key && reopen.key.startsWith(name + "|")) {
+    if (memo.key && memo.key.startsWith(name + "|")) {
       pick.open = true;
-      const key = reopen.key.slice(name.length + 1);
+      const key = memo.key.slice(name.length + 1);
       requestAnimationFrame(() => { const box = rows.find((b) => b.dataset.key === key); if (box && !box.disabled) box.focus(); });
-      reopen.key = null;
+      memo.key = null;
     }
     return h("div", { class: "small" }, name, pick);
   }
@@ -379,7 +384,8 @@
       };
       // A list is kept only when it is not everything. Picked releases are always kept, because the default moves.
       const keep = (all) => (v) => (v.length === all.length ? "" : v.join(","));
-      const toolbar = () => {
+      const toolbar = (state) => {
+        pickState = state || reopen;
         const o = opts || { providers: [], puzzles: [] };
         const selected = selectionFromQuery(c, o);
         const releases = bundle.releases || [];
@@ -408,7 +414,7 @@
         // The path came from the options of an earlier response, so it holds only when this one agrees.
         if (requestFor(c, opts) === path) { show(body, cached, c, toolbar(), bundle.definitions); watch(); return; }
       }
-      body.append(toolbar(), h("p", { class: "muted", text: "Loading…" }));
+      body.append(toolbar(holding), h("p", { class: "muted", text: "Loading…" }));
       async function fetchAndShow(fresh, quiet) {
         busy = true;
         try {
@@ -429,6 +435,7 @@
             Defs.holdRedraw(body, () => { if (mine === seq && body.isConnected) show(body, shown, c, toolbar(), bundle.definitions); });
           }
         } catch (e) {
+          if (mine === seq) reopen.key = null;
           if (mine === seq && body.isConnected && !quiet) body.replaceChildren(toolbar(), h("p", { class: "msg err", text: e.message }));
         } finally {
           busy = false;
