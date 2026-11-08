@@ -18,6 +18,18 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
    valid_invalid_split = 0.5
    ```
 
+   `scramble_depths` is either one list for every puzzle, as above, or a table with one list per puzzle, and then every puzzle in `puzzles` needs an entry and no other key is allowed:
+
+   ```toml
+   [scramble_depths]
+   2x2 = [5, 10, 20]
+   3x3 = [5, 10, 20]
+   4x4 = [10, 20, 40]
+   5x5 = [15, 30, 60]
+   ```
+
+   `depths_for(release_config, puzzle) -> list[int]` returns the list for one puzzle in either form. [generate](generate.md), `max_moves`, and every other reader of depths use it.
+
 2. `config/experiments/<experiment id>.toml`, read by [run](run.md) and [evaluate](evaluate.md). The file name is the [experiment id](../definitions.md#releases-and-experiments).
 
    ```toml
@@ -26,7 +38,7 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
    retry_cap = 3
    max_output_tokens = 32000
    reasoning_effort = "medium"    # optional; low, medium, or high; sent to every system-2 model; absent means the provider default
-   max_moves = 14                 # optional; decision models only; default is twice the largest scramble depth
+   max_moves = 14                 # optional; decision models only; default is twice the puzzle's largest scramble depth
    puzzles = ["2x2"]              # optional; default is every puzzle in the release
 
    [[models]]
@@ -67,7 +79,7 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
 The checks:
 
 1. Every field shown is present and has the type shown.
-2. `seed`, `scramble_count`, `attempts`, `max_output_tokens`, and every scramble depth are at least 1. `retry_cap` is at least 0. `max_moves`, if present, is an integer of at least 1. `max_moves(config, release_config)` returns it, or twice the largest scramble depth in the release when it is absent. `reasoning_effort`, if present, is `low`, `medium`, or `high`.
+2. `seed`, `scramble_count`, `attempts`, `max_output_tokens`, and every scramble depth are at least 1. `retry_cap` is at least 0. `max_moves`, if present, is an integer of at least 1. `max_moves(config, release_config, puzzle)` returns it, or twice the largest scramble depth of that puzzle in the release when it is absent. Every scramble depth in either form of `scramble_depths` is an integer of at least 1, and no list is empty. `reasoning_effort`, if present, is `low`, `medium`, or `high`.
 3. `valid_invalid_split` is between 0 and 1.
 4. Every puzzle is a name in the [registry](registry.md).
 5. `release` is `latest` or matches `MAJOR.MINOR.PATCH`. [run](run.md) resolves `latest` to a version on the first run, so raw records, `results/<experiment id>/experiment.toml`, and reports always hold a version.
