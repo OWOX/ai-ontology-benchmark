@@ -548,11 +548,11 @@ def test_plain_progress_line_per_attempt(exp, capsys):
     assert go("--model", "A", "--limit", "3", "--no-commit") == 0
     first, second, third = progress_lines(capsys.readouterr().out)
     assert first.startswith("[1/3] A 2x2 ") and " no_model #1 failure | in 10 out 4 | $0.0000 | " in first
-    assert first.endswith("precision 0% hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
+    assert first.endswith("balanced precision n/a hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
     assert " no_model #2 hallucination | in 20 out 8 | " in second
-    assert second.endswith("precision 0% hallucination 50% malformed 0% truncated 0% abstention 0% format error 0%")
+    assert second.endswith("balanced precision n/a hallucination 50% malformed 0% truncated 0% abstention 0% format error 0%")
     assert " descriptive #1 malformed_output | in 30 out 12 | " in third and third.startswith("[3/3] A ")
-    assert third.endswith("precision 0% hallucination 50% malformed 33% truncated 0% abstention 0% format error 0%")
+    assert third.endswith("balanced precision n/a hallucination 50% malformed 33% truncated 0% abstention 0% format error 0%")
 
 
 def test_progress_counts_prior_records(exp, capsys):
@@ -567,8 +567,8 @@ def test_progress_rates_leave_out_infrastructure_failures(exp, capsys):
     models.FAKE_REPLIES[:] = [InfrastructureError("x", 0, 0) for _ in range(4)] + [reply()]
     go("--model", "A", "--limit", "2", "--no-commit")
     first, second = progress_lines(capsys.readouterr().out)
-    assert "infrastructure_failure" in first and first.endswith("precision n/a hallucination n/a malformed n/a truncated n/a abstention n/a format error n/a")
-    assert second.endswith("precision 0% hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
+    assert "infrastructure_failure" in first and first.endswith("balanced precision n/a hallucination n/a malformed n/a truncated n/a abstention n/a format error n/a")
+    assert second.endswith("balanced precision n/a hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
 
 
 def test_no_progress_for_dry_run_and_estimate(exp, capsys):
@@ -1248,7 +1248,7 @@ def test_records_hold_mismatch_reason_and_progress_shows_precision(exp, capsys):
     go("--model", "A", "--limit", "1", "--no-commit")
     (line,) = progress_lines(capsys.readouterr().out)
     (row,) = records(exp, "A")
-    assert row["mismatch_reason"] == reason and "precision 0%" in line
+    assert row["mismatch_reason"] == reason and "balanced precision n/a" in line
 
 
 def test_progress_precision_counts_tp_and_tn():
@@ -1262,7 +1262,18 @@ def test_progress_precision_counts_tp_and_tn():
     tally.add(dict(base, outcome="success", validity="invalid", mismatch=True, mismatch_reason="twisted corner"),
               price, "twisted corner at UFR")
     tally.add(dict(base, outcome="abstention"), price)
-    assert tally.precision() == "67%"
+    assert tally.precision() == "75%"  # valid 1/2, invalid 1/1
+
+
+def test_progress_precision_is_na_when_a_label_has_no_classified_answer():
+    from src.run.progress import Tally
+    price = {"price_input_per_mtok": 0, "price_output_per_mtok": 0}
+    base = {"input_tokens": 0, "output_tokens": 0, "retry_input_tokens": 0, "retry_output_tokens": 0,
+            "validity": "valid", "mismatch": False, "parsed_moves": []}
+    tally = Tally()
+    tally.add(dict(base, outcome="success", parsed_moves=["R"]), price)
+    tally.add(dict(base, validity="invalid", outcome="abstention"), price)
+    assert tally.precision() == "n/a"
 
 
 def test_per_puzzle_depths_give_each_puzzle_its_cap(exp):

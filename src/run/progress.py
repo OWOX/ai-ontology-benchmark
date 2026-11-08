@@ -22,7 +22,8 @@ class Tally:
         self.valid = self.invalid = self.flagged_valid = self.flagged_invalid = 0
         self.decision_counted = 0
         self.gave_moves = 0
-        self.classified = self.hits = 0
+        self.classified = {"valid": 0, "invalid": 0}
+        self.hits = {"valid": 0, "invalid": 0}
 
     def add(self, record: dict, price: dict, corruption: str | None = None, reasons: bool = False) -> None:
         self.attempts += 1
@@ -35,8 +36,8 @@ class Tally:
         self.decision_counted += bool(record.get("decision"))
         self.gave_moves += bool(record.get("parsed_moves")) and not record.get("decision")
         kind = answer_class(dict(record, corruption=corruption, reasons=reasons))
-        self.classified += kind is not None
-        self.hits += kind in ("tp", "tn")
+        self.classified[record["validity"]] += kind is not None
+        self.hits[record["validity"]] += kind in ("tp", "tn")
         if record["validity"] == "invalid":
             self.invalid += 1
             self.flagged_invalid += bool(record["mismatch"])
@@ -52,8 +53,12 @@ class Tally:
         return f"{round(100 * hits / n)}%" if n else NA
 
     def precision(self) -> str:
-        """Hits (`tp` and `tn`) over the classified answers, both validity labels together."""
-        return self.share(self.hits, self.classified)
+        """Balanced precision: the mean of the precision on valid inputs and on invalid inputs, each the hits
+        (`tp` and `tn`) over the classified answers of that label. n/a when either label has none."""
+        if not all(self.classified.values()):
+            return NA
+        mean = sum(self.hits[v] / self.classified[v] for v in self.classified) / 2
+        return f"{round(100 * mean)}%"
 
     def rate(self, outcome: str) -> str:
         return self.share(self.outcomes[outcome], self.counted)
@@ -131,7 +136,7 @@ class Progress:
         return (f"[{t.attempts}/{self.goal}] {record['model']} {record['puzzle']} {record['input_id']} "
                 f"{record['setup']} #{record['attempt_number']} {record['outcome']} | "
                 f"in {t.tokens_in} out {t.tokens_out} | ${t.cost:.4f} | "
-                f"precision {t.precision()} hallucination {t.hallucination()} "
+                f"balanced precision {t.precision()} hallucination {t.hallucination()} "
                 f"malformed {t.rate('malformed_output')} truncated {t.rate('truncated')} "
                 f"abstention {t.rate('abstention')} format error {t.rate('format_error')}")
 
@@ -171,7 +176,7 @@ class Progress:
 
     def table(self):
         table = self.Table()
-        for title in ("AI model", "attempts", "input tokens*", "output tokens*", "cost USD", "precision",
+        for title in ("AI model", "attempts", "input tokens*", "output tokens*", "cost USD", "balanced precision",
                       "hallucination", "malformed", "truncated", "abstention", "format error", "mismatch detection", "false mismatch", "infra failures"):
             table.add_column(title, justify="left" if title == "AI model" else "right")
         for name, t in [*self.by_model.items(), ("total", self.total)]:
