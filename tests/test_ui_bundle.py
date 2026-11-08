@@ -304,6 +304,17 @@ def test_pooled_cost_counts_groups_without_right_answers():
     assert row["coverage"] == "n/a"  # an old report CSV lacks the column
 
 
+def test_pooled_rates_balance_precision_over_both_validity_labels():
+    from ui.pooling import pooled_rates
+    rows = [{"validity": "valid", "precision": 0.5, "precision_n": 4, "precision_inputs": 2},
+            {"validity": "valid", "precision": 0.5, "precision_n": 4, "precision_inputs": 2},
+            {"validity": "invalid", "precision": 1.0, "precision_n": 2, "precision_inputs": 1}]
+    both = pooled_rates(rows, balanced=True)
+    assert both["precision"] == pytest.approx(0.75) and both["precision_n"] == 10 and both["precision_inputs"] == 5
+    assert pooled_rates(rows[:2], balanced=True)["precision"] == "n/a"  # no invalid rows
+    assert pooled_rates(rows[:2])["precision"] == 0.5  # one label in scope: that label's pooled precision
+
+
 # --- bundle ----------------------------------------------------------------------------------
 
 def make_bundles(ui_repo):
@@ -1129,8 +1140,15 @@ def test_all_scope_rates_equal_the_three_call_computation(ui_repo, samples):
     valid = rates([r for r in done if r["validity"] == "valid"], "valid", key)
     expected.update({k: v for k, v in invalid.items() if k.startswith("mismatch_detection_rate")})
     expected.update({k: v for k, v in valid.items() if k.startswith("false_mismatch_rate")})
+    from ui.expdata import precision_stats
+    keyed = [r for r in done]
+    expected.update(precision_stats(keyed, "all", key))  # balanced precision, not the pool over both labels
     actual = expdata.all_scope_rates(done, key)
     assert actual == expected and list(actual) == list(expected)
+    side = {v: rates([r for r in done if r["validity"] == v and r["answer_class"]], v, key)["precision"]
+            for v in ("valid", "invalid")}
+    if all(isinstance(x, float) for x in side.values()):
+        assert actual["precision"] == pytest.approx((side["valid"] + side["invalid"]) / 2)
 
 
 def test_malformed_report_csv_does_not_poison_the_cached_entry(ui_repo, samples):

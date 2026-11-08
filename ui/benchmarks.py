@@ -7,8 +7,7 @@ so it lives outside the assessment. Reads attempt rows, writes nothing.
 from collections import defaultdict
 from fractions import Fraction
 
-from src.evaluate.metrics import (NA, consistency, gave_moves, holm, is_hit, mean, rates, sign_test,
-                                  stratified_interval)
+from src.evaluate.metrics import consistency, gave_moves, holm, is_hit, mean, rates, sign_test
 from ui.expdata import all_scope_rates
 from ui.expdata import cell as na_to_none
 from ui.pooling import RATES
@@ -29,24 +28,6 @@ def bootstrap_rates(done: list[dict], scope: str, key: str) -> dict:
     return all_scope_rates(keyed, key) if scope == "all" else rates(keyed, scope, key)
 
 
-def precision_stats(done: list[dict], scope: str, key: str) -> dict:
-    """The precision columns of a cell. One validity label shows that label's precision. Both labels show the
-    balanced precision of docs/definitions.md: the mean of the two precisions, n/a when either is, with a stratified
-    bootstrap interval over inputs."""
-    keyed = [{**r, "input_id": (r["input_set_id"], r["input_id"])} for r in done if r["answer_class"]]
-    only = lambda stats: {k: v for k, v in stats.items() if k.startswith("precision")}
-    if scope != "all":
-        return only(rates(keyed, scope, key))
-    side = {v: rates([r for r in keyed if r["validity"] == v], v, key) for v in ("valid", "invalid")}
-    values = [side[v]["precision"] for v in side]
-    hit = lambda r: is_hit(r, "precision")
-    low, high = stratified_interval(keyed, key + "|precision", hit, hit, complement=False)
-    return {"precision": mean(values) if all(isinstance(v, float) for v in values) else NA,
-            "precision_low": low, "precision_high": high,
-            "precision_n": sum(side[v]["precision_n"] for v in side),
-            "precision_inputs": sum(side[v]["precision_inputs"] for v in side)}
-
-
 def rate_cell(stats: dict, metric: str) -> dict:
     return {"value": na_to_none(stats[metric]), "low": na_to_none(stats[metric + "_low"]),
             "high": na_to_none(stats[metric + "_high"]), "n": stats[metric + "_n"],
@@ -64,7 +45,6 @@ def cells(rows: list[dict], scope: str, key: str) -> dict[str, dict]:
     names the group for the bootstrap. A hallucination cell is n/a when every attempt is a decision model's."""
     done = [r for r in rows if r["outcome"] != "infrastructure_failure"]
     stats = bootstrap_rates(done, scope, key)
-    stats = {**stats, **precision_stats(done, scope, key)}
     out = {m: rate_cell(stats, m) for m in BENCH_RATES}
     out["consistency"] = {"value": na_to_none(consistency_of(done)), "n": len(done)}
     latencies = [r["latency_s"] for r in done if r["latency_s"] is not None]

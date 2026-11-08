@@ -44,16 +44,32 @@ def hits_and_n(rows: list[dict], rate: str) -> tuple[int, int]:
     return hits, total
 
 
-def pooled_rates(rows: list[dict]) -> dict:
+def balanced_precision(rows: list[dict]) -> dict:
+    """The precision columns over rows of both validity labels: the mean of the valid rows' and the invalid rows'
+    pooled precisions, and of their interval ends. n/a when either label has no precision. `_n` and `_inputs`
+    are the sums."""
+    sides = []
+    for validity in ("valid", "invalid"):
+        part = [r for r in rows if r.get("validity") == validity]
+        hits, n = hits_and_n(part, "precision")
+        sides.append((*wilson(hits, n), n, total(part, "precision_inputs")))
+    out = {"precision_n": sum(s[3] for s in sides), "precision_inputs": sum(s[4] for s in sides)}
+    for i, name in enumerate(("precision", "precision_low", "precision_high")):
+        out[name] = sum(s[i] for s in sides) / 2 if all(s[3] for s in sides) else NA
+    return out
+
+
+def pooled_rates(rows: list[dict], balanced: bool = False) -> dict:
     """The rate, interval, and denominator columns pooled over `rows`. The `_inputs` column is the
-    sum over the pooled rows, whose inputs never overlap."""
+    sum over the pooled rows, whose inputs never overlap. `balanced` is true for rows of both validity
+    labels, which show balanced precision in place of the pooled one."""
     out: dict = {}
     for rate in RATES:
         hits, n = hits_and_n(rows, rate)
         out[rate], out[rate + "_low"], out[rate + "_high"] = wilson(hits, n)
         out[rate + "_n"] = n
         out[rate + "_inputs"] = total(rows, rate + "_inputs")
-    return out
+    return out | balanced_precision(rows) if balanced else out
 
 
 def total(rows: list[dict], column: str) -> int:
