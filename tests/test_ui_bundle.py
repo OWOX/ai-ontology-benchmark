@@ -18,7 +18,7 @@ from test_ui import PRICES, ui_repo  # noqa: F401  (ui_repo is a fixture)
 from ui import expdata
 from ui.catalogue import build_providers
 from ui import secrets as key_store
-from ui.bundle import Bundles, is_mirror, metric_definitions
+from ui.bundle import Bundles, definition_terms, is_mirror, section_anchor
 from ui.common import ApiError
 from ui.gitdata import GitData
 from ui.pooling import pooled_summary
@@ -335,7 +335,7 @@ def test_bundle_reads_refs_only(ui_repo, samples):
     assert exp_ids(bundles.get(None, True, set(), {}, set())) == []
     push_results(ui_repo, "e", files_for(records))
     bundle = bundles.get(None, True, set(), {}, set())
-    assert exp_ids(bundle) == ["e"] and bundle["schema"] == 3 and bundle["release"] == "1.0.0"
+    assert exp_ids(bundle) == ["e"] and bundle["schema"] == 4 and bundle["release"] == "1.0.0"
     assert [r["validity"] for r in bundle["experiments"]] == ["all", "valid", "invalid"]
     assert bundle["defaults"]["attempts"] == 3
     assert bundle["scramble_count"] == 2  # from the sample release config
@@ -481,7 +481,7 @@ def test_links_pin_sha(ui_repo, samples, monkeypatch):
     monkeypatch.setattr(GitData, "github", lambda self: "https://github.com/o/r")
     bundles = make_bundles(ui_repo)
     bundle = bundles.get(None, True, set(), {}, set())
-    found = list(sources(bundle["puzzles"])) + [bundle["about"]["source"], bundle["metric_definitions"]["source"]]
+    found = list(sources(bundle["puzzles"])) + [bundle["about"]["source"]]
     assert len(found) >= 5
     assert all(s.startswith(f"https://github.com/o/r/blob/{bundle['main_sha']}/") for s in found)
     sha = bundles.git.sha("refs/remotes/origin/results/e")
@@ -1078,26 +1078,51 @@ def test_scored_cache_holds_one_entry_per_experiment(ui_repo, monkeypatch):
     assert len(bundles._scored_cache) == 70
 
 
-def test_metric_definitions():
-    text = ("## Recorded values\n\n1. **Move count.** Not a metric.\n\n## Metrics\n\nIntro.\n\n"
-            "1. **Success rate.** The share of attempts with outcome `success`.\n"
-            "2. **Paired model test.** The [paired setup test](#metrics) with two AI models.\n\n## Baseline\n\n"
-            "1. **Reference solver.** Not a metric.\n")
-    assert metric_definitions(text) == {"Success rate": "The share of attempts with outcome success.",
-                                        "Paired model test": "The paired setup test with two AI models."}
-    assert metric_definitions(None) == {} and metric_definitions("# Nothing\n") == {}
+def test_definition_terms_across_sections():
+    text = ("# Definitions\n\n## Attempts and outcomes\n\n1. **Attempt.** One request to an [AI model](#setups), `once`.\n"
+            "2. **Mismatch reason.** First.\n\n## Prices\n\n4. **Budget.** A limit:\n   1. **Request budget.** No request over it.\n\n"
+            "## Recorded values\n\n1. **Mismatch reason.** Second.\n")
+    base = "https://github.com/o/r/blob/abc/docs/definitions.md"
+    terms = definition_terms(text, base)
+    assert terms["Attempt"] == {"text": "One request to an AI model, once.", "source": base + "#attempts-and-outcomes"}
+    assert terms["Request budget"]["source"] == base + "#prices" and terms["Budget"]["source"] == base + "#prices"
+    assert terms["Mismatch reason"] == {"text": "First.", "source": base + "#attempts-and-outcomes"}
+    assert definition_terms(text, None)["Attempt"]["source"] is None
+    assert definition_terms(None, base) == {} and definition_terms("# Nothing\n", base) == {}
+    assert section_anchor("Attempts and outcomes") == "attempts-and-outcomes"
 
 
-def test_metric_definitions_cover_benchmarks():
+def test_definition_terms_cover_the_real_file():
     root = Path(__file__).parent.parent
-    terms = metric_definitions((root / "docs" / "definitions.md").read_text(encoding="utf-8"))
+    terms = definition_terms((root / "docs" / "definitions.md").read_text(encoding="utf-8"), "B")
+    assert terms["Precision"]["source"] == "B#metrics" and terms["Attempt"]["source"] == "B#attempts-and-outcomes"
+    assert terms["Worst-case request cost"]["source"] == "B#prices" and terms["Parallel requests"]["source"] == "B#workflows"
+    assert terms["Request budget"]["source"] == "B#prices" and terms["Puzzle"]["source"] == "B#puzzles"
+    assert terms["Inputs per depth"]["source"] == "B#inputs"
+    assert all(t["text"] and "`" not in t["text"] for t in terms.values())
+
+
+def test_definitions_cover_benchmarks():
+    root = Path(__file__).parent.parent
+    terms = definition_terms((root / "docs" / "definitions.md").read_text(encoding="utf-8"), None)
     page = (root / "ui" / "static" / "pages" / "benchmarks.js").read_text(encoding="utf-8")
     labels = re.findall(r'\["[a-z_]+", "([^"]+)"\]', page.split("const METRICS = [", 1)[1].split("];", 1)[0])
     assert len(labels) == 12 and all(terms.get(label) for label in labels)
 
 
+def test_label_to_term_table_names_only_defined_terms():
+    root = Path(__file__).parent.parent
+    terms = definition_terms((root / "docs" / "definitions.md").read_text(encoding="utf-8"), None)
+    script = (root / "ui" / "static" / "definitions.js").read_text(encoding="utf-8")
+    table = script.split("const TERMS = {", 1)[1].split("\n  };", 1)[0]
+    pairs = re.findall(r'"([^"]+)": "([^"]+)"', table)
+    assert len(pairs) >= 30
+    assert [t for _, t in pairs if t not in terms] == []
+
+
 def test_bundle_without_definitions(ui_repo):
-    assert make_bundles(ui_repo).get(None, True, set(), {}, set())["metric_definitions"] == {"terms": {}, "source": None}
+    bundle = make_bundles(ui_repo).get(None, True, set(), {}, set())
+    assert bundle["definitions"] == {"terms": {}} and "metric_definitions" not in bundle
 
 
 def test_loaded_is_read_once_per_ref_sha(ui_repo, samples, monkeypatch):

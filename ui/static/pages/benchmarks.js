@@ -151,20 +151,8 @@
 
   const svgText = (attrs, text) => { const t = svg("text", attrs); t.textContent = text; return t; };
 
-  // The metric's name with an (i) after it: hovering or focusing shows its definition from docs/definitions.md
-  // (the bundle's `metric_definitions`) in the shared tooltip panel, and the icon links to it. Just the name when
-  // the bundle has no definition for it.
-  function metricLabel(metric, id, defs) {
-    const text = defs && defs.terms && defs.terms[LABEL[metric]];
-    if (!text) return [LABEL[metric]];
-    const icon = h(defs.source ? "a" : "span", { class: "info tip-src", "aria-label": "definition",
-      "aria-describedby": id, text: "i", ...(defs.source ? { href: defs.source, target: "_blank", rel: "noopener" } : { tabindex: "0" }) });
-    UI.tipOn(icon);
-    // A mouse click blurs the link, so its panel does not stay at a stale place once GitHub opens in another tab.
-    // A keyboard Enter (detail 0) keeps the focus.
-    icon.addEventListener("click", (e) => { if (e.detail) icon.blur(); });
-    return [LABEL[metric], " ", h("span", { class: "tip-wrap" }, icon, h("span", { class: "tip-fixed", id, role: "tooltip", text }))];
-  }
+  // The metric's name with an (i) after it: the shared definition icon, just the name when the bundle has no definition.
+  const metricLabel = (metric, defs) => [LABEL[metric], ...Defs.infoTerm(defs, LABEL[metric])];
 
   // The model name without its vendor part: the first `-` separated part. A name of one part stays whole.
   const shortName = (name) => name.split("-").slice(1).join("-") || name;
@@ -222,7 +210,7 @@
         rate ? pct(cell.value, 0) : fmt(row.metric, cell.value)));
     });
     return h("div", { class: "bench-chart" }, h("h4", {}, `${row.puzzle} · `,
-      ...metricLabel(row.metric, `def-chart-${row.puzzle}-${row.metric}`, defs)), root);
+      ...metricLabel(row.metric, defs)), root);
   }
 
   function table(rows, models, marksOf, defs) {
@@ -264,7 +252,7 @@
         return td;
       });
       body.push(h("tr", {}, first ? h("th", { rowspan: String(rows.filter((r) => r.puzzle === row.puzzle).length), text: row.puzzle }) : null,
-        h("th", {}, ...metricLabel(row.metric, `def-table-${row.puzzle}-${row.metric}`, defs)), ...tds));
+        h("th", {}, ...metricLabel(row.metric, defs)), ...tds));
     }
     return h("div", { class: "table-wrap" }, h("table", { class: "exp-table bench-table" }, h("thead", {}, ...head), h("tbody", {}, ...body)));
   }
@@ -349,7 +337,7 @@
         opts = cached.options;
         if (!c.releases.length) defaultReleases = cached.releases;
         // The path came from the options of an earlier response, so it holds only when this one agrees.
-        if (requestFor(c, opts) === path) { show(body, cached, c, toolbar(), bundle.metric_definitions); watch(); return; }
+        if (requestFor(c, opts) === path) { show(body, cached, c, toolbar(), bundle.definitions); watch(); return; }
       }
       body.append(toolbar(), h("p", { class: "muted", text: "Loading…" }));
       async function fetchAndShow(fresh, quiet) {
@@ -368,7 +356,7 @@
           if (data) {
             opts = data.options;
             if (!c.releases.length) defaultReleases = data.releases || defaultReleases;
-            show(body, data, c, toolbar(), bundle.metric_definitions);
+            show(body, data, c, toolbar(), bundle.definitions);
           }
         } catch (e) {
           if (mine === seq && body.isConnected && !quiet) body.replaceChildren(toolbar(), h("p", { class: "msg err", text: e.message }));

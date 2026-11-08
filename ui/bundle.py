@@ -28,13 +28,21 @@ NO_ACCOUNT = "no account id: add it under Models"
 CACHE_LIMIT = 16
 
 
-def metric_definitions(markdown: str | None) -> dict[str, str]:
-    """Each numbered item under `## Metrics` in docs/definitions.md, keyed by its bold term, as plain text:
-    links keep their text and backticks are dropped."""
-    section = re.search(r"^## Metrics\n(.*?)(?=^## |\Z)", markdown or "", re.M | re.S)
-    out = {}
-    for term, text in re.findall(r"^\d+\. \*\*(.+?)\.\*\* (.+)$", section.group(1) if section else "", re.M):
-        out[term] = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text).replace("`", "")
+def section_anchor(heading: str) -> str:
+    """GitHub's anchor for a `## ` heading: lower case, punctuation dropped, spaces to hyphens."""
+    return re.sub(r"[^a-z0-9 _-]", "", heading.strip().lower()).replace(" ", "-")
+
+
+def definition_terms(markdown: str | None, base: str | None) -> dict[str, dict]:
+    """Every numbered bold term of every `## ` section of docs/definitions.md, keyed by the term without its full
+    stop. `text` is plain: links keep their text and backticks are dropped. `source` is `base` plus the section's
+    anchor, or None without a base. A term that appears twice keeps its first definition."""
+    out: dict[str, dict] = {}
+    for heading, body in re.findall(r"^## ([^\n]+)\n(.*?)(?=^## |\Z)", markdown or "", re.M | re.S):
+        source = base and f"{base}#{section_anchor(heading)}"
+        for term, text in re.findall(r"^[ \t]*\d+\. \*\*([^\n]+?)\.\*\* ([^\n]+)$", body, re.M):
+            out.setdefault(term.replace("`", ""), {"text": re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text).replace("`", ""),
+                                                  "source": source})
     return out
 
 
@@ -191,13 +199,12 @@ class Bundles(BranchReaders):
         puzzles = [build_puzzle(self.git, main, link, release, manifest, name, inputs_by_release[release],
                                 experiments, rows_by_exp) for name in names]
         definitions = link("docs/definitions.md")
-        return {"schema": 3, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
+        return {"schema": 4, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
                 "repo": base, "main_sha": main_sha, "defaults": DEFAULTS,
                 "scramble_count": manifest["release_config"].get("scramble_count") if manifest else None,
                 "providers": build_providers(catalogue, self._prices(), experiments), "puzzles": puzzles, "experiments": rows,
                 "about": {"markdown": self.git.show(main, "README.md"), "source": link("README.md")},
-                "metric_definitions": {"terms": metric_definitions(self.git.show(main, "docs/definitions.md")),
-                                       "source": definitions and definitions + "#metrics"}}
+                "definitions": {"terms": definition_terms(self.git.show(main, "docs/definitions.md"), definitions)}}
 
     # --- benchmarks ------------------------------------------------------------------------
 
