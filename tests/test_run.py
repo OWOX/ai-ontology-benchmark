@@ -22,7 +22,7 @@ from src.run.budget import worst_request, worst_state
 from src.run.prompts import build_prompt, load_questions
 from src.run.raw import read_raw
 from src.validator import offered_reasons
-from test_release import edit_template, git, release_ok, repo  # noqa: F401  (repo is a fixture)
+from test_release import commit_all, edit_template, git, release_ok, repo  # noqa: F401  (repo is a fixture)
 
 EXPERIMENT = (
     'release = "1.0.0"\nattempts = 2\nretry_cap = 3\nmax_output_tokens = 100\n'
@@ -1279,3 +1279,30 @@ def test_manifest_mismatch_reasons_must_match_the_prompts(exp, capsys):
     path.write_text(json.dumps(manifest), encoding="utf-8")
     assert go("--estimate") == 1
     assert "mismatch_reasons" in capsys.readouterr().err
+
+
+def test_decision_model_under_a_release_without_mismatch_reasons(repo, monkeypatch):
+    for path in (repo / "prompts").rglob("*.txt"):
+        path.write_text(path.read_text(encoding="utf-8").replace("{mismatch_reasons}", ""), encoding="utf-8")
+    commit_all(repo, "templates without mismatch reasons")
+    release_ok(repo, "major")
+    assert json.loads((repo / "releases/1.0.0/manifest.json").read_text(encoding="utf-8"))["mismatch_reasons"] is False
+    (repo / "config" / "experiments").mkdir()
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(release_module, "REPO_ROOT", repo)
+    fake = decision_exp(repo, monkeypatch)
+    asked = []
+    from src.run import decision as decision_module
+    real = decision_module.call_decision
+
+    def spy(model, state, questions):
+        asked.append(questions)
+        return real(model, state, questions)
+
+    monkeypatch.setattr(decision_module, "call_decision", spy)
+    fake[:] = [d_reply("move_1"), d_reply("mismatch"), d_reply("done")]
+    assert go("--limit", "1") == 0
+    (row,) = records(repo, "D")
+    assert "mismatch" in json.dumps(asked[0]) and "mismatch_1" not in json.dumps(asked[0])
+    assert row["mismatch"] is True and len(json.loads(row["raw_response"])) == 2 and row["hallucination"] is None
+    assert row["mismatch_reason"] is None and row["decision"] is True
