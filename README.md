@@ -2,7 +2,7 @@
 
 ## Abstract
 
-To evaluate AI models without bias, we test them on ontologies of real-world objects. Research uses Rubik's cubes as the well-known source of legal moves, constraints and a criterion of success. Each model gets a scrambled cube and must either solve it or say why it can't be solved. A script judges every answer, not a person or another AI, so the assessment is objective and the experiments are reproducible. The metrics show how often a model's answers are right, how often it hallucinates by making illegal moves or naming a defect the cube can't show, and how well it spots an impossible cube and names what is wrong.
+To evaluate AI models without bias, we test them on ontologies of real-world objects. The research uses Rubik's cubes as the well-known source of legal moves, constraints, and a criterion of success. Each model gets a scrambled cube and must either solve it or say why it can't be solved. A script judges every answer, not a person or another AI, so the assessment is objective and the experiments are reproducible. The metrics show how often a model's answers are right, how often it hallucinates by making [impossible moves](docs/definitions.md#puzzles) or naming a defect the cube can't show, and how well it spots an impossible cube and names what is wrong.
 
 ## Goals
 
