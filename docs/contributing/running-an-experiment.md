@@ -57,15 +57,16 @@ Run every command from the repo root with `.venv` active.
 
 ## After the run
 
-1. To fix the assessment, commit the fix on a branch and cut a patch release as the last commit of that branch. Push the branch and the `release-<version>` tag, and open a pull request:
+1. To fix the assessment, commit the fix on a branch and cut a patch release as the last commit of that branch. Push the branch and the `release-<version>` tag, open a pull request, and merge it with a merge commit, never a squash or rebase, so the tag stays on `main`:
    ```
    python -m src.release.release --bump patch --note "Fix: ..."
    ```
-2. After the merge, bring the experiment's results into the work tree, score it under the new release, and commit the report to its branch. No AI model is called again, and the old report stays:
+2. After the merge, bring the experiment's results into the work tree and score it under the new release. Restore from the local branch `results/<experiment id>` instead when it holds records not yet pushed. No AI model is called again, and the old report stays:
    ```
    git fetch origin results/<experiment id>
    git restore --source=origin/results/<experiment id> --worktree -- results/<experiment id>
    python -m src.evaluate.evaluate --experiment <experiment id> --release <new version>
-   python -m src.run.run --experiment <experiment id> --limit 0
    ```
-3. Never edit a raw record, and never rerun an attempt because its answer is wrong ([invariant 10](../../AGENTS.md#invariants)).
+   In the UI, Evaluate with "Score under release" on the experiment page does the same.
+3. Commit the new report with Commit on the experiment page. Don't use `run --limit 0` here: `run` checks the experiment's own release against the checkout's assessment, and after the fix they differ, so it exits with code 1.
+4. Never edit a raw record, and never rerun an attempt because its answer is wrong ([invariant 10](../../AGENTS.md#invariants)).

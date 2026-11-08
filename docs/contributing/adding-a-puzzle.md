@@ -30,7 +30,7 @@ All three templates hold `{state}` and `{mismatch_reasons}`, and the prescriptiv
 | `src/puzzles/registry.py` | One entry in `ENGINES`. It is the only list of puzzles in the code. |
 | `tests/test_registry.py` | It checks that `ENGINES` holds exactly the four cubes. |
 | `tests/test_config.py` | It checks that `config/release.toml` lists exactly the four cubes. |
-| `src/evaluate/metrics.py` and `src/evaluate/report.py` | Only if the puzzle has corruption types the cubes lack. Both read the report order of corruption types from `CUBE_CORRUPTION_TYPES` in the cube engine, so a new type sorts after the cube ones. Generalizing that list changes the assessment. |
+| `src/evaluate/metrics.py` and `src/evaluate/report.py` | Only if the puzzle has corruption types the cubes lack, and only after the project owner decides, because AGENTS.md treats any code change outside the engine and registry as a sign the interface is wrong. Both read the report order of corruption types from `CUBE_CORRUPTION_TYPES` in the cube engine, so a new type sorts after the cube ones. Generalizing that list changes the assessment. |
 | `docs/specs/registry.md` | Its `ENGINES` example lists every puzzle. |
 | `docs/specs/README.md` | Add the engine spec to the spec list, and update the note that the octahedral and tetrahedral engines have no spec yet. |
 | `config/release.toml` | Add the puzzle to `puzzles` and give its `scramble_depths`. `release` reads this file only for a major bump. |
@@ -62,7 +62,7 @@ Changes to `definitions.md` and `AGENTS.md` need the project owner's approval, b
    python -m src.release.release --bump major --note "Add the FTO"
    ```
    A new puzzle means a new input set, and a new input set means a new major release ([invariant 7](../../AGENTS.md#invariants)). `release` commits the release folder and tags it `release-<version>` locally.
-9. Push the branch and the tag, and open a pull request to `main`. On the About page of the UI, "Push and open PR" does both:
+9. Push the branch and the tag, and open a pull request to `main`. On the About page of the UI, "Push and open PR" does both. Merge it with a merge commit, never a squash or rebase, so the tag stays on `main`:
    ```
    git push -u origin <branch>
    git push origin release-<version>
