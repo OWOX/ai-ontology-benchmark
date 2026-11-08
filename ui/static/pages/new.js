@@ -14,7 +14,7 @@
   const NUMBERS = [["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
   // The form survives a redraw of the page (a bundle reload after a job) and resets with the release.
-  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", parallel: "4", perDepth: null, estimate: null, result: null };
+  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", parallel: "4", perDepth: null, estimate: null, pending: false, result: null };
   let cleanup = null;
   let idSeq = 0;
   const mine = UI.mine;
@@ -28,7 +28,7 @@
 
   function reset(bundle) {
     const d = bundle.defaults;
-    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", parallel: "4", perDepth: null, estimate: null, result: null,
+    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", parallel: "4", perDepth: null, estimate: null, pending: false, result: null,
       vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, reasoning_effort: d.reasoning_effort, ...d.budget } });
   }
 
@@ -89,12 +89,29 @@
     return Math.max(1, ...bundle.puzzles.map((p) => Math.floor((p.valid || 1) / Math.max(1, (p.depths || [1]).length))));
   }
 
+  // The Inputs per depth slider and the form. The top of the slider means every input, which is null. A loaded
+  // value at or above the top shows as "all" but stays what the form sends until the slider is moved, so a resumed
+  // config is byte-identical.
+  function perDepthPosition(perDepth, top) { return perDepth === null || perDepth >= top ? top : perDepth; }
+  function perDepthFromSlider(n, top) { return n >= top ? null : n; }
+
+  // Hands out numbered requests and says whether one is still the newest, so a late answer can be dropped.
+  function newestOnly() {
+    let last = 0;
+    return { next: () => ++last, isNewest: (ticket) => ticket === last };
+  }
+
   // A range slider with its value shown beside it. `show` turns the number into the text beside the slider.
   function slider(label, min, max, value, show, onInput) {
     const input = h("input", { type: "range", min: String(min), max: String(max), step: "1", "aria-label": label });
     input.value = String(Math.min(max, Math.max(min, value)));
     const out = h("output", { class: "slider-value", text: show(Number(input.value)) });
-    input.addEventListener("input", () => { out.textContent = show(Number(input.value)); onInput(Number(input.value)); });
+    input.setAttribute("aria-valuetext", out.textContent);
+    input.addEventListener("input", () => {
+      out.textContent = show(Number(input.value));
+      input.setAttribute("aria-valuetext", out.textContent);
+      onInput(Number(input.value));
+    });
     return h("label", {}, label, h("span", { class: "slider" }, input, out));
   }
 
@@ -182,8 +199,8 @@
     const attempts = slider("Attempts per input and setup: sends the same input N times", 1, Math.max(10, Number(S.vals.attempts) || 0), Number(S.vals.attempts) || 1,
       String, (n) => { S.vals.attempts = String(n); changed(); });
     const top = perDepthMax(bundle);
-    const perDepth = slider("Inputs per depth: valid inputs per puzzle and scramble depth", 1, top, S.perDepth === null ? top : S.perDepth,
-      (n) => n >= top ? "all" : String(n), (n) => { S.perDepth = n >= top ? null : n; changed(); });
+    const perDepth = slider("Inputs per depth: valid inputs per puzzle and scramble depth", 1, top, perDepthPosition(S.perDepth, top),
+      (n) => n >= top ? "all" : String(n), (n) => { S.perDepth = perDepthFromSlider(n, top); changed(); });
     const parallel = (() => {
       const box = slider("Parallel requests", 1, 16, Number(S.parallel) || 4, String, (n) => { S.parallel = String(n); changed(); });
       // The definition is on main: linked when the bundle knows the repository, plain text otherwise.
@@ -278,27 +295,33 @@
       // request dropped. Its errors show in the card, never in the form's message.
       const usd = (v) => UI.usd(v, { verbatim: true, maxBelowOne: 4 });
       const count = (v) => Number(v).toLocaleString("en-GB");
-      let timer = null, estSeq = 0;
+      let timer = null;
+      const asks = newestOnly();
       function drawCard() {
         if (!ref.card) return;
         const e = S.estimate;
         ref.card.hidden = !(S.puzzles.length && S.models.length);
         if (ref.card.hidden) return;
+        // While a request is scheduled or in flight the last answer stays, with a note above it, so the card is never blank.
+        const wait = S.pending ? [h("p", { class: "muted small", text: "Estimating…" })] : [];
         if (!e) { ref.card.replaceChildren(h("p", { class: "muted small", text: "Estimating…" })); return; }
-        if (e.error) { ref.card.replaceChildren(h("p", { class: "msg err", role: "alert", text: e.error })); return; }
+        if (e.error) { ref.card.replaceChildren(...wait, h("p", { class: "msg err", role: "alert", text: e.error })); return; }
         const d = e.data, c = d.counts, budget = e.budget;
         const formula = `${count(c.inputs)} inputs × ${c.models} AI models × ${c.setups} setups × ${e.attempts} attempts = ${count(c.planned)} attempts`
           + (c.done ? `, ${count(c.done)} done, ${count(c.to_run)} to run` : "");
         const cells = (tag, values) => h("tr", {}, ...values.map(([text, cls, title], i) =>
           h(tag, { class: (i ? "n " : "") + (cls || ""), text, ...(title ? { title } : {}) })));
-        const over = (flag) => flag ? ["over", "Spent plus the worst case exceeds the budget: the run stops when spending reaches it."] : [];
-        const rows = d.models.map((m) => cells("td", [[m.name], [count(m.attempts)], [usd(m.worst_case_usd), ...over(m.over)], [usd(m.spent_usd)],
+        const over = (flag, reason) => flag ? ["over", reason] : [];
+        const REQUEST_OVER = "The longest worst-case request exceeds the request budget: the run refuses it.";
+        const MODEL_OVER = "Spent plus the worst case exceeds the model budget: the run stops when spending reaches it.";
+        const EXPERIMENT_OVER = "Spent plus the worst case exceeds the experiment budget: the run stops when spending reaches it.";
+        const rows = d.models.map((m) => cells("td", [[m.name], [count(m.attempts)], [usd(m.worst_case_usd), ...over(m.over, m.max_request_usd > d.per_request_usd ? REQUEST_OVER : MODEL_OVER)], [usd(m.spent_usd)],
           [usd(m.per_model_usd)], m.median_latency_s === null ? ["no timing data yet", "muted"] : [`${m.median_latency_s.toFixed(1)} s (n = ${count(m.latency_n)})`],
           m.time_s === null ? ["no timing data yet", "muted"] : [fmtTime(m.time_s)]]));
         const t = d.total;
-        const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over)], [usd(t.spent_usd)], [usd(t.per_experiment_usd)], [""],
+        const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over, EXPERIMENT_OVER)], [usd(t.spent_usd)], [usd(t.per_experiment_usd)], [""],
           t.time_s === null ? ["partial: no timing data for some AI models", "muted"] : [fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
-        ref.card.replaceChildren(h("p", { class: "estimate-formula", text: formula }),
+        ref.card.replaceChildren(...wait, h("p", { class: "estimate-formula", "aria-live": "polite", text: formula }),
           h("div", { class: "estimate" }, h("table", { class: "estimate-table" },
             h("thead", {}, cells("th", [["AI model"], ["Attempts to run"], ["Worst case"], ["Spent"], ["Model budget"], ["Median latency"], ["Time"]])),
             h("tbody", {}, ...rows), h("tfoot", {}, total))),
@@ -306,20 +329,17 @@
       }
       function schedule() {
         clearTimeout(timer);
-        const seq = ++estSeq;
-        if (!(S.puzzles.length && S.models.length)) { S.estimate = null; drawCard(); return; }
+        const seq = asks.next();
+        if (!(S.puzzles.length && S.models.length)) { S.estimate = null; S.pending = false; drawCard(); return; }
+        S.pending = true; drawCard();
+        const settle = (value) => { if (asks.isNewest(seq) && !dead) { S.estimate = value; S.pending = false; drawCard(); } };
         timer = setTimeout(async () => {
           let form, parallel;
-          try { form = readForm(bundle); parallel = readParallel(); } catch (err) {
-            if (seq === estSeq && !dead) { S.estimate = { error: err.message }; drawCard(); }
-            return;
-          }
+          try { form = readForm(bundle); parallel = readParallel(); } catch (err) { settle({ error: err.message }); return; }
           try {
             const data = await UI.api("/api/estimate/live", { method: "POST", body: { form, parallel } });
-            if (seq === estSeq && !dead) { S.estimate = { data, attempts: form.attempts, budget: { parallel } }; drawCard(); }
-          } catch (err) {
-            if (seq === estSeq && !dead) { S.estimate = { error: err.message }; drawCard(); }
-          }
+            settle({ data, attempts: form.attempts, budget: { parallel } });
+          } catch (err) { settle({ error: err.message }); }
         }, 250);
       }
 
@@ -428,7 +448,7 @@
           h("section", { class: "step" }, h("h3", { text: "Puzzles" }), puzzleCards(bundle, choose)),
           h("section", { class: "step" }, h("h3", { text: "AI models" }), modelList(bundle, choose)),
           ref.section = h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(bundle, schedule),
-            ref.card = h("div", { class: "estimate-card", "aria-live": "polite" }), h("div", { class: "actions" }, ref.dry, ref.run), msg));
+            ref.card = h("div", { class: "estimate-card" }), h("div", { class: "actions" }, ref.dry, ref.run), msg));
         if (S.result) showResult(S.result.label, S.result.job, S.result.id, S.result.after);
         controls();
         drawCard(); schedule();

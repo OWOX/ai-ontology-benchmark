@@ -96,6 +96,33 @@ def test_new_experiment_formats_estimate_times():
     assert json.loads(run.stdout) == ["0 s", "40 s", "1 min", "1 min", "12 min", "1 h 00 min", "1 h 05 min", "2 h 03 min", "10 h 00 min"]
 
 
+def _new_js_functions(*names):
+    import re
+    source = (ROOT / "ui" / "static" / "pages" / "new.js").read_text(encoding="utf-8")
+    return "".join(re.search(rf"  function {name}\(.*?\n  \}}\n|  function {name}\([^\n]*\}}\n", source, re.S).group(0) for name in names)
+
+
+def test_new_experiment_inputs_per_depth_maps_between_slider_and_form():
+    import json
+    script = _new_js_functions("perDepthPosition", "perDepthFromSlider") + (
+        "console.log(JSON.stringify([perDepthPosition(null, 40), perDepthPosition(40, 40), perDepthPosition(55, 40), perDepthPosition(7, 40),"
+        "perDepthFromSlider(40, 40), perDepthFromSlider(39, 40), perDepthFromSlider(1, 40)]));")
+    run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    # The top is "all" (null); a loaded value at or above it shows at the top but is not rewritten by the position alone.
+    assert json.loads(run.stdout) == [40, 40, 40, 7, None, 39, 1]
+
+
+def test_new_experiment_drops_a_stale_estimate_response():
+    import json
+    script = _new_js_functions("newestOnly") + (
+        "const a = newestOnly(); const t1 = a.next(), t2 = a.next();"
+        "console.log(JSON.stringify([a.isNewest(t1), a.isNewest(t2)]));")
+    run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout) == [False, True]
+
+
 def test_new_experiment_fills_the_reasoning_effort_a_stale_cached_bundle_lacks():
     import json
     import re
