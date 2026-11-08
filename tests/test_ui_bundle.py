@@ -635,7 +635,7 @@ def test_experiment_rows_cover_every_release(ui_repo, samples):
 def test_provider_without_catalogue_models_is_left_out():
     from ui.catalogue import PROVIDER_ORDER
     catalogue = {"m": {"name": "m", "provider": "typesafe", "api_model_id": "x"}}
-    assert PROVIDER_ORDER[3:5] == ("typesafe", "cloudflare")
+    assert PROVIDER_ORDER[4:6] == ("typesafe", "cloudflare")
     assert [p["name"] for p in build_providers(catalogue, {}, [])] == ["typesafe"]
 
 

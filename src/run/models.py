@@ -12,9 +12,8 @@ import time
 from dataclasses import dataclass
 
 KEY_VARIABLES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "google": "GOOGLE_API_KEY",
-                 "typesafe": "TYPESAFE_API_KEY", "cloudflare": "CLOUDFLARE_API_TOKEN"}
-# Providers the UI doesn't offer. Their key comes only from the env var, never from secrets/.
-ENV_KEY_VARIABLES = {"openrouter": "OPENROUTER_API_KEY"}
+                 "openrouter": "OPENROUTER_API_KEY", "typesafe": "TYPESAFE_API_KEY",
+                 "cloudflare": "CLOUDFLARE_API_TOKEN"}
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # A second variable some providers need besides the key.
 ACCOUNT_VARIABLES = {"cloudflare": "CLOUDFLARE_ACCOUNT_ID"}
@@ -403,7 +402,7 @@ def call_model(model: dict, prompt: str, max_output_tokens: int, reasoning_effor
         raise ValueError(f"provider {provider} is a decision-model provider: use call_decision")
     if provider == "fake":
         return _fake()
-    variable = {**KEY_VARIABLES, **ENV_KEY_VARIABLES}[provider]
+    variable = KEY_VARIABLES[provider]
     key = (os.environ.get(variable) or "").strip()
     if not key:
         raise ValueError(f"missing API key: set the env var {variable}")

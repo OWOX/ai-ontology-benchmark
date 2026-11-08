@@ -3,7 +3,7 @@
 
 from src.run.models import KEY_VARIABLES
 
-PROVIDER_ORDER = ("anthropic", "openai", "google", "typesafe", "cloudflare", "fake", "fake_decision")
+PROVIDER_ORDER = ("anthropic", "openai", "google", "openrouter", "typesafe", "cloudflare", "fake", "fake_decision")
 NO_PRICE = "no price in config/prices.toml"
 
 

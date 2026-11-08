@@ -737,9 +737,8 @@ def test_openai_other_status_errors_are_request_errors(monkeypatch):
         call_model(entry("openai"), "prompt", 50)
 
 
-def test_openrouter_key_is_env_only():
-    assert models.ENV_KEY_VARIABLES == {"openrouter": "OPENROUTER_API_KEY"}
-    assert "openrouter" not in models.KEY_VARIABLES  # so the UI offers no key slot for it
+def test_openrouter_key_variable():
+    assert models.KEY_VARIABLES["openrouter"] == "OPENROUTER_API_KEY"
 
 
 def test_openrouter_reply_without_a_model_has_no_served_model(monkeypatch):
