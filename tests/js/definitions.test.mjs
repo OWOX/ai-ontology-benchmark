@@ -23,10 +23,13 @@ function node(tag, attrs = {}, ...kids) {
   return n;
 }
 const window = {};
-const UI = { el: (tag, props = {}, ...kids) => node(tag, props, ...kids.flat()), tipOn() {} };
+const UI = { el: (tag, props = {}, ...kids) => node(tag, props, ...kids.flat()), tipOn() {},
+  tipHolds: () => held, afterTipClose: (fn) => waiters.push(fn) };
+let held = false;
+const waiters = [];
 const ctx = vm.createContext({ window, document, UI });
 vm.runInContext(fs.readFileSync(file, "utf8"), ctx);
-const { infoTerm, keepFocus } = window.Defs;
+const { infoTerm, keepFocus, holdRedraw } = window.Defs;
 
 let failed = 0;
 function check(name, ok) { if (!ok) { failed++; console.error(`FAIL ${name}`); } }
@@ -58,4 +61,17 @@ check("focus returns in the same table", document.activeElement === icon(metrics
 
 document.activeElement = node("button");
 check("focus outside an icon is left alone", keepFocus(container)() === undefined && document.activeElement.tag === "button");
+
+{
+  const box = {}, ran = [];
+  holdRedraw(box, () => ran.push("now"));
+  check("holdRedraw runs at once with no panel open", ran.join() === "now");
+  held = true;
+  holdRedraw(box, () => ran.push("first"));
+  holdRedraw(box, () => ran.push("second"));
+  check("holdRedraw waits while a panel is open", ran.join() === "now");
+  held = false;
+  waiters.splice(0).forEach((fn) => fn());
+  check("only the newest waiting redraw runs, after the panel closes", ran.join() === "now,second");
+}
 process.exit(failed ? 1 : 0);

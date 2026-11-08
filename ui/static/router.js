@@ -151,22 +151,40 @@
     // pointer can move onto the panel and its text can be selected. Only one panel is open at a time.
     tipOn(src) {
       const tipOf = () => src.nextElementSibling;
-      const later = () => { if (openTip && openTip.src === src) { clearTimeout(openTip.timer); openTip.timer = setTimeout(closeTip, TIP_DELAY); } };
+      const later = () => {
+        if (openTip && openTip.src === src && !openTip.focused) { clearTimeout(openTip.timer); openTip.timer = setTimeout(closeTip, TIP_DELAY); }
+      };
       src.addEventListener("mouseenter", () => showTip(src, tipOf()));
       src.addEventListener("mouseleave", later);
-      src.addEventListener("focus", () => showTip(src, tipOf()));
-      // A click on the panel blurs the source, which must not close the panel the pointer is on.
-      src.addEventListener("blur", () => { if (!openTip || openTip.src !== src || !openTip.overPanel) closeTip(); });
+      src.addEventListener("focus", () => { showTip(src, tipOf()); if (openTip && openTip.src === src) { openTip.focused = true; clearTimeout(openTip.timer); } });
+      // Blur closes only this source's panel. A click on the panel blurs the source, which must not close the panel the
+      // pointer is on: it then closes when the pointer leaves it.
+      src.addEventListener("blur", () => {
+        if (!openTip || openTip.src !== src) return;
+        openTip.focused = false;
+        if (!openTip.overPanel) closeTip();
+      });
     },
+    // True while a tooltip panel whose source is inside `container` is open, including its 0.5 s delay and while the
+    // pointer is on it. A redraw that would detach the source waits for it (see Defs.holdRedraw).
+    tipHolds(container) { return !!openTip && container.contains(openTip.src); },
+    // Calls `fn` once, the next time a panel closes.
+    afterTipClose(fn) { closeWaiters.push(fn); },
   };
   const TIP_DELAY = 500;
-  let openTip = null; // { src, tip, timer, overPanel }
+  let openTip = null; // { src, tip, timer, overPanel, focused }
+  let closeWaiters = [];
   function closeTip() {
     if (!openTip) return;
     clearTimeout(openTip.timer);
     openTip.tip.classList.remove("open");
     openTip = null;
+    const waiters = closeWaiters;
+    closeWaiters = [];
+    for (const fn of waiters) fn();
   }
+  // Escape closes the open panel, whatever opened it (WCAG 1.4.13).
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTip(); });
   function showTip(src, tip) {
     if (!tip) return;
     if (openTip && openTip.src !== src) closeTip();
@@ -175,12 +193,14 @@
       tip.tipBound = true;
       tip.addEventListener("mouseenter", () => { if (openTip && openTip.tip === tip) { openTip.overPanel = true; clearTimeout(openTip.timer); } });
       tip.addEventListener("mouseleave", () => {
-        if (openTip && openTip.tip === tip) { openTip.overPanel = false; clearTimeout(openTip.timer); openTip.timer = setTimeout(closeTip, TIP_DELAY); }
+        if (!openTip || openTip.tip !== tip) return;
+        openTip.overPanel = false; clearTimeout(openTip.timer);
+        if (!openTip.focused) openTip.timer = setTimeout(closeTip, TIP_DELAY);
       });
     }
     tip.classList.add("open");
     placeTip(src, tip);
-    openTip = { src, tip, timer: null, overPanel: false };
+    openTip = { src, tip, timer: null, overPanel: false, focused: false };
   }
 
   function parse() {

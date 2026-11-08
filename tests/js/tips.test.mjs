@@ -33,7 +33,9 @@ function node() {
   };
 }
 
-const document = { createElement: node, getElementById: () => node(), querySelector: () => null, querySelectorAll: () => [], addEventListener() {} };
+const docListeners = {};
+const document = { createElement: node, getElementById: () => node(), querySelector: () => null, querySelectorAll: () => [],
+  addEventListener(ev, fn) { (docListeners[ev] = docListeners[ev] || []).push(fn); } };
 const window = { addEventListener() {}, innerWidth: 1000, innerHeight: 800 };
 const context = { window, document, location: { hash: "" }, localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
   requestAnimationFrame: (fn) => fn(), fetch: async () => ({ ok: false }), URLSearchParams,
@@ -103,6 +105,56 @@ function pair() {
   tip.fire("mouseenter");
   src.fire("blur"); // a click on the panel blurs the source
   check("blur does not close a panel the pointer is on", tip.open);
+}
+
+{
+  const a = pair(), b = pair();
+  a.src.fire("mouseenter");
+  b.src.fire("blur"); // another icon losing focus
+  check("blur of another source leaves the open panel", a.tip.open);
+  a.src.fire("mouseleave");
+  fake.advance(1000);
+}
+{
+  const { src, tip } = pair();
+  src.fire("focus");
+  src.fire("mouseenter"); src.fire("mouseleave");
+  fake.advance(5000);
+  check("a focused icon keeps its panel after the pointer leaves", tip.open);
+  src.fire("blur");
+  check("blur then closes it", !tip.open);
+}
+{
+  const { src, tip } = pair();
+  src.fire("focus");
+  tip.fire("mouseenter"); tip.fire("mouseleave");
+  fake.advance(5000);
+  check("a focused icon keeps its panel after the pointer leaves the panel", tip.open);
+  src.fire("blur");
+}
+{
+  const { src, tip } = pair();
+  src.fire("mouseenter");
+  for (const fn of docListeners.keydown) fn({ key: "a" });
+  check("another key leaves the panel", tip.open);
+  for (const fn of docListeners.keydown) fn({ key: "Escape" });
+  check("Escape closes the panel", !tip.open);
+  src.fire("focus");
+  for (const fn of docListeners.keydown) fn({ key: "Escape" });
+  check("Escape closes a focused panel", !tip.open);
+}
+{
+  const { src, tip } = pair();
+  const box = { contains: (n) => n === src }, other = { contains: () => false };
+  check("tipHolds is false with nothing open", !UI.tipHolds(box));
+  src.fire("mouseenter");
+  check("tipHolds is true for the container of the open source", UI.tipHolds(box) && !UI.tipHolds(other));
+  let closed = 0;
+  UI.afterTipClose(() => { closed++; });
+  src.fire("mouseleave");
+  check("tipHolds stays true during the delay", UI.tipHolds(box) && closed === 0);
+  fake.advance(501);
+  check("afterTipClose runs once when the panel closes", closed === 1 && !UI.tipHolds(box) && !tip.open);
 }
 
 if (failed) process.exit(1);

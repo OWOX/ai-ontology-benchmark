@@ -356,7 +356,8 @@
           if (data) {
             opts = data.options;
             if (!c.releases.length) defaultReleases = data.releases || defaultReleases;
-            show(body, data, c, toolbar(), bundle.definitions);
+            const shown = data;
+            Defs.holdRedraw(body, () => { if (mine === seq && body.isConnected) show(body, shown, c, toolbar(), bundle.definitions); });
           }
         } catch (e) {
           if (mine === seq && body.isConnected && !quiet) body.replaceChildren(toolbar(), h("p", { class: "msg err", text: e.message }));

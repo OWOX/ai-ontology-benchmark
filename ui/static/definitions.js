@@ -61,5 +61,22 @@
     };
   }
 
-  window.Defs = { TERMS, infoTerm, info, keepFocus };
+  // Runs `fn`, a redraw of `container` that detaches its icons, now, or when the open tooltip panel inside `container`
+  // closes (and the pointer has left it), so a poll never pulls a panel from under the pointer. Only the newest
+  // waiting redraw of a container runs.
+  const waiting = new WeakMap();
+  function holdRedraw(container, fn) {
+    if (!UI.tipHolds(container)) { waiting.delete(container); fn(); return; }
+    const first = !waiting.has(container);
+    waiting.set(container, fn);
+    if (first) UI.afterTipClose(function again() {
+      const next = waiting.get(container);
+      if (!next) return;
+      if (UI.tipHolds(container)) { UI.afterTipClose(again); return; }
+      waiting.delete(container);
+      next();
+    });
+  }
+
+  window.Defs = { TERMS, infoTerm, info, keepFocus, holdRedraw };
 })();

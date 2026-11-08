@@ -168,7 +168,7 @@
         card.busy = true; card.last = Date.now();
         try {
           const d = await UI.api("/api/scorecard/" + encodeURIComponent(id));
-          if (root.isConnected) { const back = Defs.keepFocus(cardBox); cardBox.replaceChildren(scoreCard(d, bundle.definitions)); back(); }
+          if (root.isConnected) Defs.holdRedraw(cardBox, () => { if (!root.isConnected) return; const back = Defs.keepFocus(cardBox); cardBox.replaceChildren(scoreCard(d, bundle.definitions)); back(); });
         } catch (e) { /* no branch yet, or a read error: the header shows it */ } finally { card.busy = false; }
         if (card.queued && root.isConnected) { card.queued = false; loadCard(); }
       }
@@ -207,10 +207,13 @@
           headBox.replaceChildren(header(d), h("div", { class: "actions exp-stop" }, stop, stopMsg));
           settingsBody.replaceChildren(...settings(d, bundle));
           autoSettings();
-          const backToIcon = Defs.keepFocus(resultsBox);
-          resultsBox.replaceChildren(block("Summary", ExpMetrics.summary(d, bundle.experiments, bundle.definitions), false),
-            block("Full metrics", ExpMetrics.full(d, bundle.definitions), false), block("Report", reportBox(d), false));
-          backToIcon();
+          Defs.holdRedraw(resultsBox, () => {
+            if (!root.isConnected) return;
+            const backToIcon = Defs.keepFocus(resultsBox);
+            resultsBox.replaceChildren(block("Summary", ExpMetrics.summary(d, bundle.experiments, bundle.definitions), false),
+              block("Full metrics", ExpMetrics.full(d, bundle.definitions), false), block("Report", reportBox(d), false));
+            backToIcon();
+          });
           actions.replaceChildren(...(d.local_results ? [block("Evaluate and commit",
             h("div", {}, h("div", { class: "actions by-field" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit), result), true)] : []));
           controls();
