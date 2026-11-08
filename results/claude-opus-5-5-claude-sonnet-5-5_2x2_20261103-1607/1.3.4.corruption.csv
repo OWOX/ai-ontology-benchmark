@@ -1,0 +1,7 @@
+model,puzzle,setup,corruption_type,detection_rate,detection_rate_low,detection_rate_high,detection_rate_n,detection_rate_inputs
+claude-opus-5-5,2x2,no_model,twisted corner,1.0000,1.0000,1.0000,15,5
+claude-opus-5-5,2x2,descriptive,twisted corner,1.0000,1.0000,1.0000,15,5
+claude-opus-5-5,2x2,prescriptive,twisted corner,1.0000,1.0000,1.0000,15,5
+claude-sonnet-5-5,2x2,no_model,twisted corner,1.0000,1.0000,1.0000,15,5
+claude-sonnet-5-5,2x2,descriptive,twisted corner,1.0000,1.0000,1.0000,15,5
+claude-sonnet-5-5,2x2,prescriptive,twisted corner,1.0000,1.0000,1.0000,15,5
