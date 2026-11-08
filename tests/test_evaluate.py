@@ -674,3 +674,23 @@ def test_all_infrastructure_failures_evaluate_with_header_only_csvs(repo, monkey
     for name, header in (("detection", ",".join(DETECTION_COLUMNS)),
                          ("corruption", ",".join(CORRUPTION_COLUMNS))):
         assert (repo / f"results/exp/1.0.0.{name}.csv").read_text(encoding="utf-8") == header + "\n"
+
+
+def test_answer_class():
+    from src.evaluate.metrics import answer_class
+
+    def row(outcome, moves=(), reason=None, corruption=None):
+        return {"outcome": outcome, "parsed_moves": list(moves), "mismatch_reason": reason,
+                "corruption": corruption}
+
+    twisted = "twisted corner at UFR"
+    assert answer_class(row("success", ["R"])) == "tp"
+    assert answer_class(row("failure", ["R"])) == "fp"
+    assert answer_class(row("hallucination", ["Q"])) == "fp"
+    assert answer_class(row("failure", ["R"], corruption=twisted)) == "fp"
+    assert answer_class(row("success", [], "twisted corner", twisted)) == "tn"
+    assert answer_class(row("failure", [], "other", twisted)) == "fn"
+    assert answer_class(row("failure", [], "twisted corner")) == "fn"  # false MISMATCH on a valid input
+    assert answer_class(row("failure", [], None, twisted)) == "fn"
+    for outcome in ("abstention", "format_error", "truncated", "malformed_output", "infrastructure_failure"):
+        assert answer_class(row(outcome)) is None

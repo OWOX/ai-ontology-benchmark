@@ -98,6 +98,21 @@ def gave_moves(row: dict) -> bool:
     return bool(row.get("parsed_moves"))
 
 
+def answer_class(row: dict) -> str | None:
+    """The class of a classified answer: `tp`, `fp`, `tn`, or `fn`, or None for an attempt that is
+    not one (abstention, format error, truncated, malformed output, infrastructure failure). Reads
+    `outcome`, `parsed_moves`, `mismatch_reason`, and the input's `corruption`."""
+    outcome = row["outcome"]
+    if outcome not in ("success", "failure", "hallucination"):
+        return None
+    if gave_moves(row):
+        return "tp" if outcome == "success" else "fp"
+    corruption = row.get("corruption")
+    if outcome == "success" and corruption and row.get("mismatch_reason") == corruption_type(corruption):
+        return "tn"
+    return "fn"
+
+
 def rates(rows: list[dict], validity: str, key: str) -> dict:
     """Rates over the attempts that are not infrastructure failures (`rows` holds only those).
     `key` names the group, and seeds each rate's bootstrap."""
