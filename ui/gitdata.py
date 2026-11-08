@@ -66,6 +66,11 @@ class GitData:
         done = self._git("show", f"{ref}:{path}")
         return done.stdout if done.returncode == 0 else None
 
+    def tree_sha(self, ref: str, path: str) -> str | None:
+        """The sha of a folder at a ref, so a cache can outlive pushes that leave the folder alone."""
+        done = self._git("rev-parse", "--verify", "--quiet", f"{ref}:{path}")
+        return done.stdout.strip() if done.returncode == 0 and done.stdout.strip() else None
+
     def ls(self, ref: str, path: str) -> list[str]:
         done = self._git("ls-tree", "--name-only", ref, path.rstrip("/") + "/")
         if done.returncode != 0:

@@ -19,6 +19,7 @@ from ui.common import ApiError
 from ui.gitdata import LOCAL_RESULTS, REMOTE_RESULTS
 
 CACHE_LIMIT = 8
+RELEASE_LIMIT = 4  # each holds every rendered prompt of a release
 EXPERIMENT_LIMIT = 64
 
 
@@ -38,7 +39,7 @@ class LiveEstimate:
         self.bundles = bundles
         self._lock = threading.Lock()
         self._main: dict[str, dict] = {}  # main sha -> view, prices, and the releases read
-        self._releases: dict[tuple, dict] = {}  # (release, main sha) -> inputs, templates, prompts, questions
+        self._releases: dict[tuple, dict] = {}  # (release, tree sha) -> inputs, templates, prompts, questions
         self._experiments: dict[tuple, dict] = {}  # (id, sha) -> the experiment as expdata loads it
         self._latency: tuple | None = None  # (key, medians)
 
@@ -63,14 +64,17 @@ class LiveEstimate:
                                         "prices": self.bundles._prices()}
             return self._main[main_sha]
 
-    def _release(self, release: str, main_sha: str | None, manifest: dict) -> dict:
-        key = (release, main_sha)
+    def _release(self, release: str, tree: str, manifest: dict) -> dict:
+        """What a release holds on `main`, kept per release and the sha of its tree, so a push that leaves the
+        release alone keeps the rendered prompts. `lock` is held while prompts are rendered."""
+        key = (release, tree)
         with self._lock:
             if key not in self._releases:
-                if len(self._releases) >= CACHE_LIMIT:
+                if len(self._releases) >= RELEASE_LIMIT:
                     self._releases.pop(next(iter(self._releases)))
                 git = self.bundles.git
                 self._releases[key] = {"manifest": manifest, "templates": {}, "prompts": {}, "questions": None,
+                                       "lock": threading.Lock(),
                                        "inputs": expdata.read_inputs(git, git.main_ref(), release)}
             return self._releases[key]
 
@@ -100,12 +104,25 @@ class LiveEstimate:
         return held["questions"]
 
     def _experiment(self, experiment_id: str, ref: str, sha: str) -> dict:
-        """One experiment branch as `expdata` loads it, kept per ref sha, the oldest dropped past a limit."""
+        """What the estimate needs of one experiment branch, kept per ref sha, the oldest dropped past a limit:
+        `error`, the attempt keys and token sums of each AI model, and its (model, latency) pairs. Raw responses
+        are not kept."""
         with self._lock:
             held = self._experiments.get((experiment_id, sha))
         if held is None:
             git = self.bundles.git
-            held = expdata.load_experiment(git, experiment_id, ref, git.main_ref())
+            exp = expdata.load_experiment(git, experiment_id, ref, git.main_ref())
+            held = {"error": exp["error"], "keys": {}, "tokens": {}, "latencies": []}
+            for name, records in exp["records"].items():
+                for r in records:
+                    model = r.get("model", name)
+                    held["keys"].setdefault(model, set()).add((r.get("input_id"), r.get("setup"), model,
+                                                               r.get("attempt_number")))
+                    tin, tout = held["tokens"].get(model, (0, 0))
+                    held["tokens"][model] = (tin + r["input_tokens"] + r["retry_input_tokens"],
+                                             tout + r["output_tokens"] + r["retry_output_tokens"])
+                    if r.get("outcome") != "infrastructure_failure" and isinstance(r.get("latency_s"), (int, float)):
+                        held["latencies"].append((model, r["latency_s"]))
             with self._lock:
                 if len(self._experiments) >= EXPERIMENT_LIMIT:
                     self._experiments.pop(next(iter(self._experiments)))
@@ -114,18 +131,16 @@ class LiveEstimate:
 
     def medians(self, remote: dict[str, str]) -> dict[str, tuple[float, int]]:
         """The median `latency_s` and the record count of each AI model over every pushed experiment, outcome
-        `infrastructure_failure` left out. Cached by the shas of the refs read."""
+        `infrastructure_failure` left out. Cached by the shas of the refs read. A branch that does not load adds
+        what it could read."""
         key = tuple(sorted(remote.items()))
         with self._lock:
             if self._latency and self._latency[0] == key:
                 return self._latency[1]
         values: dict[str, list[float]] = {}
         for experiment_id, sha in sorted(remote.items()):
-            exp = self._experiment(experiment_id, REMOTE_RESULTS + experiment_id, sha)
-            for records in exp["records"].values():
-                for r in records:
-                    if r.get("outcome") != "infrastructure_failure" and isinstance(r.get("latency_s"), (int, float)):
-                        values.setdefault(r.get("model"), []).append(r["latency_s"])
+            for model, latency in self._experiment(experiment_id, REMOTE_RESULTS + experiment_id, sha)["latencies"]:
+                values.setdefault(model, []).append(latency)
         found = {m: (median(v), len(v)) for m, v in values.items()}
         with self._lock:
             self._latency = (key, found)
@@ -147,9 +162,15 @@ class LiveEstimate:
         for model in config["models"]:
             if model["name"] not in prices:
                 raise ApiError(400, f"no prices for model {model['name']!r} in config/prices.toml on main")
+            for field in ("price_input_per_mtok", "price_output_per_mtok"):
+                value = prices[model["name"]].get(field) if isinstance(prices[model["name"]], dict) else None
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    raise ApiError(400, f"config/prices.toml on main: model {model['name']!r} has no number "
+                                        f"for {field}")
         release = config["release"]
         manifest = at["manifests"][release]
-        held = self._release(release, main_sha, manifest)
+        tree = self.bundles.git.tree_sha(main_sha or "HEAD", f"releases/{release}")
+        held = self._release(release, tree, manifest)
         names = [m["name"] for m in config["models"]]
         done, spent = self._branch(config, form["id"], prices, local, remote)
         rows = experiment_inputs(config, held["inputs"])
@@ -157,11 +178,13 @@ class LiveEstimate:
                    for number in range(1, config["attempts"] + 1)
                    if (row["input_id"], setup, model["name"], number) not in done]
         decision = any(m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending)
-        questions = self._questions(held, release) if decision else None
+        with held["lock"]:
+            questions = self._questions(held, release) if decision else None
         prompts = {}
-        for row, _, setup, _ in pending:
-            if (row["input_id"], setup) not in prompts:
-                prompts[row["input_id"], setup] = self._prompt(held, release, row, setup)
+        with held["lock"]:  # two cold calls render once
+            for row, _, setup, _ in pending:
+                if (row["input_id"], setup) not in prompts:
+                    prompts[row["input_id"], setup] = self._prompt(held, release, row, setup)
         release_config = manifest["release_config"]
         caps = {p: max_moves(config, release_config, p) for p in release_config["puzzles"]}
         result = estimate(config, pending, prices, questions, None, caps, prompts,
@@ -178,13 +201,15 @@ class LiveEstimate:
             ref, sha = REMOTE_RESULTS + experiment_id, remote[experiment_id]
         else:
             return set(), {}
-        records = self._experiment(experiment_id, ref, sha)["records"]
+        found = self._experiment(experiment_id, ref, sha)
+        if found["error"] and not found["error"].endswith("file not found"):  # no experiment.toml is no experiment
+            raise ApiError(400, f"experiment {experiment_id} cannot be read: {found['error']}")
         done, spent = set(), {}
         for name in (m["name"] for m in config["models"]):
-            found = records.get(name, [])
-            for r in found:
-                done.add((r.get("input_id"), r.get("setup"), name, r.get("attempt_number")))
-            spent[name] = sum(attempt_cost(r, prices[name]) for r in found)
+            done |= found["keys"].get(name, set())
+            tin, tout = found["tokens"].get(name, (0, 0))
+            spent[name] = attempt_cost({"input_tokens": tin, "output_tokens": tout, "retry_input_tokens": 0,
+                                        "retry_output_tokens": 0}, prices[name])
         return done, spent
 
     def _finish(self, result: dict, config: dict, parallel: int, inputs: int, to_run: int, remote: dict) -> dict:

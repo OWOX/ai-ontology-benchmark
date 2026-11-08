@@ -165,3 +165,61 @@ def test_warm_call_is_fast(server):
     start = time.perf_counter()
     assert call(server, "POST", URL, {"form": {**form, "attempts": 3}})[0] == 200
     assert time.perf_counter() - start < 0.5
+
+
+def test_done_and_spent_equal_the_run_path(server, tmp_path):
+    import tomllib
+    from src.run.budget import spent_by_model
+    from src.run.models import DECISION_PROVIDERS  # noqa: F401
+    ids = [r["input_id"] for r in inputs_of(server)]
+    records = [record("example-model", ids[0], "no_model", tokens=300_000),
+               record("example-model", ids[0], "descriptive", tokens=123_456),
+               record("example-model", ids[1], "prescriptive", number=2, tokens=7),
+               {**record("example-model", ids[1], "no_model"), "retry_input_tokens": 5000, "retry_output_tokens": 900}]
+    form = {**FORM, "attempts": 2}
+    put_branch(server.root, "t1", {"results/t1/experiment.toml": dumps_config(config_of(form, server)),
+                                   **raw_files(records)}, where="local")
+    status, body = call(server, "POST", URL, {"form": form})
+    assert status == 200, body
+    config = config_of(form, server)
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    for path, text in raw_files(records).items():
+        (raw_dir / path.rsplit("/", 1)[1]).write_text(text)
+    prices = tomllib.loads((server.root / "config" / "prices.toml").read_text())
+    pending = list(pending_attempts(config, [r for r in inputs_of(server)], raw_dir, None))
+    assert body["counts"]["to_run"] == len(pending)
+    assert body["counts"]["done"] == body["counts"]["planned"] - len(pending) == 4
+    assert abs(body["models"][0]["spent_usd"] - spent_by_model(config, prices, raw_dir)["example-model"]) < 1e-9
+    assert "raw_response" not in repr(server.app.live_estimate._experiments)
+
+
+def test_unreadable_branch_is_400(server):
+    bad = record("example-model", "x", "no_model")
+    del bad["latency_s"]
+    put_branch(server.root, "t1", {"results/t1/experiment.toml": dumps_config(config_of(FORM, server)),
+                                   **raw_files([bad])}, where="local")
+    status, body = call(server, "POST", URL, LIVE)
+    assert status == 400 and "latency_s" in body["error"]
+
+
+def test_price_missing_a_field_is_400(server):
+    root = server.root
+    (root / "config" / "prices.toml").write_text("[example-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = \"free\"\n")
+    commit_all(root, "partial price")
+    git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
+    status, body = call(server, "POST", URL, LIVE)
+    assert status == 400 and "example-model" in body["error"] and "price_output_per_mtok" in body["error"]
+
+
+def test_a_push_to_main_outside_the_release_keeps_the_prompts(server):
+    est = server.app.live_estimate
+    assert call(server, "POST", URL, LIVE)[0] == 200
+    held = next(iter(est._releases.values()))
+    count = len(held["prompts"])
+    assert count
+    (server.root / "docs.txt").write_text("a docs change")
+    commit_all(server.root, "docs")
+    git(server.root, "push", "-q", "origin", "HEAD:refs/heads/main")
+    assert call(server, "POST", URL, LIVE)[0] == 200
+    assert len(est._releases) == 1 and next(iter(est._releases.values())) is held
