@@ -1,6 +1,6 @@
 // Spec: docs/specs/ui.md (Benchmarks, HTTP API 26)
 // The Benchmarks page: AI models compared across experiments, from GET /api/benchmarks. It loads its own data
-// and ignores the menu's release. Release, provider, model, puzzle, setup, and validity changes send a request;
+// and ignores the menu's release. Release, AI model, puzzle, setup, and validity changes send a request;
 // significance and metrics changes only redraw. Every choice that differs from its default lives in the hash.
 (function () {
   const h = UI.el;
@@ -96,6 +96,40 @@
     const all = options.providers.flatMap((p) => p.models);
     return names.length === all.length ? null : names;
   }
+
+  // The AI models dropdown works on one list: the selected model names, in the order of the options. These helpers
+  // are pure, for tests/js/benchmarks.test.mjs.
+  const allModels = (options) => options.providers.flatMap((p) => p.models);
+  // The selection a hash stands for: `models=` alone, or `providers=` with or without `models=` (old links).
+  const selectionFromQuery = (c, options) => {
+    const names = chosenModels(c, options);
+    return allModels(options).filter((m) => !names || names.includes(m));
+  };
+  // "all", "mixed", or "none": how many of the provider's models are selected.
+  const headerState = (provider, selected) => {
+    const n = provider.models.filter((m) => selected.includes(m)).length;
+    return n === 0 ? "none" : n === provider.models.length ? "all" : "mixed";
+  };
+  // Clicking a header clears all of the provider's models when all are selected, and selects all of them otherwise.
+  const toggleProvider = (options, selected, name) => {
+    const provider = options.providers.find((p) => p.name === name);
+    const clear = headerState(provider, selected) === "all";
+    return allModels(options).filter((m) => (provider.models.includes(m) ? !clear : selected.includes(m)));
+  };
+  const toggleModel = (options, selected, model, on) => allModels(options).filter((m) => (m === model ? on : selected.includes(m)));
+  const summaryText = (options, selected) => {
+    const all = allModels(options);
+    if (selected.length === all.length) return "all";
+    const whole = options.providers.filter((p) => headerState(p, selected) === "all");
+    if (whole.length === 1 && whole[0].models.length === selected.length) return whole[0].name;
+    return `${selected.length} of ${all.length}`;
+  };
+  // What the old two selectors sent: the providers with a selected model, and the models (null when all are selected).
+  // Only `models` reaches the API.
+  const paramsFromSelection = (options, selected) => ({
+    providers: options.providers.filter((p) => headerState(p, selected) !== "none").map((p) => p.name),
+    models: selected.length === allModels(options).length ? null : selected,
+  });
 
   function requestFor(c, options) {
     const models = chosenModels(c, options);
@@ -290,7 +324,46 @@
     if (again) again.reopen(focused);
   }
 
-  window.Benchmarks = { verdict, chosenModels };  // for tests/js/benchmarks.test.mjs
+  // A dropdown of checkboxes with the column picker's look: "All AI models", then a header checkbox per provider
+  // (mixed when some of its models are selected) with its models indented under it. The last selected model can't be
+  // cleared. `state.key` remembers the box just toggled so the redrawn dropdown opens again on it.
+  function modelPicker(options, selected, onChange) {
+    const name = "AI models";
+    const all = allModels(options);
+    const rows = [];
+    const row = (key, text, cls, state, onToggle, disabled) => {
+      const box = h("input", { type: "checkbox", "data-key": key });
+      box.checked = state === "all";
+      box.indeterminate = state === "mixed";
+      if (state === "mixed") box.setAttribute("aria-checked", "mixed");
+      box.disabled = disabled;
+      box.addEventListener("change", () => { reopen.key = name + "|" + key; onChange(onToggle(box.checked)); });
+      rows.push(box);
+      return h("label", { class: cls }, box, " " + text);
+    };
+    const everything = selected.length === all.length ? "all" : selected.length ? "mixed" : "none";
+    const items = [row("all", "All AI models", "pick-all", everything, () => all, everything === "all")];
+    for (const p of options.providers) {
+      const state = headerState(p, selected);
+      items.push(row("provider:" + p.name, p.name, "pick-group", state, () => toggleProvider(options, selected, p.name),
+        state === "all" && selected.length === p.models.length));
+      for (const m of p.models) {
+        items.push(row("model:" + m, m, "pick-model", selected.includes(m) ? "all" : "none", (on) => toggleModel(options, selected, m, on),
+          selected.includes(m) && selected.length === 1));
+      }
+    }
+    const pick = h("details", { class: "col-picker" }, h("summary", { text: summaryText(options, selected) }),
+      h("div", { class: "col-menu" }, ...items));
+    if (reopen.key && reopen.key.startsWith(name + "|")) {
+      pick.open = true;
+      const key = reopen.key.slice(name.length + 1);
+      requestAnimationFrame(() => { const box = rows.find((b) => b.dataset.key === key); if (box && !box.disabled) box.focus(); });
+      reopen.key = null;
+    }
+    return h("div", { class: "small" }, name, pick);
+  }
+
+  window.Benchmarks = { verdict, chosenModels, selectionFromQuery, headerState, toggleProvider, toggleModel, summaryText, paramsFromSelection };  // for tests/js/benchmarks.test.mjs
 
   UI.registerPage("benchmarks", {
     render(bundle, params, el) {
@@ -308,16 +381,12 @@
       const keep = (all) => (v) => (v.length === all.length ? "" : v.join(","));
       const toolbar = () => {
         const o = opts || { providers: [], puzzles: [] };
-        const providers = o.providers.map((p) => p.name);
-        const shownProviders = c.providers.length ? providers.filter((p) => c.providers.includes(p)) : providers;
-        const modelOptions = o.providers.filter((p) => shownProviders.includes(p.name)).flatMap((p) => p.models);
-        const picked = c.models.length ? modelOptions.filter((m) => c.models.includes(m)) : modelOptions;
+        const selected = selectionFromQuery(c, o);
         const releases = bundle.releases || [];
         const bar = h("div", { class: "actions exp-filters" },
           picker("Releases", releases.map((r) => [r, r]), (c.releases.length ? c.releases : defaultReleases).filter((r) => releases.includes(r)),
             (v) => go({ releases: v.join(",") }), "all"),
-          picker("AI providers", providers.map((p) => [p, p]), shownProviders, (v) => go({ providers: keep(providers)(v), models: "" })),
-          picker("AI models", modelOptions.map((m) => [m, m]), picked.length ? picked : modelOptions, (v) => go({ models: keep(modelOptions)(v) })),
+          modelPicker(o, selected, (v) => go({ providers: "", models: v.length === allModels(o).length ? "" : v.join(",") })),
           picker("Puzzles", o.puzzles.map((p) => [p, p]), c.puzzles.length ? c.puzzles.filter((p) => o.puzzles.includes(p)) : o.puzzles,
             (v) => go({ puzzles: keep(o.puzzles)(v) })),
           picker("Setups", SETUPS, c.setups.length ? c.setups : SETUPS.map((s) => s[0]), (v) => go({ setups: keep(SETUPS)(v) })),

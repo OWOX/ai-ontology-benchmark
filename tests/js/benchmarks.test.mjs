@@ -1,4 +1,4 @@
-// Spec: docs/specs/ui.md (Benchmarks 2, How to test 31)
+// Spec: docs/specs/ui.md (Benchmarks 1 and 2, How to test 31)
 // Loads ui/static/pages/benchmarks.js in a bare context and checks which cell is coloured under each tier and which
 // models a request asks for. Exits 1 on any failure.
 import fs from "node:fs";
@@ -9,7 +9,7 @@ const file = fileURLToPath(new URL("../../ui/static/pages/benchmarks.js", import
 const window = {};
 const UI = { el: () => null, registerPage: () => {}, jobs: [], validityOptions: () => [], onJobs: () => () => {} };
 vm.runInNewContext(fs.readFileSync(file, "utf8"), { window, UI, document: { addEventListener: () => {} } });
-const { verdict, chosenModels } = window.Benchmarks;
+const { verdict, chosenModels, selectionFromQuery, headerState, toggleProvider, toggleModel, summaryText, paramsFromSelection } = window.Benchmarks;
 
 let failed = 0;
 function check(name, got, want) {
@@ -54,5 +54,32 @@ check("stale models under a provider mean that provider", pick({ providers: ["op
 check("a stale name beside a live one is ignored", pick({ models: ["gone", "claude-a"] }), ["claude-a"]);
 check("without options, models alone are kept", chosenModels({ providers: [], models: ["x"] }, null), ["x"]);
 check("without options, providers mean no list", chosenModels({ providers: ["openai"], models: ["x"] }, null), null);
+
+// The AI models dropdown: one selection of model names, grouped by provider.
+const o3 = { providers: [{ name: "anthropic", models: ["claude-a", "claude-b"] }, { name: "openai", models: ["gpt-a"] }] };
+const [anth, oai] = o3.providers;
+const from = (c) => selectionFromQuery({ providers: [], models: [], ...c }, o3);
+check("header: none", headerState(anth, ["gpt-a"]), "none");
+check("header: mixed", headerState(anth, ["claude-b"]), "mixed");
+check("header: all", headerState(anth, ["claude-a", "claude-b", "gpt-a"]), "all");
+check("toggle: mixed selects all of the provider", toggleProvider(o3, ["claude-b"], "anthropic"), ["claude-a", "claude-b"]);
+check("toggle: none selects all, keeping others", toggleProvider(o3, ["gpt-a"], "anthropic"), ["claude-a", "claude-b", "gpt-a"]);
+check("toggle: all clears the provider only", toggleProvider(o3, ["claude-a", "claude-b", "gpt-a"], "anthropic"), ["gpt-a"]);
+check("toggle model", toggleModel(o3, ["gpt-a"], "claude-b", true), ["claude-b", "gpt-a"]);
+check("summary: all", summaryText(o3, ["claude-a", "claude-b", "gpt-a"]), "all");
+check("summary: one whole provider", summaryText(o3, ["gpt-a"]), "openai");
+check("summary: one whole provider, two models", summaryText(o3, ["claude-a", "claude-b"]), "anthropic");
+check("summary: part of a provider", summaryText(o3, ["claude-a"]), "1 of 3");
+check("summary: a whole provider and another model", summaryText(o3, ["claude-a", "claude-b", "gpt-a"].slice(0, 2).concat([])), "anthropic");
+check("summary: k of n", summaryText({ providers: [anth, oai, { name: "g", models: ["g-a"] }] }, ["claude-a", "claude-b", "g-a"]), "3 of 4");
+check("params: all selected", paramsFromSelection(o3, ["claude-a", "claude-b", "gpt-a"]), { providers: ["anthropic", "openai"], models: null });
+check("params: one provider", paramsFromSelection(o3, ["gpt-a"]), { providers: ["openai"], models: ["gpt-a"] });
+check("params: part of two providers", paramsFromSelection(o3, ["claude-b", "gpt-a"]), { providers: ["anthropic", "openai"], models: ["claude-b", "gpt-a"] });
+check("params match the old request", paramsFromSelection(o3, from({ providers: ["openai"] })).models, chosenModels({ providers: ["openai"], models: [] }, o3));
+check("old hash: nothing is all", from({}), ["claude-a", "claude-b", "gpt-a"]);
+check("old hash: providers alone", from({ providers: ["anthropic"] }), ["claude-a", "claude-b"]);
+check("old hash: providers with models", from({ providers: ["anthropic"], models: ["claude-b", "gpt-a"] }), ["claude-b"]);
+check("new hash: models alone", from({ models: ["gpt-a", "claude-a"] }), ["claude-a", "gpt-a"]);
+check("old hash: stale models mean the providers", from({ providers: ["openai"], models: ["gone"] }), ["gpt-a"]);
 
 if (failed) process.exit(1);
