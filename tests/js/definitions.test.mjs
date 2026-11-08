@@ -29,7 +29,7 @@ let held = false;
 const waiters = [];
 const ctx = vm.createContext({ window, document, UI });
 vm.runInContext(fs.readFileSync(file, "utf8"), ctx);
-const { infoTerm, keepFocus, holdRedraw } = window.Defs;
+const { infoTerm, keepFocus, holdRedraw, dropRedraw } = window.Defs;
 
 let failed = 0;
 function check(name, ok) { if (!ok) { failed++; console.error(`FAIL ${name}`); } }
@@ -73,5 +73,14 @@ check("focus outside an icon is left alone", keepFocus(container)() === undefine
   held = false;
   waiters.splice(0).forEach((fn) => fn());
   check("only the newest waiting redraw runs, after the panel closes", ran.join() === "now,second");
+}
+{
+  const box = {}, ran = [];
+  held = true;
+  holdRedraw(box, () => ran.push("stale"));
+  dropRedraw(box);
+  held = false;
+  waiters.splice(0).forEach((fn) => fn());
+  check("a dropped redraw never runs", ran.length === 0);
 }
 process.exit(failed ? 1 : 0);

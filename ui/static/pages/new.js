@@ -302,9 +302,10 @@
         if (ref.card.hidden) return;
         const wait = S.pending ? "Estimating…" : "";
         ref.body.classList.toggle("pending", S.pending);
-        if (!e) { ref.formula.textContent = wait; ref.body.replaceChildren(); return; }
+        if (!e) { ref.formula.textContent = wait; Defs.dropRedraw(ref.body); ref.body.replaceChildren(); return; }
         if (e.error) {
           ref.formula.textContent = wait;
+          Defs.dropRedraw(ref.body);
           ref.body.replaceChildren(h("p", { class: "msg err", role: "alert", text: e.error }));
           return;
         }

@@ -78,5 +78,8 @@
     });
   }
 
-  window.Defs = { TERMS, infoTerm, info, keepFocus, holdRedraw };
+  // Drops the redraw waiting for `container`, for a caller that is about to draw something else there at once.
+  function dropRedraw(container) { waiting.delete(container); }
+
+  window.Defs = { TERMS, infoTerm, info, keepFocus, holdRedraw, dropRedraw };
 })();
