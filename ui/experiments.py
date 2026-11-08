@@ -38,11 +38,14 @@ def load_form(bundles, experiment_id: str) -> dict:
     return config_form(config, bundles.release_puzzles(config["release"]) or [])
 
 
-def planned_inputs(bundles, config: dict) -> list[dict]:
-    """The inputs an experiment plays, in release order: `experiment_inputs` over the release on `main`."""
+def planned_inputs(bundles, config: dict, inputs: list[dict] | None = None) -> list[dict]:
+    """The inputs an experiment plays, in release order: `experiment_inputs` over the release's `inputs` (read from
+    `main` when not given)."""
     puzzles = config.get("puzzles") or bundles.release_puzzles(config["release"]) or []
     git = bundles.git
-    return experiment_inputs({**config, "puzzles": puzzles}, expdata.read_inputs(git, git.main_ref(), config["release"]))
+    if inputs is None:
+        inputs = expdata.read_inputs(git, git.main_ref(), config["release"])
+    return experiment_inputs({**config, "puzzles": puzzles}, inputs)
 
 
 def snapshot(bundles, experiment_id: str, live_ids: set[str], job_states: dict, parallel: dict | None = None) -> dict:

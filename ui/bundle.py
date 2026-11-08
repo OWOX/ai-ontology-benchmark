@@ -242,6 +242,18 @@ class Bundles(BranchReaders):
                     return [v]
         return versions[:1]
 
+    def manifest(self, release: str) -> dict | None:
+        """The manifest of a release on `main`, or None."""
+        return self._manifest(release)
+
+    def prices(self) -> dict:
+        """`config/prices.toml` on `main`, `{}` when it cannot be read."""
+        return self._prices()
+
+    def scored_rows(self, held: dict, release: str, inputs: list[dict]) -> list[dict]:
+        """The scored attempt rows of a loaded entry (`loaded_entry`) over the release's full `inputs`, cached with it."""
+        return self._rows(held, {release: self._manifest(release)}, {release: inputs})
+
     def _rows(self, held: dict, manifests: dict[str, dict | None], inputs_by_release: dict[str, list[dict]]) -> list[dict]:
         """The scored attempt rows of one experiment with a config, read once. Empty when it has an error."""
         exp = held["exp"]

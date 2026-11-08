@@ -58,13 +58,13 @@ class LiveEstimate:
 
         def puzzles(release: str):
             if release not in manifests:
-                manifests[release] = self.bundles._manifest(release)
+                manifests[release] = self.bundles.manifest(release)
             found = manifests[release]
             return list(found["release_config"]["puzzles"]) if found else None
 
         # Read with the keys the page holds: a model with no key is allowed here, other reasons are not.
         held = {"view": _View(self.bundles.models({}), puzzles), "manifests": manifests,
-                "prices": self.bundles._prices()}
+                "prices": self.bundles.prices()}
         with self._lock:
             if len(self._main) >= CACHE_LIMIT:
                 self._main.pop(next(iter(self._main)))

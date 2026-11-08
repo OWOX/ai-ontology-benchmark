@@ -8,16 +8,13 @@ Bundles and the prices on `main`. Writes nothing. For display only.
 from datetime import datetime, timezone
 from statistics import median
 
-from src.evaluate.metrics import NA, attempt_cost, gave_moves, is_diagnosis, is_hit, mean, mean_of_two, share
+from src.evaluate.metrics import NA, attempt_cost, gave_moves, is_diagnosis, is_hit, mean_of_two, share
 from src.run.prompts import SETUPS
 from ui import expdata, experiments
+from ui.expdata import cell
 from ui.common import ApiError
 
 OWN_LATENCY_MIN = 5  # fewer records of this model than this: use the pushed history instead
-
-
-def cell(value: object) -> object:
-    return None if value == NA else value
 
 
 def parse_time(text: object) -> datetime | None:
@@ -68,13 +65,12 @@ def scorecard(bundles, experiment_id: str, live_ids: set[str], job_states: dict,
     if config is None:
         raise ApiError(400, exp["error"])
     release = config["release"]
-    inputs = experiments.planned_inputs(bundles, config)
-    manifest = bundles._manifest(release)
-    every = expdata.read_inputs(bundles.git, bundles.git.main_ref(), release)
-    rows = bundles._rows(held, {release: manifest}, {release: every})
+    every = expdata.read_inputs(bundles.git, bundles.git.main_ref(), release)  # read once: the plan and the rows
+    inputs = experiments.planned_inputs(bundles, config, every)
+    rows = bundles.scored_rows(held, release, every)
     if exp["error"]:
         raise ApiError(400, exp["error"])
-    prices = bundles._prices()
+    prices = bundles.prices()
     planned = len(inputs) * len(SETUPS) * config["attempts"]
     running = {n for n, s in job_states.items() if s == "running" and n.startswith("run:")}
     alive = bool(running)
