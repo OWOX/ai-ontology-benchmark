@@ -13,17 +13,17 @@ from src.run.prompts import SETUPS
 
 NA = "n/a"
 VALID_ROWS = [
-    ("Success rate", "success_rate"),
+    ("Precision", "precision"),
     ("Hallucination rate", "hallucination_rate"),
     ("False mismatch rate", "false_mismatch_rate"),
     ("Malformed output rate", "malformed_output_rate"),
     ("Truncation rate", "truncated_rate"),
     ("Abstention rate", "abstention_rate"),
     ("Format error rate", "format_error_rate"),
-    ("Cost per success", "cost_per_success"),
+    ("Cost per attempt", "cost_per_attempt"),
 ]
 INVALID_ROWS = [
-    ("Success rate", "success_rate"),
+    ("Precision", "precision"),
     ("Mismatch detection rate", "mismatch_detection_rate"),
     ("Hallucination rate", "hallucination_rate"),
     ("Malformed output rate", "malformed_output_rate"),
@@ -32,7 +32,7 @@ INVALID_ROWS = [
     ("Format error rate", "format_error_rate"),
 ]
 METRIC_COLUMNS = [
-    ("Success", "success_rate"),
+    ("Precision", "precision"),
     ("Hallucination", "hallucination_rate"),
     ("Mismatch detection", "mismatch_detection_rate"),
     ("False mismatch", "false_mismatch_rate"),
@@ -78,7 +78,7 @@ def balanced_cell(row: dict) -> str:
 
 
 def value_cell(row: dict, name: str) -> str:
-    return number(row[name], 4) if name == "cost_per_success" else rate_cell(row, name)
+    return number(row[name], 4) if name == "cost_per_attempt" else rate_cell(row, name)
 
 
 def table(header: list[str], rows: list[list[str]]) -> list[str]:
@@ -259,7 +259,7 @@ def metric_line(r: dict) -> list:
     line += [
         number(r["consistency"], 2),
         number(r["latency_per_attempt_s"], 2), number(r["input_tokens_per_attempt"], 1),
-        number(r["output_tokens_per_attempt"], 1), number(r["cost_per_success"], 4),
+        number(r["output_tokens_per_attempt"], 1), number(r["cost_per_attempt"], 4),
     ]
     return line
 
@@ -269,7 +269,7 @@ def metrics_section(metric_rows: list[dict]) -> list[str]:
     header = ["Setup", "AI model", "Depth", "Validity", "Attempts", "Infra failures"]
     header += [title for title, _ in METRIC_COLUMNS]
     header += ["Consistency", "Latency (s)", "Input tokens", "Output tokens",
-               "Cost per success"]
+               "Cost per attempt"]
     puzzles = list(dict.fromkeys(r["puzzle"] for r in metric_rows))
     for puzzle in puzzles:
         body = []

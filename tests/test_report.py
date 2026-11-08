@@ -107,7 +107,7 @@ def test_summary_tables_never_mix_validity(tree):
     text = build(tree)
     summary = text.split("## Summary")[1].split("## Metrics")[0]
     valid, invalid = summary.split("#### Invalid inputs")
-    assert "False mismatch rate" in valid and "Cost per success" in valid and "Mismatch detection" not in valid
+    assert "False mismatch rate" in valid and "Cost per attempt" in valid and "Mismatch detection" not in valid
     assert "Mismatch detection rate" in invalid and "False mismatch" not in invalid and "Cost" not in invalid
     assert "n=2" in valid and "n=2" in invalid
 
