@@ -70,7 +70,7 @@ def run_decision_attempt(model: dict, prompt: str, legal: list[str], questions: 
         read = read_decision_call(reply.call, legal)
         if read is None:
             break  # a call the validator rejects ends the attempt; it rules malformed_output
-        if read in ("done", "mismatch"):
+        if read == "done" or read.startswith("MISMATCH"):
             break
         moves.append(read)
         if len(moves) >= cap:
