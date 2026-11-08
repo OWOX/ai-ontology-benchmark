@@ -1,0 +1,606 @@
+% =====================================================================================
+% main.tex -- arXiv-ready TEMPLATE
+% "Deterministic Measurement of Ontology-Grounded Hallucination and Solvability
+%  Detection in LLMs Using Twisty Puzzles", Vlad Flaks and Mykhailo Flaks.
+%
+% Status: template with figure and table placeholders. No results are measured yet.
+% The evidence release is 3.0.0, the held-out input set (input set id 3, seed 20261108).
+% Releases 1.x and 2.x hold the development input sets and are not evidence.
+% Every number without a source comment is a placeholder (\val{...}) or a \todo{...}.
+% Real numbers carry a "% SRC:" comment that names their source file in this repo.
+%
+% Sources used: this repo only. docs/definitions.md, docs/methodology.md, AGENTS.md,
+% config/models.toml, config/prices.toml, releases/3.0.0/, and prompts/.
+%
+% Venue plan (project owner): (1) arXiv cs.CL, cross-list cs.AI, after the data release on
+% Hugging Face with a Zenodo DOI; (2) short version (about 4 pages) to an ICLR 2027
+% workshop, about 1 Feb 2027; (3) full paper to TMLR (rolling) or the NeurIPS 2027
+% Evaluations and Datasets Track (about May 2027) if 5x5, octahedral, and tetrahedral
+% results are ready. TMLR and NeurIPS are double-blind: anonymize before submission.
+%
+% Build: latexmk -pdf main.tex     Style check: python3 ste_check.py
+% =====================================================================================
+\documentclass[10pt,twocolumn,letterpaper]{article}
+\usepackage[margin=0.75in,columnsep=0.25in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx,multirow,makecell}
+\usepackage[table]{xcolor}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage[breakable,skins]{tcolorbox}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{placeholders}
+\usepackage[colorlinks=true,linkcolor=red!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
+
+\captionsetup{font=small,labelfont=bf}
+\setlength{\emergencystretch}{3em}
+\raggedbottom
+\usepackage{placeins}
+\renewcommand{\topfraction}{0.92}\renewcommand{\dbltopfraction}{0.92}
+\renewcommand{\bottomfraction}{0.6}\renewcommand{\textfraction}{0.06}
+\renewcommand{\floatpagefraction}{0.85}\renewcommand{\dblfloatpagefraction}{0.85}
+\setcounter{topnumber}{3}\setcounter{dbltopnumber}{3}\setcounter{totalnumber}{5}
+
+% ---- template markers ---------------------------------------------------------------
+\newcommand{\todo}[1]{{\color{red!70!black}\textbf{[TODO:}~#1\textbf{]}}}
+\newcommand{\val}[1]{{\color{red!70!black}\textbf{[VALUE:}~#1\textbf{]}}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newenvironment{procedure}{\begin{enumerate}[leftmargin=*,itemsep=1pt]}{\end{enumerate}}
+\newtcolorbox{uncertainty}[1]{enhanced,breakable,colback=yellow!5,colframe=orange!65!black,
+  boxrule=0.6pt,arc=1pt,left=4pt,right=4pt,top=2pt,bottom=2pt,fonttitle=\bfseries\small,
+  fontupper=\small,title={Uncertainty: #1}}
+\lstset{basicstyle=\ttfamily\scriptsize,breaklines=true,columns=fullflexible,frame=single,
+  rulecolor=\color{gray!60}}
+
+\title{Deterministic Measurement of Ontology-Grounded Hallucination and Solvability Detection in LLMs Using Twisty Puzzles}
+\author{%
+  Vlad Flaks\\ OWOX\\ \texttt{fv@owox.com}
+  \and
+  Mykhailo Flaks\\ Helmholtz Institute Mainz, Johannes Gutenberg University Mainz\\ \texttt{mflaks@uni-mainz.de}
+}
+% Open point: confirm the institution the study runs under.
+\date{\todo{date of submission} \quad arXiv:\val{ID} [cs.CL]}
+
+\begin{document}
+\maketitle
+
+% -------------------------------------------------------------------------------------
+% Abstract: STE text. It covers the four cubes (2x2 to 5x5) of Release 3.0.0. Keep it under
+% 1,920 characters for arXiv.
+% -------------------------------------------------------------------------------------
+\begin{abstract}
+Many evaluations treat a wrong move sequence from a Large Language Model (LLM) as a search error. This view hides a second type of error. A model can use a move that does not exist, or it can try to solve a state that no legal move sequence reaches.
+
+We ask whether the rules of the puzzle in the prompt change how often each error occurs. Twisty puzzles make this question measurable, because the puzzle defines every move and a deterministic validator checks every answer. No person and no second model judges correctness.
+
+Twelve Artificial Intelligence (AI) models receive each frozen cube state under three setups: no rules, prose rules, or an exact move list. Nine are system-2 models and three are decision models that choose among options. The inputs come from the held-out input set of Release 3.0.0 and cover the 2x2, 3x3, 4x4, and 5x5 cubes.
+
+A corruption step turns one in five inputs into an unreachable state, and the correct answer to it is a mismatch with a reason. We report balanced precision, hallucination rate, and critical thinking with 95\% bootstrap intervals. A paired test compares the setups. With the exact move list, the hallucination rate changes from \val{rate, no rules} to \val{rate, move list}, and critical thinking reaches \val{score}.
+\end{abstract}
+
+% =====================================================================================
+\section{Introduction}\label{sec:intro}
+A common view holds that a Large Language Model (LLM) fails a puzzle because it does not search deep enough. Under this view, a larger reasoning budget or a better search strategy repairs the error. Benchmarks that score the distance to the solved state support this view, because they count each failure as a short plan \citep{cubebench,illusion}. A score of this type cannot show whether the model knew which moves exist.
+
+Take a solved 3x3 cube and twist one corner in place. The cube now looks one move away from solved, but no sequence of legal face turns can solve it. A model that returns a move sequence for this state has not made a search error. It has missed a rule of the domain, and more search cannot repair that.
+
+This paper asks a narrow question. We keep the Artificial Intelligence (AI) model and the puzzle state constant and change only the rules in the prompt. Does the rate of impossible moves change? We also ask whether the model notices when a state is unreachable. A script can check both answers, so we can measure them without a judge model.
+
+We answer with a closed domain in which the rules are exact. A formal ontology defines the pieces, the legal move group, and the reachability axioms of each cube. A deterministic validator then scores every attempt from the raw response alone. \Cref{fig:workflow} shows the four workflows and the separation between valid and corrupted inputs.
+
+This work makes three contributions. The list below states each contribution and the part of the paper that supports it. \todo{Replace the third item with the measured main effect when Release 3.0.0 results exist.}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item We release a frozen held-out benchmark of 600 states of the 2x2, 3x3, 4x4, and 5x5 cubes, with a recorded seed. One in five states is unreachable by construction, so the correct answer to it is a mismatch with a reason and not a move list.
+  \item We define hallucination as one countable event: a move token that is not legal, or a mismatch reason that no state can show. A deterministic validator gives each attempt one of eight outcomes, and no model judges another model.
+  \item We compare twelve AI models from five providers under three prompt setups on byte-identical inputs. \todo{One sentence with the main measured effect and its 95\% interval.}
+\end{itemize}
+
+% ---- placeholder fig:workflow (ID stamped from the float counter) --------------------
+% DATA: none (schematic). SOURCE: docs/definitions.md (Workflows) and src/puzzles/cube.py.
+% STATUS: to draw (new).
+\begin{figure*}[t]
+\begin{phcanvas}
+  \phpanel{0}{0.205}{1}{0.145}{A}{Four workflows: generate, release, run, evaluate. Shows which step reads and writes which frozen files.}
+  \phpanel{0}{0}{0.492}{0.19}{B}{Reachable versus unreachable. A valid scramble and its corrupted copy.}
+  \phpanel{0.508}{0}{0.492}{0.19}{C}{Three setups. What each prompt adds to the same state.}
+\end{phcanvas}
+\caption{Benchmark workflow and design. (A) The four workflows \code{generate}, \code{release}, \code{run}, and \code{evaluate}, with the frozen release folder as the only interface between them. (B) A valid scramble and its corrupted copy with one twisted corner, which breaks the corner orientation invariant. (C) The content that each setup adds to the same rendered state.}
+\label{fig:workflow}
+\end{figure*}
+
+% =====================================================================================
+\section{Related Work}\label{sec:related}
+% SRC [REPO] docs/related-work.md
+Several benchmarks use cubes and other puzzles with moves that a program can check. Cube Bench tests multimodal models on 3x3 cube skills and scores progress as the distance to solved \citep{cubebench}. CubeBench uses the cube to test agents that track state over many steps under partial observation \citep{cubebenchpartial}. Other studies find invalid moves on the 8-puzzle and a collapse of reasoning models past a complexity limit \citep{innateplanning,illusion,planbench}.
+
+The closest match to our definition of hallucination lists illegal notation as one failure mode on finite puzzles \citep{complexitylimits}. Other studies put explicit rules into the prompt and check with code whether models keep them \citep{simplerules,gridgames,ludobench}. HalluLens gives a broad taxonomy of hallucination \citep{hallulens}. We narrow hallucination to one countable event, an impossible move.
+
+A separate line of work asks whether models notice a question without a valid answer \citep{knowunknown,unsolvable,blindsolvers,solvabilityboundary}. Work on ontologies and knowledge graphs adds domain structure to the prompt or checks answers against it \citep{agrawal2024,penkov2024,magana2025,ali2026}. Most of these studies use a reference answer or a small set of examples, and not a deterministic rule check over frozen inputs.
+
+None of these studies gives the same frozen inputs to several models under three levels of rules in the prompt. None measures success, impossible moves, and detection of invalid inputs with one deterministic validator. That combination is the gap that this study fills. \todo{Add two or three 2026 papers on solvability detection if a literature pass finds them.}
+
+% =====================================================================================
+\section{Scope and Terms}\label{sec:terms}
+An AI model that plans without a formal domain ontology cannot separate a hard search problem from an impossible state. In open-ended text tasks, people or secondary LLMs judge whether a response contains a hallucination. Judge models add variance and cannot show whether an error came from shallow planning or from missing rules. Twisty puzzles remove judge variance, because every state is discrete and every move is deterministic.
+
+\Cref{tab:vocab} lists the controlled vocabulary of this paper. Each term has one meaning in the code, the configuration files, the raw records, and this text. The table also gives the code location that defines the term.
+
+% SRC [REPO] docs/definitions.md and AGENTS.md (puzzle engine interface).
+\begin{table*}[t]
+\caption{Controlled vocabulary. The second column gives the code symbol or file that defines each term in the repository \citep{flaksrepo}.}
+\label{tab:vocab}
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.17\textwidth}p{0.25\textwidth}X@{}}
+\toprule
+Term & Code symbol or location & Definition \\
+\midrule
+Ontology model & \code{prompts/\{setup\}/} & The rules of a puzzle: pieces, legal move group, state transitions, and reachability constraints. \\
+Setup & \code{SETUPS} (\code{src/run/prompts.py}) & The prompt condition: \code{no\_model}, \code{descriptive}, or \code{prescriptive}. \\
+State & \code{state: str} (\code{src/puzzles/cube.py}) & A string of $6n^2$ face letters in \code{URFDLB} order, one letter for each sticker. \\
+Legal move & \code{engine.legal\_moves()} & A string that matches a move of the move group exactly, without normalization. The cubes use face turns, plus wide turns on the 4x4 and 5x5. \\
+Impossible move & \code{engine.is\_move\_token()} (\code{src/puzzles/cube.py}), \code{legal\_moves()} & A move token that is not in \code{legal\_moves()}, such as a slice move, a lowercase turn, a whole-cube rotation, or a doubled suffix. \\
+Valid or invalid input & \code{validity} (\code{inputs.jsonl}) & A frozen state that can or cannot be reached from the solved state by legal moves. The label is authoritative. \\
+Corruption & \code{engine.corrupt()} (\code{src/puzzles/cube.py}) & A change that makes a copy of a valid state unreachable, for example a twisted corner or a flipped edge. \\
+Mismatch reason & \code{engine.mismatch\_reasons()} & One cause from the closed list that the engine returns, such as \code{twisted corner}, or \code{other}, which the prompt adds. The engine list holds a decoy reason that no state can show. \\
+Mismatch flag & \code{validate()} (\code{src/validator.py}) & Set when the whole reply is the single line \code{MISMATCH} with a reason. It says that the state is unreachable. \\
+Hallucination & \code{validate()} (\code{src/validator.py}) & The outcome for any reply with an impossible move or a decoy reason, even if the cube ends solved. \\
+Diagnosis & \code{is\_diagnosis()} (\code{src/evaluate/metrics.py}) & A mismatch on an invalid input whose reason is the corruption type of that input. \\
+Decision model & \code{src/run/decision.py} & An AI model that chooses among options in a loop of one call per move and never writes text. \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+% =====================================================================================
+\section{Method}\label{sec:method}
+\subsection{Algebraic ontology and turn operator}\label{sec:ontology}
+% SRC [REPO] src/puzzles/cube.py (_turn_clockwise, _moves).
+An LLM reads a puzzle state as a flat sequence of characters, but the physical puzzle obeys a closed algebraic ontology. We define the puzzle ontology as a five-tuple over finite discrete sets. \Cref{eq:ontology} states this structure.
+\begin{equation}
+\mathcal{O} = (\mathcal{C}, \mathcal{I}, \mathcal{R}, \mathcal{T}, \mathcal{A})
+\label{eq:ontology}
+\end{equation}
+In \cref{eq:ontology}, $\mathcal{C}$ denotes concepts, $\mathcal{I}$ individuals, $\mathcal{R}$ spatial relations, $\mathcal{T}$ the move group, and $\mathcal{A}$ the reachability axioms. Each sticker on an $n \times n$ cube has a position vector $\mathbf{p}$ and a unit normal $\mathbf{u}$. A clockwise quarter turn of face $f$ rotates every sticker with $\mathbf{a}\cdot\mathbf{p} = n-1$ around the face normal $\mathbf{a}$. The function \code{\_turn\_clockwise()} applies \cref{eq:rotation} to each vector.
+\begin{equation}
+\operatorname{Rot}_{\mathbf{a}}(\mathbf{v}) = (\mathbf{a}\cdot\mathbf{v})\,\mathbf{a} - (\mathbf{a}\times\mathbf{v})
+\label{eq:rotation}
+\end{equation}
+
+\subsection{Reachability invariants}\label{sec:invariants}
+% SRC [REPO] src/puzzles/cube.py (_is_reachable, corrupt); docs/puzzles/3x3.md.
+This single operator generates every move in \code{legal\_moves()}. On the 3x3 cube there are 18 moves: the clockwise turns $f$, the anticlockwise turns $f' = f^{-1}$, and the half turns $f2 = f \circ f$. The 4x4 and 5x5 cubes add wide turns, and no cube has slice moves or whole-cube rotations. Every legal move preserves the three invariants of the 3x3 cube in \cref{eq:invariants}.
+\begin{equation}
+\begin{aligned}
+&\textstyle\sum_{i=1}^{8} v_i \equiv 0 \ (\mathrm{mod}\,3), \quad \textstyle\sum_{j=1}^{12} w_j \equiv 0 \ (\mathrm{mod}\,2),\\
+&\operatorname{sgn}\sigma = \operatorname{sgn}\tau
+\end{aligned}
+\label{eq:invariants}
+\end{equation}
+Here $v_i \in \{0,1,2\}$ is the orientation of corner $i$ and $w_j \in \{0,1\}$ is the flip of edge $j$. The last condition requires equal parity of the corner permutation $\sigma$ and the edge permutation $\tau$. Legal moves therefore reach $43{,}252{,}003{,}274{,}489{,}856{,}000$ states, which is one twelfth of all assembled configurations.
+% SRC: standard group theory of the 3x3 cube: 519,024,039,293,878,272,000 assembled; 43,252,003,274,489,856,000 reachable.
+
+The 2x2 cube has only the corner twist invariant, and no permutation parity rule. With the down-back-left (\code{DBL}) corner fixed, the 2x2 cube has $7! \cdot 3^6 = 3{,}674{,}160$ reachable states. The function \code{corrupt()} makes each invalid input from a copy of a valid state, as \cref{fig:example} shows. The 2x2 uses twisted corner and recoloured sticker, and the 3x3 adds flipped edge, swapped corners, and swapped edges. The 4x4 uses twisted corner, flipped wing, and recoloured sticker, and the 5x5 adds flipped edge.
+
+% ---- placeholder fig:example (ID stamped from the float counter) ---------------------
+% DATA: one valid input and its invalid copy from releases/3.0.0/inputs.jsonl, rendered with
+% engine.render(); one example reply per outcome. STATUS: to draw (new figure).
+\begin{figure}[t]
+\begin{phcanvas}
+  \phpanel{0}{0.40}{0.492}{0.36}{A}{Valid input. The rendered state in the prompt.}
+  \phpanel{0.508}{0.40}{0.492}{0.36}{B}{Corrupted copy. One corner twisted in place.}
+  \phpanel{0}{0}{1}{0.385}{C}{Reply format and outcomes. Replies for the outcomes judged from the reply text.}
+\end{phcanvas}
+\caption{What the model receives and returns. (A) A valid input as the prompt shows it. (B) Its corrupted copy, which no legal move sequence reaches. (C) Example replies in the required format, with the outcome that the validator gives each one. A reply is one move per line, or one \code{MISMATCH} line with a reason. The outcomes \code{truncated} and \code{infrastructure\_failure} come from the stop reason, so they have no example reply.}
+\label{fig:example}
+\end{figure}
+
+\subsection{Prompt setups and frozen releases}\label{sec:setups}
+% SRC [REPO] releases/3.0.0/manifest.json and releases/3.0.0/README.md; config/release.toml.
+The evidence release is 3.0.0, which freezes the held-out input set (input set id 3) from the seed 20261108. Per puzzle and scramble depth it holds 40 valid inputs and 10 invalid copies, so 600 inputs in all: 480 valid and 120 invalid. The 2x2 and 3x3 use depths 5, 10, and 20. The 4x4 uses 10, 20, and 40, and the 5x5 uses 15, 30, and 60. Each input goes through three setups, and every setup lists the mismatch reasons beside the reply format.
+
+The \code{no\_model} setup gives the state and the reply format only. The \code{descriptive} setup adds prose rules, and the \code{prescriptive} setup also lists every legal move. Releases 1.x and 2.x hold development inputs, which are not evidence: prompts changed while input set 1 results were read. \Cref{tab:prompt-bytes} and \cref{fig:prompt-sizes} give the template sizes. A prompt change after the freeze of Release 3.0.0 needs a new minor release, and its results appear beside the earlier ones.
+% SRC [REPO] releases/3.0.0/manifest.json lists the 12-character version of each prompt template.
+
+% SRC [REPO] byte sizes of releases/3.0.0/prompts/ (identical to prompts/), measured with wc -c.
+\begin{table}[t]
+\caption{Template size in bytes for each setup and puzzle in Release 3.0.0. The templates still hold the markers for the state, the move list, and the mismatch reasons.}
+\label{tab:prompt-bytes}
+\small
+\begin{tabularx}{\linewidth}{@{}Xrrrr@{}}
+\toprule
+Setup & 2x2 & 3x3 & 4x4 & 5x5 \\
+\midrule
+\code{no\_model}     & 791  & 791  & 784  & 784  \\
+\code{descriptive}  & 1523 & 1590 & 1965 & 1975 \\
+\code{prescriptive} & 1637 & 1704 & 2079 & 2089 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ---- placeholder fig:prompt-sizes (ID stamped from the float counter) ----------------
+% DATA: table tab:prompt-bytes (real), plus rendered prompt tokens per input from the
+% Release 3.0.0 raw records (pending). STATUS: data for bytes exists; token panel pending.
+\begin{figure}[t]
+\phsingle{0.56}{Prompt size by setup and puzzle under Release 3.0.0, in bytes and tokens.}
+\caption{Prompt template size by setup and puzzle under Release 3.0.0. Bars give the template size in bytes. A second axis shows the mean rendered prompt length in input tokens, \val{tokens per setup}.}
+\label{fig:prompt-sizes}
+\end{figure}
+
+\subsection{Deterministic validation and metrics}\label{sec:metrics}
+% SRC [REPO] src/validator.py (validate); docs/definitions.md (Attempts and outcomes, Metrics).
+The function \code{validate()} judges every attempt from the input, the raw response, and the stop reason. It gives one of eight outcomes in the strict priority order of \cref{eq:outcome}. A hallucination outcome holds even if the remaining moves solve the puzzle.
+\begin{equation}
+\begin{gathered}
+\texttt{infrastructure\_failure} \succ \texttt{truncated} \succ \texttt{malformed\_output}\\
+\succ \texttt{abstention} \succ \texttt{hallucination} \succ \texttt{format\_error}\\
+\succ \texttt{success} \succ \texttt{failure}
+\end{gathered}
+\label{eq:outcome}
+\end{equation}
+A text model replies with one move per line, or with the single line \code{MISMATCH}, one space, and a mismatch reason. A reply cut off at the token limit is truncated, and a refusal or an empty reply is malformed output. A reply with no move line is an abstention. Legal moves in any other layout, such as a decorated line or a line with a Unicode prime, are a format error. A hallucination is a move token that is not legal, such as \code{r}, \code{M}, \code{x}, \code{Rw} on a 3x3, or \code{R'2}, or a decoy reason.
+
+A valid input succeeds if all moves are legal, the cube ends solved, and the mismatch flag is off. An invalid input succeeds if all moves are legal and the mismatch flag is on. Any other attempt with only legal moves is a failure. A decision model instead chooses an option in each call of a per-move loop, and the validator builds its moves from the choices. It cannot return an impossible move, but it can choose the decoy reason.
+
+The function \code{answer\_class()} in \code{src/evaluate/metrics.py} classifies each answer, and \code{evaluate} runs it. An answer is positive when it claims a solution, and it is true when the claim is right. A mismatch on an invalid input is a true negative only with the corruption type of that input as the reason. Any other mismatch is a false negative. Abstentions, format errors, truncated output, malformed output, and infrastructure failures are not classified.
+
+Precision $P$ is the share of classified answers that are right, for one validity label. Balanced precision $P_{\mathrm{b}}$ is the mean of $P$ on valid inputs and on invalid inputs, as \cref{eq:precision} shows. Coverage, the share of attempts that are classified answers, goes beside it.
+\begin{equation}
+P_{\mathrm{b}} = \tfrac{1}{2}\left(P_{\mathrm{valid}} + P_{\mathrm{invalid}}\right), \quad P = \frac{TP+TN}{TP+FP+TN+FN}
+\label{eq:precision}
+\end{equation}
+The mismatch detection rate is the share of attempts on invalid inputs with the mismatch flag on. The false mismatch rate $F$ is the same share on valid inputs. Truncated output, malformed output, abstention, and format errors count as not flagged. The diagnosis rate $D$ is the share of attempts on invalid inputs that are a diagnosis. Critical thinking $C_{\mathrm{t}}$ is the mean of $D$ and one minus $F$, as \cref{eq:critical} shows.
+\begin{equation}
+C_{\mathrm{t}} = \tfrac{1}{2}\bigl(D + (1 - F)\bigr)
+\label{eq:critical}
+\end{equation}
+
+The hallucination rate is the share of attempts with an impossible move among the attempts that gave moves. The reason hallucination rate is the share of mismatch reasons that are the decoy. Consistency is the mean share of the modal outcome over the repeated attempts on one input. Cost efficiency is the mean cost per attempt divided by balanced precision times coverage.
+
+% =====================================================================================
+\section{Experimental Setup}\label{sec:setup}
+\subsection{AI models and prices}\label{sec:models}
+The study tests twelve AI models: nine system-2 models, three each from Anthropic, OpenAI, and Google, and three decision models from TypeSafe and Cloudflare. \Cref{tab:models} lists their token prices from \code{config/prices.toml}. All models run with empty sampling parameters. Anthropic endpoints reject \code{temperature}, \code{top\_p}, and \code{top\_k} since 21 October 2026, and the reasoning models of the other providers fix their own sampling. \todo{State the reasoning effort, the run dates, and the served model ids.}
+
+% SRC [REPO] config/models.toml and config/prices.toml (checked 2026-10-23).
+\begin{table}[t]
+\caption{AI models and token prices in United States Dollars (USD) per million tokens. Prices marked $\dagger$ rise to 4.00 and 20.00 on 1 December 2026. Prices marked $\ddagger$ rise to 1.50 and 7.50 on 1 January 2027. Decision models return a choice, so their output price is zero.}
+\label{tab:models}
+\small
+\begin{tabularx}{\linewidth}{@{}Xrr@{}}
+\toprule
+AI model & Input & Output \\
+\midrule
+\code{claude-opus-5-5}       & 4.00  & 20.00 \\
+\code{claude-sonnet-5-5}     & 2.00  & 10.00 \\
+\code{claude-haiku-5-5}      & 0.10  & 0.50  \\
+\code{gpt-6-astra}           & 10.00 & 50.00 \\
+\code{gpt-6.1-sol}           & 2.00  & 10.00 \\
+\code{gpt-6-luna}            & 0.10  & 0.50  \\
+\code{gemini-4-argon}$^{\dagger}$   & 2.00  & 10.00 \\
+\code{gemini-3.8-flash}$^{\ddagger}$ & 0.75  & 3.75  \\
+\code{gemini-3.5-flash-lite} & 0.30  & 2.50  \\
+\code{jev}                  & 0.042 & 0.00  \\
+\code{clef}                 & 0.24  & 0.00  \\
+\code{clef-flash}           & 0.038 & 0.00  \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Budget and operational limits}\label{sec:budget}
+% SRC [REPO] src/run/budget.py; defaults in docs/definitions.md (Prices).
+The budget guard in \code{src/run/budget.py} enforces three limits in USD. The defaults are \$2.00 per request, \$25.00 per model, and \$50.00 per experiment, and the experiment config can change them. Before the run, \code{check\_request\_budget()} bounds the worst-case cost of every pending request with \cref{eq:cmax}, and no request may pass the request budget. Here $L$ is the prompt length in characters and $T$ is \code{max\_output\_tokens}.
+\begin{equation}
+C_{\max} = \frac{\lceil L/4 \rceil\, p_{\mathrm{in}} + T\, p_{\mathrm{out}}}{10^6} \le B_{\mathrm{req}}
+\label{eq:cmax}
+\end{equation}
+During the run, the guard refuses a request when its worst-case cost plus the cost spent would pass the model budget or the experiment budget. This budget stop ends the run with exit code 1, and a later run with a higher budget resumes. One pass sends 600 inputs through three setups, which makes 1,800 prompts per model, and each prompt has $K$ attempts.
+
+A decision model makes one call per move, up to \code{max\_moves}. Each call holds the state with the moves so far and the questions object. \Cref{tab:limits} and \cref{fig:cost} give the worst-case cost per model. \todo{Recompute every cell of \cref{tab:limits} from \code{releases/3.0.0/prompts/} and \code{config/prices.toml}}. \todo{Choose one budget basis and name the models that the model budget blocks}.
+
+% SRC [REPO] to recompute from the 1,800 prompts per model of releases/3.0.0 (src/run/prompts.py) and config/prices.toml.
+\begin{table}[t]
+\caption{Worst-case cost per model in USD for one pass of 1,800 prompts. The last column is the largest $T$ that fits the default \$25.00 model budget with $K = 1$.}
+\label{tab:limits}
+\small
+\begin{tabularx}{\linewidth}{@{}Xrrr@{}}
+\toprule
+AI model & \makecell[r]{$K{=}1$} & \makecell[r]{$K{=}\val{K}$} & \makecell[r]{max $T$\\at \$25} \\
+\midrule
+\code{gpt-6-astra}           & \val{USD} & \val{USD} & \val{T} \\
+\code{claude-opus-5-5}       & \val{USD} & \val{USD} & \val{T} \\
+\code{claude-sonnet-5-5}     & \val{USD} & \val{USD} & \val{T} \\
+\code{gpt-6.1-sol}           & \val{USD} & \val{USD} & \val{T} \\
+\code{gemini-4-argon}        & \val{USD} & \val{USD} & \val{T} \\
+\code{gemini-3.8-flash}      & \val{USD} & \val{USD} & \val{T} \\
+\code{gemini-3.5-flash-lite} & \val{USD} & \val{USD} & \val{T} \\
+\code{claude-haiku-5-5}      & \val{USD} & \val{USD} & \val{T} \\
+\code{gpt-6-luna}            & \val{USD} & \val{USD} & \val{T} \\
+\code{jev}                   & \val{USD} & \val{USD} & n/a \\
+\code{clef}                  & \val{USD} & \val{USD} & n/a \\
+\code{clef-flash}            & \val{USD} & \val{USD} & n/a \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ---- placeholder fig:cost (ID stamped from the float counter) ------------------------
+% DATA: tab:limits (pending recompute for Release 3.0.0). STATUS: to draw.
+\begin{figure}[t]
+\phsingle{0.62}{Worst-case cost per model for one pass. Shows which models the default 25 USD budget blocks.}
+\caption{Worst-case cost per model for one pass of 1,800 prompts at $K = 1$ and $T = \val{T}$. The horizontal line marks the default model budget of \$25.00. Hatched bars show the cost at $K = \val{K}$.}
+\label{fig:cost}
+\end{figure}
+
+% Full-width results floats are placed early so that they land on the Results pages.
+% ---- placeholder fig:hallucination (ID stamped from the float counter) ---------------
+% DATA: results/<experiment>/<release>.md and its CSV (evaluate output). Bootstrap intervals from
+% src/evaluate/metrics.py (bootstrap_interval). STATUS: pending Release 3.0.0 run.
+\begin{figure*}[t]
+\begin{phcanvas}
+  \phpanel{0}{0}{0.492}{0.27}{A}{Solvable inputs. Hallucination rate per model and setup, with 95\% bootstrap intervals.}
+  \phpanel{0.508}{0}{0.492}{0.27}{B}{Corrupted inputs. The same bars, to test whether unreachable states cause more invented moves.}
+\end{phcanvas}
+\caption{Hallucination rate by AI model and setup. Grouped bars give the share of attempts with at least one impossible move, among the attempts that gave moves, with 95\% bootstrap intervals over inputs. (A) Valid inputs, $n = \val{n}$ attempts per bar. (B) Invalid inputs, $n = \val{n}$ attempts per bar. The decision models show n/a, because they cannot return an impossible move. The bars sort the models by provider and price.}
+\label{fig:hallucination}
+\end{figure*}
+
+% ---- placeholder fig:setup-effect (ID stamped from the float counter) ----------------
+% DATA: paired per-input shares from raw records. METHOD: paired setup test (see sec:stats, src/evaluate/metrics.py paired_tests).
+% STATUS: new figure. Justification: it shows the effect of the
+% ontology directly, which fig:hallucination shows only as a difference between bars.
+\begin{figure}[t]
+\phsingle{0.72}{Setup effect per model. Paired change in hallucination rate against no rules.}
+\caption{Change in hallucination rate for each AI model when the prompt adds rules. Circles show \code{descriptive} minus \code{no\_model}, and squares show \code{prescriptive} minus \code{no\_model}. Each marker is the mean share difference over the paired valid inputs of one cube, \val{cube}. The paired setup test runs for each model, cube, and validity label.}
+\label{fig:setup-effect}
+\end{figure}
+
+\subsection{Statistical analysis}\label{sec:stats}
+% SRC [REPO] docs/methodology.md (Sample size); docs/definitions.md (Metrics); src/evaluate/metrics.py.
+Every rate has a 95\% bootstrap interval over inputs. The bootstrap draws inputs with replacement 2000 times from a fixed seed, and each draw keeps all attempts of the inputs drawn. Attempts on one input are not independent, so resampling attempts would make the interval too narrow. The interval is n/a when fewer than two inputs are behind a rate.
+
+The paired setup test compares two setups on the same inputs. Each input gets one share per setup, and the test is an exact two-sided sign test on the inputs whose shares differ. A difference is significant when its Holm-adjusted p-value is below 0.05. With 120 valid inputs per puzzle, the test has 80\% power for a 20-point difference from 0.50 at the 0.05 level. The worst-case Holm correction asks for 140 inputs, so the test falls a little short there.
+
+\begin{uncertainty}{pooled depths}
+The paired test pools scramble depths and never pools validity labels. Hard inputs tend to be hard under every setup, so the independence assumption behind the sample size is conservative. More attempts per input add little power, because the input is the unit of the test. \todo{State the number of attempts per input $K$ of the run.}
+\end{uncertainty}
+
+% =====================================================================================
+\section{Results}\label{sec:results}
+\begin{uncertainty}{no measured results yet}
+This template holds no measured results. Every rate in this section will come from the held-out input set of Release 3.0.0. Results on the development input sets of releases 1.x and 2.x show how the method was built. They are not evidence for the question. \todo{Insert the experiment id and the report date.}
+\end{uncertainty}
+
+% ---- placeholder tab:main (ID stamped from the float counter) ------------------------
+% DATA: evaluate CSV. STATUS: pending. One row per model, column groups per setup.
+\begin{table*}[t]
+\caption{Main results. Each cell gives the metric and its 95\% bootstrap interval for one AI model and setup. The columns cover balanced precision with coverage, hallucination rate, reason hallucination rate, critical thinking, and mismatch detection rate.}
+\label{tab:main}
+\phsingle{0.17}{Main results table: twelve models by three setups, headline metrics with intervals.}
+\end{table*}
+
+% ---- placeholder fig:outcomes (ID stamped from the float counter) --------------------
+% DATA: outcome counts per model x setup x validity from evaluate. STATUS: new figure.
+% Justification: separates error types that the validator already distinguishes.
+\begin{figure*}[t]
+\begin{phcanvas}
+  \phpanel{0}{0}{0.492}{0.24}{A}{Outcome shares on solvable inputs. Stacked bars of the seven outcomes in the rates, per model and setup.}
+  \phpanel{0.508}{0}{0.492}{0.24}{B}{Outcome shares on corrupted inputs. Shows where rules move attempts between outcomes.}
+\end{phcanvas}
+\caption{Outcome shares by AI model and setup. Each stacked bar splits the attempts into seven outcomes: success, failure, hallucination, format error, abstention, malformed output, and truncated. (A) Valid inputs. (B) Invalid inputs. Infrastructure failures stay out of every rate and appear here only as a count above each bar.}
+\label{fig:outcomes}
+\end{figure*}
+
+% ---- placeholder fig:confusion (ID stamped from the float counter) -------------------
+% DATA: true and false positives and negatives per classified answer (docs/definitions.md,
+% Attempts and outcomes). STATUS: pending.
+\begin{figure*}[t]
+\begin{phcanvas}
+  \phpanel{0}{0}{0.325}{0.25}{A}{No rules. Confusion matrix of the answer class against the true label.}
+  \phpanel{0.3375}{0}{0.325}{0.25}{B}{Prose rules. The same matrix for the descriptive setup.}
+  \phpanel{0.675}{0}{0.325}{0.25}{C}{Exact move list. The same matrix for the prescriptive setup.}
+\end{phcanvas}
+\caption{Solvability detection by setup, pooled over the twelve AI models. Each two-by-two matrix counts classified answers by validity label and claim, so a true negative needs the right mismatch reason. (A) \code{no\_model}. (B) \code{descriptive}. (C) \code{prescriptive}. Answers that are not classified are counted beside each matrix.}
+\label{fig:confusion}
+\end{figure*}
+
+\subsection{Hallucination rate by AI model and setup}\label{sec:res-hallucination}
+\Cref{fig:hallucination} shows the hallucination rate for each model and setup, split by valid and invalid inputs. \todo{State the largest setup effect and the model that shows it.} The \code{prescriptive} setup changes the pooled rate from \val{rate} to \val{rate}. The decision models show n/a, because they cannot return an impossible move. \Cref{fig:setup-effect} gives the paired change for each model, and \cref{tab:main} gives all rates with their intervals.
+
+
+
+
+\subsection{Outcome breakdown}\label{sec:res-outcomes}
+A low hallucination rate can hide a high rate of malformed output or failure. \Cref{fig:outcomes} therefore shows the share of each outcome for each model and setup, with the infrastructure failures as a count. \todo{Report whether rules in the prompt move attempts from hallucination to failure or to success.} The malformed output rate is \val{range} across models.
+
+
+\subsection{Solvability detection and diagnosis}\label{sec:res-detection}
+The mismatch flag turns solvability into a binary decision that a script can score, and the reason turns it into a diagnosis. \Cref{fig:confusion} gives the confusion matrix for each setup, pooled over models. \Cref{fig:flag-roc} plots the mismatch detection rate against the false mismatch rate for each model. Critical thinking in \cref{tab:main} counts a false mismatch as much as a missed diagnosis, and \cref{app:consistency} splits the diagnosis rate by corruption type. \todo{State whether any setup lifts critical thinking above the best fixed answer, and report the reason hallucination rate.}
+
+
+% ---- placeholder fig:flag-roc (ID stamped from the float counter) --------------------
+% DATA: mismatch detection rate and false mismatch rate per model x setup.
+% STATUS: new figure. Justification: the reply has a mismatch flag and no confidence, so
+% this plot replaces a calibration curve. A true calibration curve needs a confidence
+% field, which invariant 9 of AGENTS.md does not allow.
+\begin{figure}[!htbp]
+\phsingle{0.82}{Flag quality per model. Detection rate against false flag rate, one point per setup.}
+\caption{Quality of the mismatch flag. Each point is one AI model under one setup, with 95\% bootstrap intervals on both axes. Lines join the three setups of one model. The diagonal marks a flag that carries no information about reachability. Both axes read the mismatch flag only, and not the reason.}
+\label{fig:flag-roc}
+\end{figure}
+
+\begin{uncertainty}{calibration of the flag}
+The reply contains a mismatch flag and a reason, but no confidence value. The current records therefore do not support a calibration curve. A confidence field would change the output schema, which needs a new release and explicit approval of the project owner.
+\end{uncertainty}
+
+\subsection{Difficulty scaling}\label{sec:res-depth}
+Scramble depth sets an upper bound on the distance to solved. \Cref{fig:depth} shows the precision on valid inputs at the scramble depths of each cube. \Cref{fig:tokens} shows how output tokens grow with depth. \todo{State whether rules in the prompt slow the fall of success with depth.}
+
+% ---- placeholder fig:depth (ID stamped from the float counter) -----------------------
+% DATA: success rate per depth from evaluate (reports split by scramble depth).
+% STATUS: pending.
+\begin{figure}[!htbp]
+\begin{phcanvas}
+  \phpanel{0}{0.645}{1}{0.2}{A}{2x2 cube. Precision on valid inputs against depth 5, 10, and 20.}
+  \phpanel{0}{0.43}{1}{0.2}{B}{3x3 cube. The same axes and depths.}
+  \phpanel{0}{0.215}{1}{0.2}{C}{4x4 cube. Depths 10, 20, and 40.}
+  \phpanel{0}{0}{1}{0.2}{D}{5x5 cube. Depths 15, 30, and 60.}
+\end{phcanvas}
+\caption{Precision on valid inputs against scramble depth. (A) 2x2 cube. (B) 3x3 cube. (C) 4x4 cube. (D) 5x5 cube. Each cube has its own depths. Line style marks the setup and colour marks the model. Each point has $n = \val{n}$ attempts and a 95\% bootstrap interval.}
+\label{fig:depth}
+\end{figure}
+
+% ---- placeholder fig:tokens (ID stamped from the float counter) ----------------------
+% DATA: input_tokens, output_tokens per raw record (Gemini: candidates + thoughts).
+% STATUS: new figure. Justification: the ontology lengthens the prompt, so the cost
+% argument needs tokens per depth and setup.
+\begin{figure}[!htbp]
+\phsingle{0.62}{Output tokens against scramble depth. Shows whether rules in the prompt change reasoning length.}
+\caption{Mean output tokens per attempt against scramble depth, for each setup. Bands give the interquartile range over AI models. Output tokens include hidden reasoning tokens where the provider bills them.}
+\label{fig:tokens}
+\end{figure}
+
+\subsection{Cost and accuracy}\label{sec:res-cost}
+An ontology in the prompt costs input tokens on every attempt. It pays off only if it saves more than it adds. \Cref{fig:pareto} plots cost efficiency, the cost of one right answer, against balanced precision for each model and setup. Cost comes from the token counts in the raw records and the prices in config. \todo{Name the models on the Pareto front.}
+
+% ---- placeholder fig:pareto (ID stamped from the float counter) ----------------------
+% DATA: cost efficiency (definitions.md, Metrics) and balanced precision from evaluate;
+% prices from config/prices.toml. STATUS: pending.
+\begin{figure}[!htbp]
+\phsingle{0.75}{Cost against precision. Cost efficiency and balanced precision, with the Pareto front marked.}
+\caption{Cost efficiency in USD, the cost of one right answer, against balanced precision. Each point is one AI model under one setup. The line joins the points that no other point beats on both axes. The cost axis is logarithmic, and prices are those of \cref{tab:models}.}
+\label{fig:pareto}
+\end{figure}
+
+% =====================================================================================
+\section{Pipeline Verification}\label{sec:verification}
+% SRC [REPO] tests/fixtures/report_expected.md, tests/fixtures/pipeline-1.0.0.md; tests/test_report.py, tests/test_pipeline.py.
+Before any paid API call, we checked the pipeline against two test fixtures. The fixtures use a fake model and produce known outcomes on small 2x2 inputs. The unit tests run \code{evaluate} on them and compare the report with the expected text. These fixtures test the code path and say nothing about real AI models. \todo{Add a summary of the verification results once the fixtures cover Release 3.0.0.}
+
+% =====================================================================================
+\section{Discussion}\label{sec:discussion}
+\todo{Draft after results. Answer the question of the introduction in the first sentence.} The result must separate two effects of the rules in the prompt. One effect is fewer impossible moves, and the other is better detection of unreachable states. A setup can improve one effect and leave the other unchanged.
+
+Strict string matching makes the hallucination count conservative, because \code{R'2} in place of \code{R2} gets a hallucination verdict. A Unicode prime in place of the apostrophe is not a move token. That line is prose, so it gives an abstention, or a format error beside legal moves. The appendix splits impossible moves by type, so a reader can see how many verdicts come from notation alone. \todo{Report that share.}
+
+The mismatch reasons also tell every setup which kinds of defect exist. Detection rates under Release 3.0.0 therefore do not compare with those of releases 1.x and 2.x. The 2x2 list names edges and wings that the 2x2 does not have, and naming one is a wrong reason. The decoy reason lets the study count a claim of evidence that the state cannot show.
+
+The comparison rests on the assumption that the models already know Singmaster and WCA notation. If that assumption fails, the \code{no\_model} setup is harder for reasons outside the ontology. The \code{descriptive} setup restates the notation and gives a partial control for this effect.
+
+\subsection{Limitations}\label{sec:limitations}
+% SRC [REPO] AGENTS.md (Open); docs/methodology.md.
+Four items limit the current scope of the benchmark. Some of them come from decisions of the project owner, and some from the providers. The list below states the effect of each item on the results.
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item The study has no reference solver and reports no efficiency metric, because optimal solvers are not practical for the 5x5 and the other puzzles. A correct answer is any move sequence that solves the puzzle.
+  \item Only the four cubes have engines. The octahedral and tetrahedral puzzles have no engine yet, and their move groups are still open.
+  \item The validator matches move strings exactly and does not normalize them. A move token outside \code{legal\_moves()}, such as \code{R'2}, counts as a hallucination. A decorated line or a Unicode prime counts as a format error or an abstention.
+  \item Providers bill hidden reasoning tokens in different ways, and API latency changes with load. Token and latency figures are therefore valid only for the run dates.
+\end{itemize}
+
+% =====================================================================================
+\section{Reproducibility}\label{sec:repro}
+Anyone can compute every number in the results again from the raw records, the release, and the configuration. The steps below rebuild the release, the reports, and this paper. Step 5 calls paid APIs, so it needs an approved budget.
+\begin{procedure}
+  \item Clone the repository and open a terminal in its root folder.
+  \item Run \code{pytest -q} and confirm zero failures.
+  \item Check out the tag \code{release-3.0.0}, which holds the frozen inputs and prompts.
+  \item Run the experiment with \code{-{}-estimate} to print the attempts and the worst-case cost.
+  \item Run the experiment without \code{-{}-estimate} after you approve the budget.
+  \item Run \code{evaluate} to compute the reports from the raw records.
+  \item Run \code{make plots} to build every figure from the reports.
+  \item Build this paper with \code{latexmk -pdf main.tex}.
+  \item Run \code{python3 ste\_check.py} and confirm that it reports zero violations.
+\end{procedure}
+% NOTE: scripts/plots.py and the "make plots" target are planned, not built.
+
+\section*{Data and Code Availability}
+We will publish the frozen inputs, prompts, and raw records on Hugging Face with a Zenodo Digital Object Identifier (DOI). Code is under the Apache License 2.0, and data, prompts, and results are under CC BY 4.0. \todo{Insert the dataset URL, the DOI, and the release tag \code{release-3.0.0}.} \todo{Confirm repository visibility, which is open in \code{AGENTS.md}.}
+
+\section*{Acknowledgements}
+\todo{Name the API credit programmes that fund the runs, if any award arrives.} The study applies to programmes from Anthropic, OpenAI, and Google. Each acknowledgement must match the terms of its award. We also thank \todo{endorser and readers}.
+
+% Flush every pending float (Figures 7-12) so none prints among the references.
+\clearpage
+\bibliographystyle{unsrtnat}
+\bibliography{refs}
+
+% =====================================================================================
+\appendix
+\section{Prompt Texts}\label{app:prompts}
+The listings below give the 3x3 templates of Release 3.0.0 for the three setups. The runner fills \code{\{state\}} with the rendered state, \code{\{legal\_moves\}} with the output of \code{legal\_moves()}, and \code{\{mismatch\_reasons\}} with the output of \code{mismatch\_reasons()} followed by \code{other}. The templates of the other cubes differ in the puzzle description and the notation.
+% SRC [REPO] prompts/{setup}/3x3.txt, identical to releases/3.0.0/prompts/{setup}/3x3.txt.
+\lstinputlisting[caption={\code{no\_model}, 3x3.}]{../releases/3.0.0/prompts/no_model/3x3.txt}
+\lstinputlisting[caption={\code{descriptive}, 3x3.}]{../releases/3.0.0/prompts/descriptive/3x3.txt}
+\lstinputlisting[caption={\code{prescriptive}, 3x3.}]{../releases/3.0.0/prompts/prescriptive/3x3.txt}
+
+\section{Impossible Moves by Type}\label{app:taxonomy}
+Strict matching counts every move token that is not legal as an impossible move, and \cref{fig:taxonomy} splits them into types. The types are slice moves, wide moves on the 2x2 and 3x3, lowercase turns, and rotations. Two more types are layer-count tokens such as \code{3Fw} and doubled suffixes such as \code{R'2}. The split is a post-hoc label and does not change any outcome. \todo{Write the classifier and list its rules here.}
+
+% ---- placeholder fig:taxonomy (ID stamped from the float counter) --------------------
+% DATA: parsed moves not in legal_moves(), from raw records. STATUS: needs a new
+% post-hoc classifier (not in the repo). Justification: shows how much of the
+% hallucination count is notation noise (Open Item 6, strict matching).
+\begin{figure}[t]
+\phsingle{0.65}{Types of impossible moves. Share of each type per setup, from slice moves to doubled suffixes.}
+\caption{Impossible moves by type and setup, pooled over AI models. Each bar splits the impossible move strings into slice moves, wide moves, lowercase turns, rotations, layer-count tokens, and doubled suffixes such as \code{R'2}. The counts are $n = \val{n}$ strings per setup.}
+\label{fig:taxonomy}
+\end{figure}
+
+\section{Results by Puzzle}\label{app:puzzle}
+The main text pools the four cube sizes where the effect is the same. \Cref{fig:per-puzzle} gives the balanced precision and the hallucination rate for each size. \todo{State whether the setup effect differs between the cubes.}
+
+% ---- placeholder fig:per-puzzle (ID stamped from the float counter) ------------------
+% DATA: evaluate reports split by puzzle. STATUS: pending. Justification: shows whether
+% effects hold as cubes grow.
+\begin{figure}[t]
+\begin{phcanvas}
+  \phpanel{0}{0.35}{1}{0.34}{A}{Balanced precision by cube and setup. Compares the four cubes.}
+  \phpanel{0}{0}{1}{0.34}{B}{Hallucination rate by cube size and setup, on the same axes.}
+\end{phcanvas}
+\caption{Results by puzzle. (A) Balanced precision and (B) hallucination rate for the four cubes under each setup, pooled over AI models, with 95\% bootstrap intervals. Future releases add the octahedral and tetrahedral puzzles.}
+\label{fig:per-puzzle}
+\end{figure}
+
+\section{Consistency and Diagnosis}\label{app:consistency}
+Each input gets $K$ attempts for each model and setup. \Cref{fig:consistency} shows how often these attempts give the same outcome. \Cref{fig:diagnosis} splits the diagnosis rate by the corruption type of the invalid input. \todo{State which corruption types the AI models find and which they miss.}
+
+% ---- placeholder fig:consistency (ID stamped from the float counter) -----------------
+% DATA: consistency() in src/evaluate/metrics.py. STATUS: pending.
+\begin{figure}[t]
+\phsingle{0.55}{Consistency heat map. Share of repeated attempts with the modal outcome, per model and setup.}
+\caption{Consistency of outcomes over $K = \val{K}$ repeated attempts. Each cell gives the mean share of the most common outcome for one AI model and setup. A value of 1.0 means that every attempt on an input gave the same outcome.}
+\label{fig:consistency}
+\end{figure}
+
+% ---- placeholder fig:diagnosis (ID stamped from the float counter) -------------------
+% DATA: diagnosis rate per corruption type from the corruption CSV of evaluate
+% (corruption_rows in src/evaluate/metrics.py). STATUS: pending. Justification: the
+% reason is what separates a diagnosis from a lucky MISMATCH.
+\begin{figure}[t]
+\phsingle{0.55}{Diagnosis by corruption type. Diagnosis rate per corruption type, by model and setup.}
+\caption{Diagnosis rate by corruption type and setup, pooled over AI models. Each bar gives the share of attempts on invalid inputs whose mismatch reason is the corruption type of the input.}
+\label{fig:diagnosis}
+\end{figure}
+
+\section{Full Results and Dataset Documentation}\label{app:full}
+\Cref{tab:full} gives every metric for each model, setup, puzzle, and depth. \Cref{tab:datasheet} lists the dataset fields that the NeurIPS Evaluations and Datasets Track requires. Both tables come from the same raw records as the main text.
+
+% ---- placeholder tab:full (ID stamped from the float counter) ------------------------
+\begin{table*}[t]
+\caption{Full results for each AI model, setup, puzzle, and scramble depth. Columns give all metrics with 95\% bootstrap intervals, plus consistency, tokens per attempt, latency, and cost efficiency.}
+\label{tab:full}
+\phsingle{0.2}{Full results table: one row per model, setup, puzzle, and depth, with every metric.}
+\end{table*}
+
+% ---- placeholder tab:datasheet (ID stamped from the float counter) -------------------
+% NOTE: the NeurIPS E&D track needs Croissant metadata with Responsible AI fields.
+\begin{table}[t]
+\caption{Dataset documentation for the Croissant metadata file. The table lists the Responsible AI fields, the licence, the hosting location, and the DOI.}
+\label{tab:datasheet}
+\phsingle{0.5}{Dataset card fields: hosting, licence, DOI, and Responsible AI metadata.}
+\end{table}
+
+\end{document}

@@ -85,6 +85,7 @@ releases/          one read-only folder per release version
 results/           one folder per experiment: raw records and one report per release
 docs/              definitions, methodology, specs, puzzles, contributing guides, assumptions, related work, one-page summary PDF
 CONTRIBUTING.md    how to add a puzzle and how to run an experiment
+paper/             LaTeX paper template with figure and table placeholders (paper/build.sh)
 LICENSE            Apache 2.0 licence text
 LICENSE-CC-BY-4.0  CC BY 4.0 licence text
 NOTICE             copyright and attribution for reused code

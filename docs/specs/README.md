@@ -57,6 +57,15 @@ Listed in build order. Each script depends only on scripts above it.
 
 The octahedral and tetrahedral engines have no spec yet. They wait on [open item 4](../../AGENTS.md#open).
 
+## Paper specs
+
+The paper template in `paper/` has its own build tools. They do not depend on the scripts above.
+
+1. [paper-verify-ste100](paper-verify-ste100.md): `paper/verify_ste100.py`.
+2. [paper-ste-check](paper-ste-check.md): `paper/ste_check.py`.
+3. [paper-ids](paper-ids.md): `paper/ids.py`.
+4. [paper-previews](paper-previews.md): `paper/make_previews.py`.
+
 ## End-to-end test
 
 `tests/test_pipeline.py` runs the whole flow in a temporary git repo: a major release of a small 2x2 input set, `run` with the `fake` provider, then `evaluate`. It compares the report with a stored expected file, ignoring the dates. It is the first test to run after any change that touches more than one script.
