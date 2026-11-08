@@ -57,10 +57,7 @@ def write_experiment(root, experiment_id, records, toml=EXPERIMENT_TOML):
     (folder / "raw").mkdir(parents=True)
     (folder / "experiment.toml").write_text(toml)
     (folder / "raw" / "m.jsonl").write_text("\n".join(json.dumps(r) for r in records) + "\n")
-    sha = commit(root, experiment_id)
-    subprocess.run(["git", "update-ref", f"refs/remotes/origin/results/{experiment_id}", sha], cwd=root, check=True)
-    subprocess.run(["git", "rm", "-rq", "results"], cwd=root, check=True)
-    commit(root, "drop")
+    commit(root, experiment_id)
 
 
 @pytest.fixture
@@ -83,7 +80,7 @@ def test_attempts_sorted_and_filtered(repo):
         record("m2", "i2", 1), record("m1", "i2", 2), record("m1", "i2", 1),
         record("m1", "i1", 1, outcome="infrastructure_failure"), record("m1", "gone", 1)])
     write_experiment(repo, "b-exp", [record("m1", "i1", 1)])
-    data, skipped = site.export(GitData(repo), "main", "origin")
+    data, skipped = site.export(GitData(repo), "main")
     assert skipped == 1
     assert [e["experimentId"] for e in data["experiments"]] == ["a-exp", "b-exp"]
     a = data["experiments"][0]
@@ -99,7 +96,7 @@ def test_attempts_sorted_and_filtered(repo):
     assert data["legalMoves"] == {"2x2": list(get_engine("2x2").legal_moves())}
 
 
-def test_missing_branch_is_checked_error(repo, tmp_path):
+def test_missing_experiment_is_checked_error(repo, tmp_path):
     write_experiment(repo, "a-exp", [record("m1", "i1", 1)])
     out = tmp_path / "out.json"
     code = subprocess.run([sys.executable, "-m", "src.site.export", "--root", str(repo), "--ref", "main",
@@ -117,7 +114,7 @@ def test_definitions_parsing_and_missing_name():
     assert found[0]["definition"] == "The share of attempts with at least one impossible move."
 
 
-def test_branch_without_kept_records_is_checked_error(repo, tmp_path):
+def test_experiment_without_kept_records_is_checked_error(repo, tmp_path):
     write_experiment(repo, "a-exp", [record("m1", "i1", 1, outcome="infrastructure_failure")])
     write_experiment(repo, "b-exp", [record("m1", "i1", 1)])
     done = subprocess.run([sys.executable, "-m", "src.site.export", "--root", str(repo), "--ref", "main",
@@ -130,4 +127,4 @@ def test_duplicate_experiment_id_is_checked_error(repo):
     (repo / "config" / "site.toml").write_text(SITE_TOML.replace('["b-exp", "a-exp"]', '["a-exp", "b-exp", "a-exp"]'))
     commit(repo, "duplicate id")
     with pytest.raises(site.ExportError, match="duplicate experiment id a-exp"):
-        site.export(GitData(repo), "main", "origin")
+        site.export(GitData(repo), "main")
