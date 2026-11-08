@@ -95,7 +95,7 @@
     dlg.showModal();
   }
 
-  const CARD_NOTE = "* computed by the UI from the raw records, for display only.";
+  const CARD_NOTE = "* computed by the UI from the raw records, for display only. Pooled over all puzzles and setups of the experiment, so not the per-puzzle and per-setup values of the report. Outcomes are re-validated under the experiment's release, so they can differ from the stored outcomes in the progress bar.";
   const CARD_COLUMNS = [["balanced_precision", "Balanced precision", "pct"], ["coverage", "Coverage", "pct"],
     ["hallucination_rate", "Hallucination", "pct"], ["reason_hallucination_rate", "Reason hallucination", "pct"],
     ["critical_thinking", "Critical thinking", "pct"], ["cost_usd", "Cost so far", "usd"], ["cost_efficiency", "Cost efficiency", "usd"]];
@@ -157,24 +157,25 @@
       const stopMsg = h("span", { class: "msg small", role: "status" });
       const commit = h("button", { type: "button", text: "Commit" });
 
-      // The score card loads once, and every 5 seconds while a run job of the experiment is alive. It reads the job
-      // state the page already holds, and loads again when that state changes, so the last poll sees the end.
-      const card = { timer: null, busy: false, running: null };
+      // The score card loads once, and again on the snapshot poll at most every 5 seconds while a run job of the
+      // experiment is alive. It reads the job state the page already holds. When that state changes, and when the
+      // last job ends, it loads again at once; a load asked for while one is in flight is queued, never dropped.
+      const card = { busy: false, queued: false, last: 0, running: null };
       async function loadCard() {
-        if (card.busy) return;
-        card.busy = true;
+        if (card.busy) { card.queued = true; return; }
+        card.busy = true; card.last = Date.now();
         try {
           const d = await UI.api("/api/scorecard/" + encodeURIComponent(id));
           if (root.isConnected) cardBox.replaceChildren(scoreCard(d));
         } catch (e) { /* no branch yet, or a read error: the header shows it */ } finally { card.busy = false; }
+        if (card.queued && root.isConnected) { card.queued = false; loadCard(); }
       }
       function cardSync() {
-        if (!root.isConnected) { clearInterval(card.timer); return; }
+        if (!root.isConnected) return;
         const run = (j) => j.startsWith("run:");
         const running = mine(id, run) || snapRunning(state.ctl && state.ctl.snapshot(), run);
-        if (running && !card.timer) card.timer = setInterval(() => (root.isConnected ? loadCard() : clearInterval(card.timer)), 5000);
-        if (!running && card.timer) { clearInterval(card.timer); card.timer = null; }
         if (running !== card.running) { card.running = running; loadCard(); }
+        else if (running && Date.now() - card.last >= 5000) loadCard();
       }
 
       // Settings fold while a run job is alive and open otherwise, until the user folds or unfolds it by hand.
