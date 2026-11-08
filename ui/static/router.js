@@ -147,8 +147,41 @@
     get lines() { return st.lines; },
     get bundleNow() { return st.bundle; },
     // Gives a `.tip-src` element the status dot's tooltip panel: the `.tip-fixed` sibling after it, placed at each open.
-    tipOn(src) { for (const ev of ["mouseenter", "focus"]) src.addEventListener(ev, () => placeTip(src, src.nextElementSibling)); },
+    // The panel shows on hover and focus and hides TIP_DELAY ms after the pointer leaves the source or the panel, so the
+    // pointer can move onto the panel and its text can be selected. Only one panel is open at a time.
+    tipOn(src) {
+      const tipOf = () => src.nextElementSibling;
+      const later = () => { if (openTip && openTip.src === src) { clearTimeout(openTip.timer); openTip.timer = setTimeout(closeTip, TIP_DELAY); } };
+      src.addEventListener("mouseenter", () => showTip(src, tipOf()));
+      src.addEventListener("mouseleave", later);
+      src.addEventListener("focus", () => showTip(src, tipOf()));
+      // A click on the panel blurs the source, which must not close the panel the pointer is on.
+      src.addEventListener("blur", () => { if (!openTip || openTip.src !== src || !openTip.overPanel) closeTip(); });
+    },
   };
+  const TIP_DELAY = 500;
+  let openTip = null; // { src, tip, timer, overPanel }
+  function closeTip() {
+    if (!openTip) return;
+    clearTimeout(openTip.timer);
+    openTip.tip.classList.remove("open");
+    openTip = null;
+  }
+  function showTip(src, tip) {
+    if (!tip) return;
+    if (openTip && openTip.src !== src) closeTip();
+    if (openTip) { clearTimeout(openTip.timer); return; }
+    if (!tip.tipBound) {
+      tip.tipBound = true;
+      tip.addEventListener("mouseenter", () => { if (openTip && openTip.tip === tip) { openTip.overPanel = true; clearTimeout(openTip.timer); } });
+      tip.addEventListener("mouseleave", () => {
+        if (openTip && openTip.tip === tip) { openTip.overPanel = false; clearTimeout(openTip.timer); openTip.timer = setTimeout(closeTip, TIP_DELAY); }
+      });
+    }
+    tip.classList.add("open");
+    placeTip(src, tip);
+    openTip = { src, tip, timer: null, overPanel: false };
+  }
 
   function parse() {
     const [path, qs] = (location.hash.replace(/^#/, "") || "/experiments").split("?");
