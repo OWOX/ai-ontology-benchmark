@@ -11,7 +11,7 @@ Instructions for any coding agent working in this repo. The design is decided. B
 Do not break these. Changing one needs explicit approval from the project owner.
 
 1. API keys come from env vars. Never commit a key.
-2. Scramble count, scramble depths, valid/invalid split, attempts per input, retry cap, max moves, and reasoning effort are config parameters, not constants. Config can list several scramble depths.
+2. Scramble count, scramble depths, valid/invalid split, attempts per input, retry cap, max moves, and reasoning effort are config parameters, not constants. Config can list several scramble depths, either for every puzzle or for each puzzle on its own.
 3. Each puzzle uses the standard notation AI models already know: Singmaster for 3x3 and the established equivalent for the others. No invented unified notation.
 4. A deterministic validator judges answers. An AI model never judges an AI model.
 5. `generate` and `run` are separate workflows. `generate` builds scrambles and invalid inputs once, records the seed, and freezes the result. `run` only reads frozen inputs. It never generates, scrambles, or edits them.
