@@ -9,7 +9,6 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
-    // This machine freezes under unbounded parallel load.
     maxWorkers: 4,
   },
 })

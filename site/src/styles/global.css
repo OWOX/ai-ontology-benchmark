@@ -2,7 +2,9 @@
    Newsreader for text, Figtree for headings and UI (Astro Fonts API, see astro.config.mjs). */
 
 :root {
-  --bg: #f1ece2;
+  --bg: #f1ece2;               /* warm paper (light end of the page gradient) */
+  --paper-top: #d7cfbf;        /* shadowed top of the sheet */
+  --paper-bottom: #f4efe6;     /* lit bottom of the sheet */
   --text: #1a1a1a;
   --head: #4a4436;
   --text-inv: #f0f0f0;
@@ -30,7 +32,12 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg);
+  /* Paper sheet: fixed vertical light gradient with a faint SVG grain on top. */
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E"),
+    linear-gradient(to bottom, var(--paper-top) 0%, var(--paper-bottom) 45%, var(--paper-bottom) 100%);
+  background-attachment: fixed;
+  background-blend-mode: soft-light;
   color: var(--text);
   font-family: var(--font-newsreader), Georgia, serif;
   font-weight: 400;
@@ -57,8 +64,14 @@ a:hover, a:focus-visible { text-decoration: underline; }
 main {
   max-width: var(--measure);
   margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr) minmax(0, 1fr);   /* 20/60/20 */
+  gap: 2rem;
   padding: 2.5rem var(--pad) 4rem;
 }
+.content { grid-column: 2; }
+main .content > :first-child { margin-top: 0; }
+main .content > h1:first-child { margin-top: -0.166rem; }
 
 footer {
   max-width: var(--measure);
@@ -71,3 +84,9 @@ footer {
   font-weight: 300;
 }
 footer p { margin: 0; }
+
+/* Tablet/mobile: single content column */
+@media (max-width: 60rem) {
+  main { grid-template-columns: minmax(0, 1fr); }
+  .content { grid-column: 1; }
+}

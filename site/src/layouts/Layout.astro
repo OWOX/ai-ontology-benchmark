@@ -24,7 +24,9 @@ const { title, description } = Astro.props
   </head>
   <body>
     <main>
-      <slot />
+      <div class="content">
+        <slot />
+      </div>
     </main>
     <footer>
       <p>Source: <a href="https://github.com/OWOX/ai-ontology-benchmark">github.com/OWOX/ai-ontology-benchmark</a></p>
