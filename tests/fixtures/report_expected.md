@@ -43,9 +43,9 @@ Cost spent, at the prices above (USD):
 
 | Puzzle | Setup | Balanced precision | Coverage | Cost efficiency |
 |---|---|---|---|---|
-| 2x2 | no_model | 0.25 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.1067 |
-| 2x2 | descriptive | 0.25 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.1067 |
-| 2x2 | prescriptive | 0.25 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.1067 |
+| 2x2 | no_model | 0.75 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.0356 |
+| 2x2 | descriptive | 0.75 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.0356 |
+| 2x2 | prescriptive | 0.75 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.0356 |
 
 #### Valid inputs
 
@@ -65,7 +65,7 @@ Cost spent, at the prices above (USD):
 
 | Metric | no_model | descriptive | prescriptive |
 |---|---|---|---|
-| Precision | 0.00 (n/a) n=1, 1 input | 0.00 (n/a) n=1, 1 input | 0.00 (n/a) n=1, 1 input |
+| Precision | 1.00 (n/a) n=1, 1 input | 1.00 (n/a) n=1, 1 input | 1.00 (n/a) n=1, 1 input |
 | Coverage | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
 | Mismatch detection rate | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
 | Hallucination rate | n/a n=0, 0 inputs | n/a n=0, 0 inputs | n/a n=0, 0 inputs |
@@ -120,11 +120,11 @@ Each row is a [paired setup test](../../docs/definitions.md#metrics) of two setu
 | Setup | AI model | Depth | Validity | Attempts | Infra failures | Precision | Hallucination | Mismatch detection | False mismatch | Malformed | Truncated | Abstention | Format error | Consistency | Latency (s) | Input tokens | Output tokens | Cost per attempt |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | no_model | M | 1 | valid | 2 | 0 | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 1.75 | 10.0 | 5.0 | 0.0200 |
-| no_model | M | 1 | invalid | 2 | 0 | 0.00 (n/a) n=1, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0200 |
+| no_model | M | 1 | invalid | 2 | 0 | 1.00 (n/a) n=1, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0200 |
 | descriptive | M | 1 | valid | 2 | 0 | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 1.75 | 10.0 | 5.0 | 0.0200 |
-| descriptive | M | 1 | invalid | 2 | 0 | 0.00 (n/a) n=1, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0200 |
+| descriptive | M | 1 | invalid | 2 | 0 | 1.00 (n/a) n=1, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0200 |
 | prescriptive | M | 1 | valid | 2 | 0 | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 1.75 | 10.0 | 5.0 | 0.0200 |
-| prescriptive | M | 1 | invalid | 2 | 0 | 0.00 (n/a) n=1, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0200 |
+| prescriptive | M | 1 | invalid | 2 | 0 | 1.00 (n/a) n=1, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0200 |
 
 ## Attempts
 

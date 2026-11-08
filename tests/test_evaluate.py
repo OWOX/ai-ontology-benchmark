@@ -166,7 +166,7 @@ def test_hand_worked_metrics(release_dir):
     assert valid["input_tokens_per_attempt"] == pytest.approx(62 / 6)
     assert valid["output_tokens_per_attempt"] == pytest.approx(31 / 6)
     assert valid["cost_per_attempt"] == pytest.approx(0.124 / 6)
-    assert invalid["precision"] == 0.0  # no reasons: MISMATCH answers are false negatives
+    assert invalid["precision"] == 0.4  # no reasons: the 2 flagged answers are true negatives, the 3 with moves false positives
     assert (invalid["precision_n"], invalid["coverage"]) == (5, pytest.approx(5 / 6))
     assert invalid["diagnosis_rate"] == "n/a" and invalid["reason_hallucination_rate"] == "n/a"
     assert invalid["hallucination_rate"] == pytest.approx(2 / 3)  # MISMATCH and malformed attempts left out
