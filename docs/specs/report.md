@@ -23,11 +23,12 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 3. **Experiment.** Linked to `experiment.toml`.
    1. A table of AI models with name, provider, API model id, kind (or "not set" when the config has none), every served model id seen in the raw records, and `params`, or "provider defaults" when there are none.
    2. When the config has `puzzles`, the line `Puzzles: 2x2, 3x3` with the names in config order. Without `puzzles`, the line is absent and the report is unchanged.
-   3. Attempts, retry cap, maximum output tokens, and the reasoning effort as `Reasoning effort: low.` (or `medium` or `high`), or `Reasoning effort: provider default.` when the config has none.
-   4. First and last `created_at` across raw records.
-   5. The line `Torn raw lines skipped: <n>.`
-   6. The token prices used, linked to `prices.toml` in the experiment folder.
-   7. The three budgets in force, and the cost spent per AI model and in total, at the prices used.
+   3. When the config has `inputs_per_depth`, directly after the Puzzles line, one sentence: the run used a sample of that many valid inputs per puzzle and depth, so it is a pilot and its results are not evidence for the research question, with a link to [inputs per depth](../definitions.md#inputs). Without it, the sentence is absent.
+   4. Attempts, retry cap, maximum output tokens, and the reasoning effort as `Reasoning effort: low.` (or `medium` or `high`), or `Reasoning effort: provider default.` when the config has none.
+   5. First and last `created_at` across raw records.
+   6. The line `Torn raw lines skipped: <n>.`
+   7. The token prices used, linked to `prices.toml` in the experiment folder.
+   8. The three budgets in force, and the cost spent per AI model and in total, at the prices used.
 4. **Summary.** First, for each AI model, one headline table from `detection_rows`, one row per puzzle and setup, with the columns Balanced precision, Coverage, Critical thinking, and Cost efficiency (USD to 4 places). Then two tables with setups as columns:
    1. Valid inputs: precision, coverage, hallucination rate, reason hallucination rate, false mismatch rate, malformed output rate, truncation rate, abstention rate, format error rate, and cost per attempt.
    2. Invalid inputs: precision, coverage, mismatch detection rate, diagnosis rate, hallucination rate, reason hallucination rate, malformed output rate, truncation rate, abstention rate, and format error rate.
@@ -57,6 +58,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 10. With `detection_rows`, the Mismatch detection section appears right after Summary, with a baseline row per puzzle. Without them, it is absent.
 11. With `corruption_rows`, the Detection by corruption type section appears right after Mismatch detection. Without them, it is absent.
 12. With `reason_rows`, the Mismatch reasons section appears right after Detection by corruption type, with the decoy column marked. Without them, it is absent, and a report under a release without mismatch reasons has no reason rows, columns, or baseline row.
+13. The pilot sentence appears only when the config sets `inputs_per_depth`, names its value, and links the Inputs definition.
 
 ## Risk
 

@@ -130,7 +130,7 @@ def params_text(model: dict) -> str:
 
 
 def experiment_section(link, folder: Path, config: dict, prices: dict, rows: list[dict],
-                       torn: int) -> list[str]:
+                       torn: int, definitions_link: str = "") -> list[str]:
     served = defaultdict(set)
     for row in rows:
         served[row["model"]].update(filter(None, row["served_model"].split(",")))
@@ -146,6 +146,10 @@ def experiment_section(link, folder: Path, config: dict, prices: dict, rows: lis
     out += table(["AI model", "Provider", "API model id", "Kind", "Served model ids", "Params"], models)
     if "puzzles" in config:
         out += [f"Puzzles: {', '.join(config['puzzles'])}", ""]
+    if "inputs_per_depth" in config:
+        out += [f"This run used a sample of {config['inputs_per_depth']} valid inputs per puzzle and depth "
+                f"([inputs per depth]({definitions_link}#inputs)), so it is a pilot and its results are "
+                "not evidence for the research question.", ""]
     out += [
         f"Attempts per input, model and setup: {config['attempts']}. "
         f"Retry cap: {config['retry_cap']}. "
@@ -406,9 +410,9 @@ def write_report(path, experiment_id, experiment_config, release_dir, prices, at
 
     lines = [f"# Experiment {experiment_id} on release {release_dir.name}", ""]
     lines += release_section(link, release_dir, experiment_config)
-    lines += experiment_section(link, path.parent, experiment_config, prices, attempt_rows,
-                                torn_lines)
     definitions = link(release_dir.parent.parent / "docs" / "definitions.md")
+    lines += experiment_section(link, path.parent, experiment_config, prices, attempt_rows,
+                                torn_lines, definitions)
     reasons = has_reasons(attempt_rows)
     lines += summary_section(experiment_config, summary_rows, detection_rows, reasons, definitions)
     if detection_rows:
