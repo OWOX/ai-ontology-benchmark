@@ -40,6 +40,22 @@
     return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
   }
 
+  // A dollar amount in whole dollars, for the estimate table: "$1,178", "<$1" for a value above 0 and below $0.50
+  // so a real cost never reads as $0, and "n/a" for anything that is not a number.
+  function usdWhole(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
+    if (value > 0 && value < 0.5) return "<$1";
+    return "$" + Math.round(value).toLocaleString("en-GB");
+  }
+
+  // The hint the Estimation block shows when no estimate can be made, or "" when one can.
+  function estimateHint(puzzles, models) {
+    if (!puzzles && !models) return "Select at least one puzzle and one AI model to see the estimate.";
+    if (!models) return "Select at least one AI model to see the estimate.";
+    if (!puzzles) return "Select at least one puzzle to see the estimate.";
+    return "";
+  }
+
   const UI = window.UI = {
     el,
     token: meta ? meta.content : "",
@@ -93,6 +109,8 @@
     },
     // The validity filter's options as [value, text] pairs. `all` is the value of "all inputs" ("all" or "").
     fmtTime,
+    usdWhole,
+    estimateHint,
     validityOptions(all) { return [[all, "all inputs"], ["valid", "valid only"], ["invalid", "invalid only"]]; },
     // A labelled <select> over [value, text] options; onChange gets the chosen value.
     dropdown(name, value, options, onChange) {

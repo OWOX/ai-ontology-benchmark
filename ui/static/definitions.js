@@ -11,8 +11,7 @@
     "Attempts per input and setup": "Attempt", "Inputs per depth": "Inputs per depth", "Retry cap": "Retry cap",
     "Reasoning effort": "Reasoning effort", "Parallel requests": "Parallel requests",
     // the live estimate table
-    "Attempts to run": "Attempt", "Spent": "Cost", "Model budget": "Model budget",
-    "Median latency": "Latency", "Expected cost": "Expected cost",
+    "Attempts to run": "Attempt", "Expected cost": "Expected cost",
     // the score card, the Experiments list, and the Summary and Full metrics tables
     "Balanced precision": "Balanced precision", "Coverage": "Coverage", "Hallucination": "Hallucination rate",
     "Hallucination rate": "Hallucination rate", "Reason hallucination": "Reason hallucination rate",
