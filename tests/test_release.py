@@ -361,3 +361,43 @@ def test_latest_version_prefers_1_10_0_over_1_9_0(tmp_path):
     for name in ("1.9.0", "1.10.0", "0.99.9", "notes"):
         (tmp_path / name).mkdir()
     assert latest_version(tmp_path) == "1.10.0"
+
+
+def strip_reasons(repo: Path, only: str | None = None) -> None:
+    for path in (repo / "prompts").glob("*/*.txt"):
+        if only is None or path.name == only:
+            path.write_text(path.read_text(encoding="utf-8").replace("{mismatch_reasons}", "the listed reason"),
+                            encoding="utf-8")
+    commit_all(repo, "strip reasons")
+
+
+def test_manifest_holds_mismatch_reasons(repo):
+    release_ok(repo, "major")
+    assert manifest_of(repo, "1.0.0")["mismatch_reasons"] is True
+
+
+def test_manifest_mismatch_reasons_false_without_placeholder(repo):
+    strip_reasons(repo)
+    release_ok(repo, "major")
+    assert manifest_of(repo, "1.0.0")["mismatch_reasons"] is False
+
+
+def test_mixed_templates_fail(repo):
+    strip_reasons(repo, "2x2.txt")
+    result = run_release(repo, "major")
+    assert result.returncode == 1
+    assert "mismatch_reasons" in result.stderr
+    assert not (repo / "releases").exists()
+
+
+def test_patch_fails_when_mismatch_reasons_changes(repo):
+    release_ok(repo, "major")
+    path = repo / "releases" / "1.0.0" / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["mismatch_reasons"] = False
+    path.chmod(0o644)
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    edit_validator(repo)
+    result = run_release(repo, "patch")
+    assert result.returncode == 1
+    assert "mismatch_reasons" in result.stderr
