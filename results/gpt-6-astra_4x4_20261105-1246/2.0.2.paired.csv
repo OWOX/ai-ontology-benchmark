@@ -1,0 +1,16 @@
+model,puzzle,validity,metric,setup_a,setup_b,inputs_paired,a_higher,b_higher,mean_difference,p_value,p_holm,significant
+gpt-6-astra,4x4,valid,success_rate,no_model,descriptive,2,0,1,0.3333,1,1,False
+gpt-6-astra,4x4,valid,success_rate,no_model,prescriptive,2,0,1,0.3333,1,1,False
+gpt-6-astra,4x4,valid,success_rate,descriptive,prescriptive,2,0,0,0.0000,1,1,False
+gpt-6-astra,4x4,valid,hallucination_rate,no_model,descriptive,2,1,0,-0.3333,1,1,False
+gpt-6-astra,4x4,valid,hallucination_rate,no_model,prescriptive,2,1,0,-0.3333,1,1,False
+gpt-6-astra,4x4,valid,hallucination_rate,descriptive,prescriptive,2,0,0,0.0000,1,1,False
+gpt-6-astra,4x4,invalid,success_rate,no_model,descriptive,2,0,0,0.0000,1,1,False
+gpt-6-astra,4x4,invalid,success_rate,no_model,prescriptive,2,0,0,0.0000,1,1,False
+gpt-6-astra,4x4,invalid,success_rate,descriptive,prescriptive,2,0,0,0.0000,1,1,False
+gpt-6-astra,4x4,invalid,hallucination_rate,no_model,descriptive,0,0,0,n/a,n/a,n/a,n/a
+gpt-6-astra,4x4,invalid,hallucination_rate,no_model,prescriptive,0,0,0,n/a,n/a,n/a,n/a
+gpt-6-astra,4x4,invalid,hallucination_rate,descriptive,prescriptive,0,0,0,n/a,n/a,n/a,n/a
+gpt-6-astra,4x4,invalid,mismatch_detection_rate,no_model,descriptive,2,0,0,0.0000,1,1,False
+gpt-6-astra,4x4,invalid,mismatch_detection_rate,no_model,prescriptive,2,0,0,0.0000,1,1,False
+gpt-6-astra,4x4,invalid,mismatch_detection_rate,descriptive,prescriptive,2,0,0,0.0000,1,1,False
