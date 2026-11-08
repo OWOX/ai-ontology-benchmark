@@ -205,9 +205,10 @@
         evaluate.disabled = mine(id, evalJob) || snapRunning(snap, evalJob);
         const running = mine(id, run) || snapRunning(snap, run);
         stop.disabled = !running;
-        // Shown once the experiment has attempts left and no run job is alive; the server's 409s stay the authority.
+        // Shown only for an unfinished experiment: no run job alive, attempts left, and no report on the branch (a report
+        // means it was evaluated and committed). The server's 409s stay the authority.
         const t = state.ctl ? state.ctl.totals() : { done: 0, planned: 0 };
-        contBox.hidden = running || !snap || t.done >= t.planned;
+        contBox.hidden = running || !snap || !d || !!d.report || t.done >= t.planned;
         cont.disabled = starting || mine(id, evalJob) || snapRunning(snap, evalJob) || !(d && d.local_results);
         contNote.hidden = contBox.hidden || !d || d.local_results;
         // The server's 409s stay the authority; this only keeps the button honest.
