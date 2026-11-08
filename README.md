@@ -8,7 +8,7 @@
 
 ## Approach
 
-The study uses [twisty puzzles](docs/definitions.md#puzzles): 2x2, 3x3, 4x4, and 5x5 cubes, an octahedral puzzle, and a tetrahedral puzzle. A move turns one part of the puzzle and is written in the puzzle's standard notation, which AI models already know from their training data, for example `R`, `U'`, or `F2` on the 3x3 cube. Each puzzle has a fixed list of legal moves. An AI model gets a scrambled puzzle and returns the moves it thinks solve it.
+The study uses [twisty puzzles](docs/definitions.md#puzzles): 2x2, 3x3, 4x4, and 5x5 cubes. A move turns one part of the puzzle and is written in the puzzle's standard notation, which AI models already know from their training data, for example `R`, `U'`, or `F2` on the 3x3 cube. Each puzzle has a fixed list of legal moves. An AI model gets a scrambled puzzle and returns the moves it thinks solve it.
 
 The AI model hallucinates when it returns a move that isn't on the puzzle's list of legal moves. A deterministic validator checks every returned move against that list by exact string match and counts each one that isn't there. Some inputs show a colouring that no sequence of legal moves can produce, and the validator also records whether the AI model flags them.
 
@@ -31,7 +31,7 @@ This study tests the question in closed systems where correctness isn't a matter
 ## Side questions
 
 1. Does the success rate fall as scramble depth grows, and does an ontology model slow that fall?
-2. Do the effects hold as the cubes get bigger, from 2x2 to 5x5? The octahedral and tetrahedral puzzles have no size series, so this question covers the cubes only.
+2. Do the effects hold as the cubes get bigger, from 2x2 to 5x5?
 3. How consistent is an AI model across repeated attempts on the same input, and does an ontology model change that?
 4. Do [system-1 and system-2 models](docs/definitions.md#setups) differ? Does an ontology model help one kind more than the other, and what does each kind pay per success?
 
@@ -89,3 +89,7 @@ tests/
 ## Licence
 
 Code in `src/`, `ui/`, `tests/`, and `config/`, plus the build and packaging files at the root, such as `pyproject.toml`, is under the [Apache License 2.0](LICENSE). Everything else, including docs, prompts, frozen inputs, and results, is under [CC BY 4.0](LICENSE-CC-BY-4.0). Reused third-party code is listed in [NOTICE](NOTICE).
+
+## Abstract
+
+To evaluate AI models without bias, we test them on ontologies of real-world objects. Research uses Rubik's cubes as the well-known source of legal moves, constraints and a criterion of success. Each model gets a scrambled cube and must either solve it or say it can't be solved. A script judges every answer, not a person or another AI, so the assessment is objective and the experiments are reproducible. The charts show how often models succeed, hallucinate by making illegal moves, and spot an impossible cube.
