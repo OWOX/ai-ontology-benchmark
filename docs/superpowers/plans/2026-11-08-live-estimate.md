@@ -70,3 +70,20 @@ Files: new `ui/scorecard.py`, `ui/app.py`, `ui/static/pages/experiment.js`, `ui/
 2. The page shows the card at the top, above the progress bar: one tile per headline metric per AI model (one row per AI model), then spend against each budget as a bar, elapsed, and time left. While a run job is alive it says "live" and polls the endpoint every 5 seconds; otherwise it loads once. Every value carries the `*` display-only mark and the note that it is computed by the UI from the raw records, like the computed Summary.
 3. `ui.md`: the endpoint and the card, in the spec's style. Experiment item 1 becomes the card and then the progress bar.
 4. Tests: values on a small fake experiment equal those of `src.evaluate.metrics` for the same records, elapsed and time left with and without a running job, and n/a values as `null`.
+
+## Task 6: Definition tooltips on every input and metric
+
+Owner request, 2026-11-08: "show (i) and tooltip definition next to each input and metric when available".
+
+Files: `ui/bundle.py`, `ui/static/router.js` (or a new shared `ui/static/definitions.js` loaded before the pages), `ui/static/pages/benchmarks.js`, `ui/static/pages/new.js`, `ui/static/pages/experiment.js`, `ui/static/pages/experiments.js`, `ui/static/expmetrics.js`, `ui/static/progress.js` or wherever the score card and estimate card render, `ui/static/style.css`, `docs/specs/ui.md`, and the UI tests.
+
+1. Bundle: add `definitions`: `{"terms": {"<term>": {"text": "...", "source": "<url>#<section anchor>"}}}`, holding every numbered bold term of every section of `docs/definitions.md` on `main`, parsed as `metric_definitions` is today (plain text, links keep their text, backticks dropped). Keep `metric_definitions` as it is, so Benchmarks keeps working, or move Benchmarks onto `definitions` and drop it, in one commit with the spec. The UI never keeps a second copy of a definition.
+2. One shared helper builds the (i) icon and its tooltip, the one Benchmarks uses today (`.tip-wrap`, `.tip-fixed`, `aria-describedby`, placed below or above, closed by a click, the icon links to the term's section). Benchmarks uses the shared helper.
+3. A term with no definition gets no icon. Never write a fallback text.
+4. Where: every field on New Experiment (Puzzles, AI models, each budget, attempts per input and setup, inputs per depth, retry cap, max output tokens if a term exists, reasoning effort, limit if a term exists, parallel requests), every column of the live estimate table (attempts, worst case, spent, budget, latency), every metric of the score card, every rate column of the Summary and Full metrics tables, and every metric column of the Experiments list. The mapping from a UI label to a term name lives in one table in the shared helper file, keyed by the term exactly as `docs/definitions.md` writes it.
+5. `ui.md`: Bundle item for `definitions`, and one paragraph saying where the icons go, in the spec's style.
+6. Tests: the bundle parses terms from more than one section with the right anchors; the label-to-term table names only terms that exist in `docs/definitions.md` (a test reads the file and the JS table).
+
+## Last step: screenshots
+
+After the final review, start a UI server from the worktree on a free port with `--no-lan`, open New Experiment with two puzzles and two AI models selected and the live estimate filled, and an Experiment page with a score card, and save both screenshots under the project's `tmp/` at deviceScaleFactor 2. Send them to the owner. Stop that server afterwards.
