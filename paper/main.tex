@@ -16,7 +16,7 @@
 % Hugging Face with a Zenodo DOI; (2) short version (about 4 pages) to an ICLR 2027
 % workshop, about 1 Feb 2027; (3) full paper to TMLR (rolling) or the NeurIPS 2027
 % Evaluations and Datasets Track (about May 2027) if 5x5, octahedral, and tetrahedral
-% results are ready. TMLR and NeurIPS are double-blind: anonymise before submission.
+% results are ready. TMLR and NeurIPS are double-blind: anonymize before submission.
 %
 % Build: latexmk -pdf main.tex     Style check: python3 ste_check.py
 % =====================================================================================
@@ -79,7 +79,7 @@ Many evaluations treat a wrong move sequence from a Large Language Model (LLM) a
 
 We ask whether the rules of the puzzle in the prompt change how often each error occurs. Twisty puzzles make this question measurable, because the puzzle defines every move and a deterministic validator checks every answer. No person and no second model judges correctness.
 
-Twelve Artificial Intelligence (AI) models receive each frozen cube state under three setups: no rules, prose rules, or an exact move list. Nine are text models and three are decision models that choose among options. The inputs come from the held-out input set of Release 3.0.0 and cover the 2x2, 3x3, 4x4, and 5x5 cubes.
+Twelve Artificial Intelligence (AI) models receive each frozen cube state under three setups: no rules, prose rules, or an exact move list. Nine are system-2 models and three are decision models that choose among options. The inputs come from the held-out input set of Release 3.0.0 and cover the 2x2, 3x3, 4x4, and 5x5 cubes.
 
 A corruption step turns one in five inputs into an unreachable state, and the correct answer to it is a mismatch with a reason. We report balanced precision, hallucination rate, and critical thinking with 95\% bootstrap intervals. A paired test compares the setups. With the exact move list, the hallucination rate changes from \val{rate, no rules} to \val{rate, move list}, and critical thinking reaches \val{score}.
 \end{abstract}
@@ -144,10 +144,10 @@ Ontology model & \code{prompts/\{setup\}/} & The rules of a puzzle: pieces, lega
 Setup & \code{SETUPS} (\code{src/run/prompts.py}) & The prompt condition: \code{no\_model}, \code{descriptive}, or \code{prescriptive}. \\
 State & \code{state: str} (\code{src/puzzles/cube.py}) & A string of $6n^2$ face letters in \code{URFDLB} order, one letter for each sticker. \\
 Legal move & \code{engine.legal\_moves()} & A string that matches a move of the move group exactly, without normalization. The cubes use face turns, plus wide turns on the 4x4 and 5x5. \\
-Impossible move & \code{legal\_moves()}, \code{is\_move\_token()} (\code{src/validator.py}) & A move token that is not in \code{legal\_moves()}, such as a slice move, a lowercase turn, or a whole-cube rotation. \\
+Impossible move & \code{engine.is\_move\_token()} (\code{src/puzzles/cube.py}), \code{legal\_moves()} & A move token that is not in \code{legal\_moves()}, such as a slice move, a lowercase turn, a whole-cube rotation, or a doubled suffix. \\
 Valid or invalid input & \code{validity} (\code{inputs.jsonl}) & A frozen state that can or cannot be reached from the solved state by legal moves. The label is authoritative. \\
 Corruption & \code{engine.corrupt()} (\code{src/puzzles/cube.py}) & A change that makes a copy of a valid state unreachable, for example a twisted corner or a flipped edge. \\
-Mismatch reason & \code{engine.mismatch\_reasons()} & One cause from a closed list, such as \code{twisted corner}, or \code{other}. The list ends with a decoy reason that no state can show. \\
+Mismatch reason & \code{engine.mismatch\_reasons()} & One cause from the closed list that the engine returns, such as \code{twisted corner}, or \code{other}, which the prompt adds. The engine list holds a decoy reason that no state can show. \\
 Mismatch flag & \code{validate()} (\code{src/validator.py}) & Set when the whole reply is the single line \code{MISMATCH} with a reason. It says that the state is unreachable. \\
 Hallucination & \code{validate()} (\code{src/validator.py}) & The outcome for any reply with an impossible move or a decoy reason, even if the cube ends solved. \\
 Diagnosis & \code{is\_diagnosis()} (\code{src/evaluate/metrics.py}) & A mismatch on an invalid input whose reason is the corruption type of that input. \\
@@ -184,7 +184,7 @@ This single operator generates every move in \code{legal\_moves()}. On the 3x3 c
 Here $v_i \in \{0,1,2\}$ is the orientation of corner $i$ and $w_j \in \{0,1\}$ is the flip of edge $j$. The last condition requires equal parity of the corner permutation $\sigma$ and the edge permutation $\tau$. Legal moves therefore reach $43{,}252{,}003{,}274{,}489{,}856{,}000$ states, which is one twelfth of all assembled configurations.
 % SRC: standard group theory of the 3x3 cube: 519,024,039,293,878,272,000 assembled; 43,252,003,274,489,856,000 reachable.
 
-The 2x2 cube has only the corner permutation and the corner twist invariant. With the down-back-left (\code{DBL}) corner fixed, the 2x2 cube has $7! \cdot 3^7 = 3{,}674{,}160$ reachable states. The function \code{corrupt()} makes each invalid input from a copy of a valid state. Its types are twisted corner, flipped edge, flipped wing, swapped corners, swapped edges, and recoloured sticker. \Cref{fig:example} shows one valid input, its corrupted copy, and the reply format.
+The 2x2 cube has only the corner twist invariant, and no permutation parity rule. With the down-back-left (\code{DBL}) corner fixed, the 2x2 cube has $7! \cdot 3^6 = 3{,}674{,}160$ reachable states. The function \code{corrupt()} makes each invalid input from a copy of a valid state, as \cref{fig:example} shows. The 2x2 uses twisted corner and recoloured sticker, and the 3x3 adds flipped edge, swapped corners, and swapped edges. The 4x4 uses twisted corner, flipped wing, and recoloured sticker, and the 5x5 adds flipped edge.
 
 % ---- placeholder fig:example (ID stamped from the float counter) ---------------------
 % DATA: one valid input and its invalid copy from releases/3.0.0/inputs.jsonl, rendered with
@@ -193,9 +193,9 @@ The 2x2 cube has only the corner permutation and the corner twist invariant. Wit
 \begin{phcanvas}
   \phpanel{0}{0.40}{0.492}{0.36}{A}{Valid input. The rendered state in the prompt.}
   \phpanel{0.508}{0.40}{0.492}{0.36}{B}{Corrupted copy. One corner twisted in place.}
-  \phpanel{0}{0}{1}{0.385}{C}{Reply format and outcomes. Shows one reply for each of the eight outcomes.}
+  \phpanel{0}{0}{1}{0.385}{C}{Reply format and outcomes. Replies for the outcomes judged from the reply text.}
 \end{phcanvas}
-\caption{What the model receives and returns. (A) A valid input as the prompt shows it. (B) Its corrupted copy, which no legal move sequence reaches. (C) Example replies in the required format, with the outcome that the validator gives each one. A reply is one move per line, or one \code{MISMATCH} line with a reason.}
+\caption{What the model receives and returns. (A) A valid input as the prompt shows it. (B) Its corrupted copy, which no legal move sequence reaches. (C) Example replies in the required format, with the outcome that the validator gives each one. A reply is one move per line, or one \code{MISMATCH} line with a reason. The outcomes \code{truncated} and \code{infrastructure\_failure} come from the stop reason, so they have no example reply.}
 \label{fig:example}
 \end{figure}
 
@@ -203,7 +203,7 @@ The 2x2 cube has only the corner permutation and the corner twist invariant. Wit
 % SRC [REPO] releases/3.0.0/manifest.json and releases/3.0.0/README.md; config/release.toml.
 The evidence release is 3.0.0, which freezes the held-out input set (input set id 3) from the seed 20261108. Per puzzle and scramble depth it holds 40 valid inputs and 10 invalid copies, so 600 inputs in all: 480 valid and 120 invalid. The 2x2 and 3x3 use depths 5, 10, and 20. The 4x4 uses 10, 20, and 40, and the 5x5 uses 15, 30, and 60. Each input goes through three setups, and every setup lists the mismatch reasons beside the reply format.
 
-The \code{no\_model} setup gives the state and the reply format only. The \code{descriptive} setup adds prose rules, and the \code{prescriptive} setup also lists every legal move. Releases 1.x and 2.x hold the development input sets. Prompts changed while the results of input set 1 were read, so those results show how the method was built and are not evidence. A prompt change after the freeze of Release 3.0.0 needs a new minor release, and its results appear beside the earlier ones.
+The \code{no\_model} setup gives the state and the reply format only. The \code{descriptive} setup adds prose rules, and the \code{prescriptive} setup also lists every legal move. Releases 1.x and 2.x hold the development input sets, whose results show how the method was built and are not evidence. \Cref{tab:prompt-bytes} and \cref{fig:prompt-sizes} give the template sizes. A prompt change after the freeze of Release 3.0.0 needs a new minor release, and its results appear beside the earlier ones.
 % SRC [REPO] releases/3.0.0/manifest.json lists the 12-character version of each prompt template.
 
 % SRC [REPO] byte sizes of releases/3.0.0/prompts/ (identical to prompts/), measured with wc -c.
@@ -242,27 +242,29 @@ The function \code{validate()} judges every attempt from the input, the raw resp
 \end{gathered}
 \label{eq:outcome}
 \end{equation}
-A text model replies with one move per line, or with the single line \code{MISMATCH}, one space, and a mismatch reason. A reply cut off at the token limit is truncated, and a refusal or an empty reply is malformed output. A reply in prose without a move is an abstention, and legal moves in any other layout are a format error. A move that is not legal, or the decoy reason, is a hallucination.
+A text model replies with one move per line, or with the single line \code{MISMATCH}, one space, and a mismatch reason. A reply cut off at the token limit is truncated, and a refusal or an empty reply is malformed output. A reply with no move line is an abstention. Legal moves in any other layout, such as a decorated line or a line with a Unicode prime, are a format error. A hallucination is a move token that is not legal, such as \code{r}, \code{M}, \code{x}, \code{Rw} on a 3x3, or \code{R'2}, or a decoy reason.
 
 A valid input succeeds if all moves are legal, the cube ends solved, and the mismatch flag is off. An invalid input succeeds if all moves are legal and the mismatch flag is on. Any other attempt with only legal moves is a failure. A decision model instead chooses an option in each call of a per-move loop, and the validator builds its moves from the choices. It cannot return an impossible move, but it can choose the decoy reason.
 
-The validator also classifies each answer. An answer is positive when it claims a solution, and it is true when the claim is right. A mismatch on an invalid input is a true negative only with the corruption type of that input as the reason. Any other mismatch is a false negative. Abstentions, format errors, truncated output, malformed output, and infrastructure failures are not classified.
+The function \code{answer\_class()} in \code{src/evaluate/metrics.py} classifies each answer, and \code{evaluate} runs it. An answer is positive when it claims a solution, and it is true when the claim is right. A mismatch on an invalid input is a true negative only with the corruption type of that input as the reason. Any other mismatch is a false negative. Abstentions, format errors, truncated output, malformed output, and infrastructure failures are not classified.
 
-Precision $P$ is the share of classified answers that are right, for one validity label. Balanced precision $P_{\mathrm{b}}$ is the mean of $P$ on valid inputs and on invalid inputs, as \cref{eq:precision} shows. Coverage, the share of attempts that are classified answers, goes beside it. Critical thinking $C_{\mathrm{t}}$ is the mean of the diagnosis rate $D$ and one minus the false mismatch rate $F$, as \cref{eq:critical} shows.
+Precision $P$ is the share of classified answers that are right, for one validity label. Balanced precision $P_{\mathrm{b}}$ is the mean of $P$ on valid inputs and on invalid inputs, as \cref{eq:precision} shows. Coverage, the share of attempts that are classified answers, goes beside it.
 \begin{equation}
 P_{\mathrm{b}} = \tfrac{1}{2}\left(P_{\mathrm{valid}} + P_{\mathrm{invalid}}\right), \quad P = \frac{TP+TN}{TP+FP+TN+FN}
 \label{eq:precision}
 \end{equation}
+The mismatch detection rate is the share of attempts on invalid inputs with the mismatch flag on. The false mismatch rate $F$ is the same share on valid inputs. Truncated output, malformed output, abstention, and format errors count as not flagged. The diagnosis rate $D$ is the share of attempts on invalid inputs that are a diagnosis. Critical thinking $C_{\mathrm{t}}$ is the mean of $D$ and one minus $F$, as \cref{eq:critical} shows.
 \begin{equation}
 C_{\mathrm{t}} = \tfrac{1}{2}\bigl(D + (1 - F)\bigr)
 \label{eq:critical}
 \end{equation}
+
 The hallucination rate is the share of attempts with an impossible move among the attempts that gave moves. The reason hallucination rate is the share of mismatch reasons that are the decoy. Consistency is the mean share of the modal outcome over the repeated attempts on one input. Cost efficiency is the mean cost per attempt divided by balanced precision times coverage.
 
 % =====================================================================================
 \section{Experimental Setup}\label{sec:setup}
 \subsection{AI models and prices}\label{sec:models}
-The study tests twelve AI models. Nine are text models, three from each of Anthropic, OpenAI, and Google, and three are decision models from TypeSafe and Cloudflare. \Cref{tab:models} lists their token prices from \code{config/prices.toml}. All models run with empty sampling parameters, because Anthropic endpoints reject \code{temperature}, \code{top\_p}, and \code{top\_k} since 21 October 2026. \todo{State the reasoning effort, the run dates, and the served model ids.}
+The study tests twelve AI models: nine system-2 models, three each from Anthropic, OpenAI, and Google, and three decision models from TypeSafe and Cloudflare. \Cref{tab:models} lists their token prices from \code{config/prices.toml}. All models run with empty sampling parameters. Anthropic endpoints reject \code{temperature}, \code{top\_p}, and \code{top\_k} since 21 October 2026, and the reasoning models of the other providers fix their own sampling. \todo{State the reasoning effort, the run dates, and the served model ids.}
 
 % SRC [REPO] config/models.toml and config/prices.toml (checked 2026-10-23).
 \begin{table}[t]
@@ -291,16 +293,18 @@ AI model & Input & Output \\
 
 \subsection{Budget and operational limits}\label{sec:budget}
 % SRC [REPO] src/run/budget.py; defaults in docs/definitions.md (Prices).
-The budget guard in \code{src/run/budget.py} enforces three limits in USD. The defaults are \$2.00 per request, \$25.00 per model, and \$50.00 per experiment, and the experiment config can change them. Before each Application Programming Interface (API) call, the guard bounds the request cost with \cref{eq:cmax}. Here $L$ is the prompt length in characters and $T$ is \code{max\_output\_tokens}.
+The budget guard in \code{src/run/budget.py} enforces three limits in USD. The defaults are \$2.00 per request, \$25.00 per model, and \$50.00 per experiment, and the experiment config can change them. Before the run, \code{check\_request\_budget()} bounds the worst-case cost of every pending request with \cref{eq:cmax}, and no request may pass the request budget. Here $L$ is the prompt length in characters and $T$ is \code{max\_output\_tokens}.
 \begin{equation}
 C_{\max} = \frac{\lceil L/4 \rceil\, p_{\mathrm{in}} + T\, p_{\mathrm{out}}}{10^6} \le B_{\mathrm{req}}
 \label{eq:cmax}
 \end{equation}
-One pass sends 600 prompts per model, and each prompt has $K$ attempts. For a decision model, each call holds the state with \code{max\_moves} moves and the questions object. \Cref{tab:limits} gives the worst-case cost per model. \todo{Recompute every cell of \cref{tab:limits} from \code{releases/3.0.0/prompts/} and \code{config/prices.toml}}. \todo{Choose one budget basis and name the models that the model budget blocks}.
+During the run, the guard refuses a request when its worst-case cost plus the cost spent would pass the model budget or the experiment budget. This budget stop ends the run with exit code 1, and a later run with a higher budget resumes. One pass sends 600 inputs through three setups, which makes 1,800 prompts per model, and each prompt has $K$ attempts.
 
-% SRC [REPO] to recompute from the 600 prompts of releases/3.0.0 (src/run/prompts.py) and config/prices.toml.
+A decision model makes one call per move, up to \code{max\_moves}. Each call holds the state with the moves so far and the questions object. \Cref{tab:limits} and \cref{fig:cost} give the worst-case cost per model. \todo{Recompute every cell of \cref{tab:limits} from \code{releases/3.0.0/prompts/} and \code{config/prices.toml}}. \todo{Choose one budget basis and name the models that the model budget blocks}.
+
+% SRC [REPO] to recompute from the 1,800 prompts per model of releases/3.0.0 (src/run/prompts.py) and config/prices.toml.
 \begin{table}[t]
-\caption{Worst-case cost per model in USD for one pass of 600 prompts. The last column is the largest $T$ that fits the default \$25.00 model budget with $K = 1$.}
+\caption{Worst-case cost per model in USD for one pass of 1,800 prompts. The last column is the largest $T$ that fits the default \$25.00 model budget with $K = 1$.}
 \label{tab:limits}
 \small
 \begin{tabularx}{\linewidth}{@{}Xrrr@{}}
@@ -327,7 +331,7 @@ AI model & \makecell[r]{$K{=}1$} & \makecell[r]{$K{=}\val{K}$} & \makecell[r]{ma
 % DATA: tab:limits (pending recompute for Release 3.0.0). STATUS: to draw.
 \begin{figure}[t]
 \phsingle{0.62}{Worst-case cost per model for one pass. Shows which models the default 25 USD budget blocks.}
-\caption{Worst-case cost per model for one pass of 600 prompts at $K = 1$ and $T = \val{T}$. The horizontal line marks the default model budget of \$25.00. Hatched bars show the cost at $K = \val{K}$.}
+\caption{Worst-case cost per model for one pass of 1,800 prompts at $K = 1$ and $T = \val{T}$. The horizontal line marks the default model budget of \$25.00. Hatched bars show the cost at $K = \val{K}$.}
 \label{fig:cost}
 \end{figure}
 
@@ -350,7 +354,7 @@ AI model & \makecell[r]{$K{=}1$} & \makecell[r]{$K{=}\val{K}$} & \makecell[r]{ma
 % ontology directly, which fig:hallucination shows only as a difference between bars.
 \begin{figure}[t]
 \phsingle{0.72}{Setup effect per model. Paired change in hallucination rate against no rules.}
-\caption{Change in hallucination rate for each AI model when the prompt adds rules. Circles show \code{descriptive} minus \code{no\_model}, and squares show \code{prescriptive} minus \code{no\_model}. Each marker is the mean share difference over the paired inputs. Filled markers mark a Holm-adjusted p-value below 0.05 in the paired setup test.}
+\caption{Change in hallucination rate for each AI model when the prompt adds rules. Circles show \code{descriptive} minus \code{no\_model}, and squares show \code{prescriptive} minus \code{no\_model}. Each marker is the mean share difference over the paired valid inputs of one cube, \val{cube}. The paired setup test runs for each model, cube, and validity label.}
 \label{fig:setup-effect}
 \end{figure}
 
@@ -383,10 +387,10 @@ This template holds no measured results. Every rate in this section will come fr
 % Justification: separates error types that the validator already distinguishes.
 \begin{figure*}[t]
 \begin{phcanvas}
-  \phpanel{0}{0}{0.492}{0.24}{A}{Outcome shares on solvable inputs. Stacked bars of the eight outcomes per model and setup.}
+  \phpanel{0}{0}{0.492}{0.24}{A}{Outcome shares on solvable inputs. Stacked bars of the seven outcomes in the rates, per model and setup.}
   \phpanel{0.508}{0}{0.492}{0.24}{B}{Outcome shares on corrupted inputs. Shows where rules move attempts between outcomes.}
 \end{phcanvas}
-\caption{Outcome shares by AI model and setup. Each stacked bar splits the attempts into the eight outcomes: success, failure, hallucination, format error, abstention, malformed output, truncated, and infrastructure failure. (A) Valid inputs. (B) Invalid inputs. Infrastructure failures stay out of every rate and appear here only as a count.}
+\caption{Outcome shares by AI model and setup. Each stacked bar splits the attempts into seven outcomes: success, failure, hallucination, format error, abstention, malformed output, and truncated. (A) Valid inputs. (B) Invalid inputs. Infrastructure failures stay out of every rate and appear here only as a count above each bar.}
 \label{fig:outcomes}
 \end{figure*}
 
@@ -410,7 +414,7 @@ This template holds no measured results. Every rate in this section will come fr
 
 
 \subsection{Outcome breakdown}\label{sec:res-outcomes}
-A low hallucination rate can hide a high rate of malformed output or failure. \Cref{fig:outcomes} therefore shows the share of all eight outcomes for each model and setup. \todo{Report whether rules in the prompt move attempts from hallucination to failure or to success.} The malformed output rate is \val{range} across models.
+A low hallucination rate can hide a high rate of malformed output or failure. \Cref{fig:outcomes} therefore shows the share of each outcome for each model and setup, with the infrastructure failures as a count. \todo{Report whether rules in the prompt move attempts from hallucination to failure or to success.} The malformed output rate is \val{range} across models.
 
 
 \subsection{Solvability detection and diagnosis}\label{sec:res-detection}
@@ -480,7 +484,7 @@ Before any paid API call, we checked the pipeline against two test fixtures. The
 \section{Discussion}\label{sec:discussion}
 \todo{Draft after results. Answer the question of the introduction in the first sentence.} The result must separate two effects of the rules in the prompt. One effect is fewer impossible moves, and the other is better detection of unreachable states. A setup can improve one effect and leave the other unchanged.
 
-Strict string matching makes the hallucination count conservative. A model that writes a valid turn in an unusual form, such as a prime sign in place of an apostrophe, gets a hallucination verdict. The appendix splits impossible moves by type, so a reader can see how many verdicts come from notation alone. \todo{Report that share.}
+Strict string matching makes the hallucination count conservative, because \code{R'2} in place of \code{R2} gets a hallucination verdict. A Unicode prime in place of the apostrophe is not a move token. That line is prose, so it gives an abstention, or a format error beside legal moves. The appendix splits impossible moves by type, so a reader can see how many verdicts come from notation alone. \todo{Report that share.}
 
 The mismatch reasons also tell every setup which kinds of defect exist. Detection rates under Release 3.0.0 therefore do not compare with those of releases 1.x and 2.x. The 2x2 list names edges and wings that the 2x2 does not have, and naming one is a wrong reason. The decoy reason lets the study count a claim of evidence that the state cannot show.
 
@@ -503,8 +507,8 @@ Anyone can compute every number in the results again from the raw records, the r
   \item Clone the repository and open a terminal in its root folder.
   \item Run \code{pytest -q} and confirm zero failures.
   \item Check out the tag \code{release-3.0.0}, which holds the frozen inputs and prompts.
-  \item Run the experiment with \code{-{}-dry-run} to print the worst-case cost.
-  \item Run the experiment without \code{-{}-dry-run} after you approve the budget.
+  \item Run the experiment with \code{-{}-estimate} to print the attempts and the worst-case cost.
+  \item Run the experiment without \code{-{}-estimate} after you approve the budget.
   \item Run \code{evaluate} to compute the reports from the raw records.
   \item Run \code{make plots} to build every figure from the reports.
   \item Build this paper with \code{latexmk -pdf main.tex}.
@@ -526,22 +530,22 @@ We will publish the frozen inputs, prompts, and raw records on Hugging Face with
 % =====================================================================================
 \appendix
 \section{Prompt Texts}\label{app:prompts}
-The listings below give the 3x3 templates of Release 3.0.0 for the three setups. The runner fills \code{\{state\}} with the rendered state, \code{\{legal\_moves\}} with the output of \code{legal\_moves()}, and \code{\{mismatch\_reasons\}} with the output of \code{mismatch\_reasons()}. The templates of the other cubes differ in the puzzle description and the notation.
+The listings below give the 3x3 templates of Release 3.0.0 for the three setups. The runner fills \code{\{state\}} with the rendered state, \code{\{legal\_moves\}} with the output of \code{legal\_moves()}, and \code{\{mismatch\_reasons\}} with the output of \code{mismatch\_reasons()} followed by \code{other}. The templates of the other cubes differ in the puzzle description and the notation.
 % SRC [REPO] prompts/{setup}/3x3.txt, identical to releases/3.0.0/prompts/{setup}/3x3.txt.
-\lstinputlisting[caption={\code{no\_model}, 3x3.}]{../prompts/no_model/3x3.txt}
-\lstinputlisting[caption={\code{descriptive}, 3x3.}]{../prompts/descriptive/3x3.txt}
-\lstinputlisting[caption={\code{prescriptive}, 3x3.}]{../prompts/prescriptive/3x3.txt}
+\lstinputlisting[caption={\code{no\_model}, 3x3.}]{../releases/3.0.0/prompts/no_model/3x3.txt}
+\lstinputlisting[caption={\code{descriptive}, 3x3.}]{../releases/3.0.0/prompts/descriptive/3x3.txt}
+\lstinputlisting[caption={\code{prescriptive}, 3x3.}]{../releases/3.0.0/prompts/prescriptive/3x3.txt}
 
 \section{Impossible Moves by Type}\label{app:taxonomy}
-Strict matching counts every move token that is not legal as an impossible move. \Cref{fig:taxonomy} splits these strings into types. The types include slice moves, wide moves on the 2x2 and 3x3, lowercase turns, whole-cube rotations, wrong prime signs, and invented tokens. The split is a post-hoc label and does not change any outcome. \todo{Write the classifier and list its rules here.}
+Strict matching counts every move token that is not legal as an impossible move, and \cref{fig:taxonomy} splits them into types. The types are slice moves, wide moves on the 2x2 and 3x3, lowercase turns, and rotations. Two more types are layer-count tokens such as \code{3Fw} and doubled suffixes such as \code{R'2}. The split is a post-hoc label and does not change any outcome. \todo{Write the classifier and list its rules here.}
 
 % ---- placeholder fig:taxonomy (ID stamped from the float counter) --------------------
 % DATA: parsed moves not in legal_moves(), from raw records. STATUS: needs a new
 % post-hoc classifier (not in the repo). Justification: shows how much of the
 % hallucination count is notation noise (Open Item 6, strict matching).
 \begin{figure}[t]
-\phsingle{0.65}{Types of impossible moves. Share of each type per setup, from slice moves to invented tokens.}
-\caption{Impossible moves by type and setup, pooled over AI models. Each bar splits the impossible move strings into slice moves, wide moves, lowercase turns, rotations, wrong prime signs, and invented tokens. The counts are $n = \val{n}$ strings per setup.}
+\phsingle{0.65}{Types of impossible moves. Share of each type per setup, from slice moves to doubled suffixes.}
+\caption{Impossible moves by type and setup, pooled over AI models. Each bar splits the impossible move strings into slice moves, wide moves, lowercase turns, rotations, layer-count tokens, and doubled suffixes such as \code{R'2}. The counts are $n = \val{n}$ strings per setup.}
 \label{fig:taxonomy}
 \end{figure}
 
@@ -577,7 +581,7 @@ Each input gets $K$ attempts for each model and setup. \Cref{fig:consistency} sh
 % reason is what separates a diagnosis from a lucky MISMATCH.
 \begin{figure}[t]
 \phsingle{0.55}{Diagnosis by corruption type. Diagnosis rate per corruption type, by model and setup.}
-\caption{Diagnosis rate by corruption type and setup, pooled over AI models. Each bar gives the share of attempts on invalid inputs whose mismatch reason is the corruption type of the input. The dashed line marks the best fixed answer, which is the most common corruption type in the input set.}
+\caption{Diagnosis rate by corruption type and setup, pooled over AI models. Each bar gives the share of attempts on invalid inputs whose mismatch reason is the corruption type of the input.}
 \label{fig:diagnosis}
 \end{figure}
 
