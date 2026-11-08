@@ -46,8 +46,7 @@ def attempt(bundles, experiment_id: str, live_ids: set[str], query: dict) -> dic
         except ValueError as error:
             raise ApiError(404, str(error)) from None
         engine = get_engine(row["puzzle"])
-        manifest = json.loads(git.show(git.main_ref(), f"releases/{release}/manifest.json") or "{}")
-        offered = offered_reasons(engine) if manifest.get("mismatch_reasons") else None
+        offered = offered_reasons(engine) if exp["reasons"] else None
         asked = decision_questions(questions, engine.legal_moves(), offered)
         prompt = f"{decision_state(prompt, [])}\n--- questions\n{json.dumps(asked, indent=2)}"
     record = expdata.find_record(exp["records"].get(model_name, []), input_id, setup, number)

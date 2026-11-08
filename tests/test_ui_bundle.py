@@ -173,7 +173,7 @@ def test_computed_rows_equal_compute(ui_repo, samples):
                      "abstention_rate", "format_error_rate"):
             n = sum(r[rate + "_n"] for r in mine)
             expected = sum(r[rate] * r[rate + "_n"] for r in mine if r[rate + "_n"]) / n
-            assert by[validity][rate] == pytest.approx(expected), (validity, rate, [(r["setup"], r[rate], r[rate+"_n"]) for r in mine])
+            assert by[validity][rate] == pytest.approx(expected)
     assert by["valid"]["mismatch_detection_rate"] is None
     assert by["invalid"]["false_mismatch_rate"] is None
     assert by["invalid"]["mismatch_detection_rate"] == pytest.approx(0.0)  # a bare MISMATCH is a format error under reasons
@@ -677,7 +677,7 @@ def test_benchmarks_pooled_rates_equal_metrics(ui_repo, samples):
     expected = expdata.all_scope_rates(keyed, "benchmarks|2x2|example-model|all|1.0.0|no_model|descriptive|prescriptive")
     cells = {r["metric"]: r["cells"]["example-model"] for r in out["rows"] if r["puzzle"] == "2x2"}
     assert out["experiments"] == ["e"] and out["releases"] == ["1.0.0"] and out["skipped"] == []
-    for metric in ("precision", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
+    for metric in ("hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
                    "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate"):
         assert cells[metric] == {"value": expdata.cell(expected[metric]), "low": expdata.cell(expected[metric + "_low"]),
                                  "high": expdata.cell(expected[metric + "_high"]), "n": expected[metric + "_n"],
@@ -872,6 +872,17 @@ def test_cost_efficiency_divides_cost_by_precision_and_coverage():
     assert cell["value"] == pytest.approx(0.5 / (2 / 3 * 3 / 4))  # mean cost 0.5, precision 2/3, coverage 3/4
     none = [synthetic("a", "i1", "abstention", moves=())]
     assert metric_row(none, ["a"], "cost_efficiency")["cells"]["a"]["value"] is None
+
+
+def test_precision_under_both_labels_is_balanced_precision():
+    rows = ([synthetic("a", f"v{n}", "success") for n in range(3)] + [synthetic("a", "v3", "failure")]
+            + [synthetic("a", "x0", "failure", validity="invalid")])
+    cell = metric_row(rows, ["a"], "precision", scope="all")["cells"]["a"]
+    assert cell["value"] == pytest.approx((3 / 4 + 0) / 2)  # not the pooled 3/5
+    assert cell["n"] == 5
+    one_side = [synthetic("a", "v0", "success")]
+    assert metric_row(one_side, ["a"], "precision", scope="all")["cells"]["a"]["value"] is None
+    assert metric_row(one_side, ["a"], "cost_efficiency", scope="all")["cells"]["a"]["value"] is None
 
 
 def test_report_csv_without_new_columns_pools_to_na():
