@@ -22,8 +22,8 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
 <style>
   /* React renders the island's markup, so these rules reach it with :global. Monochrome: the page's tokens only.
      The island root also wears .cube-solver, so the cube drawing and the text buttons come from src/styles/cube-stage.css, the same source as /cube. */
-  /* /cube's red (--danger); the green is darker than the sticker green so it reaches 3:1 on the page background. */
-  :global(.benchmark) { --danger: #c62828; --ok: #2e7d32; display: grid; gap: 1.5rem; max-width: 40rem; }
+  /* Status colours from owox.com tokens.css: red-200 (a lighter red than status-error, which fails AA on the panel), green-100 (status-ok). */
+  :global(.benchmark) { --danger: #ed7475; --ok: #27ae60; display: grid; gap: 1.5rem; max-width: 40rem; }
   /* The filter is /cube's numbered steps (rules in src/styles/cube-stage.css); here only the body row: the options side by side, scrolling sideways when they do not fit. */
   :global(.benchmark .steps.filter .body) { overflow-x: auto; scrollbar-width: none; }
   :global(.benchmark .steps.filter .body::-webkit-scrollbar) { display: none; }
@@ -32,7 +32,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(3)) { grid-column: 1 / -1; margin-top: 1.5rem; }
   /* The options sit close under their title and start where the title text starts. */
   :global(.cube-solver.benchmark .steps.filter .body) { margin-top: 0.35rem; padding-left: 0; }
-  /* The step circle is the icon itself (icons.tsx): a black disc with the icon cut out of it, so no ring here. */
+  /* The step circle is the icon itself (icons.tsx): a disc in the text colour with the icon cut out of it, so no ring here. */
   :global(.cube-solver.benchmark .steps .num) { border: 0; color: var(--text); }
   :global(.cube-solver.benchmark .steps .num svg) { display: block; }
   :global(.benchmark .options) { display: flex; flex-wrap: nowrap; gap: 0.5rem; }
@@ -51,7 +51,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   /* Provider names are capitalised words, so their visual centre is the cap-height centre, ~0.118em (Newsreader: (cap 0.676 - x 0.44) / 2) above the x-height centre the box is aligned to. Raise the box there; the lowercase model ids keep the x-height alignment. */
   :global(.benchmark .options.checks:not(.columns) input[type='checkbox']) { position: relative; top: -0.118em; font-size: inherit; }
   :global(.benchmark .checks input[type='checkbox']:checked) {
-    background: var(--muted) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.3l2.4 2.4 5.2-5.4' fill='none' stroke='%23f0f0f0' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 80% no-repeat;
+    background: var(--muted) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.3l2.4 2.4 5.2-5.4' fill='none' stroke='%231a1f2e' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 80% no-repeat;
   }
   :global(.benchmark .checks input[type='checkbox']:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
   :global(.benchmark .checks input[type='checkbox']:disabled) { opacity: 0.5; cursor: default; }
@@ -70,7 +70,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.benchmark .options.checks.sizer) { height: 0; overflow: hidden; visibility: hidden; }
   /* Step 2 is a block of its own pushed to the right edge of the content column (its natural width); inside it everything stays left-aligned. */
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(2)) { justify-self: end; }
-  /* A puzzle option is a small solved cube. Selected: a solid black border only. Unselected: a transparent border of the same width, 50% transparent. */
+  /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only. Unselected: a transparent border of the same width, 50% transparent. */
   :global(.benchmark .options button.square) { width: 3.9rem; height: 3.9rem; padding: 0.26rem; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
   :global(.benchmark .options button.square:hover) { opacity: 1; }
   :global(.benchmark .options button.square[aria-checked='true']) { border-color: var(--text); opacity: 1; }
@@ -79,7 +79,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.benchmark .options button.square span) { display: block; width: 100%; line-height: 0; }
   :global(.benchmark .options button.square .cube-view) { display: block; width: 100%; pointer-events: none; }
   :global(.benchmark .muted) { color: var(--muted); }
-  /* The chart sits in a framed panel on white; the metric tabs hang off its top edge like folder tabs. The selected tab is white and covers the frame's top border, so it merges into the panel. */
+  /* The chart sits in a framed panel; the metric tabs hang off its top edge like folder tabs. The selected tab has the panel background and covers the frame's top border, so it merges into the panel. */
   /* 1rem + the island's 1.5rem gap = 2.5rem above the tabs, the same as the puzzle row to the Model step (1rem row gap + 1.5rem). */
   :global(.benchmark .metrics) { display: grid; gap: 0; margin-top: 1rem; }
   :global(.benchmark .metrics .options) { flex-wrap: wrap; align-items: flex-end; gap: 0.25rem; }
@@ -87,7 +87,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
     position: relative; background: transparent; color: var(--text); border: 1px solid var(--text); border-bottom: 0; border-radius: 3px 3px 0 0;
   }
   :global(.cube-solver.benchmark .metrics button[role='tab'][aria-selected='true']:not(.redo):not(.switch):not(.square)) {
-    z-index: 1; margin-bottom: -1px; padding-bottom: calc(0.2rem + 1px); background: #fff; color: var(--text);
+    z-index: 1; margin-bottom: -1px; padding-bottom: calc(0.2rem + 1px); background: var(--panel); color: var(--text);
   }
   /* The selected tab stands 0.34rem above the others: taller, with the extra as padding on top so its text sits where the others' does. The row is always as tall as it, so switching tabs moves nothing. */
   :global(.cube-solver.benchmark .metrics button[role='tab'][aria-selected='true']:not(.redo):not(.switch):not(.square)) { min-height: calc(1.6rem + 0.34rem); padding-top: calc(0.2rem + 0.34rem); }
@@ -114,7 +114,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.benchmark .metric-popover p) { margin: 0 0 0.35rem; }
   :global(.benchmark .metric-popover p:last-child) { margin-bottom: 0; }
   :global(.benchmark .metric-popover .direction) { color: var(--head); }
-  :global(.benchmark .metrics [role='tabpanel']) { box-sizing: border-box; border: 1px solid var(--text); background: #fff; padding: 1rem 1.25rem 0.5rem; }
+  :global(.benchmark .metrics [role='tabpanel']) { box-sizing: border-box; border: 1px solid var(--text); background: var(--panel); padding: 1rem 1.25rem 0.5rem; }
   :global(.benchmark .chart) { margin: 0; }
   :global(.benchmark .empty) { margin: 0; }
   :global(.benchmark .chart .row) { margin-bottom: 0.75rem; }
@@ -147,7 +147,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   /* Room for ". Source" on its own line where it wraps, so the run never moves Run down. */
   @media (max-width: 48rem) { :global(.benchmark .facts .one-line) { min-height: 2lh; } }
   /* The link to the prompt the model was sent, like a link in the page's prose (.prose a). */
-  :global(.benchmark .facts .prompt) { text-decoration: underline; text-underline-offset: 0.2em; }
+  :global(.benchmark .facts .prompt) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
   /* An illegal move: the cube shakes side to side for one second. */
   :global(.benchmark .player .cube-stage.shake .views) { animation: bench-shake 1s ease-in-out; }
   @keyframes bench-shake {
@@ -157,7 +157,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   }
   :global(.benchmark .player .actions) { display: flex; align-items: center; gap: 1rem; }
   /* ". Source" after the result: the study repo, a plain content link. */
-  :global(.benchmark .player .source) { text-decoration: underline; text-underline-offset: 0.2em; }
+  :global(.benchmark .player .source) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
   /* The result and its tick or cross: green when the attempt's outcome is success, red otherwise. */
   :global(.benchmark .facts [data-verdict='correct'] .result .value) { color: var(--ok); }
   :global(.benchmark .facts [data-verdict='wrong'] .result .value) { color: var(--danger); }
