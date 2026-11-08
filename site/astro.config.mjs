@@ -6,24 +6,20 @@ export default defineConfig({
   site: 'https://owox.github.io',
   base: '/ai-ontology-benchmark',
   output: 'static',
-  // Self-hosted via Astro's Fonts API, as on vladflaks.com.
+  // Self-hosted via Astro's Fonts API. The two fonts of owox.com's astro.config.mjs.
   fonts: [
     {
+      name: 'Roboto',
+      cssVariable: '--font-roboto',
       provider: fontProviders.google(),
-      name: 'Figtree',
-      cssVariable: '--font-figtree',
-      weights: [300, 700, 800],
-      subsets: ['latin'],
-      display: 'fallback',
+      weights: ['300 500'],
+      styles: ['normal', 'italic'],
     },
     {
+      name: 'Space Mono',
+      cssVariable: '--font-space-mono',
       provider: fontProviders.google(),
-      name: 'Newsreader',
-      cssVariable: '--font-newsreader',
       weights: [400, 700],
-      subsets: ['latin', 'cyrillic'],
-      fallbacks: ['Georgia', 'serif'],
-      display: 'fallback',
     },
   ],
   integrations: [react()],

@@ -22,8 +22,8 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
 <style>
   /* React renders the island's markup, so these rules reach it with :global. Monochrome: the page's tokens only.
      The island root also wears .cube-solver, so the cube drawing and the text buttons come from src/styles/cube-stage.css, the same source as /cube. */
-  /* Status colours from owox.com tokens.css: red-200 (a lighter red than status-error, which fails AA on the panel), green-100 (status-ok). */
-  :global(.benchmark) { --danger: #ed7475; --ok: #27ae60; display: grid; gap: 1.5rem; max-width: 40rem; }
+  /* Status colours (--ok, --danger) live in global.css with the theme tokens. */
+  :global(.benchmark) { display: grid; gap: 1.5rem; max-width: 40rem; }
   /* The filter is /cube's numbered steps (rules in src/styles/cube-stage.css); here only the body row: the options side by side, scrolling sideways when they do not fit. */
   :global(.benchmark .steps.filter .body) { overflow-x: auto; scrollbar-width: none; }
   :global(.benchmark .steps.filter .body::-webkit-scrollbar) { display: none; }
@@ -48,10 +48,15 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
     appearance: none; -webkit-appearance: none; box-sizing: border-box; display: inline-block; vertical-align: middle; width: 1.05rem; height: 1.05rem; margin: 0 0.5rem 0 0;
     border: 1px solid var(--muted); border-radius: 2px; background: transparent; cursor: inherit;
   }
-  /* Provider names are capitalised words, so their visual centre is the cap-height centre, ~0.118em (Newsreader: (cap 0.676 - x 0.44) / 2) above the x-height centre the box is aligned to. Raise the box there; the lowercase model ids keep the x-height alignment. */
-  :global(.benchmark .options.checks:not(.columns) input[type='checkbox']) { position: relative; top: -0.118em; font-size: inherit; }
+  /* Provider names are capitalised words, so their visual centre is the cap-height centre, ~0.09em (Roboto: (cap 0.711 - x 0.528) / 2) above the x-height centre the box is aligned to. Raise the box there; the lowercase model ids keep the x-height alignment. */
+  :global(.benchmark .options.checks:not(.columns) input[type='checkbox']) { position: relative; top: -0.09em; font-size: inherit; }
   :global(.benchmark .checks input[type='checkbox']:checked) {
     background: var(--muted) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.3l2.4 2.4 5.2-5.4' fill='none' stroke='%231a1f2e' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 80% no-repeat;
+  }
+  /* Light themes: a light tick on the --muted fill (5:1). */
+  :global(:root[data-theme='light'] .benchmark .checks input[type='checkbox']:checked) { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.3l2.4 2.4 5.2-5.4' fill='none' stroke='%23f5f7fb' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+  @media (prefers-color-scheme: light) {
+    :global(:root:not([data-theme='dark']) .benchmark .checks input[type='checkbox']:checked) { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.3l2.4 2.4 5.2-5.4' fill='none' stroke='%23f5f7fb' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
   }
   :global(.benchmark .checks input[type='checkbox']:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
   :global(.benchmark .checks input[type='checkbox']:disabled) { opacity: 0.5; cursor: default; }
@@ -97,7 +102,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.cube-solver.benchmark .metrics button.help:not(.redo):not(.switch):not(.square)) {
     position: absolute; z-index: 2; transform: translate(calc(-100% - 0.4rem), calc(-100% - 0.25rem)); box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
     width: 1.1rem; height: 1.1rem; min-height: 0; padding: 0; border: 1px solid var(--text); border-radius: 50%; background: transparent; color: var(--text);
-    font-size: 0.72rem; font-weight: 800; line-height: 1;
+    font-size: 0.72rem; font-weight: var(--weight-medium); line-height: 1;
   }
   :global(.cube-solver.benchmark .metrics button.help[aria-expanded='true']:not(.redo):not(.switch):not(.square)) { background: var(--text); color: var(--text-inv); }
   :global(.cube-solver.benchmark .metrics button.help:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
@@ -119,7 +124,8 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.benchmark .empty) { margin: 0; }
   :global(.benchmark .chart .row) { margin-bottom: 0.75rem; }
   :global(.benchmark .chart .label) { display: flex; justify-content: space-between; gap: 1rem; }
-  :global(.benchmark .chart .value) { color: var(--muted); }
+  :global(.benchmark strong) { font-weight: var(--weight-medium); }
+  :global(.benchmark .chart .value) { color: var(--muted); font-family: var(--font-mono); }
   :global(.benchmark .chart .track) { height: 6px; background: var(--rule); }
   :global(.benchmark .chart .fill) { height: 100%; background: currentColor; }
   :global(.benchmark .chart .row[data-rank='best'] .fill) { background: var(--ok); }
@@ -140,7 +146,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   /* State, Model and Result: one line each, the term bold. */
   :global(.benchmark .facts) { display: grid; gap: 0.25rem; margin: 0; }
   :global(.benchmark .facts dt), :global(.benchmark .facts dd) { display: inline; margin: 0; }
-  :global(.benchmark .facts dt) { font-weight: 800; }
+  :global(.benchmark .facts dt) { font-weight: var(--weight-medium); }
   /* The label and the result never break inside ("Result: Mismatch not detected"); the ". Source" after them may wrap on a narrow screen. */
   :global(.benchmark .facts .one-line) { white-space: nowrap; }
   :global(.benchmark .facts .after-result) { white-space: normal; }
@@ -161,7 +167,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   /* The result and its tick or cross: green when the attempt's outcome is success, red otherwise. */
   :global(.benchmark .facts [data-verdict='correct'] .result .value) { color: var(--ok); }
   :global(.benchmark .facts [data-verdict='wrong'] .result .value) { color: var(--danger); }
-  :global(.benchmark .facts .result .value) { font-weight: 800; }
+  :global(.benchmark .facts .result .value) { font-weight: var(--weight-medium); }
   :global(.benchmark .facts .verdict-icon) { vertical-align: -0.15em; margin-right: 0.3rem; }
   /* Another case: a bare icon button after the state, its keyboard focus a dashed ring like the puzzle squares. */
   :global(.cube-solver.benchmark .facts button.another) {

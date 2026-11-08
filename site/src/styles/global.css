@@ -1,5 +1,5 @@
 /* Tokens and base rules for the results page, taken from vladflaks.com's global.css.
-   Newsreader for text, Figtree for headings and UI (Astro Fonts API, see astro.config.mjs). */
+   Fonts follow owox.com src/design-system/tokens.css: Roboto carries language, Space Mono carries anything the system generated. Do not add a third. */
 
 :root {
   color-scheme: dark;
@@ -14,6 +14,14 @@
   --code-bg: #242a3b;          /* surface-800, bg-surface */
   --code-rule: #3a4358;        /* line-650, border-default */
   --link: #459ce9;             /* blue-200, text-link */
+  /* Typography, from owox.com src/design-system/tokens.css. */
+  --font-body: var(--font-roboto), system-ui, sans-serif;
+  --font-mono: var(--font-space-mono), ui-monospace, SFMono-Regular, monospace;
+  --weight-light: 300;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --ok: #27ae60;               /* green-100, status-ok */
+  --danger: #ed7475;           /* red-200 */
   --measure: 1200px;
   --pad: 1.5rem;
   /* Cube sticker colours: content, not decoration. */
@@ -27,6 +35,42 @@
   --cube-gap: #0e1119;
 }
 
+/* Light-mode tokens of owox.com src/design-system/tokens.css ([data-mode='light'] and the light neutrals). CSS can't share one block between an attribute selector and a media query, so the values are written twice. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f5f7fb;               /* canvas-050 */
+  --panel: #ffffff;            /* surface-000 */
+  --text: #1a1f2e;             /* ink-900 */
+  --head: #1a1f2e;             /* ink-900 */
+  --text-inv: #f5f7fb;         /* canvas-050 */
+  --muted: #5e6b85;            /* text-500 */
+  --rule: #e2e8f1;             /* line-150 */
+  --code-bg: #edf1f8;          /* surface-100 */
+  --code-rule: #d1d9e6;        /* line-200 */
+  --link: #0b63b8;             /* blue-000 */
+  --ok: #14713c;               /* green-000 */
+  --danger: #c60e0e;           /* red-000 */
+  --cube-unknown: #b4bfd1;     /* line-250 */
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --bg: #f5f7fb;               /* canvas-050 */
+    --panel: #ffffff;            /* surface-000 */
+    --text: #1a1f2e;             /* ink-900 */
+    --head: #1a1f2e;             /* ink-900 */
+    --text-inv: #f5f7fb;         /* canvas-050 */
+    --muted: #5e6b85;            /* text-500 */
+    --rule: #e2e8f1;             /* line-150 */
+    --code-bg: #edf1f8;          /* surface-100 */
+    --code-rule: #d1d9e6;        /* line-200 */
+    --link: #0b63b8;             /* blue-000 */
+    --ok: #14713c;               /* green-000 */
+    --danger: #c60e0e;           /* red-000 */
+    --cube-unknown: #b4bfd1;     /* line-250 */
+  }
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 html { -webkit-text-size-adjust: 100%; }
@@ -36,21 +80,22 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-newsreader), Georgia, serif;
-  font-weight: 400;
+  font-family: var(--font-body);
+  font-weight: var(--weight-regular);
   font-size: 1.0625rem;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
 }
 
 h1 {
-  font-family: var(--font-figtree), system-ui, sans-serif;
+  font-family: var(--font-body);
   color: var(--head);
   line-height: 1.2;
   margin: 0 0 0.5em;
-  font-weight: 700;
+  font-weight: var(--weight-medium);
   font-size: 2rem;
 }
+strong, b { font-weight: var(--weight-medium); }
 p { margin: 0 0 1rem; }
 
 a { color: inherit; text-decoration: none; }
@@ -77,8 +122,8 @@ footer {
   border-top: 1px solid var(--rule);
   color: var(--muted);
   font-size: 0.9rem;
-  font-family: var(--font-figtree), system-ui, sans-serif;
-  font-weight: 300;
+  font-family: var(--font-body);
+  font-weight: var(--weight-light);
 }
 footer p { margin: 0; }
 footer a { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
@@ -88,3 +133,10 @@ footer a { color: var(--link); text-decoration: underline; text-underline-offset
   main { grid-template-columns: minmax(0, 1fr); }
   .content { grid-column: 1; }
 }
+
+/* Theme switcher */
+.theme-switch { display: flex; justify-content: flex-end; gap: 0.25rem; margin: 0 0 0.5rem; font-family: var(--font-body); font-size: 0.85rem; line-height: 1.2; }
+.theme-switch button { font: inherit; background: none; border: 0; padding: 0.2rem 0.4rem; color: var(--muted); cursor: pointer; }
+.theme-switch button[aria-checked='true'] { color: var(--text); text-decoration: underline; text-underline-offset: 0.25em; }
+.theme-switch button:hover { color: var(--text); }
+.theme-switch button:focus-visible { outline: 2px dashed var(--text); outline-offset: 2px; }
