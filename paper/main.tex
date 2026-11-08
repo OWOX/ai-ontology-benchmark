@@ -97,7 +97,7 @@ We answer with a closed domain in which the rules are exact. A formal ontology d
 This work makes three contributions. The list below states each contribution and the part of the paper that supports it. \todo{Replace the third item with the measured main effect when Release 3.0.0 results exist.}
 \begin{itemize}[leftmargin=*,itemsep=1pt]
   \item We release a frozen held-out benchmark of 600 states of the 2x2, 3x3, 4x4, and 5x5 cubes, with a recorded seed. One in five states is unreachable by construction, so the correct answer to it is a mismatch with a reason and not a move list.
-  \item We define hallucination as one countable event: a move string that is not legal, or a mismatch reason that no state can show. A deterministic validator gives each attempt one of eight outcomes, and no model judges another model.
+  \item We define hallucination as one countable event: a move token that is not legal, or a mismatch reason that no state can show. A deterministic validator gives each attempt one of eight outcomes, and no model judges another model.
   \item We compare twelve AI models from five providers under three prompt setups on byte-identical inputs. \todo{One sentence with the main measured effect and its 95\% interval.}
 \end{itemize}
 
@@ -203,7 +203,7 @@ The 2x2 cube has only the corner twist invariant, and no permutation parity rule
 % SRC [REPO] releases/3.0.0/manifest.json and releases/3.0.0/README.md; config/release.toml.
 The evidence release is 3.0.0, which freezes the held-out input set (input set id 3) from the seed 20261108. Per puzzle and scramble depth it holds 40 valid inputs and 10 invalid copies, so 600 inputs in all: 480 valid and 120 invalid. The 2x2 and 3x3 use depths 5, 10, and 20. The 4x4 uses 10, 20, and 40, and the 5x5 uses 15, 30, and 60. Each input goes through three setups, and every setup lists the mismatch reasons beside the reply format.
 
-The \code{no\_model} setup gives the state and the reply format only. The \code{descriptive} setup adds prose rules, and the \code{prescriptive} setup also lists every legal move. Releases 1.x and 2.x hold the development input sets, whose results show how the method was built and are not evidence. \Cref{tab:prompt-bytes} and \cref{fig:prompt-sizes} give the template sizes. A prompt change after the freeze of Release 3.0.0 needs a new minor release, and its results appear beside the earlier ones.
+The \code{no\_model} setup gives the state and the reply format only. The \code{descriptive} setup adds prose rules, and the \code{prescriptive} setup also lists every legal move. Releases 1.x and 2.x hold development inputs, which are not evidence: prompts changed while input set 1 results were read. \Cref{tab:prompt-bytes} and \cref{fig:prompt-sizes} give the template sizes. A prompt change after the freeze of Release 3.0.0 needs a new minor release, and its results appear beside the earlier ones.
 % SRC [REPO] releases/3.0.0/manifest.json lists the 12-character version of each prompt template.
 
 % SRC [REPO] byte sizes of releases/3.0.0/prompts/ (identical to prompts/), measured with wc -c.
@@ -496,7 +496,7 @@ Four items limit the current scope of the benchmark. Some of them come from deci
 \begin{itemize}[leftmargin=*,itemsep=1pt]
   \item The study has no reference solver and reports no efficiency metric, because optimal solvers are not practical for the 5x5 and the other puzzles. A correct answer is any move sequence that solves the puzzle.
   \item Only the four cubes have engines. The octahedral and tetrahedral puzzles have no engine yet, and their move groups are still open.
-  \item The validator matches move strings exactly and does not normalize them. Any format deviation in a move string counts as a hallucination.
+  \item The validator matches move strings exactly and does not normalize them. A move token outside \code{legal\_moves()}, such as \code{R'2}, counts as a hallucination. A decorated line or a Unicode prime counts as a format error or an abstention.
   \item Providers bill hidden reasoning tokens in different ways, and API latency changes with load. Token and latency figures are therefore valid only for the run dates.
 \end{itemize}
 
