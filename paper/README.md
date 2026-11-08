@@ -2,7 +2,9 @@
 
 **Paper:** "Deterministic Measurement of Ontology-Grounded Hallucination and Solvability Detection in LLMs Using Twisty Puzzles", by Vlad Flaks and Mykhailo Flaks.
 
-**Status:** template, built 2026-11-01. It has no measured results, because no Release 1.1.2 run exists yet. Every number without a `% SRC:` comment in `main.tex` is a red `[VALUE: …]` or `[TODO: …]` marker.
+**Status:** template, updated 2026-11-08 to the method on `main`. The evidence release is 3.0.0, the held-out input set (input set id 3, seed 20261108). Releases 1.x and 2.x hold the development input sets, and their results are not evidence. The paper has no measured results. Every number without a `% SRC:` comment in `main.tex` is a red `[VALUE: …]` or `[TODO: …]` marker.
+
+**`main.pdf` predates this update.** No TeX was available when the text changed, so the PDF, the page numbers in the ID table below, and the page count are from the earlier build. Run `./build.sh` to rebuild them. `ids.py` then regenerates the ID table.
 
 ## Files
 
@@ -12,14 +14,14 @@
 | `placeholders.sty` | TikZ macros for the placeholders: `\phpanel`, `\phsingle`, and the `phcanvas` environment. |
 | `refs.bib` | Bibliography (natbib, `unsrtnat`). 14 entries carry `[AUTHORS: TODO]`. |
 | `../prompts/<setup>/3x3.txt` | The approved 3x3 prompt templates, read from the repo for Appendix A. No copy lives in `paper/`. |
-| `main.pdf` | Rendered paper, 13 pages. |
+| `main.pdf` | Rendered paper. Built before the Release 3.0.0 update, so rebuild it with `./build.sh`. |
 | `ste_check.py` | Converts `main.tex` to `build/main.check.html` and runs `verify_ste100.py` on it. It also checks for 3–5 sentences per paragraph, forbidden terms, and hardcoded references. |
-| `make_previews.py` | Renders `previews/page-NN.png` and the contact sheet `preview.png` (first 8 pages). |
+| `make_previews.py` | Renders `previews/page-NN.png` and the contact sheet `preview.png` (every page). |
 | `build.sh` / `Makefile` | Builds the PDF, runs the check, and renders the previews. The box has no `make`, so use `./build.sh` there. |
 | `previews/figure-heavy-pageN.png` | The page with the most placeholder stamps, at 150 dpi. `build.sh` picks it automatically. |
 | `ids.py` | Checks each stamped ID against its printed number in the PDF, writes `build/id-map.tsv`, and regenerates the ID table below. |
 
-**Build:** `./build.sh` from `paper/`. It needs `latexmk` and `pdflatex` (TinyTeX or MacTeX), poppler (`pdftoppm`, `pdfinfo`, `pdftotext`), and Python 3 with Pillow. If the TeX binaries are not on `PATH`, set `TEXBIN` to their folder. The appendix prompt listings read `../prompts/<setup>/3x3.txt` straight from the repo.
+**Build:** `./build.sh` from `paper/`. It needs `latexmk` and `pdflatex` (TinyTeX or MacTeX), poppler (`pdftoppm`, `pdfinfo`, `pdftotext`), and Python 3 with Pillow. If the TeX binaries are not on `PATH`, set `TEXBIN` to their folder. `TEXBIN` is optional. `build.sh` and the Makefile look for TinyTeX in `~/Library/TinyTeX/bin/universal-darwin`, `~/.TinyTeX/bin/universal-darwin`, and `~/.TinyTeX/bin/x86_64-linux`, and otherwise use `PATH`. The appendix prompt listings read `../prompts/<setup>/3x3.txt` straight from the repo.
 
 **arXiv upload:** send `main.tex`, `main.bbl`, `placeholders.sty`, `refs.bib`, and the three `prompts/<setup>/3x3.txt` files (fix the `\lstinputlisting` paths to match). Category cs.CL, cross-listed to cs.AI.
 
@@ -32,94 +34,80 @@
 - Panels have large bold letters (A, B, C) in the top-left corner.
 - Below each placeholder is a real caption: short, but more detailed than the text inside.
 - Table placeholders (`tab-onto-N`) use the same format, with the caption above.
-- **Layout:** a `\clearpage` before the bibliography flushes every pending float, so Figures 7–12 print before the references (Figures 7–10 on page 8, Figures 11 and 12 on page 9). Figures 9–12 use `[!htbp]`. The paper is 13 pages, and the figure numbers follow reading order.
+- **Layout:** a `\clearpage` before the bibliography flushes every pending float, so Figures 7–12 print before the references. Figures 9–12 use `[!htbp]`. The figure numbers follow reading order. Check the page layout after the next build.
 
 ## Figures and table placeholders
 
-`placeholders.sty` derives each stamped ID from the LaTeX float counter, so the ID always equals the printed number. `ids.py` reads the compiled PDF and confirms that each stamp sits on the same page as its caption. It also regenerates the table below between the IDMAP markers. Do not edit the table by hand. The data tables (vocabulary, prompt bytes, prices, limits, fixtures) keep their own numbers, and the placeholder tables take whatever number their counter gives them.
+`placeholders.sty` derives each stamped ID from the LaTeX float counter, so the ID always equals the printed number. `ids.py` reads the compiled PDF and confirms that each stamp sits on the same page as its caption. It also regenerates the table below between the IDMAP markers. Do not edit the table by hand. The data tables (vocabulary, prompt bytes, prices, limits) keep their own numbers, and the placeholder tables take whatever number their counter gives them.
 
-Status legend: *data exists* means the source numbers are in the repo or this template, *pending run* means the figure needs the Release 1.1.2 experiment, and *new code* means it needs a script the repo does not have yet.
+Status legend: *data exists* means the source numbers are in the repo or this template, *pending run* means the figure needs the Release 3.0.0 experiment, and *new code* means it needs a script the repo does not have yet.
 
 <!-- IDMAP:BEGIN -->
 | Stamped ID | Printed as | Label | Size | Page | Purpose | Data source | Status |
 |---|---|---|---|---|---|---|---|
-| fig-onto-1 | Figure 1 | `fig:workflow` | full | 2 | Pipeline (generate → release → run → evaluate), reachable vs corrupted states, and what each setup adds | SVG Figure 1 in the arXiv HTML draft `ontology_hallucination_arxiv.html` (outside the repo); `src/puzzles/cube.py` | Schematic exists as SVG. Export it and draw panel C |
-| fig-onto-2 | Figure 2 | `fig:example` | column | 3 | Puzzle and ontology example: rendered valid input, its corrupted copy, one JSON reply per outcome | `releases/1.0.0/inputs.jsonl`, `engine.render()`, `validator.py` | Data exists. To draw (new) |
-| fig-onto-3 | Figure 3 | `fig:prompt-sizes` | column | 4 | Prompt template sizes, Release 1.0.0 vs 1.1.2, in bytes (and tokens under 1.1.2) | `tab:prompt-bytes` (byte sizes of `releases/1.0.0/prompts/` and `releases/1.1.2/prompts/`); 1.1.2 raw records | Bytes exist. Tokens pending the 1.1.2 run |
-| fig-onto-4 | Figure 4 | `fig:cost` | column | 5 | Worst-case cost per model for one pass against the $5 model budget | `tab:limits` (MD Table 3), `config/prices.toml`, `src/run/budget.py` | Data exists. SVG Figure 3 exists in the HTML build |
-| fig-onto-5 | Figure 5 | `fig:hallucination` | full | 6 | Hallucination rate per model × setup with Wilson CIs, split into solvable (A) and corrupted (B) inputs | evaluate report and CSV; `metrics.py` Wilson CI | Pending run (T-17 Fig 4) |
-| fig-onto-6 | Figure 6 | `fig:setup-effect` | column | 7 | Paired change in hallucination rate per model (descriptive − no_model, prescriptive − no_model) | raw records, paired per input | Pending run. Needs a paired test (new) |
-| fig-onto-7 | Figure 7 | `fig:outcomes` | full | 8 | Share of all five outcomes per model × setup (error taxonomy) | evaluate outcome counts | Pending run (new) |
-| fig-onto-8 | Figure 8 | `fig:confusion` | full | 8 | Solvability confusion matrices per setup, pooled over models | mismatch flag vs validity label | Pending run (T-17 Fig 5) |
-| fig-onto-9 | Figure 9 | `fig:flag-roc` | column | 8 | Detection rate vs false mismatch rate per model × setup (in place of a calibration plot) | evaluate | Pending run (new) |
-| fig-onto-10 | Figure 10 | `fig:depth` | column | 8 | Accuracy vs scramble depth (5, 10, 20) for 2x2 (A) and 3x3 (B) | evaluate split by depth | Pending run (T-17 Fig 6) |
-| fig-onto-11 | Figure 11 | `fig:tokens` | column | 9 | Output tokens vs scramble depth per setup | raw record token fields | Pending run (new) |
-| fig-onto-12 | Figure 12 | `fig:pareto` | column | 9 | Cost per success vs success rate, with the Pareto front | evaluate; `config/prices.toml` | Pending run (T-17 Fig 7) |
-| fig-onto-13 | Figure 13 | `fig:taxonomy` | column (appendix) | 11 | Impossible moves by type (slice, wide, lowercase, rotation, prime sign, invented) | parsed moves not in `legal_moves()` | Pending run. Needs a post-hoc classifier (new code) |
-| fig-onto-14 | Figure 14 | `fig:per-puzzle` | column (appendix) | 11 | Per-puzzle breakdown: success (A) and hallucination (B), 2x2 vs 3x3 | evaluate split by puzzle | Pending run (new) |
-| fig-onto-15 | Figure 15 | `fig:consistency` | column (appendix) | 12 | Consistency heat map over K repeated attempts | `consistency()`, metrics.py L65–75 | Pending run (new) |
-| fig-onto-16 | Figure 16 | `fig:efficiency` | column (appendix) | 12 | Move count / reference length, 2x2 only | `efficiency()`, metrics.py L97–103 | Pending run. 3x3 is blocked by the missing solver |
-| tab-onto-5 | Table 5 | `tab:main` | full | 6 | Main results: 9 models × 3 setups × 5 rates with CIs | evaluate CSV | Pending run |
-| tab-onto-7 | Table 7 | `tab:full` | full (appendix) | 13 | Full results per model, setup, puzzle, and depth | evaluate CSV | Pending run |
-| tab-onto-8 | Table 8 | `tab:datasheet` | column (appendix) | 13 | Croissant and Responsible AI fields for NeurIPS E&D | Vlad's doc, venue table | To write |
+| fig-onto-1 | Figure 1 | `fig:workflow` | full | 2 | Pipeline (generate → release → run → evaluate), reachable vs corrupted states, and what each setup adds | `docs/definitions.md` (Workflows); `src/puzzles/cube.py` | To draw (new) |
+| fig-onto-2 | Figure 2 | `fig:example` | column | 3 | Puzzle and ontology example: rendered valid input, its corrupted copy, one reply per outcome | `releases/3.0.0/inputs.jsonl`, `engine.render()`, `validate()` in `src/validator.py` | Data exists. To draw (new) |
+| fig-onto-3 | Figure 3 | `fig:prompt-sizes` | column | 4 | Prompt template sizes by setup and puzzle under Release 3.0.0, in bytes and tokens | `tab:prompt-bytes` (byte sizes of `releases/3.0.0/prompts/`); 3.0.0 raw records | Bytes exist. Tokens pending the 3.0.0 run |
+| fig-onto-4 | Figure 4 | `fig:cost` | column | 5 | Worst-case cost per model for one pass against the default 25.00 USD model budget | `tab:limits`, `config/prices.toml`, `worst_case_request_cost()` in `src/run/budget.py` | Pending recompute from `releases/3.0.0/prompts/` |
+| fig-onto-5 | Figure 5 | `fig:hallucination` | full | 6 | Hallucination rate per model × setup with bootstrap intervals, split into solvable (A) and corrupted (B) inputs | evaluate report and CSV; `bootstrap_interval()` in `src/evaluate/metrics.py` | Pending 3.0.0 run |
+| fig-onto-6 | Figure 6 | `fig:setup-effect` | column | 7 | Paired change in hallucination rate per model (descriptive − no_model, prescriptive − no_model) | paired setup test: `paired_tests()` in `src/evaluate/metrics.py` | Pending 3.0.0 run. Plot to write |
+| fig-onto-7 | Figure 7 | `fig:outcomes` | full | 8 | Share of all eight outcomes per model × setup (error taxonomy) | evaluate outcome counts | Pending 3.0.0 run (new) |
+| fig-onto-8 | Figure 8 | `fig:confusion` | full | 8 | Classified-answer confusion matrices per setup, pooled over models | answer classes: `answer_class()` in `src/evaluate/metrics.py` | Pending 3.0.0 run (new) |
+| fig-onto-9 | Figure 9 | `fig:flag-roc` | column | 8 | Mismatch detection rate vs false mismatch rate per model × setup (in place of a calibration plot) | `detection_rows()` in `src/evaluate/metrics.py` | Pending 3.0.0 run (new) |
+| fig-onto-10 | Figure 10 | `fig:depth` | column | 8 | Precision on valid inputs vs scramble depth for the 2x2 (A), 3x3 (B), 4x4 (C), and 5x5 (D), each with its own depths | evaluate split by depth | Pending 3.0.0 run (new) |
+| fig-onto-11 | Figure 11 | `fig:tokens` | column | 9 | Output tokens vs scramble depth per setup | raw record token fields | Pending 3.0.0 run (new) |
+| fig-onto-12 | Figure 12 | `fig:pareto` | column | 9 | Cost efficiency vs balanced precision, with the Pareto front | evaluate; `config/prices.toml` | Pending 3.0.0 run (new) |
+| fig-onto-13 | Figure 13 | `fig:taxonomy` | column (appendix) | 11 | Impossible moves by type (slice, wide, lowercase, rotation, prime sign, invented) | parsed moves not in `legal_moves()` | Pending 3.0.0 run. Needs a post-hoc classifier (new code) |
+| fig-onto-14 | Figure 14 | `fig:per-puzzle` | column (appendix) | 11 | Per-puzzle breakdown: balanced precision (A) and hallucination rate (B), 2x2 to 5x5 | evaluate split by puzzle | Pending 3.0.0 run (new) |
+| fig-onto-15 | Figure 15 | `fig:consistency` | column (appendix) | 12 | Consistency heat map over K repeated attempts | `consistency()` in `src/evaluate/metrics.py` | Pending 3.0.0 run (new) |
+| fig-onto-16 | Figure 16 | `fig:diagnosis` | column (appendix) | 12 | Diagnosis rate by corruption type and setup, with the best fixed answer | corruption CSV: `corruption_rows()` in `src/evaluate/metrics.py` | Pending 3.0.0 run (new) |
+| tab-onto-5 | Table 5 | `tab:main` | full | 6 | Main results: 12 models × 3 setups, headline metrics with intervals | evaluate CSV | Pending 3.0.0 run |
+| tab-onto-7 | Table 7 | `tab:full` | full (appendix) | 13 | Full results per model, setup, puzzle, and depth | evaluate CSV | Pending 3.0.0 run |
+| tab-onto-8 | Table 8 | `tab:datasheet` | column (appendix) | 13 | Croissant and Responsible AI fields for NeurIPS E&D | NeurIPS E&D track requirements | To write |
 <!-- IDMAP:END -->
 
-### Why the figures beyond T-17 are there
+The page numbers above are from the earlier build and may shift. `ids.py` rewrites the table on the next build.
+
+### Why the extra figures are there
 
 The bullets use labels, because the numbers come from the build. The table above maps each label to its current ID.
 
 - **`fig:example` (puzzle example):** a reader has to see the exact input and reply format before any rate means anything. Reviewers of evaluation papers ask for this.
-- **`fig:setup-effect` (paired effect):** the paper's question is about the effect of the setup on the same inputs. In `fig:hallucination` that effect shows only as a gap between bars, so a paired view is the figure that answers the question directly.
-- **`fig:outcomes` (outcome breakdown):** a lower hallucination rate can come from more malformed output or more failures. The validator already separates the five outcomes, so this costs nothing extra.
-- **`fig:flag-roc` (flag quality instead of calibration):** the reply has only a Boolean `mismatch` flag and no confidence, so a true calibration curve is impossible. Adding a confidence field would break AGENTS.md invariant 9 and need a new release. Detection rate against false-flag rate is the honest substitute, and the text says so in an Uncertainty callout.
+- **`fig:setup-effect` (paired effect):** the paper's question is about the effect of the setup on the same inputs. The paired setup test answers it directly, which the gap between bars in `fig:hallucination` does not.
+- **`fig:outcomes` (outcome breakdown):** a lower hallucination rate can come from more malformed output or more failures. The validator already separates the eight outcomes, so this costs nothing extra.
+- **`fig:confusion` and `fig:flag-roc` (detection):** the answer classes read the mismatch reason, and the detection plot reads the mismatch flag only. The reply has no confidence, so a true calibration curve is impossible. Adding a confidence field would break AGENTS.md invariant 9 and need a new release.
 - **`fig:tokens` (tokens vs depth):** the ontology makes the prompt longer, so the cost argument needs the token side. Gemini bills hidden thoughts as output.
-- **`fig:taxonomy` (impossible-move types):** strict string matching (Open Item 6) means notation noise counts as hallucination. Readers need to see how much of the count it accounts for.
-- **`fig:per-puzzle`, `fig:consistency`, `fig:efficiency`:** these answer README side questions 3 and 4 (cube size, consistency) and report the efficiency metric that the paper defines.
+- **`fig:taxonomy` (impossible-move types):** strict string matching means notation noise counts as hallucination. Readers need to see how much of the count it accounts for.
+- **`fig:per-puzzle`, `fig:consistency`, `fig:diagnosis`:** these show the cube size effect, the consistency over repeated attempts, and which corruption types the AI models diagnose. The diagnosis figure replaces the dropped efficiency figure.
 - **`tab:datasheet`:** the NeurIPS 2027 E&D track flags or desk-rejects submissions that have no Croissant metadata with Responsible AI fields.
 
 ## Real numbers kept, with sources
 
 Each one has a `% SRC:` comment in `main.tex`.
 
-- **Inputs:** 90 inputs, seed 20261017, depths 5/10/20, and 10 valid plus 5 corrupted per puzzle and depth.
+- **Inputs:** 600 inputs in Release 3.0.0, seed 20261108. Per puzzle and scramble depth: 40 valid and 10 invalid inputs, so 480 valid and 120 invalid. Depths: 5, 10, and 20 on the 2x2 and 3x3, 10, 20, and 40 on the 4x4, and 15, 30, and 60 on the 5x5. Source: `releases/3.0.0/README.md`.
 - **State-space sizes:** 43,252,003,274,489,856,000 reachable states for the 3x3 and 3,674,160 for the 2x2.
-- **Vocabulary:** the controlled vocabulary in the table comes from MD Table 1.
-- **Prompt template bytes:**
-  - Release 1.0.0: 298, 428, and 365 bytes.
-  - Release 1.1.2 (the approved templates, identical to `prompts/`): 690, 1422/1489, and 1536/1603 bytes.
-  - Source: `releases/1.0.0/prompts/` and the `release-1.1.2` tag.
-- **Prices:** model prices and the dates they rise come from `config/prices.toml`.
-- **Budget limits:** $0.50, $5, and $10.
-- **Worst-case costs:** recomputed from the 270 Release 1.1.2 prompts and `config/prices.toml` (mean 334.5 input tokens). They replace MD Table 3.
-- **Fixture verification rates:** MD Table 2.
-- **Credit-request budget:** 810 attempts, 1,500 input and 4,096 output tokens, giving 109/215/58 USD (about 380 USD). Source: Vlad's doc.
-- **Derived here:** the maximum Wilson half widths, 0.072 at n=180 and 0.101 at n=90, and the template growth of 2.3–4.4×.
+- **Prompt template bytes:** measured with `wc -c` on `releases/3.0.0/prompts/` (identical to `prompts/`). `tab:prompt-bytes` has the figures.
+- **Prices:** model prices and the dates they rise come from `config/prices.toml`. The decision models have an output price of zero.
+- **Budget defaults:** request 2.00 USD, model 25.00 USD, experiment 50.00 USD (`docs/definitions.md`, Prices).
+- **Sample size:** 120 valid inputs per puzzle give 80% power for a 20-point difference from 0.50 at α 0.05 (`docs/methodology.md`).
 
-## Discrepancies found in the sources
+The worst-case cost table (`tab:limits`) holds `\val{...}` cells. It was computed for Release 1.1.2 with the old budgets, so it needs a recompute from `releases/3.0.0/prompts/` and `config/prices.toml`.
 
-1. **MD Table 3, column K=1/T=1024:** the MD values are 1–2% higher than a recompute. Recomputed from the Release 1.1.2 prompts (mean 334.5 input tokens, not 337), gpt-6-astra comes out at $14.73, against $14.91 in the MD. The table now uses the recomputed values.
-2. **The $182.97 total in the MD:** the recomputed K=3/T=2048 column adds up to **$183.67**. Confirm it with `run --dry-run`.
-3. **Two budget bases:**
-   - The paper uses K=3, T=2048, and 334.5 mean input tokens, for about $184.
-   - Vlad's doc uses 1,500 input and 4,096 output tokens, for about $380.
-   - The template states both and has a TODO to pick one.
-4. **Scope of the abstract:** Vlad's doc abstract covers five puzzles (2x2, 3x3, 5x5, octahedral, and tetrahedral). Release 1.0.0 has only the 2x2 and 3x3 cubes, so the paper abstract covers only those two.
-5. **Abstract length:** T-17 asks for an abstract of at most 200 words, and the doc abstract has 231. The paper abstract is a rewrite in STE of about 190 words.
+## Dropped from the earlier draft
 
-## Abstract from Vlad's doc (verbatim, 231 words, not used as-is)
+1. **Efficiency, reference length, and the reference solver.** Dropped on 2026-11-04, because optimal solvers are not practical for the 5x5 and the other puzzles. The paper no longer defines them, and `fig:efficiency` became `fig:diagnosis`.
+2. **Wilson intervals.** Replaced by 95% bootstrap intervals over inputs, and the `wilson1927` entry left `refs.bib`.
+3. **The JSON reply.** Output is one move per line or a `MISMATCH` line with a reason (invariant 9).
+4. **The credit-request budget (810 attempts, about 380 USD).** It came from a document outside the repo. The budget basis is a `\todo` in `main.tex`.
+5. **The fixture table.** The fixtures now use bootstrap metrics, so the old table with Wilson intervals was removed.
 
-> Does giving an AI model the rules of a system change how often it solves a problem in that system, and how often it hallucinates? This study answers the question with twisty puzzles: the 2x2, 3x3, and 5x5 cubes, an octahedral puzzle, and a tetrahedral puzzle. Every move is defined, AI models already know the standard notation, and a deterministic validator checks every answer, so no person or AI model has to judge correctness.
-> Each puzzle state goes to every AI model under three prompt setups. The first gives no rules. The second describes the rules. The third lists every legal move and requires the AI model to choose only from that list. A hallucination is a move that does not exist on the puzzle. A third of the inputs are corrupted into states that legal moves cannot reach, which tests whether the AI model notices that the problem is impossible.
-> Inputs are generated once from a recorded seed and frozen, so every AI model sees byte-identical prompts. Every attempt is stored as a raw record, and every metric can be recomputed from those records. We report success rate, hallucination rate, mismatch detection rate, efficiency against a reference solver, consistency, tokens, and cost per success, each with a 95% Wilson interval. The study compares three Anthropic, three OpenAI, and three Google AI models, and will publish its inputs, prompts, and reports.
-
-Three of its sentences break the 25-word limit, and it uses the passive voice in several places. The paper version fixes both.
-
-## Venue plan (from Vlad's doc)
+## Venue plan
 
 1. Publish the inputs, prompts, and raw records on Hugging Face, with a Zenodo DOI.
 2. Post on arXiv in cs.CL, cross-listed to cs.AI. You need an endorser first.
 3. Send a short version (about 4 pages) to an ICLR 2027 workshop, about 1 Feb 2027.
-4. Submit the full paper to TMLR (rolling) or to the NeurIPS 2027 Evaluations and Datasets Track (about May 2027), if the 5x5, octahedral, and tetrahedral results are ready.
+4. Submit the full paper to TMLR (rolling) or to the NeurIPS 2027 Evaluations and Datasets Track (about May 2027), if the octahedral and tetrahedral results are ready.
 
 TMLR and NeurIPS review double-blind, so anonymise the paper and switch to their LaTeX templates. The placeholders port unchanged, because their sizes follow `\linewidth`.
 
@@ -133,20 +121,20 @@ TMLR and NeurIPS review double-blind, so anonymise the paper and switch to their
 - **IDs:** `ids.py` (run by `build.sh`) checks each stamped ID in the PDF against the caption number on its page.
 
 The last run gave `STATUS: PASS (0 violations)`:
-- 50 body paragraphs, with a mean of 3.54 sentences each.
-- 328 descriptive sentences, the longest 25 words.
+- 55 body paragraphs, with a mean of 3.91 sentences each.
+- 371 descriptive sentences, the longest 25 words.
 - 9 procedural steps, the longest 14 words.
 - 0 extra violations.
-- `ids.py`: 19 placeholders checked, 0 ID mismatches.
+- `ids.py`: not run since the update, because it needs the rebuilt PDF. The earlier build had 19 placeholders and 0 ID mismatches, and the placeholder count is unchanged.
 
 ## Open TODOs
 
+- Rebuild `main.pdf` with `./build.sh` and check the page layout.
 - Fill in the arXiv author lists. The arXiv API returned HTTP 503 on 2026-11-01, and the private repo is not visible to the GitHub connector.
-- Merge the Release 1.1.2 commits into `main`. The tag `release-1.1.2` (a3245a1) sits on branch `docs/mismatch-comment`, so `releases/1.1.2/` is not on `main` yet.
-- Pick the paired test (McNemar, paired bootstrap, or a mixed model) and the correction for multiple comparisons.
-- Choose the budget basis.
-- Write `scripts/plots.py` and the `make plots` target (planned in T-17).
+- Choose the budget basis and recompute `tab:limits` from `releases/3.0.0/prompts/` and `config/prices.toml`.
+- Confirm the number of attempts per input (`K`) and the reasoning effort of the 3.0.0 run.
+- Write `scripts/plots.py` and the `make plots` target.
 - Write the impossible-move classifier.
-- Confirm the affiliations (an open point in Vlad's doc).
+- Confirm the affiliations.
 - Add the dataset URL and DOI, and confirm repo visibility.
 - Add the acknowledgements once any credit award arrives.
