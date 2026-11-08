@@ -1,5 +1,5 @@
 /* Tokens and base rules for the results page, taken from vladflaks.com's global.css.
-   Newsreader for text, Figtree for headings and UI (Astro Fonts API, see astro.config.mjs). */
+   Fonts follow owox.com src/design-system/tokens.css: Roboto carries language, Space Mono carries anything the system generated. Do not add a third. */
 
 :root {
   color-scheme: dark;
@@ -14,6 +14,12 @@
   --code-bg: #242a3b;          /* surface-800, bg-surface */
   --code-rule: #3a4358;        /* line-650, border-default */
   --link: #459ce9;             /* blue-200, text-link */
+  /* Typography, from owox.com src/design-system/tokens.css. */
+  --font-body: var(--font-roboto), system-ui, sans-serif;
+  --font-mono: var(--font-space-mono), ui-monospace, SFMono-Regular, monospace;
+  --weight-light: 300;
+  --weight-regular: 400;
+  --weight-medium: 500;
   --measure: 1200px;
   --pad: 1.5rem;
   /* Cube sticker colours: content, not decoration. */
@@ -36,19 +42,19 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-newsreader), Georgia, serif;
-  font-weight: 400;
+  font-family: var(--font-body);
+  font-weight: var(--weight-regular);
   font-size: 1.0625rem;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
 }
 
 h1 {
-  font-family: var(--font-figtree), system-ui, sans-serif;
+  font-family: var(--font-body);
   color: var(--head);
   line-height: 1.2;
   margin: 0 0 0.5em;
-  font-weight: 700;
+  font-weight: var(--weight-medium);
   font-size: 2rem;
 }
 p { margin: 0 0 1rem; }
@@ -77,8 +83,8 @@ footer {
   border-top: 1px solid var(--rule);
   color: var(--muted);
   font-size: 0.9rem;
-  font-family: var(--font-figtree), system-ui, sans-serif;
-  font-weight: 300;
+  font-family: var(--font-body);
+  font-weight: var(--weight-light);
 }
 footer p { margin: 0; }
 footer a { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
