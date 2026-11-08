@@ -298,18 +298,18 @@ The budget guard in \code{src/run/budget.py} enforces three limits in USD. The d
 C_{\max} = \frac{\lceil L/4 \rceil\, p_{\mathrm{in}} + T\, p_{\mathrm{out}}}{10^6} \le B_{\mathrm{req}}
 \label{eq:cmax}
 \end{equation}
-During the run, the guard refuses a request when its worst-case cost plus the cost spent would pass the model budget or the experiment budget. This budget stop ends the run with exit code 1, and a later run with a higher budget resumes. One pass sends 600 inputs through three setups, which makes 1,800 prompts per model, and each prompt has $K$ attempts.
+During the run, the guard refuses a request when its worst-case cost plus the cost spent would pass the model budget or the experiment budget. This budget stop ends the run with exit code 1, and a later run with a higher budget resumes. One pass sends 600 inputs through three setups, which makes 1,800 prompts per model, and each prompt has $K \geq 2$ attempts.
 
 A decision model makes one call per move, up to \code{max\_moves}. Each call holds the state with the moves so far and the questions object. \Cref{tab:limits} and \cref{fig:cost} give the worst-case cost per model. \todo{Recompute every cell of \cref{tab:limits} from \code{releases/3.0.0/prompts/} and \code{config/prices.toml}}. \todo{Choose one budget basis and name the models that the model budget blocks}.
 
 % SRC [REPO] to recompute from the 1,800 prompts per model of releases/3.0.0 (src/run/prompts.py) and config/prices.toml.
 \begin{table}[t]
-\caption{Worst-case cost per model in USD for one pass of 1,800 prompts. The last column is the largest $T$ that fits the default \$25.00 model budget with $K = 1$.}
+\caption{Worst-case cost per model in USD for one pass of 1,800 prompts. The last column is the largest $T$ that fits the default \$25.00 model budget with $K = 2$.}
 \label{tab:limits}
 \small
 \begin{tabularx}{\linewidth}{@{}Xrrr@{}}
 \toprule
-AI model & \makecell[r]{$K{=}1$} & \makecell[r]{$K{=}\val{K}$} & \makecell[r]{max $T$\\at \$25} \\
+AI model & \makecell[r]{$K{=}2$} & \makecell[r]{$K{=}\val{K}$} & \makecell[r]{max $T$\\at \$25} \\
 \midrule
 \code{gpt-6-astra}           & \val{USD} & \val{USD} & \val{T} \\
 \code{claude-opus-5-5}       & \val{USD} & \val{USD} & \val{T} \\
@@ -331,7 +331,7 @@ AI model & \makecell[r]{$K{=}1$} & \makecell[r]{$K{=}\val{K}$} & \makecell[r]{ma
 % DATA: tab:limits (pending recompute for Release 3.0.0). STATUS: to draw.
 \begin{figure}[t]
 \phsingle{0.62}{Worst-case cost per model for one pass. Shows which models the default 25 USD budget blocks.}
-\caption{Worst-case cost per model for one pass of 1,800 prompts at $K = 1$ and $T = \val{T}$. The horizontal line marks the default model budget of \$25.00. Hatched bars show the cost at $K = \val{K}$.}
+\caption{Worst-case cost per model for one pass of 1,800 prompts at $K = 2$ and $T = \val{T}$. The horizontal line marks the default model budget of \$25.00. Hatched bars show the cost at $K = \val{K}$.}
 \label{fig:cost}
 \end{figure}
 
@@ -365,7 +365,7 @@ Every rate has a 95\% bootstrap interval over inputs. The bootstrap draws inputs
 The paired setup test compares two setups on the same inputs. Each input gets one share per setup, and the test is an exact two-sided sign test on the inputs whose shares differ. A difference is significant when its Holm-adjusted p-value is below 0.05. With 120 valid inputs per puzzle, the test has 80\% power for a 20-point difference from 0.50 at the 0.05 level. The worst-case Holm correction asks for 140 inputs, so the test falls a little short there.
 
 \begin{uncertainty}{pooled depths}
-The paired test pools scramble depths and never pools validity labels. Hard inputs tend to be hard under every setup, so the independence assumption behind the sample size is conservative. More attempts per input add little power, because the input is the unit of the test. \todo{State the number of attempts per input $K$ of the run.}
+The paired test pools scramble depths and never pools validity labels. Hard inputs tend to be hard under every setup, so the independence assumption behind the sample size is conservative. Each input gets at least two attempts, so consistency can be measured. More attempts add little power, because the input is the unit of the test. \todo{State the exact $K$ of the run.}
 \end{uncertainty}
 
 % =====================================================================================
@@ -565,7 +565,7 @@ The main text pools the four cube sizes where the effect is the same. \Cref{fig:
 \end{figure}
 
 \section{Consistency and Diagnosis}\label{app:consistency}
-Each input gets $K$ attempts for each model and setup. \Cref{fig:consistency} shows how often these attempts give the same outcome. \Cref{fig:diagnosis} splits the diagnosis rate by the corruption type of the invalid input. \todo{State which corruption types the AI models find and which they miss.}
+Each input gets $K \geq 2$ attempts for each model and setup. \Cref{fig:consistency} shows how often these attempts give the same outcome. \Cref{fig:diagnosis} splits the diagnosis rate by the corruption type of the invalid input. \todo{State which corruption types the AI models find and which they miss.}
 
 % ---- placeholder fig:consistency (ID stamped from the float counter) -----------------
 % DATA: consistency() in src/evaluate/metrics.py. STATUS: pending.

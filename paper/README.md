@@ -132,7 +132,7 @@ The last run gave `STATUS: PASS (0 violations)`:
 - Rebuild `main.pdf` with `./build.sh` and check the page layout.
 - Fill in the arXiv author lists. The arXiv API returned HTTP 503 on 2026-11-01, and the private repo is not visible to the GitHub connector.
 - Choose the budget basis and recompute `tab:limits` from `releases/3.0.0/prompts/` and `config/prices.toml`.
-- Confirm the number of attempts per input (`K`) and the reasoning effort of the 3.0.0 run.
+- State the exact number of attempts per input (`K`, at least 2) and the reasoning effort of the 3.0.0 run.
 - Write `scripts/plots.py` and the `make plots` target.
 - Write the impossible-move classifier.
 - Confirm the affiliations.
