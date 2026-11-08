@@ -338,7 +338,7 @@ def test_bundle_reads_refs_only(ui_repo, samples):
     assert exp_ids(bundle) == ["e"] and bundle["schema"] == 3 and bundle["release"] == "1.0.0"
     assert [r["validity"] for r in bundle["experiments"]] == ["all", "valid", "invalid"]
     assert bundle["defaults"]["attempts"] == 3
-    assert bundle["scramble_count"] is None  # the sample manifest has no scramble_count
+    assert bundle["scramble_count"] == 2  # from the sample release config
     with pytest.raises(ApiError) as caught:
         bundles.get("9.9.9", False, set(), {}, set())
     assert caught.value.status == 400 and "'release'" in caught.value.message
