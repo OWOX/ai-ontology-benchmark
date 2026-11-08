@@ -12,8 +12,8 @@
 |---|---|
 | `main.tex` | Paper source: two-column article, 10 pt, US letter. Sections use `\label`/`\cref`, so no number is hardcoded. |
 | `placeholders.sty` | TikZ macros for the placeholders: `\phpanel`, `\phsingle`, and the `phcanvas` environment. |
-| `refs.bib` | Bibliography (natbib, `unsrtnat`). 14 entries carry `[AUTHORS: TODO]`. |
-| `../prompts/<setup>/3x3.txt` | The approved 3x3 prompt templates, read from the repo for Appendix A. No copy lives in `paper/`. |
+| `refs.bib` | Bibliography (natbib, `unsrtnat`). 15 of the 19 entries carry `[AUTHORS: TODO]`. |
+| `../releases/3.0.0/prompts/<setup>/3x3.txt` | The 3x3 prompt templates of Release 3.0.0, read from the repo for Appendix A. No copy lives in `paper/`. |
 | `main.pdf` | Rendered paper. Built before the Release 3.0.0 update, so rebuild it with `./build.sh`. |
 | `ste_check.py` | Converts `main.tex` to `build/main.check.html` and runs `verify_ste100.py` on it. It also checks for 3–5 sentences per paragraph, forbidden terms, and hardcoded references. |
 | `make_previews.py` | Renders `previews/page-NN.png` and the contact sheet `preview.png` (every page). |
@@ -21,9 +21,9 @@
 | `previews/figure-heavy-pageN.png` | The page with the most placeholder stamps, at 150 dpi. `build.sh` picks it automatically. |
 | `ids.py` | Checks each stamped ID against its printed number in the PDF, writes `build/id-map.tsv`, and regenerates the ID table below. |
 
-**Build:** `./build.sh` from `paper/`. It needs `latexmk` and `pdflatex` (TinyTeX or MacTeX), poppler (`pdftoppm`, `pdfinfo`, `pdftotext`), and Python 3 with Pillow. If the TeX binaries are not on `PATH`, set `TEXBIN` to their folder. `TEXBIN` is optional. `build.sh` and the Makefile look for TinyTeX in `~/Library/TinyTeX/bin/universal-darwin`, `~/.TinyTeX/bin/universal-darwin`, and `~/.TinyTeX/bin/x86_64-linux`, and otherwise use `PATH`. The appendix prompt listings read `../prompts/<setup>/3x3.txt` straight from the repo.
+**Build:** `./build.sh` from `paper/`. It needs `latexmk` and `pdflatex` (TinyTeX or MacTeX), poppler (`pdftoppm`, `pdfinfo`, `pdftotext`), and Python 3 with Pillow. If the TeX binaries are not on `PATH`, set `TEXBIN` to their folder. `TEXBIN` is optional. `build.sh` and the Makefile look for TinyTeX in `~/Library/TinyTeX/bin/universal-darwin`, `~/.TinyTeX/bin/universal-darwin`, and `~/.TinyTeX/bin/x86_64-linux`, and otherwise use `PATH`. The appendix prompt listings read `../releases/3.0.0/prompts/<setup>/3x3.txt` straight from the repo.
 
-**arXiv upload:** send `main.tex`, `main.bbl`, `placeholders.sty`, `refs.bib`, and the three `prompts/<setup>/3x3.txt` files (fix the `\lstinputlisting` paths to match). Category cs.CL, cross-listed to cs.AI.
+**arXiv upload:** send `main.tex`, `main.bbl`, `placeholders.sty`, `refs.bib`, and the three `releases/3.0.0/prompts/<setup>/3x3.txt` files (fix the `\lstinputlisting` paths to match). Category cs.CL, cross-listed to cs.AI.
 
 ## Placeholder format
 
@@ -51,22 +51,22 @@ Status legend: *data exists* means the source numbers are in the repo or this te
 | fig-onto-4 | Figure 4 | `fig:cost` | column | 5 | Worst-case cost per model for one pass against the default 25.00 USD model budget | `tab:limits`, `config/prices.toml`, `worst_case_request_cost()` in `src/run/budget.py` | Pending recompute from `releases/3.0.0/prompts/` |
 | fig-onto-5 | Figure 5 | `fig:hallucination` | full | 6 | Hallucination rate per model × setup with bootstrap intervals, split into solvable (A) and corrupted (B) inputs | evaluate report and CSV; `bootstrap_interval()` in `src/evaluate/metrics.py` | Pending 3.0.0 run |
 | fig-onto-6 | Figure 6 | `fig:setup-effect` | column | 7 | Paired change in hallucination rate per model (descriptive − no_model, prescriptive − no_model) | paired setup test: `paired_tests()` in `src/evaluate/metrics.py` | Pending 3.0.0 run. Plot to write |
-| fig-onto-7 | Figure 7 | `fig:outcomes` | full | 8 | Share of all eight outcomes per model × setup (error taxonomy) | evaluate outcome counts | Pending 3.0.0 run (new) |
+| fig-onto-7 | Figure 7 | `fig:outcomes` | full | 8 | Share of the seven outcomes in the rates per model × setup, with the infrastructure failure count | evaluate outcome counts | Pending 3.0.0 run (new) |
 | fig-onto-8 | Figure 8 | `fig:confusion` | full | 8 | Classified-answer confusion matrices per setup, pooled over models | answer classes: `answer_class()` in `src/evaluate/metrics.py` | Pending 3.0.0 run (new) |
 | fig-onto-9 | Figure 9 | `fig:flag-roc` | column | 8 | Mismatch detection rate vs false mismatch rate per model × setup (in place of a calibration plot) | `detection_rows()` in `src/evaluate/metrics.py` | Pending 3.0.0 run (new) |
 | fig-onto-10 | Figure 10 | `fig:depth` | column | 8 | Precision on valid inputs vs scramble depth for the 2x2 (A), 3x3 (B), 4x4 (C), and 5x5 (D), each with its own depths | evaluate split by depth | Pending 3.0.0 run (new) |
 | fig-onto-11 | Figure 11 | `fig:tokens` | column | 9 | Output tokens vs scramble depth per setup | raw record token fields | Pending 3.0.0 run (new) |
 | fig-onto-12 | Figure 12 | `fig:pareto` | column | 9 | Cost efficiency vs balanced precision, with the Pareto front | evaluate; `config/prices.toml` | Pending 3.0.0 run (new) |
-| fig-onto-13 | Figure 13 | `fig:taxonomy` | column (appendix) | 11 | Impossible moves by type (slice, wide, lowercase, rotation, prime sign, invented) | parsed moves not in `legal_moves()` | Pending 3.0.0 run. Needs a post-hoc classifier (new code) |
+| fig-onto-13 | Figure 13 | `fig:taxonomy` | column (appendix) | 11 | Impossible moves by type (slice, wide, lowercase, rotation, layer-count, doubled suffix) | parsed moves not in `legal_moves()` | Pending 3.0.0 run. Needs a post-hoc classifier (new code) |
 | fig-onto-14 | Figure 14 | `fig:per-puzzle` | column (appendix) | 11 | Per-puzzle breakdown: balanced precision (A) and hallucination rate (B), 2x2 to 5x5 | evaluate split by puzzle | Pending 3.0.0 run (new) |
 | fig-onto-15 | Figure 15 | `fig:consistency` | column (appendix) | 12 | Consistency heat map over K repeated attempts | `consistency()` in `src/evaluate/metrics.py` | Pending 3.0.0 run (new) |
-| fig-onto-16 | Figure 16 | `fig:diagnosis` | column (appendix) | 12 | Diagnosis rate by corruption type and setup, with the best fixed answer | corruption CSV: `corruption_rows()` in `src/evaluate/metrics.py` | Pending 3.0.0 run (new) |
+| fig-onto-16 | Figure 16 | `fig:diagnosis` | column (appendix) | 12 | Diagnosis rate by corruption type and setup | corruption CSV: `corruption_rows()` in `src/evaluate/metrics.py` | Pending 3.0.0 run (new) |
 | tab-onto-5 | Table 5 | `tab:main` | full | 6 | Main results: 12 models × 3 setups, headline metrics with intervals | evaluate CSV | Pending 3.0.0 run |
-| tab-onto-7 | Table 7 | `tab:full` | full (appendix) | 13 | Full results per model, setup, puzzle, and depth | evaluate CSV | Pending 3.0.0 run |
-| tab-onto-8 | Table 8 | `tab:datasheet` | column (appendix) | 13 | Croissant and Responsible AI fields for NeurIPS E&D | NeurIPS E&D track requirements | To write |
+| tab-onto-6 | Table 6 | `tab:full` | full (appendix) | 13 | Full results per model, setup, puzzle, and depth | evaluate CSV | Pending 3.0.0 run |
+| tab-onto-7 | Table 7 | `tab:datasheet` | column (appendix) | 13 | Croissant and Responsible AI fields for NeurIPS E&D | NeurIPS E&D track requirements | To write |
 <!-- IDMAP:END -->
 
-The page numbers above are from the earlier build and may shift. `ids.py` rewrites the table on the next build.
+The page numbers above are from the earlier build and may shift. The table numbers of `tab:full` and `tab:datasheet` were renumbered by hand, because `tab:fixtures` was removed. `ids.py` rewrites the table on the next build.
 
 ### Why the extra figures are there
 
@@ -109,7 +109,7 @@ The worst-case cost table (`tab:limits`) holds `\val{...}` cells. It was compute
 3. Send a short version (about 4 pages) to an ICLR 2027 workshop, about 1 Feb 2027.
 4. Submit the full paper to TMLR (rolling) or to the NeurIPS 2027 Evaluations and Datasets Track (about May 2027), if the octahedral and tetrahedral results are ready.
 
-TMLR and NeurIPS review double-blind, so anonymise the paper and switch to their LaTeX templates. The placeholders port unchanged, because their sizes follow `\linewidth`.
+TMLR and NeurIPS review double-blind, so anonymize the paper and switch to their LaTeX templates. The placeholders port unchanged, because their sizes follow `\linewidth`.
 
 ## Style check
 
