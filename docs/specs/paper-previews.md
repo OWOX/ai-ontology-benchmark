@@ -4,7 +4,7 @@ File: `paper/make_previews.py`.
 
 ## Purpose
 
-Render page images of `paper/main.pdf` so a reader can review the layout without opening the PDF. `paper/build.sh` runs it last.
+Render page images of `paper/main.pdf` so a reader can review the layout without opening the PDF. `paper/build.sh` and `make previews` run it last. They pass the page count from `pdfinfo`, so the contact sheet covers every page.
 
 ## Inputs
 
