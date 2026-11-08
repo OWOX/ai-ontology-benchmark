@@ -105,7 +105,7 @@
       input.setAttribute("aria-valuetext", out.textContent);
       onInput(Number(input.value));
     });
-    return h("label", {}, label, ...icon, h("span", { class: "slider" }, input, out));
+    return h("label", {}, h("span", {}, label, ...icon), h("span", { class: "slider" }, input, out));
   }
 
   function puzzleCards(bundle, onChange) {
@@ -173,7 +173,7 @@
     const field = ([key, label]) => {
       const input = h("input", { type: "text", inputmode: "decimal", "aria-label": label, value: String(S.vals[key]) });
       input.addEventListener("input", () => { S.vals[key] = input.value; changed(); });
-      return h("label", {}, label, ...Defs.info(bundle.definitions, label), input);
+      return h("label", {}, h("span", {}, label, ...Defs.info(bundle.definitions, label)), input);
     };
     // low, medium, or high; "provider default" only appears for a loaded experiment that was saved without one.
     const effort = (() => {
@@ -182,7 +182,7 @@
       for (const v of options) select.append(h("option", { value: v, text: v || "provider default" }));
       select.value = S.vals.reasoning_effort || "";
       select.addEventListener("change", () => { S.vals.reasoning_effort = select.value; changed(); });
-      return h("label", {}, "Reasoning effort", ...Defs.info(bundle.definitions, "Reasoning effort"), ": sent to every system-2 model", select);
+      return h("label", {}, h("span", {}, "Reasoning effort", ...Defs.info(bundle.definitions, "Reasoning effort"), ": sent to every system-2 model"), select);
     })();
     const limit = (() => {
       const input = h("input", { type: "text", inputmode: "numeric", "aria-label": "Limit per model", value: S.limit });
@@ -324,12 +324,14 @@
         const t = d.total;
         const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over, EXPERIMENT_OVER)], [usd(t.spent_usd)], [usd(t.per_experiment_usd)], [""],
           t.time_s === null ? ["partial: no timing data for some AI models", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
+        const backToIcon = Defs.keepFocus(ref.body);
         ref.body.replaceChildren(
           h("div", { class: "estimate" }, h("table", { class: "estimate-table" },
             h("thead", {}, h("tr", {}, ...["AI model", "Attempts to run", "Worst case", "Spent", "Model budget", "Median latency", "Time"].map((t, i) =>
               h("th", { class: i ? "n" : "" }, t, ...Defs.info(bundle.definitions, t))))),
             h("tbody", {}, ...rows), h("tfoot", {}, total))),
           h("p", { class: "muted small", text: `Experiment budget is in the Total row. Request budget: ${usd(d.per_request_usd)}. Time runs the AI models side by side, ${budget.parallel} requests at once each.` }));
+        backToIcon();
       }
       function schedule() {
         clearTimeout(timer);
