@@ -12,6 +12,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+from ui.gitdata import FETCH_TIMEOUT_S, GitData
+
 METRIC_NAMES = {
     "Success rate": "success",
     "Hallucination rate": "hallucination",
@@ -23,50 +25,42 @@ class ExportError(Exception):
     pass
 
 
-def git(root: Path, *args: str, check: bool = True) -> str | None:
-    done = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
-                          encoding="utf-8", stdin=subprocess.DEVNULL)
-    if done.returncode != 0:
-        if check:
-            raise ExportError(f"git {' '.join(args)}: {done.stderr.strip()}")
-        return None
-    return done.stdout
-
-
 def read_jsonl(text: str) -> list[dict]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
-def read_inputs(root: Path, ref: str, release: str, cache: dict) -> dict:
+def read_inputs(gd: GitData, ref: str, release: str, cache: dict) -> dict:
     if release not in cache:
-        text = git(root, "show", f"{ref}:releases/{release}/inputs.jsonl", check=False)
+        text = gd.show(ref, f"releases/{release}/inputs.jsonl")
         cache[release] = {r["input_id"]: {"state": r["state"], "corruption": r.get("corruption")}
                           for r in read_jsonl(text or "")}
     return cache[release]
 
 
-def read_experiment(root: Path, ref: str, remote: str, experiment_id: str, cache: dict) -> tuple[dict, int]:
+def read_experiment(gd: GitData, ref: str, remote: str, experiment_id: str, cache: dict) -> tuple[dict, int]:
     branch = f"{remote}/results/{experiment_id}"
-    if git(root, "rev-parse", "--verify", "--quiet", branch, check=False) is None:
+    if gd.sha(branch) is None:
         raise ExportError(f"config/site.toml, experiments: no branch {branch} for experiment {experiment_id}")
     folder = f"results/{experiment_id}"
-    toml_text = git(root, "show", f"{branch}:{folder}/experiment.toml", check=False)
+    toml_text = gd.show(branch, f"{folder}/experiment.toml")
     toml = tomllib.loads(toml_text) if toml_text else {}
-    tree = git(root, "ls-tree", "--name-only", f"{branch}:{folder}/raw", check=False)
     kept, skipped = [], 0
-    for name in sorted(n for n in (tree or "").splitlines() if n.endswith(".jsonl")):
-        for r in read_jsonl(git(root, "show", f"{branch}:{folder}/raw/{name}")):
-            if r["outcome"] == "infrastructure_failure":
-                continue
-            found = read_inputs(root, ref, r["release_version"], cache).get(r["input_id"])
-            if found is None:
-                skipped += 1
-                continue
-            kept.append((r["created_at"], {
-                "model": r["model"], "puzzle": r["puzzle"], "inputId": r["input_id"],
-                "validity": r["validity"], "setup": r["setup"], "attempt": r["attempt_number"],
-                "depth": r["scramble_depth"], "state": found["state"], "corruption": found["corruption"],
-                "moves": r["parsed_moves"], "outcome": r["outcome"], "mismatch": r["mismatch"]}))
+    for name in sorted(n for n in gd.ls(branch, f"{folder}/raw") if n.endswith(".jsonl")):
+        for r in read_jsonl(gd.show(branch, f"{folder}/raw/{name}") or ""):
+            try:
+                if r["outcome"] == "infrastructure_failure":
+                    continue
+                found = read_inputs(gd, ref, r["release_version"], cache).get(r["input_id"])
+                if found is None:
+                    skipped += 1
+                    continue
+                kept.append((r["created_at"], {
+                    "model": r["model"], "puzzle": r["puzzle"], "inputId": r["input_id"],
+                    "validity": r["validity"], "setup": r["setup"], "attempt": r["attempt_number"],
+                    "depth": r["scramble_depth"], "state": found["state"], "corruption": found["corruption"],
+                    "moves": r["parsed_moves"], "outcome": r["outcome"], "mismatch": r["mismatch"]}))
+            except KeyError as error:
+                raise ExportError(f"{branch}:{folder}/raw/{name}: record has no field {error.args[0]}") from None
     if not kept:
         raise ExportError(f"{branch}: experiment {experiment_id} has no raw records to show")
     kept.sort(key=lambda k: (k[1]["model"], k[1]["puzzle"], k[1]["inputId"], k[1]["setup"], k[1]["attempt"], k[0]))
@@ -82,7 +76,7 @@ def read_experiment(root: Path, ref: str, remote: str, experiment_id: str, cache
         "puzzles": sorted({a["puzzle"] for _, a in kept}),
         "models": sorted(models.values(), key=lambda m: m["name"]),
         "setups": sorted({a["setup"] for _, a in kept}),
-        "attemptsPerInput": per_input if isinstance(per_input, int) else None,
+        "attemptsPerInput": per_input if type(per_input) is int else None,
         "attemptCount": len(kept), "firstAt": times[0], "lastAt": times[-1],
         "attempts": [a for _, a in kept],
     }, skipped
@@ -124,8 +118,18 @@ def read_definitions(markdown: str) -> tuple[list[dict], list[str]]:
     return list(found.values()), missing
 
 
-def export(root: Path, ref: str, remote: str) -> tuple[dict, int]:
-    text = git(root, "show", f"{ref}:config/site.toml", check=False)
+def fetch(gd: GitData, remote: str) -> None:
+    refspec = f"+refs/heads/results/*:refs/remotes/{remote}/results/*"
+    try:
+        done = gd._git("fetch", "--prune", "--quiet", remote, refspec, timeout=FETCH_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ExportError(f"git fetch {remote}: {error}") from None
+    if done.returncode != 0:
+        raise ExportError(f"git fetch {remote}: {done.stderr.strip()}")
+
+
+def export(gd: GitData, ref: str, remote: str) -> tuple[dict, int]:
+    text = gd.show(ref, "config/site.toml")
     if text is None:
         raise ExportError(f"config/site.toml: not found at {ref}")
     config = tomllib.loads(text)
@@ -135,10 +139,10 @@ def export(root: Path, ref: str, remote: str) -> tuple[dict, int]:
     cache: dict = {}
     experiments, skipped = [], 0
     for experiment_id in sorted(config["experiments"]):
-        experiment, n = read_experiment(root, ref, remote, experiment_id, cache)
+        experiment, n = read_experiment(gd, ref, remote, experiment_id, cache)
         experiments.append(experiment)
         skipped += n
-    markdown = git(root, "show", f"{ref}:docs/definitions.md", check=False)
+    markdown = gd.show(ref, "docs/definitions.md")
     if markdown is None:
         raise ExportError(f"docs/definitions.md: not found at {ref}")
     definitions, missing = read_definitions(markdown)
@@ -156,12 +160,12 @@ def main() -> int:
     parser.add_argument("--root", default=".", help="the git repository to read")
     parser.add_argument("--no-fetch", action="store_true", help="skip git fetch of the remote")
     args = parser.parse_args()
-    root = Path(args.root)
+    gd = GitData(Path(args.root))
     try:
         if not args.no_fetch:
-            git(root, "fetch", "--quiet", args.remote)
-        data, skipped = export(root, args.ref, args.remote)
-    except (ExportError, KeyError, ValueError) as error:
+            fetch(gd, args.remote)
+        data, skipped = export(gd, args.ref, args.remote)
+    except (ExportError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     out = Path(args.out)

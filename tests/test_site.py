@@ -1,11 +1,15 @@
 # Spec: docs/specs/site.md
 import json
 import subprocess
+from pathlib import Path
 import sys
 
 import pytest
 
 from src.site import export as site
+from ui.gitdata import GitData
+
+ROOT = Path(__file__).resolve().parents[1]
 
 DEFINITIONS = """# Definitions
 
@@ -78,7 +82,7 @@ def test_attempts_sorted_and_filtered(repo):
         record("m2", "i2", 1), record("m1", "i2", 2), record("m1", "i2", 1),
         record("m1", "i1", 1, outcome="infrastructure_failure"), record("m1", "gone", 1)])
     write_experiment(repo, "b-exp", [record("m1", "i1", 1)])
-    data, skipped = site.export(repo, "main", "origin")
+    data, skipped = site.export(GitData(repo), "main", "origin")
     assert skipped == 1
     assert [e["experimentId"] for e in data["experiments"]] == ["a-exp", "b-exp"]
     a = data["experiments"][0]
@@ -93,12 +97,12 @@ def test_attempts_sorted_and_filtered(repo):
     assert data["page"] == {"title": "T", "description": "D", "intro": "I"}
 
 
-def test_missing_branch_is_checked_error(repo, capsys, tmp_path):
+def test_missing_branch_is_checked_error(repo, tmp_path):
     write_experiment(repo, "a-exp", [record("m1", "i1", 1)])
     out = tmp_path / "out.json"
     code = subprocess.run([sys.executable, "-m", "src.site.export", "--root", str(repo), "--ref", "main",
                            "--no-fetch", "--out", str(out)], capture_output=True, text=True,
-                          cwd=__import__("pathlib").Path(__file__).resolve().parents[1])
+                          cwd=ROOT)
     assert code.returncode == 1
     assert "b-exp" in code.stderr
     assert not out.exists()
@@ -109,3 +113,12 @@ def test_definitions_parsing_and_missing_name():
     assert missing == ["Success rate"]
     assert [d["key"] for d in found] == ["hallucination", "detection"]
     assert found[0]["definition"] == "The share of attempts with at least one impossible move."
+
+
+def test_branch_without_kept_records_is_checked_error(repo, tmp_path):
+    write_experiment(repo, "a-exp", [record("m1", "i1", 1, outcome="infrastructure_failure")])
+    write_experiment(repo, "b-exp", [record("m1", "i1", 1)])
+    done = subprocess.run([sys.executable, "-m", "src.site.export", "--root", str(repo), "--ref", "main",
+                           "--no-fetch", "--out", str(tmp_path / "o.json")], capture_output=True, text=True, cwd=ROOT)
+    assert done.returncode == 1
+    assert "a-exp" in done.stderr
