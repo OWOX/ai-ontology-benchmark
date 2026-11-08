@@ -326,7 +326,7 @@
           t.time_s === null ? ["partial: no timing data for some AI models", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
         const backToIcon = Defs.keepFocus(ref.body);
         ref.body.replaceChildren(
-          h("div", { class: "estimate" }, h("table", { class: "estimate-table" },
+          h("div", { class: "estimate" }, h("table", { class: "estimate-table", "data-table": "estimate" },
             h("thead", {}, h("tr", {}, ...["AI model", "Attempts to run", "Worst case", "Spent", "Model budget", "Median latency", "Time"].map((t, i) =>
               h("th", { class: i ? "n" : "" }, t, ...Defs.info(bundle.definitions, t))))),
             h("tbody", {}, ...rows), h("tfoot", {}, total))),

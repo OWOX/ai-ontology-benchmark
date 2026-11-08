@@ -116,7 +116,7 @@
     const time = (v) => (typeof v === "number" ? UI.fmtTime(v) : "n/a") + " *";
     return h("section", { class: "score-card" },
       h("h3", {}, "Score card ", d.live ? h("span", { class: "live", text: "live" }) : null),
-      h("div", { class: "table-wrap" }, h("table", { class: "score-table" },
+      h("div", { class: "table-wrap" }, h("table", { class: "score-table", "data-table": "score-card" },
         h("thead", {}, h("tr", {}, ...["AI model", "Done", ...CARD_COLUMNS.map((c) => c[1])].map((t, i) =>
           h("th", { class: i ? "n" : "" }, t, ...Defs.info(defs, t))))),
         h("tbody", {}, ...d.models.map((m) => cells("td", [m.name, `${ExpMetrics.grouped(m.done)} of ${ExpMetrics.grouped(m.planned)}`,

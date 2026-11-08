@@ -46,14 +46,16 @@
   const info = (defs, label) => (TERMS[label] ? infoTerm(defs, TERMS[label]) : []);
 
   // Redrawing a table drops the focused icon. Call this before the redraw with the container that holds the tables,
-  // and call the result after it: focus goes back to the icon for the same term in the same table.
+  // and call the result after it: focus goes back to the icon for the same term in the table with the same
+  // data-table key, which the caller sets on each table it draws.
   function keepFocus(container) {
     const a = document.activeElement;
     const icon = a && a.classList && a.classList.contains("info") && container.contains(a) ? a : null;
     if (!icon) return () => {};
-    const term = icon.getAttribute("data-term"), table = [...container.querySelectorAll("table")].indexOf(icon.closest("table"));
+    const term = icon.getAttribute("data-term"), holder = icon.closest("table"), key = holder && holder.getAttribute("data-table");
+    if (!key) return () => {};
     return () => {
-      const again = [...container.querySelectorAll("table")][table];
+      const again = [...container.querySelectorAll("table")].find((t) => t.getAttribute("data-table") === key);
       const next = again && [...again.querySelectorAll(".info")].find((i) => i.getAttribute("data-term") === term);
       if (next) next.focus();
     };
