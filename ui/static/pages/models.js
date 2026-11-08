@@ -101,6 +101,7 @@
   }
 
   function modelTable(p, q) {
+    if (!p.models.length) return h("p", { class: "muted", text: "No models yet. Add one to config/models.toml." });
     return h("table", { class: "models-table" }, colgroup(),
       h("thead", {}, h("tr", {}, ...HEADS.map(([t, c]) => h("th", { class: c || "", text: t })))),
       h("tbody", {}, ...p.models.map((m) => modelRow(m, p, q))));

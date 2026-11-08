@@ -24,7 +24,7 @@ cp config/templates/anthropic.toml config/experiments/claude-haiku-5-5_2x2_20261
 export ANTHROPIC_API_KEY=...
 ```
 
-The other providers read `OPENAI_API_KEY` and `GOOGLE_API_KEY`. To run a model through OpenRouter, give its entry `provider = "openrouter"` and the OpenRouter model id as `api_model_id`, add its price row, and export `OPENROUTER_API_KEY`. In the UI, add the entry to `config/models.toml` and save the key on the Models page. Set the key before you run, because `--estimate` doesn't check it. The templates set `release = "latest"`, which picks the newest release on the first run, and the experiment keeps it.
+The other providers read `OPENAI_API_KEY` and `GOOGLE_API_KEY`. To run a model through OpenRouter, give its entry `provider = "openrouter"` and the OpenRouter model id as `api_model_id`, add its price row, and export `OPENROUTER_API_KEY`. In the UI, save the key on the Models page, under OpenRouter, and add the entry to `config/models.toml`. The UI reads that file from `origin/main`, so the model shows once the change is merged. Set the key before you run, because `--estimate` doesn't check it. The templates set `release = "latest"`, which picks the newest release on the first run, and the experiment keeps it.
 
 The `fake` config needs no key and spends nothing, because the fake provider reports zero tokens. `--estimate` still prices it as a real model. Add `--no-commit` to every `run` command with it, so the smoke test stays out of git, and skip the second command in step 4.
 
