@@ -1,0 +1,17 @@
+release = "2.0.1"
+puzzles = ["4x4"]
+attempts = 3
+retry_cap = 3
+max_output_tokens = 32000
+reasoning_effort = "medium"
+
+[[models]]
+name = "gpt-6-astra"
+provider = "openai"
+api_model_id = "gpt-6-astra"
+kind = "system-2"
+
+[budget]
+per_request_usd = 2.0
+per_model_usd = 25.0
+per_experiment_usd = 15.0

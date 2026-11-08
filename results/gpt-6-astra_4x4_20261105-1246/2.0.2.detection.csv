@@ -1,0 +1,4 @@
+model,puzzle,setup,detection_rate,detection_rate_low,detection_rate_high,detection_rate_n,detection_rate_inputs,false_mismatch_rate,false_mismatch_rate_low,false_mismatch_rate_high,false_mismatch_rate_n,false_mismatch_rate_inputs,balanced_accuracy,balanced_accuracy_low,balanced_accuracy_high
+gpt-6-astra,4x4,no_model,1.0000,1.0000,1.0000,6,2,0.0000,0.0000,0.0000,8,3,1.0000,1.0000,1.0000
+gpt-6-astra,4x4,descriptive,1.0000,1.0000,1.0000,6,2,0.0000,0.0000,0.0000,6,2,1.0000,1.0000,1.0000
+gpt-6-astra,4x4,prescriptive,1.0000,1.0000,1.0000,6,2,0.0000,0.0000,0.0000,6,2,1.0000,1.0000,1.0000
