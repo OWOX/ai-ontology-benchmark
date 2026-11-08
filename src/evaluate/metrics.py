@@ -13,15 +13,16 @@ from itertools import combinations
 from operator import itemgetter
 from pathlib import Path
 
+from src.puzzles.cube import CUBE_CORRUPTION_TYPES
 from src.puzzles.registry import ENGINES
 from src.run.prompts import SETUPS
 from src.run.raw import is_decision_record
-from src.validator import validate
+from src.validator import offered_reasons, validate
 
 NA = "n/a"
 BOOTSTRAP_DRAWS = 2000
 BOOTSTRAP_SEED = "bootstrap-v1"
-PAIRED_METRICS = ("success_rate", "hallucination_rate", "mismatch_detection_rate")
+PAIRED_METRICS = ("precision", "hallucination_rate", "mismatch_detection_rate", "diagnosis_rate")
 ALPHA = 0.05
 PAIRED_COLUMNS = (
     "model", "puzzle", "validity", "metric", "setup_a", "setup_b", "inputs_paired", "a_higher",
@@ -89,10 +90,6 @@ def rate_columns(row: dict, name: str, cells: list[tuple[int, int]], key: str) -
     row[name + "_inputs"] = len(cells)
 
 
-def count_outcome(rows: list[dict], outcome: str) -> int:
-    return sum(1 for r in rows if r["outcome"] == outcome)
-
-
 def gave_moves(row: dict) -> bool:
     """True when the attempt returned at least one parsed move: the denominator of the hallucination rate."""
     return bool(row.get("parsed_moves"))
@@ -113,6 +110,29 @@ def answer_class(row: dict) -> str | None:
     return "fn"
 
 
+def has_reasons(rows: list[dict]) -> bool:
+    """True when the rows come from a release with mismatch reasons."""
+    return bool(rows) and all(r["reasons"] for r in rows)
+
+
+def is_diagnosis(row: dict) -> bool:
+    """A flagged answer whose mismatch reason is the input's corruption type."""
+    corruption = row.get("corruption")
+    return bool(row["mismatch"] and corruption and row.get("mismatch_reason") == corruption_type(corruption))
+
+
+def is_hit(row: dict, metric: str) -> bool:
+    if metric == "mismatch_detection_rate":
+        return bool(row["mismatch"])
+    if metric == "hallucination_rate":
+        return bool(row["impossible_move"])
+    if metric == "precision":
+        return row["answer_class"] in ("tp", "tn")
+    if metric == "diagnosis_rate":
+        return is_diagnosis(row)
+    return row["outcome"] == metric.removesuffix("_rate")
+
+
 def rates(rows: list[dict], validity: str, key: str) -> dict:
     """Rates over the attempts that are not infrastructure failures (`rows` holds only those).
     `key` names the group, and seeds each rate's bootstrap."""
@@ -125,10 +145,12 @@ def rates(rows: list[dict], validity: str, key: str) -> dict:
     def outcome_is(outcome: str):
         return lambda r: r["outcome"] == outcome
 
-    add("success_rate", outcome_is("success"))
+    reasons = has_reasons(rows)
+    add("precision", lambda r: is_hit(r, "precision"), [r for r in rows if r["answer_class"]])
+    add("coverage", lambda r: r["answer_class"] is not None)
     # a decision model can't return an impossible move
     decision = bool(rows) and all(r["decision"] for r in rows)
-    add("hallucination_rate", outcome_is("hallucination"), [] if decision else [r for r in rows if gave_moves(r)])
+    add("hallucination_rate", lambda r: r["impossible_move"], [] if decision else [r for r in rows if gave_moves(r)])
     flagged = lambda r: r["mismatch"]
     add("mismatch_detection_rate", flagged, rows if validity == "invalid" else [])
     add("false_mismatch_rate", flagged, [] if validity == "invalid" else rows)
@@ -136,6 +158,9 @@ def rates(rows: list[dict], validity: str, key: str) -> dict:
     add("truncated_rate", outcome_is("truncated"))
     add("abstention_rate", outcome_is("abstention"))
     add("format_error_rate", outcome_is("format_error"))
+    add("reason_hallucination_rate", lambda r: r["decoy"],
+        [r for r in rows if r["mismatch_reason"] is not None] if reasons else [])
+    add("diagnosis_rate", is_diagnosis, rows if reasons and validity == "invalid" else [])
     return out
 
 
@@ -155,10 +180,9 @@ def consistency(rows: list[dict]) -> object:
 def group_metrics(rows: list[dict], validity: str, full: bool, key: str) -> dict:
     """Metrics for one group of attempt rows. `full` adds the columns the summary leaves out."""
     done = [r for r in rows if r["outcome"] != "infrastructure_failure"]
-    successes = count_outcome(rows, "success")
     out = {"attempts": len(rows), "infrastructure_failure_count": len(rows) - len(done)}
     out.update(rates(done, validity, key))
-    out["cost_per_success"] = sum(r["cost"] for r in rows) / successes if successes else NA
+    out["cost_per_attempt"] = mean([r["cost"] for r in rows])
     if full:
         out["consistency"] = consistency(done)
         latencies = [r["latency_s"] for r in done if r["latency_s"] is not None]
@@ -178,8 +202,8 @@ def attempt_cost(raw: dict, price: dict) -> float:
 
 
 def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float,
-                     decision: bool = False) -> dict:
-    return {
+                     decision: bool = False, reasons: bool = False) -> dict:
+    row = {
         "input_id": raw["input_id"], "input_line": line, "puzzle": source["puzzle"],
         "scramble_depth": source["scramble_depth"], "validity": source["validity"],
         "setup": raw["setup"], "model": raw["model"], "attempt_number": raw["attempt_number"],
@@ -190,11 +214,15 @@ def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float,
         "retry_input_tokens": raw["retry_input_tokens"],
         "retry_output_tokens": raw["retry_output_tokens"], "latency_s": raw["latency_s"],
         "served_model": raw["served_model"], "created_at": raw["created_at"], "cost": cost,
-        "decision": decision, "corruption": source.get("corruption"),
+        "decision": decision, "corruption": source.get("corruption"), "reasons": reasons,
+        "impossible_move": verdict.impossible_move, "mismatch_reason": verdict.mismatch_reason,
+        "decoy": verdict.decoy,
     }
+    row["answer_class"] = answer_class(row)
+    return row
 
 
-def make_attempt_rows(raw_records, inputs, prices, decision_models=frozenset()) -> list[dict]:
+def make_attempt_rows(raw_records, inputs, prices, decision_models=frozenset(), reasons: bool = False) -> list[dict]:
     by_id = {row["input_id"]: (number, row) for number, row in enumerate(inputs, start=1)}
     rows = []
     for raw in raw_records:
@@ -205,9 +233,10 @@ def make_attempt_rows(raw_records, inputs, prices, decision_models=frozenset()) 
             raise EvalError(f"prices: no prices for model {raw['model']!r}")
         line, source = by_id[raw["input_id"]]
         decision = is_decision_record(raw, decision_models)
-        verdict = validate(source, raw["raw_response"], raw["stop_reason"], decision=decision)
+        offered = offered_reasons(ENGINES[source["puzzle"]]) if reasons else None
+        verdict = validate(source, raw["raw_response"], raw["stop_reason"], decision=decision, reasons=offered)
         cost = attempt_cost(raw, prices[raw["model"]])
-        rows.append(make_attempt_row(raw, line, source, verdict, cost, decision))
+        rows.append(make_attempt_row(raw, line, source, verdict, cost, decision, reasons))
     return rows
 
 
@@ -249,7 +278,9 @@ def compute(raw_records: list[dict], release_dir: Path, prices: dict,
     """Return (attempt_rows, metric_rows, summary_rows). `models` fixes the AI model sort order."""
     lines = (Path(release_dir) / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
     inputs = [json.loads(line) for line in lines]
-    rows = make_attempt_rows(raw_records, inputs, prices, decision_models)
+    manifest = json.loads((Path(release_dir) / "manifest.json").read_text(encoding="utf-8"))
+    rows = make_attempt_rows(raw_records, inputs, prices, decision_models,
+                             bool(manifest.get("mismatch_reasons", False)))
     order = model_order(rows, models)
     decorated = [(attempt_sort_key(r, order), r) for r in rows]
     decorated.sort(key=itemgetter(0))
@@ -291,18 +322,15 @@ def holm(p_values: list[float]) -> list[float]:
     return adjusted
 
 
-def is_hit(row: dict, metric: str) -> bool:
-    if metric == "mismatch_detection_rate":
-        return bool(row["mismatch"])
-    return row["outcome"] == metric.removesuffix("_rate")
-
-
 def input_shares(rows: list[dict], metric: str) -> dict:
-    """Share of hits per (input, setup), leaving out infrastructure failures. The hallucination rate also leaves
-    out attempts that gave no moves, so an (input, setup) with none has no share."""
+    """Share of hits per (input, setup), leaving out infrastructure failures. Precision also leaves out
+    attempts that are not classified answers, and the hallucination rate those that gave no moves, so an
+    (input, setup) with none has no share."""
     counts = defaultdict(lambda: [0, 0])
     for r in rows:
-        if r["outcome"] == "infrastructure_failure" or (metric == "hallucination_rate" and not gave_moves(r)):
+        if (r["outcome"] == "infrastructure_failure"
+                or (metric == "hallucination_rate" and not gave_moves(r))
+                or (metric == "precision" and r["answer_class"] is None)):
             continue
         cell = counts[(r["input_id"], r["setup"])]
         cell[0] += is_hit(r, metric)
@@ -332,7 +360,9 @@ def paired_tests(attempt_rows: list[dict], models: list[str] | None = None) -> l
     result = []
     for model, puzzle, validity in keys:
         for metric in PAIRED_METRICS:
-            if metric == "mismatch_detection_rate" and validity != "invalid":
+            if metric in ("mismatch_detection_rate", "diagnosis_rate") and validity != "invalid":
+                continue
+            if metric == "diagnosis_rate" and not has_reasons(groups[(model, puzzle, validity)]):
                 continue
             if metric == "hallucination_rate" and all(r["decision"] for r in groups[(model, puzzle, validity)]):
                 continue
@@ -353,44 +383,93 @@ def paired_tests(attempt_rows: list[dict], models: list[str] | None = None) -> l
     return result
 
 
-def interval_for_balanced_accuracy(rows: list[dict]) -> tuple:
-    """Return (low, high) for the balanced accuracy of one group by a stratified bootstrap over
-    inputs: valid and invalid inputs are drawn separately. n/a when either side has under 2 inputs."""
-    valid = input_cells([r for r in rows if r["validity"] == "valid"], lambda r: r["mismatch"])
-    invalid = input_cells([r for r in rows if r["validity"] == "invalid"], lambda r: r["mismatch"])
+def stratified_interval(rows: list[dict], key: str, valid_hit, invalid_hit, complement: bool = True) -> tuple:
+    """Return (low, high) for a score that averages a valid side and an invalid side, by a stratified
+    bootstrap over inputs: valid and invalid inputs are drawn separately, each side as many as it has.
+    The score of a draw is (invalid rate + (1 − valid rate)) / 2, or the plain mean of the two rates when
+    `complement` is false. A draw where a side has no attempt is left out. n/a when either side has
+    under 2 inputs."""
+    valid = input_cells([r for r in rows if r["validity"] == "valid"], valid_hit)
+    invalid = input_cells([r for r in rows if r["validity"] == "invalid"], invalid_hit)
     if len(valid) < 2 or len(invalid) < 2:
         return NA, NA
-    first = rows[0]
-    rng = bootstrap_rng(f"{first['model']}|{first['puzzle']}|{first['setup']}|balanced_accuracy")
+    rng = bootstrap_rng(key)
     draws = []
     for _ in range(BOOTSTRAP_DRAWS):
         v = [valid[i] for i in rng.choices(range(len(valid)), k=len(valid))]
         x = [invalid[i] for i in rng.choices(range(len(invalid)), k=len(invalid))]
-        false_mismatch = sum(h for h, _ in v) / sum(a for _, a in v)
-        detection = sum(h for h, _ in x) / sum(a for _, a in x)
-        draws.append((detection + 1 - false_mismatch) / 2)
-    return percentiles(draws)
+        v_total, x_total = sum(a for _, a in v), sum(a for _, a in x)
+        if not v_total or not x_total:
+            continue
+        valid_rate, invalid_rate = sum(h for h, _ in v) / v_total, sum(h for h, _ in x) / x_total
+        draws.append((invalid_rate + (1 - valid_rate if complement else valid_rate)) / 2)
+    return percentiles(draws) if draws else (NA, NA)
 
 
+def interval_for_balanced_accuracy(rows: list[dict]) -> tuple:
+    """Return (low, high) for the balanced accuracy of one group by a stratified bootstrap over inputs."""
+    first = rows[0]
+    key = f"{first['model']}|{first['puzzle']}|{first['setup']}|balanced_accuracy"
+    flagged = lambda r: r["mismatch"]
+    return stratified_interval(rows, key, flagged, flagged)
+
+
+RATE_NAMES = ("detection_rate", "false_mismatch_rate", "diagnosis_rate", "coverage")
 DETECTION_COLUMNS = (
     "model", "puzzle", "setup",
     "detection_rate", "detection_rate_low", "detection_rate_high", "detection_rate_n", "detection_rate_inputs",
     "false_mismatch_rate", "false_mismatch_rate_low", "false_mismatch_rate_high", "false_mismatch_rate_n",
-    "false_mismatch_rate_inputs", "balanced_accuracy", "balanced_accuracy_low", "balanced_accuracy_high")
+    "false_mismatch_rate_inputs", "balanced_accuracy", "balanced_accuracy_low", "balanced_accuracy_high",
+    "diagnosis_rate", "diagnosis_rate_low", "diagnosis_rate_high", "diagnosis_rate_n", "diagnosis_rate_inputs",
+    "critical_thinking", "critical_thinking_low", "critical_thinking_high",
+    "fixed_answer_reason", "fixed_answer_critical_thinking",
+    "balanced_precision", "balanced_precision_low", "balanced_precision_high",
+    "coverage", "coverage_low", "coverage_high", "coverage_n", "coverage_inputs", "cost_efficiency")
+
+
+def share(rows: list[dict], hit) -> object:
+    """The share of rows that are a hit, n/a for none."""
+    return sum(1 for r in rows if hit(r)) / len(rows) if rows else NA
+
+
+def mean_of_two(a: object, b: object, complement: bool = False) -> object:
+    """The mean of two rates, with `b` as one minus itself when `complement`. n/a when either is."""
+    if NA in (a, b):
+        return NA
+    return (a + (1 - b if complement else b)) / 2
+
+
+def fixed_answer(attempt_rows: list[dict], puzzle: str) -> tuple:
+    """Return (reason, critical thinking) of the best fixed answer for a puzzle: MISMATCH with the most
+    common corruption type among its invalid inputs, ties broken by `CORRUPTION_TYPES` order."""
+    kinds = {}
+    for r in attempt_rows:
+        if r["puzzle"] == puzzle and r["validity"] == "invalid" and r.get("corruption"):
+            kinds[r["input_id"]] = corruption_type(r["corruption"])
+    if not kinds:
+        return NA, NA
+    counts = Counter(kinds.values())
+    best = max(counts, key=lambda k: (counts[k], -(CORRUPTION_TYPES.index(k) if k in CORRUPTION_TYPES
+                                                   else len(CORRUPTION_TYPES))))
+    return best, counts[best] / len(kinds) / 2
 
 
 def detection_rows(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
-    """Return one mismatch detection row per AI model, puzzle, and setup, pooled over depths."""
+    """Return one headline row per AI model, puzzle, and setup, pooled over depths. `attempt_rows` carry
+    their `cost`, which cost efficiency needs."""
     order = model_order(attempt_rows, models)
     groups = defaultdict(list)
     for r in attempt_rows:
-        if r["outcome"] != "infrastructure_failure":
-            groups[(r["model"], r["puzzle"], r["setup"])].append(r)
+        groups[(r["model"], r["puzzle"], r["setup"])].append(r)
     keys = sorted(groups, key=lambda k: (model_rank(order, k[0]), PUZZLE_ORDER.index(k[1]),
                                          SETUPS.index(k[2])))
     result = []
     for model, puzzle, setup in keys:
-        rows = groups[(model, puzzle, setup)]
+        everything = groups[(model, puzzle, setup)]
+        rows = [r for r in everything if r["outcome"] != "infrastructure_failure"]
+        if not rows:
+            continue
+        reasons = has_reasons(everything)
         invalid = [r for r in rows if r["validity"] == "invalid"]
         valid = [r for r in rows if r["validity"] == "valid"]
         key = f"{model}|{puzzle}|{setup}"
@@ -398,20 +477,41 @@ def detection_rows(attempt_rows: list[dict], models: list[str] | None = None) ->
         rate_columns(row, "detection_rate", input_cells(invalid, lambda r: r["mismatch"]), key)
         rate_columns(row, "false_mismatch_rate", input_cells(valid, lambda r: r["mismatch"]), key)
         detection, false_mismatch = row["detection_rate"], row["false_mismatch_rate"]
-        both = NA not in (detection, false_mismatch)
-        low, high = interval_for_balanced_accuracy(rows) if both else (NA, NA)
-        row.update(balanced_accuracy=(detection + (1 - false_mismatch)) / 2 if both else NA,
+        low, high = interval_for_balanced_accuracy(rows) if NA not in (detection, false_mismatch) else (NA, NA)
+        row.update(balanced_accuracy=mean_of_two(detection, false_mismatch, True),
                    balanced_accuracy_low=low, balanced_accuracy_high=high)
+        rate_columns(row, "diagnosis_rate", input_cells(invalid, is_diagnosis) if reasons else [], key)
+        diagnosis = row["diagnosis_rate"]
+        row["critical_thinking"] = mean_of_two(diagnosis, false_mismatch, True)
+        row["critical_thinking_low"] = row["critical_thinking_high"] = NA
+        if row["critical_thinking"] != NA:
+            row["critical_thinking_low"], row["critical_thinking_high"] = stratified_interval(
+                rows, key + "|critical_thinking", lambda r: r["mismatch"], is_diagnosis)
+        row["fixed_answer_reason"], row["fixed_answer_critical_thinking"] = (
+            fixed_answer(attempt_rows, puzzle) if reasons else (NA, NA))
+        classified = [r for r in rows if r["answer_class"]]
+        precise = lambda r: r["answer_class"] in ("tp", "tn")
+        balanced = mean_of_two(*(share([r for r in classified if r["validity"] == label], precise)
+                                 for label in ("valid", "invalid")))
+        row["balanced_precision"] = balanced
+        row["balanced_precision_low"] = row["balanced_precision_high"] = NA
+        if balanced != NA:
+            row["balanced_precision_low"], row["balanced_precision_high"] = stratified_interval(
+                classified, key + "|balanced_precision", precise, precise, complement=False)
+        rate_columns(row, "coverage", input_cells(rows, lambda r: r["answer_class"] is not None), key)
+        denominator = NA if balanced == NA or row["coverage"] == NA else balanced * row["coverage"]
+        row["cost_efficiency"] = (mean([r["cost"] for r in everything]) / denominator
+                                  if denominator not in (NA, 0) else NA)
         result.append(row)
     return result
 
 
-CORRUPTION_TYPES = ("twisted corner", "flipped edge", "flipped wing", "swapped corners", "swapped edges",
-                    "recoloured sticker")
-
+CORRUPTION_TYPES = CUBE_CORRUPTION_TYPES  # one list of corruption types, in report order
 
 CORRUPTION_COLUMNS = ("model", "puzzle", "setup", "corruption_type", "detection_rate", "detection_rate_low",
-                      "detection_rate_high", "detection_rate_n", "detection_rate_inputs")
+                      "detection_rate_high", "detection_rate_n", "detection_rate_inputs",
+                      "diagnosis_rate", "diagnosis_rate_low", "diagnosis_rate_high", "diagnosis_rate_n",
+                      "diagnosis_rate_inputs")
 
 
 def corruption_type(description: str) -> str:
@@ -420,7 +520,8 @@ def corruption_type(description: str) -> str:
 
 
 def corruption_rows(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
-    """Return one detection row per AI model, puzzle, setup, and corruption type, over invalid inputs."""
+    """Return one detection and diagnosis row per AI model, puzzle, setup, and corruption type, over invalid
+    inputs."""
     order = model_order(attempt_rows, models)
     groups = defaultdict(list)
     for r in attempt_rows:
@@ -434,8 +535,35 @@ def corruption_rows(attempt_rows: list[dict], models: list[str] | None = None) -
     result = []
     for key in sorted(groups, key=sort_key):
         model, puzzle, setup, kind = key
-        cells = input_cells(groups[key], lambda r: r["mismatch"])
+        rows = groups[key]
         row = {"model": model, "puzzle": puzzle, "setup": setup, "corruption_type": kind}
-        rate_columns(row, "detection_rate", cells, "|".join(key))
+        rate_columns(row, "detection_rate", input_cells(rows, lambda r: r["mismatch"]), "|".join(key))
+        rate_columns(row, "diagnosis_rate", input_cells(rows, is_diagnosis) if has_reasons(rows) else [],
+                     "|".join(key))
         result.append(row)
     return result
+
+
+REASON_COLUMNS = ("model", "puzzle", "setup", "expected", "reason", "attempts")
+
+
+def reason_rows(attempt_rows: list[dict], models: list[str] | None = None) -> list[dict]:
+    """Return the count of attempts per AI model, puzzle, setup, expected corruption type (`none` for a valid
+    input), and reason given (`none` for no reason). Empty under a release without mismatch reasons."""
+    order = model_order(attempt_rows, models)
+    counts = Counter()
+    for r in attempt_rows:
+        if r["outcome"] == "infrastructure_failure" or not r["reasons"]:
+            continue
+        expected = corruption_type(r["corruption"]) if r["validity"] == "invalid" and r.get("corruption") else "none"
+        counts[(r["model"], r["puzzle"], r["setup"], expected, r["mismatch_reason"] or "none")] += 1
+
+    def sort_key(k):
+        model, puzzle, setup, expected, reason = k
+        kinds = ["none", *CORRUPTION_TYPES]
+        offered = ["none", *offered_reasons(ENGINES[puzzle])]
+        return (model_rank(order, model), PUZZLE_ORDER.index(puzzle), SETUPS.index(setup),
+                kinds.index(expected) if expected in kinds else len(kinds), expected,
+                offered.index(reason) if reason in offered else len(offered), reason)
+
+    return [dict(zip(REASON_COLUMNS, key), attempts=counts[key]) for key in sorted(counts, key=sort_key)]
