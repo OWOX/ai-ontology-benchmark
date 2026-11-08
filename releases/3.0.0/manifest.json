@@ -1,0 +1,99 @@
+{
+  "assessment_sha256": "9890cd91cd76fd05a7c1fb68bc0839827e67e9e08c180f439c25972d41bf381a",
+  "commit": "e80677bc542834dcf8df37e911cef27c88065cb7",
+  "created_at": "2026-11-08T10:36:58Z",
+  "decision_prompt_versions": {
+    "descriptive": {
+      "2x2": "6a6447f117f3",
+      "3x3": "be0095c65012",
+      "4x4": "6b8a086e1bda",
+      "5x5": "5e8d484bb220"
+    },
+    "no_model": {
+      "2x2": "b55a5e1859fd",
+      "3x3": "cf221fcd6135",
+      "4x4": "d966b69c5cc5",
+      "5x5": "3754c47d5dec"
+    },
+    "prescriptive": {
+      "2x2": "1ec8ebe64e98",
+      "3x3": "8f44d2530b53",
+      "4x4": "ce8f06b0dcc0",
+      "5x5": "7d8d7b798db5"
+    }
+  },
+  "files": {
+    "README.md": "9d1338d1feebb678ef70984af25267afd1c23eb57b240d367436f8b0d8d3566a",
+    "inputs.jsonl": "864fe85d9fa4e0756eab389e32b55e8fa7cb9a079ae0a085044d39eb65e73b49",
+    "prompts/decision/questions.txt": "b9af34b11e1e89b31ac8916be09f215b9a1c82dfbf1b9a58852ea9ae306fec7c",
+    "prompts/descriptive/2x2.txt": "c8724409d14c7e3e87bc5af24fc42edbf4b67652b099b68960a9eabfd2d59345",
+    "prompts/descriptive/3x3.txt": "687468a804e10204694f395d72b314d0899fb921bdf6e22b3540b7518e0608e4",
+    "prompts/descriptive/4x4.txt": "9004bfe771a8af69390b895de01dc474e1c044c47a42bbf4a777634780c70af7",
+    "prompts/descriptive/5x5.txt": "61e002c168eb4ffe18113756ca13129873f055e935f14f336c222b1fac66e736",
+    "prompts/no_model/2x2.txt": "5236b69a192393b36811f49efe81f0ca1445c1854857e73b3436ce8aa75599e5",
+    "prompts/no_model/3x3.txt": "e3faa8f99fad3ae0dbe9eab1ac9a11e7a55164a440d85db3a7ebbdde95f25ca0",
+    "prompts/no_model/4x4.txt": "983ed7fbd331eda8010d35047bf69ce90e7ac519af6dfd98ecba63326f263feb",
+    "prompts/no_model/5x5.txt": "1333a6df5eb4de95e891704e77f2855328b52143b2460c29f329dc85b6aadb18",
+    "prompts/prescriptive/2x2.txt": "39ee8339d25100f9296426af2decef84124bf43e0e04e7abb6443e9dfc07a389",
+    "prompts/prescriptive/3x3.txt": "d24d533e4d43fc94b9c22929a4a3ee7c9d7288b91583a9edc931ea521cb4cf94",
+    "prompts/prescriptive/4x4.txt": "bf0ed58083407830eaa9074eb94642f83dfbe4d1f02df509cbafc87e18fb1148",
+    "prompts/prescriptive/5x5.txt": "d175a941475b26f48095a43a7c16823139b0b3683715fb2b630e74df9c828bb4"
+  },
+  "input_set_id": "3",
+  "mismatch_reasons": true,
+  "note": "Held-out input set: new seed, 40 valid and 10 invalid inputs per puzzle and depth, deeper 4x4 and 5x5 scrambles, and prompts that ask for a mismatch reason",
+  "prompt_versions": {
+    "descriptive": {
+      "2x2": "d0f8d3af9c41",
+      "3x3": "b88e9409256e",
+      "4x4": "cf8927c919d9",
+      "5x5": "966ede391f53"
+    },
+    "no_model": {
+      "2x2": "fec62eb22f76",
+      "3x3": "895007483997",
+      "4x4": "ea913feba039",
+      "5x5": "ca95c514f56c"
+    },
+    "prescriptive": {
+      "2x2": "29b85902743c",
+      "3x3": "959f6bba2d21",
+      "4x4": "eca6619bdd6a",
+      "5x5": "3195436a7434"
+    }
+  },
+  "release_config": {
+    "puzzles": [
+      "2x2",
+      "3x3",
+      "4x4",
+      "5x5"
+    ],
+    "scramble_count": 40,
+    "scramble_depths": {
+      "2x2": [
+        5,
+        10,
+        20
+      ],
+      "3x3": [
+        5,
+        10,
+        20
+      ],
+      "4x4": [
+        10,
+        20,
+        40
+      ],
+      "5x5": [
+        15,
+        30,
+        60
+      ]
+    },
+    "seed": 20261108,
+    "valid_invalid_split": 0.25
+  },
+  "release_version": "3.0.0"
+}
