@@ -157,6 +157,14 @@ def _openai_client(key: str, base_url: str | None = None):
                          **({"base_url": base_url} if base_url else {}))
 
 
+def _moderation_flagged(body) -> bool:
+    """True when an OpenRouter 403 body carries moderation metadata. Other 403s, such as a key over its
+    credit limit, are request errors."""
+    error = body.get("error", body) if isinstance(body, dict) else None
+    metadata = error.get("metadata") if isinstance(error, dict) else None
+    return isinstance(metadata, dict) and ("reasons" in metadata or "flagged_input" in metadata)
+
+
 def _chat(provider: str, client, request: dict) -> Reply:
     """One Chat Completions call, shared by openai and openrouter, which speaks the same API."""
     import openai
@@ -173,20 +181,22 @@ def _chat(provider: str, client, request: dict) -> Reply:
     except openai.APIStatusError as error:
         if error.status_code in (408, 409):  # request timeout and conflict, both worth trying again
             raise InfrastructureError(f"{provider}: {error}") from error
-        if provider == "openrouter" and error.status_code == 403:  # OpenRouter's moderation flagged the input
+        if provider == "openrouter" and error.status_code == 403 and _moderation_flagged(error.body):
             return Reply("", "refused", "", 0, 0, time.perf_counter() - start)
         raise _request_error(provider, error) from error
     latency = time.perf_counter() - start
-    usage = response.usage
-    input_tokens, output_tokens = (usage.prompt_tokens or 0, usage.completion_tokens or 0) if usage else (0, 0)
-    if not response.choices:
-        raise InfrastructureError(f"{provider}: the response has no choices", input_tokens, output_tokens)
+    if provider == "openrouter":
+        usage = getattr(response, "usage", None)
+        tokens = (usage.prompt_tokens or 0, usage.completion_tokens or 0) if usage else (0, 0)
+        if not getattr(response, "choices", None):
+            raise InfrastructureError("openrouter: the response has no choices", *tokens)
+        if response.choices[0].finish_reason == "error":  # the upstream provider failed mid-answer
+            raise InfrastructureError("openrouter: the upstream provider ended the answer with an error", *tokens)
+    else:
+        tokens = (response.usage.prompt_tokens, response.usage.completion_tokens)
     choice = response.choices[0]
-    if choice.finish_reason == "error":  # OpenRouter: the upstream provider failed mid-answer
-        raise InfrastructureError(f"{provider}: the upstream provider ended the answer with an error",
-                                  input_tokens, output_tokens)
     stop_reason = {"length": "truncated", "content_filter": "refused"}.get(choice.finish_reason, "ok")
-    return Reply(choice.message.content or "", stop_reason, response.model or "", input_tokens, output_tokens, latency)
+    return Reply(choice.message.content or "", stop_reason, response.model, *tokens, latency)
 
 
 def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:

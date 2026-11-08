@@ -198,10 +198,23 @@ def test_openai_client_keeps_the_default_base_url(monkeypatch):
     assert "base_url" not in openai.OpenAI.call_args.kwargs
 
 
-def test_openrouter_moderation_403_is_refused(monkeypatch):
-    install(monkeypatch, "openrouter", status_error(openai.PermissionDeniedError, 403))
+MODERATION = {"code": 403, "message": "flagged", "metadata": {"reasons": ["violence"], "flagged_input": "p"}}
+
+
+@pytest.mark.parametrize("body", [MODERATION, {"error": MODERATION}])
+def test_openrouter_moderation_403_is_refused(monkeypatch, body):
+    error = openai.PermissionDeniedError("flagged", response=httpx.Response(403, request=REQUEST), body=body)
+    install(monkeypatch, "openrouter", error)
     reply = call_model(entry("openrouter"), "prompt", 50)
     assert (reply.stop_reason, reply.text, reply.served_model) == ("refused", "", "")
+
+
+@pytest.mark.parametrize("body", [None, {"code": 403, "message": "Key limit exceeded"}])
+def test_openrouter_other_403_is_a_request_error(monkeypatch, body):
+    error = openai.PermissionDeniedError("x", response=httpx.Response(403, request=REQUEST), body=body)
+    install(monkeypatch, "openrouter", error)
+    with pytest.raises(models.RequestError, match="^openrouter: HTTP 403: "):
+        call_model(entry("openrouter"), "prompt", 50)
 
 
 @pytest.mark.parametrize("code", [401, 402, 404])
@@ -218,8 +231,9 @@ def test_openrouter_upstream_error_finish_is_infrastructure_with_tokens(monkeypa
     assert (raised.value.input_tokens, raised.value.output_tokens) == (11, 7)
 
 
-def test_openrouter_reply_without_choices_is_infrastructure(monkeypatch):
-    install(monkeypatch, "openrouter", NS(choices=[], model="m", usage=None))
+@pytest.mark.parametrize("response", [NS(choices=[], model="m", usage=None), NS(model="m")])
+def test_openrouter_reply_without_choices_is_infrastructure(monkeypatch, response):
+    install(monkeypatch, "openrouter", response)
     with pytest.raises(InfrastructureError):
         call_model(entry("openrouter"), "prompt", 50)
 

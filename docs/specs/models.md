@@ -36,7 +36,7 @@ Provider `openrouter` sends any AI model that OpenRouter serves through its Open
 1. `api_model_id` is the OpenRouter model id, such as `<vendor>/<model>`. A price row in `config/prices.toml` is still needed under the entry's `name`.
 2. It uses the `openai` SDK with `base_url="https://openrouter.ai/api/v1"`, built-in retries off, and the same timeout as `openai`. The key is read only from `OPENROUTER_API_KEY` (`ENV_KEY_VARIABLES`), never from `secrets/`, so `KEY_VARIABLES`, which the UI reads, leaves it out.
 3. The request has the same shape as for `openai`, except that the token limit is `max_tokens` and the body fields go through `extra_body`: `reasoning={"effort": effort}` for a system-2 model with a reasoning effort, then `params` unchanged. So OpenRouter's own fields, such as `provider` for routing preferences, can be set in `params`.
-4. A reply maps as for `openai`. `finish_reason` `length` is `truncated` and `content_filter` is `refused`. HTTP 403, which OpenRouter returns when its moderation flags the input, is `refused`. A `finish_reason` of `error`, which means the upstream provider failed mid-answer, and a reply with no choices raise `InfrastructureError` carrying the reported token counts. HTTP 402 for spent credits raises `RequestError`.
+4. A reply maps as for `openai`. `finish_reason` `length` is `truncated` and `content_filter` is `refused`. HTTP 403 is `refused` only when its error body carries moderation metadata (`metadata.reasons` or `metadata.flagged_input`). Any other 403, such as a key over its credit limit, raises `RequestError`. A `finish_reason` of `error`, which means the upstream provider failed mid-answer, and a reply with no or empty `choices` raise `InfrastructureError` carrying the reported token counts. HTTP 402 for spent credits raises `RequestError`.
 5. `served_model` is the response's `model` as returned. Token counts are `usage.prompt_tokens` and `usage.completion_tokens`, which include reasoning tokens, or 0 when the reply has no `usage`.
 
 ## Decision models
@@ -60,10 +60,10 @@ No test calls a real API.
    2. A length stop gives `truncated`.
    3. A content-filter error gives `refused`.
    4. A 429, a 500, and a timeout each raise `InfrastructureError`. For `openai` and `openrouter`, a 408 and a 409 do too, and a 401 raises `RequestError`.
-   8. For `openrouter`: the base URL, `max_tokens`, `params` and the reasoning effort in `extra_body`, a 403 as `refused`, a 401, 402, or 404 as `RequestError`, and a `finish_reason` of `error` or no choices as `InfrastructureError`.
-   7. A 400 raises `RequestError` whose message is the API's own, as in `anthropic: HTTP 400: You have reached your specified API usage limits. …`.
-   5. The mock receives exactly one user message, no system prompt, and every key from `params`.
-   6. The client gets the explicit timeout.
+   5. A 400 raises `RequestError` whose message is the API's own, as in `anthropic: HTTP 400: You have reached your specified API usage limits. …`.
+   6. The mock receives exactly one user message, no system prompt, and every key from `params`.
+   7. The client gets the explicit timeout.
+   8. For `openrouter`: the base URL, `max_tokens`, `params` and the reasoning effort in `extra_body`, a 403 with moderation metadata as `refused` and any other 403 as `RequestError`, a 401, 402, or 404 as `RequestError`, and a `finish_reason` of `error` or no choices as `InfrastructureError`.
 3. A missing or whitespace-only env var raises `ValueError` with the variable's name, and a padded key or account id reaches the SDK stripped.
 4. For each decision provider, with the SDK client replaced by a stub: the call shape and the reply kept exactly, HTTP 429 and 503 raising `InfrastructureError`, HTTP 400 raising `RequestError`, a missing key or account id raising `ValueError`, and the fake popping in order.
 5. Replies that miss the schema: Jev with a missing `model` or `answers: null`, Jev with a body of `[1]` or text that is not JSON, and Cloudflare with a `result` that is a string, list, number, or null. Each returns normally, with the missing keys absent and `served_model` `""`.
