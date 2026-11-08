@@ -352,7 +352,7 @@ class Bundles(BranchReaders):
                 "pushed": self._pushed(experiment_id, exp["sha"]), "running": experiment_id in running,
                 "branch": f"{base}/tree/{exp['sha']}/results/{experiment_id}" if base and exp["sha"] else None,
                 "metrics_source": source, "report": report,
-                # Work-tree reads (like API 12), with local_report below: Evaluate and Commit need the results on disk.
+                # Work-tree reads (like API 13), with local_report below: Evaluate and Commit need the results on disk.
                 "local_results": (self.root / "results" / experiment_id / "experiment.toml").is_file(),
                 "local_report": bool(config) and (self.root / "results" / experiment_id / f"{config['release']}.md").is_file(),
                 "metric_rows": metric_rows, "summary_rows": summary_rows, "served_models": served,

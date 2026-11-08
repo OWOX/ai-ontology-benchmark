@@ -1,4 +1,4 @@
-// Spec: docs/specs/ui.md (Benchmarks, HTTP API 25)
+// Spec: docs/specs/ui.md (Benchmarks, HTTP API 26)
 // The Benchmarks page: AI models compared across experiments, from GET /api/benchmarks. It loads its own data
 // and ignores the menu's release. Release, provider, model, puzzle, setup, and validity changes send a request;
 // significance and metrics changes only redraw. Every choice that differs from its default lives in the hash.
