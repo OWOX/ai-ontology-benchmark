@@ -1,0 +1,30 @@
+release = "3.0.0"
+puzzles = ["2x2", "3x3", "4x4", "5x5"]
+attempts = 3
+retry_cap = 3
+max_output_tokens = 32000
+reasoning_effort = "medium"
+inputs_per_depth = 5
+
+[[models]]
+name = "claude-opus-5-5"
+provider = "anthropic"
+api_model_id = "claude-opus-5-5"
+kind = "system-2"
+
+[[models]]
+name = "claude-sonnet-5-5"
+provider = "anthropic"
+api_model_id = "claude-sonnet-5-5"
+kind = "system-2"
+
+[[models]]
+name = "claude-haiku-5-5"
+provider = "anthropic"
+api_model_id = "claude-haiku-5-5"
+kind = "system-2"
+
+[budget]
+per_request_usd = 2.0
+per_model_usd = 25.0
+per_experiment_usd = 35.0
