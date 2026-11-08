@@ -265,7 +265,7 @@ def run(args: argparse.Namespace) -> int:
                                    offered_reasons(engine) if with_reasons else None)
         check_request_budget(source, config, model, prompt, prices)
     if args.estimate:
-        print_estimate(config, pending, prices, folder / "prompts", results / "raw", caps, prompts, with_reasons)
+        print_estimate(config, pending, prices, questions, results / "raw", caps, prompts, with_reasons)
         return 0
     versions = manifest["prompt_versions"]
     branch = None

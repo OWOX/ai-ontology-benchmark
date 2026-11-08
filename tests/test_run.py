@@ -395,6 +395,27 @@ def test_estimate_shows_spent_against_budgets(exp, capsys):
     assert "spent $0.0300 of per_experiment_usd 50.0" in out
 
 
+def test_estimate_dict_takes_spent_and_no_raw_dir():
+    config = {"max_output_tokens": 100, "budget": {"per_model_usd": 5.0, "per_experiment_usd": 9.0,
+                                                   "per_request_usd": 2.0},
+              "models": [{"name": "A", "provider": "openai"}, {"name": "B", "provider": "openai"}]}
+    prices = {n: {"price_input_per_mtok": 1.0, "price_output_per_mtok": 2.0} for n in "AB"}
+    a = {"name": "A", "provider": "openai"}
+    pending = [({"input_id": "i1", "puzzle": "3x3"}, a, "none", 1),
+               ({"input_id": "i2", "puzzle": "3x3"}, a, "none", 1)]
+    prompts = {("i1", "none"): "x" * 400, ("i2", "none"): "x" * 40}
+    got = budget_module.estimate(config, pending, prices, None, None, {}, prompts, spent={"A": 0.5, "B": 0.25})
+    first, second = (100 * 1.0 + 100 * 2.0) / 1e6, (10 * 1.0 + 100 * 2.0) / 1e6
+    assert got["models"] == [
+        {"name": "A", "attempts": 2, "input_tokens": 110, "worst_case_usd": pytest.approx(first + second),
+         "spent_usd": 0.5, "per_model_usd": 5.0, "max_request_usd": pytest.approx(first)},
+        {"name": "B", "attempts": 0, "input_tokens": 0, "worst_case_usd": 0, "spent_usd": 0.25,
+         "per_model_usd": 5.0, "max_request_usd": 0}]
+    assert got["total"] == {"attempts": 2, "worst_case_usd": pytest.approx(first + second),
+                            "spent_usd": 0.75, "per_experiment_usd": 9.0}
+    assert got["per_request_usd"] == 2.0
+
+
 def test_budget_checked_before_each_retry(exp, capsys):
     # Each failed call carries 100 output tokens (0.01 USD). Room for one request only.
     with_budget(exp, per_model_usd=0.015)
