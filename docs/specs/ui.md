@@ -299,10 +299,12 @@ The foot terminal: a folded "Terminal" box with the job log from `GET /api/log` 
 
 Next to each input and metric that has a term in `docs/definitions.md`, the page shows an (i) icon. Hovering or focusing it shows the term's definition from `definitions` (Bundle 6) in the shared `.tip-fixed` panel, and the icon links to the term's `source`, or is not a link when `source` is `null`. One helper, `ui/static/definitions.js`, builds every icon, and Benchmarks uses it too. Its table `TERMS` maps a UI label to the bold term, written exactly as `docs/definitions.md` writes it, and a test checks that every term in it exists there. A label with no term, such as Max output tokens, Limit per model, and Time, and a term the bundle lacks, get no icon and no fallback text. The icons go on:
 
-1. New Experiment: the Puzzles and AI models headings, the three budgets, Attempts per input and setup, Inputs per depth, Retry cap, Reasoning effort, and Parallel requests, and the headers of the live estimate table (Attempts to run, Worst case, Spent, Model budget, and Median latency). An icon never sits in the formula line, so its live region is unchanged, and the sliders keep their `aria-label` and `aria-valuetext`.
+1. New Experiment: the Puzzles and AI models headings, the three budgets, Attempts per input and setup, Inputs per depth, Retry cap, Reasoning effort, and Parallel requests, and the headers of the live estimate table (Attempts to run, Spent, Model budget, and Median latency; Worst case has no term, because it covers the whole run). In a form field the label and its icon share one inline element, so the icon stays on the label's line. An icon never sits in the formula line, so its live region is unchanged, and the sliders keep their `aria-label` and `aria-valuetext`.
 2. The score card: the headers of its metric columns.
 3. The Summary and Full metrics tables: the header of each rate column.
-4. The Experiments list: the header of each metric column and Cost. The icon sits beside the sort button, not inside it.
+4. The Experiments list: the header of each metric column, Infrastructure failures, and Cost. The icon sits beside the sort button, not inside it.
+
+Each icon's `aria-label` is "Definition of <term>". When the score card, the Summary and Full metrics tables, or the estimate table redraws while an icon has focus, focus returns to the icon for the same term in the same table.
 
 ### Benchmarks
 

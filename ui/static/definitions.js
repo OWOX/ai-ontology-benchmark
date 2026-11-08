@@ -11,7 +11,7 @@
     "Attempts per input and setup": "Attempt", "Inputs per depth": "Inputs per depth", "Retry cap": "Retry cap",
     "Reasoning effort": "Reasoning effort", "Parallel requests": "Parallel requests",
     // the live estimate table
-    "Attempts to run": "Attempt", "Worst case": "Worst-case request cost", "Spent": "Cost", "Model budget": "Model budget",
+    "Attempts to run": "Attempt", "Spent": "Cost", "Model budget": "Model budget",
     "Median latency": "Latency",
     // the score card, the Experiments list, and the Summary and Full metrics tables
     "Balanced precision": "Balanced precision", "Coverage": "Coverage", "Hallucination": "Hallucination rate",
@@ -23,6 +23,7 @@
     "Truncated": "Truncation rate", "Truncation rate": "Truncation rate",
     "Abstention": "Abstention rate", "Abstention rate": "Abstention rate",
     "Format error": "Format error rate", "Format error rate": "Format error rate",
+    "Infrastructure failures": "Infrastructure failure count",
   };
   let seq = 0;
 
@@ -32,7 +33,7 @@
     const def = defs && defs.terms && defs.terms[term];
     if (!def || !def.text) return [];
     const id = "def-" + ++seq;
-    const icon = h(def.source ? "a" : "span", { class: "info tip-src", "aria-label": "definition", "aria-describedby": id, text: "i",
+    const icon = h(def.source ? "a" : "span", { class: "info tip-src", "aria-label": "Definition of " + term, "data-term": term, "aria-describedby": id, text: "i",
       ...(def.source ? { href: def.source, target: "_blank", rel: "noopener" } : { tabindex: "0" }) });
     UI.tipOn(icon);
     // A mouse click blurs the link, so its panel does not stay at a stale place once GitHub opens in another tab.
@@ -44,5 +45,19 @@
   // The same for a UI label, through TERMS.
   const info = (defs, label) => (TERMS[label] ? infoTerm(defs, TERMS[label]) : []);
 
-  window.Defs = { TERMS, infoTerm, info };
+  // Redrawing a table drops the focused icon. Call this before the redraw with the container that holds the tables,
+  // and call the result after it: focus goes back to the icon for the same term in the same table.
+  function keepFocus(container) {
+    const a = document.activeElement;
+    const icon = a && a.classList && a.classList.contains("info") && container.contains(a) ? a : null;
+    if (!icon) return () => {};
+    const term = icon.getAttribute("data-term"), table = [...container.querySelectorAll("table")].indexOf(icon.closest("table"));
+    return () => {
+      const again = [...container.querySelectorAll("table")][table];
+      const next = again && [...again.querySelectorAll(".info")].find((i) => i.getAttribute("data-term") === term);
+      if (next) next.focus();
+    };
+  }
+
+  window.Defs = { TERMS, infoTerm, info, keepFocus };
 })();
