@@ -1,7 +1,6 @@
 # Spec: docs/specs/site.md
 """Reads config/site.toml, docs/definitions.md, and releases/*/inputs.jsonl at one git ref, and
-results/<id>/experiment.toml and results/<id>/raw/*.jsonl from the branch <remote>/results/<id>,
-for every experiment listed in the config. Writes one JSON file for the static results page.
+results/<id>/experiment.toml and results/<id>/raw/*.jsonl, all at one git ref, for every experiment listed in the config. Writes one JSON file for the static results page.
 """
 
 import argparse
@@ -41,16 +40,15 @@ def read_inputs(gd: GitData, ref: str, release: str, cache: dict) -> dict:
     return cache[release]
 
 
-def read_experiment(gd: GitData, ref: str, remote: str, experiment_id: str, cache: dict) -> tuple[dict, int]:
-    branch = f"{remote}/results/{experiment_id}"
-    if gd.sha(branch) is None:
-        raise ExportError(f"config/site.toml, experiments: no branch {branch} for experiment {experiment_id}")
+def read_experiment(gd: GitData, ref: str, experiment_id: str, cache: dict) -> tuple[dict, int]:
     folder = f"results/{experiment_id}"
-    toml_text = gd.show(branch, f"{folder}/experiment.toml")
-    toml = tomllib.loads(toml_text) if toml_text else {}
+    toml_text = gd.show(ref, f"{folder}/experiment.toml")
+    if toml_text is None:
+        raise ExportError(f"no {folder}/ at {ref} for experiment {experiment_id}")
+    toml = tomllib.loads(toml_text)
     kept, skipped = [], 0
-    for name in sorted(n for n in gd.ls(branch, f"{folder}/raw") if n.endswith(".jsonl")):
-        for r in read_jsonl(gd.show(branch, f"{folder}/raw/{name}") or ""):
+    for name in sorted(n for n in gd.ls(ref, f"{folder}/raw") if n.endswith(".jsonl")):
+        for r in read_jsonl(gd.show(ref, f"{folder}/raw/{name}") or ""):
             try:
                 if r["outcome"] == "infrastructure_failure":
                     continue
@@ -64,9 +62,9 @@ def read_experiment(gd: GitData, ref: str, remote: str, experiment_id: str, cach
                     "depth": r["scramble_depth"], "state": found["state"], "corruption": found["corruption"],
                     "moves": r["parsed_moves"], "outcome": r["outcome"], "mismatch": r["mismatch"]}))
             except KeyError as error:
-                raise ExportError(f"{branch}:{folder}/raw/{name}: record has no field {error.args[0]}") from None
+                raise ExportError(f"{ref}:{folder}/raw/{name}: record has no field {error.args[0]}") from None
     if not kept:
-        raise ExportError(f"{branch}: experiment {experiment_id} has no raw records to show")
+        raise ExportError(f"{ref}: experiment {experiment_id} has no raw records to show")
     kept.sort(key=lambda k: (k[1]["model"], k[1]["puzzle"], k[1]["inputId"], k[1]["setup"], k[1]["attempt"], k[0]))
     models = {m["name"]: {"name": m["name"], "provider": m.get("provider", "unknown"),
                           "kind": m.get("kind", "unknown")} for m in toml.get("models", [])}
@@ -123,17 +121,16 @@ def read_definitions(markdown: str) -> tuple[list[dict], list[str]]:
 
 
 def fetch(gd: GitData, remote: str) -> None:
-    refspecs = [f"+refs/heads/main:refs/remotes/{remote}/main",
-                f"+refs/heads/results/*:refs/remotes/{remote}/results/*"]
+    refspec = f"+refs/heads/main:refs/remotes/{remote}/main"
     try:
-        done = gd._git("fetch", "--prune", "--quiet", remote, *refspecs, timeout=FETCH_TIMEOUT_S)
+        done = gd._git("fetch", "--prune", "--quiet", remote, refspec, timeout=FETCH_TIMEOUT_S)
     except (OSError, subprocess.SubprocessError) as error:
         raise ExportError(f"git fetch {remote}: {error}") from None
     if done.returncode != 0:
         raise ExportError(f"git fetch {remote}: {done.stderr.strip()}")
 
 
-def export(gd: GitData, ref: str, remote: str) -> tuple[dict, int]:
+def export(gd: GitData, ref: str) -> tuple[dict, int]:
     text = gd.show(ref, "config/site.toml")
     if text is None:
         raise ExportError(f"config/site.toml: not found at {ref}")
@@ -147,7 +144,7 @@ def export(gd: GitData, ref: str, remote: str) -> tuple[dict, int]:
     cache: dict = {}
     experiments, skipped = [], 0
     for experiment_id in sorted(config["experiments"]):
-        experiment, n = read_experiment(gd, ref, remote, experiment_id, cache)
+        experiment, n = read_experiment(gd, ref, experiment_id, cache)
         experiments.append(experiment)
         skipped += n
     markdown = gd.show(ref, "docs/definitions.md")
@@ -174,7 +171,7 @@ def main() -> int:
     try:
         if not args.no_fetch:
             fetch(gd, args.remote)
-        data, skipped = export(gd, args.ref, args.remote)
+        data, skipped = export(gd, args.ref)
     except (ExportError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

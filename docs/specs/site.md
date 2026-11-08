@@ -6,9 +6,9 @@
 
 1. `config/site.toml` at `--ref` (default `origin/main`): `title`, `description`, `intro`, and `experiments`, the experiment ids shown on the page.
 2. `docs/definitions.md` and `releases/<release version>/inputs.jsonl` at `--ref`.
-3. For each listed experiment, the branch `<remote>/results/<experiment id>` (`--remote`, default `origin`): `results/<id>/experiment.toml` and every `results/<id>/raw/*.jsonl`.
+3. For each listed experiment, `results/<id>/experiment.toml` and every `results/<id>/raw/*.jsonl` at `--ref`. Results live on `main`, not on per-experiment branches.
 
-The script first runs `git fetch --prune <remote>` with the refspecs `+refs/heads/main:refs/remotes/<remote>/main` and `+refs/heads/results/*:refs/remotes/<remote>/results/*` and a 60 second timeout, so `<remote>/main` is current and deleted results branches no longer export, unless `--no-fetch` is given. It reads git objects only, never the work tree.
+The script first runs `git fetch --prune <remote>` (`--remote`, default `origin`) with the refspec `+refs/heads/main:refs/remotes/<remote>/main` and a 60 second timeout, so `<remote>/main` is current, unless `--no-fetch` is given. It reads git objects only, never the work tree.
 
 ## Output
 
@@ -33,14 +33,14 @@ It prints one line: experiments, attempts, skipped.
 1. Experiments are sorted by id. Attempts are sorted by model, puzzle, input id, setup, attempt number, and creation time.
 2. Attempts with outcome `infrastructure_failure` are dropped. A record whose input is missing from its release's `inputs.jsonl` is dropped and counted as skipped.
 3. A model absent from `[[models]]` gets provider and kind `unknown`.
-4. A listed experiment with no branch or no usable raw records is a checked error: exit 1, naming the experiment id.
+4. A listed experiment with no `results/<id>/` folder at the ref, or no usable raw records, is a checked error: exit 1, naming the experiment id and the ref.
 5. `definitions` holds the items of the `## Metrics` section matched by bold name: `success` is "Success rate", `hallucination` is "Hallucination rate", and `detection` is "Mismatch detection rate". Markdown is stripped to plain text. A name not found is left out, with one warning line on stderr per name.
 6. A duplicate experiment id in `config/site.toml` is a checked error: exit 1, naming the id.
 
 ## Build and publish
 
-After the export, `npm ci && npm run build` in `site/` builds the static page. Publishing is the manual `workflow_dispatch` workflow `.github/workflows/pages.yml`, which runs the export with `--ref origin/main`, builds, and deploys `site/dist` to GitHub Pages. The export fetches `main` and `results/*` itself. The workflow reads data and `config/site.toml` from `origin/main`, so dispatch it from `main`. It has no other trigger while the repo is private.
+After the export, `npm ci && npm run build` in `site/` builds the static page. Publishing is the manual `workflow_dispatch` workflow `.github/workflows/pages.yml`, which runs the export with `--ref origin/main`, builds, and deploys `site/dist` to GitHub Pages. The export fetches `main` itself. The workflow reads data and `config/site.toml` from `origin/main`, so dispatch it from `main`. It has no other trigger while the repo is private.
 
 ## Test
 
-`tests/test_site.py` builds a throwaway git repo with a main commit and a results branch, and covers attempt fields and order, `legalMoves`, a duplicate experiment id, dropped and skipped records, provider `unknown`, a missing branch, and the definitions parser. Run `pytest tests/test_site.py`.
+`tests/test_site.py` builds a throwaway git repo with a main commit that holds the results under `results/<id>/`, and covers attempt fields and order, `legalMoves`, a duplicate experiment id, dropped and skipped records, provider `unknown`, a missing experiment, and the definitions parser. Run `pytest tests/test_site.py`.
