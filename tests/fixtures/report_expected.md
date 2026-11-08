@@ -41,11 +41,18 @@ Cost spent, at the prices above (USD):
 
 ### M
 
+| Puzzle | Setup | Balanced precision | Coverage | Cost efficiency |
+|---|---|---|---|---|
+| 2x2 | no_model | 0.25 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.1067 |
+| 2x2 | descriptive | 0.25 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.1067 |
+| 2x2 | prescriptive | 0.25 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.1067 |
+
 #### Valid inputs
 
 | Metric | no_model | descriptive | prescriptive |
 |---|---|---|---|
 | Precision | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
+| Coverage | 1.00 (n/a) n=2, 1 input | 1.00 (n/a) n=2, 1 input | 1.00 (n/a) n=2, 1 input |
 | Hallucination rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
 | False mismatch rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
 | Malformed output rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
@@ -59,6 +66,7 @@ Cost spent, at the prices above (USD):
 | Metric | no_model | descriptive | prescriptive |
 |---|---|---|---|
 | Precision | 0.00 (n/a) n=1, 1 input | 0.00 (n/a) n=1, 1 input | 0.00 (n/a) n=1, 1 input |
+| Coverage | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
 | Mismatch detection rate | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
 | Hallucination rate | n/a n=0, 0 inputs | n/a n=0, 0 inputs | n/a n=0, 0 inputs |
 | Malformed output rate | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |

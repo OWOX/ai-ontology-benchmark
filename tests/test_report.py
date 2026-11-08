@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from src.evaluate.metrics import compute, detection_rows, paired_tests
+from src.evaluate.metrics import compute, corruption_rows, detection_rows, paired_tests, reason_rows
 from src.evaluate.report import write_report
 from src.run.prompts import SETUPS
 from test_evaluate import answer, make_inputs, raw
@@ -58,15 +58,15 @@ def tree(tmp_path):
     return tmp_path, inputs
 
 
-def build(tree, changed_outcome=False, paired_rows=(), with_paired=False, detection=(), corruption=(), config=CONFIG) -> str:
+def build(tree, changed_outcome=False, paired_rows=(), with_paired=False, detection=(), corruption=(), config=CONFIG, reason_rows=(), recs=None) -> str:
     root, _ = tree
     release, path = root / "releases" / "1.0.0", root / "results" / "exp" / "1.0.0.md"
-    rows = compute(records(changed_outcome), release, PRICES, ["M"])
+    rows = compute(recs or records(changed_outcome), release, PRICES, ["M"])
     if with_paired:
         paired_rows = paired_tests(rows[0], ["M"])
         detection = detection_rows(rows[0], ["M"])
     write_report(path, "exp", config, release, PRICES, *rows, torn_lines=2, paired_rows=paired_rows,
-                 detection_rows=detection, corruption_rows=corruption)
+                 detection_rows=detection, corruption_rows=corruption, reason_rows=reason_rows)
     return path.read_text(encoding="utf-8")
 
 
@@ -188,7 +188,13 @@ def detection_row(**over) -> dict:
            "detection_rate_low": 0.5, "detection_rate_high": 1.0, "detection_rate_n": 4, "detection_rate_inputs": 4,
            "false_mismatch_rate": 0.25, "false_mismatch_rate_low": "n/a", "false_mismatch_rate_high": "n/a",
            "false_mismatch_rate_n": 4, "false_mismatch_rate_inputs": 1,
-           "balanced_accuracy": 0.75, "balanced_accuracy_low": "n/a", "balanced_accuracy_high": "n/a"}
+           "balanced_accuracy": 0.75, "balanced_accuracy_low": "n/a", "balanced_accuracy_high": "n/a",
+           "diagnosis_rate": 0.5, "diagnosis_rate_low": 0.25, "diagnosis_rate_high": 0.75, "diagnosis_rate_n": 2,
+           "diagnosis_rate_inputs": 2, "critical_thinking": 0.62, "critical_thinking_low": "n/a",
+           "critical_thinking_high": "n/a", "fixed_answer_reason": "twisted corner",
+           "fixed_answer_critical_thinking": 0.25, "balanced_precision": 0.6, "balanced_precision_low": "n/a",
+           "balanced_precision_high": "n/a", "coverage": 1.0, "coverage_low": "n/a", "coverage_high": "n/a",
+           "coverage_n": 4, "coverage_inputs": 2, "cost_efficiency": 0.0123}
     row.update(over)
     return row
 
@@ -236,3 +242,48 @@ def test_decision_served_models_are_listed_one_by_one(tree):
     rows = compute(recs, release, PRICES, ["M"])
     write_report(path, "exp", CONFIG, release, PRICES, *rows, torn_lines=0)
     assert "| M | fake | m-1 | system-2 | a, b, m-1 | temperature=0.5 |" in path.read_text(encoding="utf-8")
+
+
+def reason_release(tree):
+    root, _ = tree
+    manifest = root / "releases" / "1.0.0" / "manifest.json"
+    manifest.write_text(json.dumps({"assessment_sha256": "abc123", "mismatch_reasons": True}), encoding="utf-8")
+
+
+def test_reason_columns_absent_without_reasons(tree):
+    text = build(tree, detection=[detection_row()], reason_rows=[])
+    for word in ("Critical thinking", "Diagnosis rate", "Mismatch reason", "Reason hallucination", "twisted corner (baseline)"):
+        assert word not in text
+    assert "## Mismatch reasons" not in text
+
+
+def test_reason_report_sections(tree):
+    reason_release(tree)
+    recs = records()
+    for r in recs:
+        r["mismatch_reason"] = None
+    rows = [{"model": "M", "puzzle": "2x2", "setup": "no_model", "expected": "none", "reason": "none", "attempts": 3},
+            {"model": "M", "puzzle": "2x2", "setup": "no_model", "expected": "twisted corner", "reason": "twisted corner", "attempts": 2},
+            {"model": "M", "puzzle": "2x2", "setup": "no_model", "expected": "twisted corner", "reason": "twisted centre", "attempts": 1}]
+    corr = {"model": "M", "puzzle": "2x2", "setup": "no_model", "corruption_type": "twisted corner",
+            "detection_rate": 0.5, "detection_rate_low": "n/a", "detection_rate_high": "n/a", "detection_rate_n": 4,
+            "detection_rate_inputs": 2, "diagnosis_rate": 0.25, "diagnosis_rate_low": "n/a",
+            "diagnosis_rate_high": "n/a", "diagnosis_rate_n": 4, "diagnosis_rate_inputs": 2}
+    text = build(tree, with_paired=True, corruption=[corr], reason_rows=rows)
+    for word in ("Reason hallucination rate", "Diagnosis rate", "Critical thinking", "Mismatch reason",
+                 "| Puzzle | Setup | Corruption type | Detection rate | Diagnosis rate |",
+                 "| 2x2 | no_model | twisted corner | 0.50 (n/a) n=4, 2 inputs | 0.25 (n/a) n=4, 2 inputs |",
+                 "Balanced precision", "Cost efficiency"):
+        assert word in text
+    assert text.index("## Detection by corruption type") < text.index("## Mismatch reasons") < text.index("## Metrics")
+    section = text.split("## Mismatch reasons")[1].split("## Metrics")[0]
+    assert "| Expected | no reason | twisted corner | twisted centre (decoy) |" in section
+    assert "| valid input | 3 |  |  |" in section
+    assert "| twisted corner |  | 2 | 1 |" in section
+    assert "| 2x2 | always MISMATCH twisted corner (baseline) | 1.00 | 1.00 | 0.50 |" in text
+
+
+def test_headline_table_without_reasons_has_no_critical_thinking(tree):
+    text = build(tree, with_paired=True)
+    assert "| Puzzle | Setup | Balanced precision | Coverage | Cost efficiency |" in text
+    assert text.index("Balanced precision") < text.index("#### Valid inputs")

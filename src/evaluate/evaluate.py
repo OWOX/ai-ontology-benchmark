@@ -120,11 +120,12 @@ def evaluate(args: argparse.Namespace) -> None:
     detection_content = csv_text(detection, columns=DETECTION_COLUMNS)
     corruption = corruption_rows(attempt_rows, names)
     corruption_content = csv_text(corruption, columns=CORRUPTION_COLUMNS)
-    reasons_content = csv_text(reason_rows(attempt_rows, names), columns=REASON_COLUMNS)
+    reasons = reason_rows(attempt_rows, names)
+    reasons_content = csv_text(reasons, columns=REASON_COLUMNS)
     # Every check is done. Write the outputs last, the prices copy after the others.
     write_report(results / f"{version}.md", args.experiment, config, release_dir, prices,
                  attempt_rows, metric_rows, summary_rows, torn, paired_rows=paired_rows, detection_rows=detection,
-                 corruption_rows=corruption)
+                 corruption_rows=corruption, reason_rows=reasons)
     (results / f"{version}.metrics.csv").write_text(csv_content, encoding="utf-8", newline="")
     (results / f"{version}.paired.csv").write_text(paired_content, encoding="utf-8", newline="")
     (results / f"{version}.detection.csv").write_text(detection_content, encoding="utf-8", newline="")
