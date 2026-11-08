@@ -76,6 +76,22 @@ class GitData:
         done = self._git("for-each-ref", "--format=%(refname)", prefix)
         return {line[len(prefix):] for line in done.stdout.splitlines() if line.startswith(prefix)}
 
+    def results_state(self) -> tuple[str | None, dict[str, str], dict[str, str]]:
+        """(main sha, local result shas, remote result shas), the shas by experiment id, from one `git for-each-ref`.
+        The main sha is that of `main_ref()`, which takes a second call only when the repo has no `origin/main`."""
+        done = self._git("for-each-ref", "--format=%(objectname) %(refname)", LOCAL_RESULTS, REMOTE_RESULTS,
+                         "refs/remotes/origin/main")
+        local, remote, main = {}, {}, None
+        for line in done.stdout.splitlines():
+            sha, _, name = line.partition(" ")
+            if name == "refs/remotes/origin/main":
+                main = sha
+            elif name.startswith(REMOTE_RESULTS):
+                remote[name[len(REMOTE_RESULTS):]] = sha
+            elif name.startswith(LOCAL_RESULTS):
+                local[name[len(LOCAL_RESULTS):]] = sha
+        return main or self.sha("HEAD"), local, remote
+
     def local_ids(self) -> set[str]:
         return self._ids(LOCAL_RESULTS)
 

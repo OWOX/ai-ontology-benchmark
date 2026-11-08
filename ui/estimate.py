@@ -1,0 +1,211 @@
+# Spec: docs/specs/ui.md
+"""The live estimate behind `POST /api/estimate/live`: the numbers of `run --estimate` for a form that has not
+been started, plus the time each AI model needs. Reads the release, prompts, and prices on `main` and the
+experiment's branch through Bundles and GitData. Caches rendered prompts and latencies in memory. Writes nothing.
+"""
+
+import threading
+from statistics import median
+
+from src.config import max_moves, parse_experiment_config
+from src.evaluate.metrics import attempt_cost
+from src.run.budget import estimate
+from src.run.models import DECISION_PROVIDERS
+from src.run.prompts import SETUPS, fill_template, parse_questions
+from src.run.run import experiment_inputs
+from ui import expdata, forms
+from ui.bundle import Bundles
+from ui.common import ApiError
+from ui.gitdata import LOCAL_RESULTS, REMOTE_RESULTS
+
+CACHE_LIMIT = 8
+EXPERIMENT_LIMIT = 64
+
+
+class _View:
+    """What `forms.build_config` reads from Bundles, held for one main sha: the catalogue read with no keys
+    (a missing key is allowed here) and the puzzles of each release."""
+
+    def __init__(self, models: dict, puzzles) -> None:
+        self._models, self.release_puzzles = models, puzzles
+
+    def models(self, env: dict) -> dict:
+        return self._models
+
+
+class LiveEstimate:
+    def __init__(self, bundles: Bundles) -> None:
+        self.bundles = bundles
+        self._lock = threading.Lock()
+        self._main: dict[str, dict] = {}  # main sha -> view, prices, and the releases read
+        self._releases: dict[tuple, dict] = {}  # (release, main sha) -> inputs, templates, prompts, questions
+        self._experiments: dict[tuple, dict] = {}  # (id, sha) -> the experiment as expdata loads it
+        self._latency: tuple | None = None  # (key, medians)
+
+    # --- caches ---------------------------------------------------------------------------
+
+    def _at(self, main_sha: str | None) -> dict:
+        """The catalogue, prices, and manifests of `main` at one sha, read once."""
+        with self._lock:
+            if main_sha not in self._main:
+                if len(self._main) >= CACHE_LIMIT:
+                    self._main.pop(next(iter(self._main)))
+                manifests = {}
+
+                def puzzles(release: str):
+                    if release not in manifests:
+                        manifests[release] = self.bundles._manifest(release)
+                    found = manifests[release]
+                    return list(found["release_config"]["puzzles"]) if found else None
+
+                # Read with the keys the page holds: a model with no key is allowed here, other reasons are not.
+                self._main[main_sha] = {"view": _View(self.bundles.models({}), puzzles), "manifests": manifests,
+                                        "prices": self.bundles._prices()}
+            return self._main[main_sha]
+
+    def _release(self, release: str, main_sha: str | None, manifest: dict) -> dict:
+        key = (release, main_sha)
+        with self._lock:
+            if key not in self._releases:
+                if len(self._releases) >= CACHE_LIMIT:
+                    self._releases.pop(next(iter(self._releases)))
+                git = self.bundles.git
+                self._releases[key] = {"manifest": manifest, "templates": {}, "prompts": {}, "questions": None,
+                                       "inputs": expdata.read_inputs(git, git.main_ref(), release)}
+            return self._releases[key]
+
+    def _prompt(self, held: dict, release: str, row: dict, setup: str) -> str:
+        key = row["input_id"], setup
+        if key not in held["prompts"]:
+            template_key = row["puzzle"], setup
+            if template_key not in held["templates"]:
+                path = f"releases/{release}/prompts/{setup}/{row['puzzle']}.txt"
+                text = self.bundles.git.show(self.bundles.git.main_ref(), path)
+                if text is None:
+                    raise ApiError(400, f"{path} is not on main")
+                held["templates"][template_key] = text
+            held["prompts"][key] = fill_template(held["templates"][template_key], row, setup)
+        return held["prompts"][key]
+
+    def _questions(self, held: dict, release: str) -> dict:
+        if held["questions"] is None:
+            path = f"releases/{release}/prompts/decision/questions.txt"
+            text = self.bundles.git.show(self.bundles.git.main_ref(), path)
+            if text is None:
+                raise ApiError(400, f"{path} is not on main")
+            try:
+                held["questions"] = parse_questions(text, path)
+            except ValueError as error:
+                raise ApiError(400, str(error)) from None
+        return held["questions"]
+
+    def _experiment(self, experiment_id: str, ref: str, sha: str) -> dict:
+        """One experiment branch as `expdata` loads it, kept per ref sha, the oldest dropped past a limit."""
+        with self._lock:
+            held = self._experiments.get((experiment_id, sha))
+        if held is None:
+            git = self.bundles.git
+            held = expdata.load_experiment(git, experiment_id, ref, git.main_ref())
+            with self._lock:
+                if len(self._experiments) >= EXPERIMENT_LIMIT:
+                    self._experiments.pop(next(iter(self._experiments)))
+                self._experiments[experiment_id, sha] = held
+        return held
+
+    def medians(self, remote: dict[str, str]) -> dict[str, tuple[float, int]]:
+        """The median `latency_s` and the record count of each AI model over every pushed experiment, outcome
+        `infrastructure_failure` left out. Cached by the shas of the refs read."""
+        key = tuple(sorted(remote.items()))
+        with self._lock:
+            if self._latency and self._latency[0] == key:
+                return self._latency[1]
+        values: dict[str, list[float]] = {}
+        for experiment_id, sha in sorted(remote.items()):
+            exp = self._experiment(experiment_id, REMOTE_RESULTS + experiment_id, sha)
+            for records in exp["records"].values():
+                for r in records:
+                    if r.get("outcome") != "infrastructure_failure" and isinstance(r.get("latency_s"), (int, float)):
+                        values.setdefault(r.get("model"), []).append(r["latency_s"])
+        found = {m: (median(v), len(v)) for m, v in values.items()}
+        with self._lock:
+            self._latency = (key, found)
+        return found
+
+    # --- the estimate ---------------------------------------------------------------------
+
+    def live(self, form: dict, parallel: int, env: dict) -> dict:
+        if not isinstance(form, dict):
+            raise ApiError(400, "body must be a JSON object")
+        main_sha, local, remote = self.bundles.git.results_state()
+        at = self._at(main_sha)
+        text = forms.config_text(at["view"], form, env, keyless_ok=True)
+        try:
+            config = parse_experiment_config(text, form["id"], f"{form['id']}.toml")
+        except ValueError as error:
+            raise ApiError(400, str(error)) from None
+        prices = at["prices"]
+        for model in config["models"]:
+            if model["name"] not in prices:
+                raise ApiError(400, f"no prices for model {model['name']!r} in config/prices.toml on main")
+        release = config["release"]
+        manifest = at["manifests"][release]
+        held = self._release(release, main_sha, manifest)
+        names = [m["name"] for m in config["models"]]
+        done, spent = self._branch(config, form["id"], prices, local, remote)
+        rows = experiment_inputs(config, held["inputs"])
+        pending = [(row, model, setup, number) for row in rows for model in config["models"] for setup in SETUPS
+                   for number in range(1, config["attempts"] + 1)
+                   if (row["input_id"], setup, model["name"], number) not in done]
+        decision = any(m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending)
+        questions = self._questions(held, release) if decision else None
+        prompts = {}
+        for row, _, setup, _ in pending:
+            if (row["input_id"], setup) not in prompts:
+                prompts[row["input_id"], setup] = self._prompt(held, release, row, setup)
+        release_config = manifest["release_config"]
+        caps = {p: max_moves(config, release_config, p) for p in release_config["puzzles"]}
+        result = estimate(config, pending, prices, questions, None, caps, prompts,
+                          bool(manifest.get("mismatch_reasons", False)), {n: spent.get(n, 0.0) for n in names})
+        return self._finish(result, config, parallel, len(rows), len(pending), remote)
+
+    def _branch(self, config: dict, experiment_id: str, prices: dict, local: dict, remote: dict
+                ) -> tuple[set, dict[str, float]]:
+        """The (input id, setup, model, attempt number) keys with a record on the experiment's branch, local first,
+        then origin, and the cost of those records per AI model."""
+        if experiment_id in local:
+            ref, sha = LOCAL_RESULTS + experiment_id, local[experiment_id]
+        elif experiment_id in remote:
+            ref, sha = REMOTE_RESULTS + experiment_id, remote[experiment_id]
+        else:
+            return set(), {}
+        records = self._experiment(experiment_id, ref, sha)["records"]
+        done, spent = set(), {}
+        for name in (m["name"] for m in config["models"]):
+            found = records.get(name, [])
+            for r in found:
+                done.add((r.get("input_id"), r.get("setup"), name, r.get("attempt_number")))
+            spent[name] = sum(attempt_cost(r, prices[name]) for r in found)
+        return done, spent
+
+    def _finish(self, result: dict, config: dict, parallel: int, inputs: int, to_run: int, remote: dict) -> dict:
+        medians = self.medians(remote)
+        budget = config["budget"]
+        times = []
+        for m in result["models"]:
+            found = medians.get(m["name"])
+            m["median_latency_s"], m["latency_n"] = (found[0], found[1]) if found else (None, 0)
+            m["time_s"] = 0.0 if m["attempts"] == 0 else (
+                m["attempts"] * found[0] / parallel if found else None)
+            m["over"] = (m["worst_case_usd"] + m["spent_usd"] > budget["per_model_usd"] + 1e-9
+                         or m["max_request_usd"] > budget["per_request_usd"] + 1e-9)
+            times.append(m["time_s"])
+        total = result["total"]
+        partial = any(t is None for t in times)
+        total["time_s"] = None if partial else max(times, default=0.0)
+        total["over"] = total["worst_case_usd"] + total["spent_usd"] > budget["per_experiment_usd"] + 1e-9
+        result["timing"] = "partial" if partial else "full"
+        planned = inputs * len(config["models"]) * len(SETUPS) * config["attempts"]
+        result["counts"] = {"inputs": inputs, "models": len(config["models"]), "setups": len(SETUPS),
+                            "attempts": config["attempts"], "planned": planned, "done": planned - to_run,
+                            "to_run": to_run}
+        return result
