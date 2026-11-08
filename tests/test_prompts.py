@@ -10,7 +10,9 @@ import pytest
 from src.generate.generate import build_inputs
 from src.puzzles.cube import CubeEngine
 from src.puzzles.registry import ENGINES, get_engine
-from src.run.prompts import SETUPS, build_prompt, fill_template, prompt_versions
+from src.run.prompts import (SETUPS, build_prompt, decision_prompt_versions, decision_questions, fill_template,
+                             prompt_versions, uses_mismatch_reasons)
+from src.validator import offered_reasons
 
 CONFIG = {
     "seed": 3,
@@ -61,7 +63,8 @@ def test_templates_ask_for_lines_and_are_not_placeholders(templates):
             assert "PLACEHOLDER" not in text
             assert text.endswith(
                 "If the state cannot be reached from the solved state by legal moves, reply with the single line "
-                "MISMATCH and nothing else.\nOtherwise reply with the moves that solve it, in the order they are "
+                "MISMATCH, one space, and the reason, exactly as written in this list: {mismatch_reasons}. Use other "
+                "when none of them fits. Write nothing else.\nOtherwise reply with the moves that solve it, in the order they are "
                 "applied, one move per line, and nothing else.\n")
             assert "JSON" not in text
 
@@ -213,7 +216,7 @@ def test_decision_versions_follow_what_is_sent(templates, monkeypatch):
     assert prompts.decision_prompt_versions(templates, INPUTS) == before
     structure = prompts.decision_questions
     monkeypatch.setattr(prompts, "decision_questions",
-                        lambda q, legal: {**structure(q, legal), "mismatch": {"type": "other"}})
+                        lambda q, legal, reasons=None: {**structure(q, legal, reasons), "mismatch": {"type": "other"}})
     assert prompts.decision_prompt_versions(templates, INPUTS) != before
     assert prompt_versions(templates, INPUTS) == llm_before
 
@@ -251,3 +254,48 @@ def test_template_is_read_once_and_reread_after_an_edit(templates, monkeypatch):
     path = templates / "descriptive" / "2x2.txt"
     path.write_text(path.read_text(encoding="utf-8") + "Extra line.\n", encoding="utf-8")
     assert build_prompt(templates, inp, "descriptive") == first + "Extra line.\n"
+
+
+def test_decision_questions_with_reasons():
+    q = decision_questions({"next_move": "n", "done": "d", "mismatch": "m"}, ["R"], ["a", "other"])
+    assert q["next_move"]["criteria"] == {
+        "move_1": "R", "done": "d", "mismatch_1": "m Reason: a.", "mismatch_2": "m Reason: other."}
+
+
+def test_text_lists_every_offered_reason_in_order(templates):
+    for puzzle in ("2x2", "3x3"):
+        row = next(r for r in INPUTS if r["puzzle"] == puzzle)
+        engine = get_engine(puzzle)
+        reasons = offered_reasons(engine)
+        listed = ", ".join(f"`{r}`" for r in reasons)
+        for setup in SETUPS:
+            text = build_prompt(templates, row, setup)
+            assert "{mismatch_reasons}" not in text
+            assert f"in this list: {listed}." in text
+            assert reasons[-1] == "other"
+    assert "`twisted centre`" in build_prompt(templates, next(r for r in INPUTS if r["puzzle"] == "3x3"), "no_model")
+
+
+def strip_reasons(templates, names=None):
+    for path in templates.glob("*/*.txt"):
+        if names is None or f"{path.parent.name}/{path.name}" in names:
+            path.write_text(path.read_text().replace("{mismatch_reasons}", "the listed reason"))
+
+
+def test_uses_mismatch_reasons(templates):
+    assert uses_mismatch_reasons(templates) is True
+    strip_reasons(templates, {"no_model/2x2.txt"})
+    with pytest.raises(ValueError, match="no_model/2x2.txt"):
+        uses_mismatch_reasons(templates)
+    strip_reasons(templates)
+    assert uses_mismatch_reasons(templates) is False
+
+
+def test_decision_versions_without_placeholder_use_the_plain_mismatch_option(templates):
+    with_reasons = decision_prompt_versions(templates, INPUTS)
+    strip_reasons(templates)
+    without = decision_prompt_versions(templates, INPUTS)
+    assert without != with_reasons
+    for setup in SETUPS:
+        for puzzle in ("2x2", "3x3"):
+            assert without[setup][puzzle] != with_reasons[setup][puzzle]

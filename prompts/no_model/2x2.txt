@@ -2,5 +2,5 @@ Solve this 2x2 cube, written in Singmaster notation. The state is written as one
 
 {state}
 
-If the state cannot be reached from the solved state by legal moves, reply with the single line MISMATCH and nothing else.
+If the state cannot be reached from the solved state by legal moves, reply with the single line MISMATCH, one space, and the reason, exactly as written in this list: {mismatch_reasons}. Use other when none of them fits. Write nothing else.
 Otherwise reply with the moves that solve it, in the order they are applied, one move per line, and nothing else.
