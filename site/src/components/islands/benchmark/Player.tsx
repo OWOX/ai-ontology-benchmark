@@ -57,10 +57,12 @@ interface Props {
   puzzle: string
   models: readonly string[]
   attemptsUrl: string
+  /** Each puzzle's move group, as the export took it from the engine's legal_moves(). */
+  legalMoves: Readonly<Record<string, readonly string[]>>
 }
 
 /** Shows one random attempt of the selected puzzle and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). The refresh button next to the state picks another attempt. The parent keys it by the filter, so a change resets it. */
-export function Player({ puzzle, models, attemptsUrl }: Props) {
+export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
   const g = useMemo(() => cubeGeometry(puzzleSize(puzzle)), [puzzle])
   const titleId = useId()
   const alive = useRef(true)
@@ -75,7 +77,7 @@ export function Player({ puzzle, models, attemptsUrl }: Props) {
     return () => void (alive.current = false)
   }, [])
 
-  const plan = useMemo(() => (attempt ? playable(attempt) : null), [attempt])
+  const plan = useMemo(() => (attempt ? playable(attempt, legalMoves[attempt.puzzle] ?? []) : null), [attempt, legalMoves])
   const moves = plan?.moves ?? []
 
   useEffect(() => {

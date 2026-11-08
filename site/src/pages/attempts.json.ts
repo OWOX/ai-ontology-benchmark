@@ -1,3 +1,4 @@
+// Spec: docs/specs/site.md
 import { loadSiteData } from '../lib/site-data'
 import type { ReplayAttempt } from '../components/islands/benchmark/Player'
 

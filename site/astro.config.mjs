@@ -1,4 +1,4 @@
-// astro.config.mjs
+// Spec: docs/specs/site.md
 import { defineConfig, fontProviders } from 'astro/config'
 import react from '@astrojs/react'
 

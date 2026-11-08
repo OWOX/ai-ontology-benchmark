@@ -1,11 +1,12 @@
 ---
+// Spec: docs/specs/site.md
 import Layout from '../layouts/Layout.astro'
 import '../styles/cube-stage.css'
 import BenchmarkView from '../components/islands/benchmark/BenchmarkView'
 import { loadSiteData } from '../lib/site-data'
 import { metricsByModel } from '../lib/benchmark'
 
-const { page, definitions, experiments } = loadSiteData()
+const { page, definitions, experiments, legalMoves } = loadSiteData()
 const metrics = metricsByModel(experiments)
 const REPO = 'https://github.com/OWOX/ai-ontology-benchmark'
 // BASE_URL may or may not end in a slash, depending on the Astro version and trailingSlash setting.
@@ -13,9 +14,9 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
 ---
 
 <Layout title={page.title} description={page.description}>
-  <h1>AI Ontology Benchmark</h1>
+  <h1>{page.title}</h1>
   <div class="prose"><p>{page.intro} <a href={`${REPO}#readme`}>About the project</a>.</p></div>
-  <BenchmarkView client:only="react" metrics={metrics} attemptsUrl={attemptsUrl} definitions={definitions} />
+  <BenchmarkView client:only="react" metrics={metrics} attemptsUrl={attemptsUrl} legalMoves={legalMoves} definitions={definitions} />
 </Layout>
 
 <style>

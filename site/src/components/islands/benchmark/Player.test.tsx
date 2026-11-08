@@ -10,11 +10,12 @@ const attempt = (o: Partial<ReplayAttempt>): ReplayAttempt => ({
   state: g.applyMoves(g.SOLVED, ['R', 'U']), moves: ["U'", "R'"], outcome: 'success', mismatch: false, ...o,
 })
 
+const LEGAL = { '3x3': ['U', 'R', 'F', 'D', 'L', 'B'].flatMap((f) => [f, `${f}'`, `${f}2`]) }
 const stub = (data: Record<string, ReplayAttempt[]>) => vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => data })))
 const SOURCE = 'https://github.com/OWOX/ai-ontology-benchmark'
 /** Renders the player and lets its first load (on mount) settle. */
 const mount = async () => {
-  const r = render(<Player puzzle="3x3" models={['m1']} attemptsUrl="/a.json" />)
+  const r = render(<Player puzzle="3x3" models={['m1']} attemptsUrl="/a.json" legalMoves={LEGAL} />)
   await act(async () => {})
   return r
 }
@@ -153,7 +154,7 @@ describe('Player', () => {
 
   it('shows only Run while nothing is loaded', () => {
     stub({ '3x3': [] })
-    render(<Player puzzle="3x3" models={['m1']} attemptsUrl="/a.json" />)
+    render(<Player puzzle="3x3" models={['m1']} attemptsUrl="/a.json" legalMoves={LEGAL} />)
     expect(document.querySelector('.facts')).toBeNull()
     expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
   })

@@ -1,10 +1,12 @@
-// Reads site/.data/site.json, which `python -m src.site.export` writes (see docs/specs/site-export.md).
+// Spec: docs/specs/site.md
+// Reads site/.data/site.json, which `python -m src.site.export` writes.
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { BenchmarkExperiment } from './types'
 
 export interface SiteData {
   page: { title: string; description: string; intro: string }
+  legalMoves: Record<string, string[]>
   definitions: { key: string; name: string; definition: string }[]
   experiments: BenchmarkExperiment[]
 }

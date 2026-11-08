@@ -6,6 +6,7 @@ import sys
 
 import pytest
 
+from src.puzzles.registry import get_engine
 from src.site import export as site
 from ui.gitdata import GitData
 
@@ -95,6 +96,7 @@ def test_attempts_sorted_and_filtered(repo):
     assert a["models"] == [{"name": "m1", "provider": "openai", "kind": "system-2"},
                            {"name": "m2", "provider": "unknown", "kind": "unknown"}]
     assert data["page"] == {"title": "T", "description": "D", "intro": "I"}
+    assert data["legalMoves"] == {"2x2": list(get_engine("2x2").legal_moves())}
 
 
 def test_missing_branch_is_checked_error(repo, tmp_path):
@@ -122,3 +124,10 @@ def test_branch_without_kept_records_is_checked_error(repo, tmp_path):
                            "--no-fetch", "--out", str(tmp_path / "o.json")], capture_output=True, text=True, cwd=ROOT)
     assert done.returncode == 1
     assert "a-exp" in done.stderr
+
+
+def test_duplicate_experiment_id_is_checked_error(repo):
+    (repo / "config" / "site.toml").write_text(SITE_TOML.replace('["b-exp", "a-exp"]', '["a-exp", "b-exp", "a-exp"]'))
+    commit(repo, "duplicate id")
+    with pytest.raises(site.ExportError, match="duplicate experiment id a-exp"):
+        site.export(GitData(repo), "main", "origin")

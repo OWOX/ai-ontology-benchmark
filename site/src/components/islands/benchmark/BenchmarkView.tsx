@@ -26,6 +26,8 @@ interface Props {
   /** One row per (puzzle, model), from metricsByModel. Each row also carries the model's provider. */
   metrics: ModelMetrics[]
   attemptsUrl: string
+  /** Each puzzle's move group, from the engine's legal_moves() via the export. */
+  legalMoves?: Readonly<Record<string, readonly string[]>>
   /** The study's definitions of the metrics (imported into Payload); a tab only gets its "?" when its metric has one. */
   definitions?: readonly MetricDefinition[]
 }
@@ -72,7 +74,7 @@ function restore(hash: string, metrics: ModelMetrics[]): FilterState {
   return { puzzle, providerOn, modelOff, metric }
 }
 
-export default function BenchmarkView({ metrics, attemptsUrl, definitions = [] }: Props) {
+export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, definitions = [] }: Props) {
   const withData = useMemo(() => new Set(metrics.map((m) => m.puzzle)), [metrics])
   const defaultPuzzle = useMemo(() => restore('', metrics).puzzle, [metrics])
   const [init] = useState(() => restore(typeof location === 'undefined' ? '' : location.hash, metrics))
@@ -309,7 +311,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, definitions = [] }
               )}
             </div>
           </div>
-          <Player key={`${puzzle}|${names.join('\u0000')}`} puzzle={puzzle} models={names} attemptsUrl={attemptsUrl} />
+          <Player key={`${puzzle}|${names.join('\u0000')}`} puzzle={puzzle} models={names} attemptsUrl={attemptsUrl} legalMoves={legalMoves} />
         </>
       )}
     </div>

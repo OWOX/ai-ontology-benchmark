@@ -12,6 +12,7 @@ import sys
 import tomllib
 from pathlib import Path
 
+from src.puzzles.registry import get_engine
 from ui.gitdata import FETCH_TIMEOUT_S, GitData
 
 METRIC_NAMES = {
@@ -140,6 +141,9 @@ def export(gd: GitData, ref: str, remote: str) -> tuple[dict, int]:
     for field in ("title", "description", "intro", "experiments"):
         if field not in config:
             raise ExportError(f"config/site.toml: missing field {field}")
+    duplicates = sorted({i for i in config["experiments"] if config["experiments"].count(i) > 1})
+    if duplicates:
+        raise ExportError(f"config/site.toml, experiments: duplicate experiment id {duplicates[0]}")
     cache: dict = {}
     experiments, skipped = [], 0
     for experiment_id in sorted(config["experiments"]):
@@ -153,7 +157,9 @@ def export(gd: GitData, ref: str, remote: str) -> tuple[dict, int]:
     for name in missing:
         print(f"warning: docs/definitions.md has no metric named {name}", file=sys.stderr)
     page = {k: config[k] for k in ("title", "description", "intro")}
-    return {"page": page, "definitions": definitions, "experiments": experiments}, skipped
+    puzzles = sorted({a["puzzle"] for e in experiments for a in e["attempts"]})
+    legal_moves = {name: list(get_engine(name).legal_moves()) for name in puzzles}
+    return {"page": page, "legalMoves": legal_moves, "definitions": definitions, "experiments": experiments}, skipped
 
 
 def main() -> int:

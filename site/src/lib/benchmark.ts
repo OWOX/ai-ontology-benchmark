@@ -67,14 +67,6 @@ export function metricsByModel(experiments: readonly BenchmarkExperiment[]): Mod
 /** '3x3' -> 3 */
 export const puzzleSize = (puzzle: string): number => Number.parseInt(puzzle, 10)
 
-/** Legal moves of an n x n cube: U R F D L B, plus the wide Uw .. Bw from n = 4. */
-export function legalMoves(n: number): string[] {
-  const faces = ['U', 'R', 'F', 'D', 'L', 'B']
-  const turned = n >= 4 ? [...faces, ...faces.map((f) => `${f}w`)] : faces
-  return turned.flatMap((f) => [f, `${f}'`, `${f}2`])
-}
-export const LEGAL_MOVES = legalMoves
-
 export function resultSign(a: Pick<BenchmarkAttempt, 'outcome' | 'validity' | 'mismatch'>): ResultSign {
   if (a.outcome === 'success' && a.validity === 'valid') return 'solved'
   if (a.mismatch) return 'mismatch'
@@ -82,9 +74,9 @@ export function resultSign(a: Pick<BenchmarkAttempt, 'outcome' | 'validity' | 'm
   return 'unsolved'
 }
 
-/** Moves up to the first illegal one; `stoppedAt` is that move's index, or null when all are legal. */
-export function playable(a: Pick<BenchmarkAttempt, 'puzzle' | 'moves'>): { moves: string[]; stoppedAt: number | null } {
-  const legal = new Set(legalMoves(puzzleSize(a.puzzle)))
+/** Moves up to the first illegal one; `stoppedAt` is that move's index, or null when all are legal. `legalMoves` is the puzzle's move group, from the engine's legal_moves() via the export. */
+export function playable(a: Pick<BenchmarkAttempt, 'moves'>, legalMoves: readonly string[]): { moves: string[]; stoppedAt: number | null } {
+  const legal = new Set(legalMoves)
   const stop = a.moves.findIndex((m) => !legal.has(m))
   return stop === -1 ? { moves: a.moves, stoppedAt: null } : { moves: a.moves.slice(0, stop), stoppedAt: stop }
 }
