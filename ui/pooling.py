@@ -12,8 +12,9 @@ from src.evaluate.metrics import NA, summary_sort_key, sorted_keys
 
 Z = 1.96  # 95% confidence, used by `wilson`
 
-RATES = ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
-         "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate")
+RATES = ("precision", "coverage", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
+         "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate",
+         "reason_hallucination_rate", "diagnosis_rate")
 
 
 def wilson(hits: int, n: int) -> tuple:
@@ -60,8 +61,9 @@ def total(rows: list[dict], column: str) -> int:
 
 
 def pooled_summary(csv_rows: list[dict], order: list[str], attempts: list[dict]) -> list[dict]:
-    """One row per AI model, setup, and validity label, as `compute` gives them. Cost comes from the
-    attempt rows (raw records), since the CSV holds only per-group cost per success."""
+    """One row per AI model, setup, and validity label, as `compute` gives them. Cost per attempt comes from the
+    attempt rows (raw records), since the CSV holds it only per puzzle and depth. A rate whose columns an old
+    CSV lacks pools to n/a."""
     costs: dict = defaultdict(float)
     for a in attempts:
         costs[(a["model"], a["setup"], a["validity"])] += a["cost"]
@@ -75,7 +77,6 @@ def pooled_summary(csv_rows: list[dict], order: list[str], attempts: list[dict])
         item["attempts"] = total(rows, "attempts")
         item["infrastructure_failure_count"] = total(rows, "infrastructure_failure_count")
         item.update(pooled_rates(rows))
-        successes = hits_and_n(rows, "success_rate")[0]
-        item["cost_per_success"] = costs[key] / successes if successes else NA
+        item["cost_per_attempt"] = costs[key] / item["attempts"] if item["attempts"] else NA
         out.append(item)
     return out

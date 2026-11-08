@@ -5,7 +5,7 @@
   const h = UI.el;
   const NOTE = "* computed from the raw records by the UI for display. No report is committed for this experiment, so these are not official numbers.";
   const SUMMARY_NOTE = "* pooled from the report's rows. The interval is a Wilson score interval over attempts, for display only, not the report's bootstrap interval over inputs.";
-  const RATES = [["success_rate", "Success"], ["hallucination_rate", "Hallucination"],
+  const RATES = [["precision", "Precision"], ["coverage", "Coverage"], ["hallucination_rate", "Hallucination"],
     ["mismatch_detection_rate", "Mismatch detection"], ["false_mismatch_rate", "False mismatch"],
     ["malformed_output_rate", "Malformed output"], ["truncated_rate", "Truncated"],
     ["abstention_rate", "Abstention"], ["format_error_rate", "Format error"]];

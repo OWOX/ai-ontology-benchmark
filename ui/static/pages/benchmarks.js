@@ -5,12 +5,12 @@
 (function () {
   const h = UI.el;
   const METRICS = [
-    ["success_rate", "Success rate"], ["hallucination_rate", "Hallucination rate"],
+    ["precision", "Precision"], ["hallucination_rate", "Hallucination rate"],
     ["mismatch_detection_rate", "Mismatch detection rate"], ["false_mismatch_rate", "False mismatch rate"],
     ["malformed_output_rate", "Malformed output rate"], ["truncated_rate", "Truncation rate"],
     ["abstention_rate", "Abstention rate"], ["format_error_rate", "Format error rate"], ["consistency", "Consistency"],
     ["latency_per_attempt_s", "Latency per attempt"], ["tokens_per_attempt", "Tokens per attempt"],
-    ["cost_per_success", "Cost per success"],
+    ["cost_efficiency", "Cost efficiency"],
   ];
   const DEFAULT_METRICS = METRICS.slice(0, 3).map((m) => m[0]);
   const LABEL = Object.fromEntries(METRICS);
@@ -26,7 +26,7 @@
   const FORMAT = {
     consistency: (v) => v.toFixed(2),
     latency_per_attempt_s: (v) => v.toFixed(1) + " s", tokens_per_attempt: (v) => Math.round(v).toLocaleString("en-GB"),
-    cost_per_success: (v) => UI.usd(v, { fixed: 2 }),
+    cost_efficiency: (v) => UI.usd(v, { fixed: 2 }),
   };
   const fmt = (metric, v) => (RATES.includes(metric) ? pct(v) : FORMAT[metric](v));
   const pval = (p) => (p < 0.001 ? "<0.001" : p.toFixed(3));

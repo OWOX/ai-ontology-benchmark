@@ -16,8 +16,8 @@ vm.runInNewContext(fs.readFileSync(file, "utf8"), { window, UI: { el, usd: loadR
 const { summary, NOTE, SUMMARY_NOTE } = window.ExpMetrics;
 
 const text = (n) => (typeof n === "string" ? n : [n.props?.text ?? "", ...n.kids.map(text)].join("|"));
-const row = { model: "m", setup: "no_model", validity: "valid", attempts: 4, success_rate: 0.5,
-  success_rate_low: 0.1, success_rate_high: 0.9, success_rate_n: 4 };
+const row = { model: "m", setup: "no_model", validity: "valid", attempts: 4, precision: 0.5,
+  precision_low: 0.1, precision_high: 0.9, precision_n: 4 };
 const detail = (source) => ({ id: "e", metrics_source: source, summary_rows: [row], metric_rows: [] });
 
 let failed = 0;

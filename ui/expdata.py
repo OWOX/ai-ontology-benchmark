@@ -59,12 +59,14 @@ def load_experiment(git: GitData, experiment_id: str, ref: str, main_ref: str) -
     base = f"results/{experiment_id}"
     exp = {"id": experiment_id, "ref": ref, "sha": git.sha(ref), "config": None, "records": {},
            "skipped": 0, "prices": {}, "report_version": None, "csv_rows": None,
-           "report_md": None, "error": None}
+           "report_md": None, "error": None, "reasons": False}
     try:
         text = git.show(ref, f"{base}/experiment.toml")
         if text is None:
             raise ValueError(f"{base}/experiment.toml: file not found")
         exp["config"] = parse_experiment_config(text, experiment_id, f"{base}/experiment.toml")
+        manifest = git.show(main_ref, f"releases/{exp['config']['release']}/manifest.json")
+        exp["reasons"] = bool(manifest and json.loads(manifest).get("mismatch_reasons"))
         saved = git.show(ref, f"{base}/prices.toml")
         exp["prices"] = tomllib.loads(saved if saved is not None
                                       else git.show(main_ref, "config/prices.toml") or "")
@@ -96,7 +98,7 @@ def model_names(exp: dict) -> list[str]:
 
 
 def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
-    """Every record re-validated. A record that cannot be scored sets `exp["error"]` and gives no rows."""
+    """Every record re-validated, offering the mismatch reasons when the release has them (`exp["reasons"]`). A record that cannot be scored sets `exp["error"]` and gives no rows."""
     if exp["error"]:
         return []
     prices = {m: NO_PRICE for m in exp["records"]} | exp["prices"]
@@ -104,7 +106,7 @@ def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
     models = exp["config"]["models"] if exp["config"] else []
     decision_models = {m["name"] for m in models if m["provider"] in DECISION_PROVIDERS}
     try:
-        return make_attempt_rows(records, inputs, prices, decision_models)
+        return make_attempt_rows(records, inputs, prices, decision_models, exp["reasons"])
     except (EvalError, KeyError) as error:
         exp["error"] = str(error.args[0]) if error.args else str(error)
         return []
