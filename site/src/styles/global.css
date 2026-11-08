@@ -140,8 +140,9 @@ footer a { color: var(--link); text-decoration: underline; text-underline-offset
 }
 
 /* Theme switcher */
-.theme-switch { display: flex; gap: 0.25rem; font-family: var(--font-body); font-size: inherit; line-height: 1.2; }
-.theme-switch button { font: inherit; background: none; border: 0; padding: 0.2rem 0.4rem; color: var(--muted); cursor: pointer; }
-.theme-switch button[aria-checked='true'] { color: var(--text); text-decoration: underline; text-underline-offset: 0.25em; }
+.theme-switch { display: flex; gap: 0.25rem; margin-right: calc(-0.3rem - 1px); }
+.theme-switch button { display: inline-flex; align-items: center; justify-content: center; background: none; border: 1px solid transparent; border-radius: 4px; padding: 0.3rem; color: var(--muted); cursor: pointer; }
+.theme-switch svg { width: 1.1rem; height: 1.1rem; display: block; }
+.theme-switch button[aria-checked='true'] { color: var(--text); border-color: var(--text); }
 .theme-switch button:hover { color: var(--text); }
 .theme-switch button:focus-visible { outline: 2px dashed var(--text); outline-offset: 2px; }
