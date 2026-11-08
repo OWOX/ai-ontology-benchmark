@@ -24,13 +24,15 @@ class DecisionResult:
 
 
 def run_decision_attempt(model: dict, prompt: str, legal: list[str], questions: dict,
-                         cap: int, retry_cap: int, can_afford, label: str) -> DecisionResult:
+                         cap: int, retry_cap: int, can_afford, label: str,
+                         reasons: list[str] | None = None) -> DecisionResult:
     """Run the loop for one attempt. `questions` is the object from load_questions(), read once
     per run. `can_afford(paid_in, paid_out)` gets every token the attempt has paid so far, retried
     and completed calls together, and raises BudgetError before a call that would pass a budget:
     raised before the first call, returned in budget_stop after. Each infrastructure error is written to
-    stderr under `label`, with the number of the request in the attempt."""
-    asked = decision_questions(questions, legal)
+    stderr under `label`, with the number of the request in the attempt. `reasons` are the offered
+    mismatch reasons (see offered_reasons), or None for a release without them."""
+    asked = decision_questions(questions, legal, reasons)
     calls: list[dict] = []
     moves: list[str] = []
     tokens_in = tokens_out = retry_in = retry_out = retries = requests = 0
@@ -67,7 +69,7 @@ def run_decision_attempt(model: dict, prompt: str, legal: list[str], questions: 
         latency += reply.latency_s
         if reply.served_model and reply.served_model not in served:
             served.append(reply.served_model)
-        read = read_decision_call(reply.call, legal)
+        read = read_decision_call(reply.call, legal, reasons)
         if read is None:
             break  # a call the validator rejects ends the attempt; it rules malformed_output
         if read == "done" or read.startswith("MISMATCH"):

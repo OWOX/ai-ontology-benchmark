@@ -13,6 +13,7 @@ from src.puzzles.registry import get_engine
 from src.run.models import DECISION_PROVIDERS
 from src.run.prompts import decision_questions, decision_state, load_questions
 from src.run.raw import read_raw
+from src.validator import offered_reasons
 
 TOLERANCE = 1e-9  # keeps float rounding from stopping a run that sits exactly on a limit
 
@@ -34,10 +35,13 @@ def worst_state(prompt: str, legal: list[str], cap: int) -> str:
     return decision_state(prompt, [max(legal, key=len)] * cap)
 
 
-def worst_request(prompt: str, legal: list[str], cap: int, questions: dict) -> str:
+def worst_request(prompt: str, legal: list[str], cap: int, questions: dict,
+                  reasons: list[str] | None = None) -> str:
     """The text of the longest request a decision attempt can send: its longest state, then the
-    questions object as sent. Budget checks count its characters."""
-    return worst_state(prompt, legal, cap) + json.dumps(decision_questions(questions, legal), sort_keys=True)
+    questions object as sent, with the release's mismatch reasons when it has them. Budget checks
+    count its characters."""
+    return worst_state(prompt, legal, cap) + json.dumps(decision_questions(questions, legal, reasons),
+                                                        sort_keys=True)
 
 
 def worst_case_request_cost(prompt: str, max_output_tokens: int, price: dict) -> float:
@@ -88,9 +92,9 @@ def check_spend(config: dict, model_name: str, next_cost: float, attempts_left: 
 
 
 def print_estimate(config: dict, pending: list, prices: dict, templates: Path, raw_dir: Path,
-                   cap: int, prompts: dict) -> None:
-    """A decision model's attempt makes up to cap calls, each as long as the longest state plus
-    the questions object."""
+                   caps: dict[str, int], prompts: dict, with_reasons: bool = False) -> None:
+    """A decision model's attempt makes up to its puzzle's cap (`caps`) of calls, each as long as
+    the longest state plus the questions object. `with_reasons` says the release offers mismatch reasons."""
     questions = load_questions(templates) if any(
         m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending) else None
     spent = spent_by_model(config, prices, raw_dir)
@@ -99,16 +103,19 @@ def print_estimate(config: dict, pending: list, prices: dict, templates: Path, r
     for model in config["models"]:
         name = model["name"]
         is_decision = model["provider"] in DECISION_PROVIDERS
-        calls = cap if is_decision else 1
+        calls = 0
         requests = []
         for row, m, setup, _ in pending:
             if m["name"] == name:
                 prompt = prompts[row["input_id"], setup]
+                cap = caps[row["puzzle"]] if is_decision else 1
                 if is_decision:
-                    prompt = worst_request(prompt, get_engine(row["puzzle"]).legal_moves(), cap, questions)
-                requests.append(prompt)
-        cost = calls * sum(worst_case_request_cost(p, config["max_output_tokens"], prices[name]) for p in requests)
-        tokens_in = calls * sum(math.ceil(len(p) / 4) for p in requests)
+                    engine = get_engine(row["puzzle"])
+                    reasons = offered_reasons(engine) if with_reasons else None
+                    prompt = worst_request(prompt, engine.legal_moves(), cap, questions, reasons)
+                requests.append((cap, prompt))
+        cost = sum(c * worst_case_request_cost(p, config["max_output_tokens"], prices[name]) for c, p in requests)
+        tokens_in = sum(c * math.ceil(len(p) / 4) for c, p in requests)
         total += cost
         print(f"{name}: {len(requests)} attempts, ~{tokens_in} input tokens, worst case ${cost:.4f}; "
               f"spent ${spent[name]:.4f} of per_model_usd {budget['per_model_usd']}")
