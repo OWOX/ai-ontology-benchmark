@@ -248,8 +248,38 @@ def test_max_moves_default_and_override():
     from src.config import max_moves
 
     release = {"scramble_depths": [3, 7, 5]}
-    assert max_moves({}, release) == 14
-    assert max_moves({"max_moves": 9}, release) == 9
+    assert max_moves({}, release, "2x2") == 14
+    assert max_moves({"max_moves": 9}, release, "2x2") == 9
+    table = {"scramble_depths": {"2x2": [3, 7], "4x4": [10, 40]}}
+    assert max_moves({}, table, "2x2") == 14
+    assert max_moves({}, table, "4x4") == 80
+
+
+TABLE = RELEASE.replace('puzzles = ["2x2"]', 'puzzles = ["2x2", "4x4"]').replace(
+    "scramble_depths = [5]\n", "").replace("valid_invalid_split = 0.5\n", "valid_invalid_split = 0.5\n")
+
+
+def table_release(body):
+    return TABLE + "[scramble_depths]\n" + body
+
+
+def test_depths_for_reads_both_forms(tmp_path):
+    from src.config import depths_for
+    assert depths_for(load_release_config(write(tmp_path, RELEASE)), "2x2") == [5]
+    config = load_release_config(write(tmp_path, table_release("2x2 = [5]\n4x4 = [10, 40]\n")))
+    assert depths_for(config, "4x4") == [10, 40]
+
+
+@pytest.mark.parametrize("body", [
+    "2x2 = [5]\n",  # 4x4 missing
+    "2x2 = [5]\n4x4 = [10]\n3x3 = [5]\n",  # 3x3 not in puzzles
+    "2x2 = [5]\n4x4 = []\n",
+    "2x2 = [5]\n4x4 = [0]\n",
+    '2x2 = [5]\n4x4 = ["a"]\n',
+])
+def test_depth_table_errors(tmp_path, body):
+    with pytest.raises(ValueError, match="scramble_depths"):
+        load_release_config(write(tmp_path, table_release(body)))
 
 
 def experiment_with_max_moves(literal):

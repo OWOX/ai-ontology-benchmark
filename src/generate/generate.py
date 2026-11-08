@@ -6,6 +6,7 @@ loads config/release.toml) and writes nothing; it returns the text of inputs.jso
 import hashlib
 import json
 
+from src.config import depths_for
 from src.puzzles.registry import get_engine
 
 
@@ -23,7 +24,7 @@ def build_inputs(release_config: dict, input_set_id: str) -> str:
     lines = []
     for puzzle in release_config["puzzles"]:
         engine = get_engine(puzzle)
-        for depth in release_config["scramble_depths"]:
+        for depth in depths_for(release_config, puzzle):
             for n in range(1, count + 1):
                 input_id = f"{puzzle}-d{depth}-{n:03d}"
                 valid = {
