@@ -37,7 +37,7 @@ Provider `openrouter` sends any AI model that OpenRouter serves through its Open
 2. It uses the `openai` SDK with `base_url="https://openrouter.ai/api/v1"`, built-in retries off, and the same timeout as `openai`. The key is read from `OPENROUTER_API_KEY`, which the [UI](ui.md#inputs) fills from `secrets/openrouter.json` like any other key.
 3. The request has the same shape as for `openai`, except that the token limit is `max_tokens` and the body fields go through `extra_body`: `reasoning={"effort": effort}` for a system-2 model with a reasoning effort, then `params` unchanged. So OpenRouter's own fields, such as `provider` for routing preferences, can be set in `params`.
 4. A reply maps as for `openai`. `finish_reason` `length` is `truncated` and `content_filter` is `refused`. HTTP 403 is `refused` only when its error body carries moderation metadata (`metadata.reasons` or `metadata.flagged_input`). Any other 403, such as a key over its credit limit, raises `RequestError`. A `finish_reason` of `error`, which means the upstream provider failed mid-answer, and a reply with no or empty `choices` raise `InfrastructureError` carrying the reported token counts. HTTP 402 for spent credits raises `RequestError`.
-5. `served_model` is the response's `model` as returned. Token counts are `usage.prompt_tokens` and `usage.completion_tokens`, which include reasoning tokens, or 0 when the reply has no `usage`.
+5. `served_model` is the response's `model` as returned, or `""` when the reply has none or is a moderation refusal, which has no response. Token counts are `usage.prompt_tokens` and `usage.completion_tokens`, which include reasoning tokens, or 0 when the reply has no `usage`.
 
 ## Decision models
 
