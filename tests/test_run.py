@@ -416,6 +416,26 @@ def test_estimate_dict_takes_spent_and_no_raw_dir():
     assert got["per_request_usd"] == 2.0
 
 
+def test_estimate_of_a_decision_model_counts_one_call_as_the_largest_request():
+    cap, max_output = 5, 100
+    config = {"max_output_tokens": max_output,
+              "budget": {"per_model_usd": 5.0, "per_experiment_usd": 9.0, "per_request_usd": 2.0},
+              "models": [{"name": "D", "provider": "fake_decision"}]}
+    prices = {"D": {"price_input_per_mtok": 1.0, "price_output_per_mtok": 2.0}}
+    d = config["models"][0]
+    pending = [({"input_id": "i1", "puzzle": "2x2"}, d, "no_model", 1)]
+    prompt = "x" * 400
+    questions = load_questions(budget_module.Path(__file__).resolve().parent.parent / "prompts")
+    got = budget_module.estimate(config, pending, prices, questions, None, {"2x2": cap}, {("i1", "no_model"): prompt},
+                                 spent={})
+    one_call = budget_module.worst_case_request_cost(
+        worst_request(prompt, get_engine("2x2").legal_moves(), cap, questions), max_output, prices["D"])
+    (model,) = got["models"]
+    assert model["max_request_usd"] == pytest.approx(one_call)
+    assert model["worst_case_usd"] == pytest.approx(cap * model["max_request_usd"])
+    assert model["spent_usd"] == 0.0 and got["total"]["spent_usd"] == 0.0
+
+
 def test_budget_checked_before_each_retry(exp, capsys):
     # Each failed call carries 100 output tokens (0.01 USD). Room for one request only.
     with_budget(exp, per_model_usd=0.015)

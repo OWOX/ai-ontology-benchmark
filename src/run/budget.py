@@ -120,12 +120,12 @@ def estimate(config: dict, pending: list, prices: dict, questions: dict | None, 
             "name": name, "attempts": len(requests),
             "input_tokens": sum(c * math.ceil(len(p) / 4) for c, p in requests),
             "worst_case_usd": sum(c * u for (c, _), u in zip(requests, unit)),
-            "spent_usd": spent[name], "per_model_usd": budget["per_model_usd"],
+            "spent_usd": spent.get(name, 0.0), "per_model_usd": budget["per_model_usd"],
             "max_request_usd": max(unit, default=0.0)})
     return {"models": models,
             "total": {"attempts": len(pending),
                       "worst_case_usd": sum(m["worst_case_usd"] for m in models),
-                      "spent_usd": sum(spent[m["name"]] for m in models),
+                      "spent_usd": sum(spent.get(m["name"], 0.0) for m in models),
                       "per_experiment_usd": budget["per_experiment_usd"]},
             "per_request_usd": budget["per_request_usd"]}
 
