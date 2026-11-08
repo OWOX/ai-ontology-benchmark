@@ -52,7 +52,7 @@ Every engine implements:
 10. `mismatch_reasons()` returns the [mismatch reasons](docs/definitions.md#attempts-and-outcomes) the prompt offers, in order: the corruption types `corrupt()` can produce on any puzzle of the same shape, then the decoy reasons. It is the only list of them. The prompt and the decision options read it, and the validator matches against it exactly.
 11. `decoy_reasons()` returns the [decoy reasons](docs/definitions.md#attempts-and-outcomes) in `mismatch_reasons()`: reasons that no state of the puzzle can show.
 
-Adding a puzzle means one new engine, one registry entry, one short description in `docs/puzzles/<puzzle>.md`, and its tests. If anything else has to change, the interface is wrong. Stop and ask. Its prompt templates, release config, and docs are listed in [adding a puzzle](docs/contributing/adding-a-puzzle.md).
+Adding a puzzle means one new engine, one registry entry, one short description in `docs/puzzles/<puzzle>.md`, and its tests. If anything else has to change, the interface is wrong. Stop and ask. Beyond that code, a puzzle needs its three prompt templates, an entry in `config/release.toml`, and updates to the tests and docs that list the puzzles, all listed in [adding a puzzle](docs/contributing/adding-a-puzzle.md).
 
 ## Reuse
 

@@ -21,13 +21,16 @@ Terms are defined in [definitions.md](../definitions.md). The examples use `fto`
 | `prompts/descriptive/fto.txt` | The descriptive model prompt, which explains the puzzle's rules and notation. |
 | `prompts/prescriptive/fto.txt` | The prescriptive model prompt, which lists the move group through `{legal_moves}`. |
 
-The project owner approves the prompt text, as for the cubes.
+All three templates hold `{state}` and `{mismatch_reasons}`, and the prescriptive one also holds `{legal_moves}`. `release` refuses when only some templates hold `{mismatch_reasons}`. The project owner approves the prompt text, as for the cubes.
 
 ### Shared files
 
 | File | Why |
 |---|---|
-| `src/puzzles/registry.py` | One entry in `ENGINES`. It is the only list of puzzles in the code, and no other code under `src/` or `ui/` names a puzzle. |
+| `src/puzzles/registry.py` | One entry in `ENGINES`. It is the only list of puzzles in the code. |
+| `tests/test_registry.py` | It checks that `ENGINES` holds exactly the four cubes. |
+| `tests/test_config.py` | It checks that `config/release.toml` lists exactly the four cubes. |
+| `src/evaluate/metrics.py` and `src/evaluate/report.py` | Only if the puzzle has corruption types the cubes lack. Both read the report order of corruption types from `CUBE_CORRUPTION_TYPES` in the cube engine, so a new type sorts after the cube ones. Generalizing that list changes the assessment. |
 | `docs/specs/registry.md` | Its `ENGINES` example lists every puzzle. |
 | `docs/specs/README.md` | Add the engine spec to the spec list, and update the note that the octahedral and tetrahedral engines have no spec yet. |
 | `config/release.toml` | Add the puzzle to `puzzles` and give its `scramble_depths`. `release` reads this file only for a major bump. |
@@ -43,7 +46,7 @@ Changes to `definitions.md` and `AGENTS.md` need the project owner's approval, b
 ### Files that need no change
 
 1. The validator, `generate`, `run`, `evaluate`, and `release` reach every puzzle through the registry.
-2. The UI shows any puzzle that isn't an NxN cube as "no drawing for <puzzle>". A drawing is a separate change to the UI and its spec.
+2. The UI draws only NxN cubes. Other puzzles show their name or state as text. A drawing is a separate change to the UI and its spec.
 
 ## Steps
 
@@ -53,18 +56,26 @@ Changes to `definitions.md` and `AGENTS.md` need the project owner's approval, b
 4. Add the entry to `src/puzzles/registry.py`, and update `docs/specs/registry.md`.
 5. Write the three prompt templates and `docs/puzzles/fto.md`.
 6. Update the shared docs in the table above.
-7. Run `pytest`. `tests/test_pipeline.py` runs the whole flow and is the first test to check.
-8. Open a pull request to `main`.
-9. After the merge, cut a new major release that holds the puzzle:
+7. Run `pytest`. `tests/test_fto.py`, `tests/test_registry.py`, and the prompt tests cover the puzzle. `tests/test_pipeline.py` uses only the 2x2, so it checks that nothing else broke.
+8. Commit everything, so the working tree is clean. Then cut a new major release that holds the puzzle, as the last commit of the same branch:
    ```
    python -m src.release.release --bump major --note "Add the FTO"
    ```
-   A new puzzle means a new input set, and a new input set means a new major release ([invariant 7](../../AGENTS.md#invariants)).
+   A new puzzle means a new input set, and a new input set means a new major release ([invariant 7](../../AGENTS.md#invariants)). `release` commits the release folder and tags it `release-<version>` locally.
+9. Push the branch and the tag, and open a pull request to `main`. On the About page of the UI, "Push and open PR" does both:
+   ```
+   git push -u origin <branch>
+   git push origin release-<version>
+   ```
 
-## Timing the merge
+## Why the release goes in the same pull request
 
-`src/puzzles/*.py` are assessment files, so the new engine and the registry entry change the assessment hash. `run` and `evaluate` refuse a release whose assessment hash differs from the checkout's. After the merge, `main` can't run or score any existing release until the new major release is cut.
+`src/puzzles/*.py` are assessment files, so the new engine and the registry entry change the assessment hash. `run` and `evaluate` refuse a release whose assessment hash differs from the checkout's. After the merge, `main` can run and score only the release cut from it.
 
-1. Merge when no experiment is running from the `main` checkout.
-2. Cut the major release straight after the merge.
+1. Cutting the release in the same pull request means `main` never holds an assessment that matches no release.
+2. Merge when no experiment is running from the `main` checkout.
 3. To score an experiment under an older release later, check out that release's tag `release-<version>` first, as the [evaluate spec](../specs/evaluate.md) says.
+
+## The new input set
+
+A major release regenerates the whole input set, the cubes included. [definitions.md](../definitions.md#inputs) and [methodology.md](../methodology.md#development-and-held-out-inputs) name release 3.0.0 as the held-out input set. The project owner decides the seed of the new release and whether it extends or replaces the held-out input set, and both docs are updated to match.

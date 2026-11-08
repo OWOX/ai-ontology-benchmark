@@ -4,7 +4,7 @@ Terms are defined in [definitions.md](../definitions.md). Every option is in the
 
 ## One experiment, one branch
 
-1. An [experiment](../definitions.md#releases-and-experiments) lives on its own branch, `results/<experiment id>`. The branch holds the experiment config, its raw records, and its reports. It never holds code.
+1. An [experiment](../definitions.md#releases-and-experiments) lives on its own branch, `results/<experiment id>`. It starts from `main`, and its commits change only `results/<experiment id>/` and `config/experiments/<experiment id>.toml`, never code.
 2. An experiment runs against one release. The release's inputs and prompts are frozen, and `run` only reads them ([invariant 5](../../AGENTS.md#invariants)). Every AI model and every setup sees the same inputs.
 3. The first `run` writes the config to `results/<experiment id>/experiment.toml`, with `release = "latest"` replaced by the version it picked. From then on the experiment keeps that release, even after a newer one appears.
 4. The config can't change once the experiment starts. Only `[budget]` can be raised, so a stopped run can resume.
@@ -16,10 +16,10 @@ Terms are defined in [definitions.md](../definitions.md). Every option is in the
 1. Run `./ui/start.sh`. The first run creates `.venv` and installs the project.
 2. On the Models page, add the API key for each provider you use.
 3. Click New Experiment. Pick the puzzles and AI models, and set the parameters. The UI names the experiment id from them. Picking an existing branch loads that experiment instead.
-4. Run the estimate and check the worst-case cost against each [budget](../definitions.md#prices).
+4. Click Estimate and check the worst-case cost against each [budget](../definitions.md#prices).
 5. Click Run. The experiment page opens and shows every attempt as it is recorded.
 6. When every run job has ended, click Evaluate to write the report.
-7. Click Commit. It pushes `results/<experiment id>` and opens a pull request to `main` with the release, puzzles, AI models, and a link to the report.
+7. Click Commit and check the preview of files. Confirm pushes `results/<experiment id>` and opens a pull request to `main` with the release, puzzles, AI models, and a link to the report.
 
 ## Steps in the terminal
 
@@ -57,9 +57,15 @@ Run every command from the repo root with `.venv` active.
 
 ## After the run
 
-1. To fix the assessment, change the code on a branch and merge it, then cut a patch release and score the old experiment under it. No AI model is called again, and the old report stays:
+1. To fix the assessment, commit the fix on a branch and cut a patch release as the last commit of that branch. Push the branch and the `release-<version>` tag, and open a pull request:
    ```
    python -m src.release.release --bump patch --note "Fix: ..."
-   python -m src.evaluate.evaluate --experiment <experiment id> --release <new version>
    ```
-2. Never edit a raw record, and never rerun an attempt because its answer is wrong ([invariant 10](../../AGENTS.md#invariants)).
+2. After the merge, bring the experiment's results into the work tree, score it under the new release, and commit the report to its branch. No AI model is called again, and the old report stays:
+   ```
+   git fetch origin results/<experiment id>
+   git restore --source=origin/results/<experiment id> --worktree -- results/<experiment id>
+   python -m src.evaluate.evaluate --experiment <experiment id> --release <new version>
+   python -m src.run.run --experiment <experiment id> --limit 0
+   ```
+3. Never edit a raw record, and never rerun an attempt because its answer is wrong ([invariant 10](../../AGENTS.md#invariants)).
