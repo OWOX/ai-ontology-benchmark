@@ -17,7 +17,8 @@ from src.run.models import InfrastructureError, Reply, call_model
 
 REQUEST = httpx.Request("POST", "https://example.invalid")
 PARAMS = {"temperature": 0.5, "top_p": 0.9}
-KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "google": "GOOGLE_API_KEY"}
+KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "google": "GOOGLE_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY"}
 
 
 def entry(provider):
@@ -89,7 +90,7 @@ def install(monkeypatch, provider, result):
         else:
             final.return_value = result
         return create
-    elif provider == "openai":
+    elif provider in ("openai", "openrouter"):
         create = client.chat.completions.create
         monkeypatch.setattr(openai, "OpenAI", MagicMock(return_value=client))
     else:
@@ -106,6 +107,7 @@ RESPONSES = {
     "anthropic": (anthropic_response, "end_turn", "max_tokens", "refusal"),
     "openai": (openai_response, "stop", "length", "content_filter"),
     "google": (google_response, "STOP", "MAX_TOKENS", "SAFETY"),
+    "openrouter": (openai_response, "stop", "length", "content_filter"),
 }
 
 
@@ -118,7 +120,7 @@ def test_stop_reasons(monkeypatch, provider, which, expected):
     assert reply.stop_reason == expected
     assert reply.text == "hi"
     assert reply.served_model == {"anthropic": "claude-served", "openai": "gpt-served",
-                                  "google": "gemini-served"}[provider]
+                                  "google": "gemini-served", "openrouter": "gpt-served"}[provider]
     assert (reply.input_tokens, reply.output_tokens) == (11, 7)
     assert reply.latency_s >= 0
 
@@ -181,6 +183,61 @@ def test_request_shape_openai(monkeypatch):
     assert openai.OpenAI.call_args.kwargs["max_retries"] == 0
 
 
+def test_request_shape_openrouter(monkeypatch):
+    create = install(monkeypatch, "openrouter", openai_response())
+    call_model(entry("openrouter"), "prompt", 50)
+    create.assert_called_once_with(model="alias-1", max_tokens=50,
+                                   messages=[{"role": "user", "content": "prompt"}], extra_body=PARAMS)
+    assert openai.OpenAI.call_args.kwargs["base_url"] == "https://openrouter.ai/api/v1"
+    assert openai.OpenAI.call_args.kwargs["max_retries"] == 0
+
+
+def test_openai_client_keeps_the_default_base_url(monkeypatch):
+    install(monkeypatch, "openai", openai_response())
+    call_model(entry("openai"), "prompt", 50)
+    assert "base_url" not in openai.OpenAI.call_args.kwargs
+
+
+MODERATION = {"code": 403, "message": "flagged", "metadata": {"reasons": ["violence"], "flagged_input": "p"}}
+
+
+@pytest.mark.parametrize("body", [MODERATION, {"error": MODERATION}])
+def test_openrouter_moderation_403_is_refused(monkeypatch, body):
+    error = openai.PermissionDeniedError("flagged", response=httpx.Response(403, request=REQUEST), body=body)
+    install(monkeypatch, "openrouter", error)
+    reply = call_model(entry("openrouter"), "prompt", 50)
+    assert (reply.stop_reason, reply.text, reply.served_model) == ("refused", "", "")
+
+
+@pytest.mark.parametrize("body", [None, {"code": 403, "message": "Key limit exceeded"}])
+def test_openrouter_other_403_is_a_request_error(monkeypatch, body):
+    error = openai.PermissionDeniedError("x", response=httpx.Response(403, request=REQUEST), body=body)
+    install(monkeypatch, "openrouter", error)
+    with pytest.raises(models.RequestError, match="^openrouter: HTTP 403: "):
+        call_model(entry("openrouter"), "prompt", 50)
+
+
+@pytest.mark.parametrize("code", [401, 402, 404])
+def test_openrouter_other_status_errors_are_request_errors(monkeypatch, code):
+    install(monkeypatch, "openrouter", status_error(openai.APIStatusError, code))
+    with pytest.raises(models.RequestError, match=f"^openrouter: HTTP {code}: "):
+        call_model(entry("openrouter"), "prompt", 50)
+
+
+def test_openrouter_upstream_error_finish_is_infrastructure_with_tokens(monkeypatch):
+    install(monkeypatch, "openrouter", openai_response("error"))
+    with pytest.raises(InfrastructureError) as raised:
+        call_model(entry("openrouter"), "prompt", 50)
+    assert (raised.value.input_tokens, raised.value.output_tokens) == (11, 7)
+
+
+@pytest.mark.parametrize("response", [NS(choices=[], model="m", usage=None), NS(model="m")])
+def test_openrouter_reply_without_choices_is_infrastructure(monkeypatch, response):
+    install(monkeypatch, "openrouter", response)
+    with pytest.raises(InfrastructureError):
+        call_model(entry("openrouter"), "prompt", 50)
+
+
 def test_request_shape_google(monkeypatch):
     create = install(monkeypatch, "google", google_response())
     call_model(entry("google"), "prompt", 50)
@@ -232,7 +289,7 @@ def sdk_errors(provider):
         return [status_error(anthropic.RateLimitError, 429), status_error(anthropic.InternalServerError, 500),
                 status_error(anthropic.APIStatusError, 529), status_error(anthropic.APIStatusError, 503),
                 anthropic.APITimeoutError(request=REQUEST), anthropic.APIConnectionError(request=REQUEST)]
-    if provider == "openai":
+    if provider in ("openai", "openrouter"):
         return [status_error(openai.RateLimitError, 429), status_error(openai.InternalServerError, 500),
                 openai.APITimeoutError(request=REQUEST), openai.APIConnectionError(request=REQUEST)]
     return [errors.ClientError(429, {"error": {}}), errors.ServerError(500, {"error": {}}),
@@ -295,7 +352,7 @@ def test_blank_key_is_missing(monkeypatch, provider, value):
 
 
 @pytest.mark.parametrize("provider,module,name", [("anthropic", anthropic, "Anthropic"), ("openai", openai, "OpenAI"),
-                                                  ("google", genai, "Client")])
+                                                  ("google", genai, "Client"), ("openrouter", openai, "OpenAI")])
 def test_padded_key_is_sent_stripped(monkeypatch, provider, module, name):
     monkeypatch.setenv(KEYS[provider], "  secret\n")
     install(monkeypatch, provider, RESPONSES[provider][0]())
@@ -628,27 +685,31 @@ def test_reasoning_effort_reaches_each_providers_own_parameter(monkeypatch):
     create = install(monkeypatch, "google", google_response())
     call_model(model("google"), "p", 50, "medium")
     assert create.call_args.kwargs["config"]["thinking_config"] == {"thinking_level": "MEDIUM"}
+    create = install(monkeypatch, "openrouter", openai_response())
+    call_model(model("openrouter"), "p", 50, "medium")
+    assert create.call_args.kwargs["extra_body"]["reasoning"] == {"effort": "medium"}
 
 
-@pytest.mark.parametrize("provider", ["anthropic", "openai", "google"])
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "google", "openrouter"])
 @pytest.mark.parametrize("kind, effort", [("system-2", None), ("system-1", "high"), (None, "high")])
 def test_no_effort_is_sent_without_one_or_for_a_system_1_model(monkeypatch, provider, kind, effort):
     create = install(monkeypatch, provider, {"anthropic": anthropic_response, "openai": openai_response,
-                                             "google": google_response}[provider]())
+                                             "google": google_response, "openrouter": openai_response}[provider]())
     model = {**entry(provider), **({"kind": kind} if kind else {})}
     call_model(model, "p", 50, effort)
     sent = create.call_args.kwargs
-    sent = {**sent, **sent.get("config", {})}
-    assert not {"output_config", "reasoning_effort", "thinking_config"} & set(sent)
+    sent = {**sent, **sent.get("config", {}), **sent.get("extra_body", {})}
+    assert not {"output_config", "reasoning_effort", "thinking_config", "reasoning"} & set(sent)
 
 
 # ---- timeouts and 408/409
 
-@pytest.mark.parametrize("provider", ["anthropic", "openai"])
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "openrouter"])
 def test_client_gets_an_explicit_timeout(monkeypatch, provider):
-    install(monkeypatch, provider, {"anthropic": anthropic_response, "openai": openai_response}[provider]())
+    install(monkeypatch, provider, {"anthropic": anthropic_response, "openai": openai_response,
+                                    "openrouter": openai_response}[provider]())
     call_model(entry(provider), "prompt", 50)
-    cls = {"anthropic": anthropic.Anthropic, "openai": openai.OpenAI}[provider]
+    cls = {"anthropic": anthropic.Anthropic, "openai": openai.OpenAI, "openrouter": openai.OpenAI}[provider]
     timeout = cls.call_args.kwargs["timeout"]
     assert models.REQUEST_TIMEOUT_S == 1800
     assert (timeout.read, timeout.connect) == (1800, 30.0)
@@ -660,12 +721,13 @@ def test_google_gets_an_explicit_timeout_in_milliseconds(monkeypatch):
     assert genai.Client.call_args.kwargs["http_options"].timeout == 1_800_000
 
 
+@pytest.mark.parametrize("provider", ["openai", "openrouter"])
 @pytest.mark.parametrize("code", [408, 409])
-def test_openai_408_and_409_are_infrastructure(monkeypatch, code):
+def test_openai_408_and_409_are_infrastructure(monkeypatch, provider, code):
     error = openai.APIStatusError("x", response=httpx2.Response(code, request=httpx2.Request("POST", "https://example.invalid")), body=None)
-    install(monkeypatch, "openai", error)
+    install(monkeypatch, provider, error)
     with pytest.raises(InfrastructureError):
-        call_model(entry("openai"), "prompt", 50)
+        call_model(entry(provider), "prompt", 50)
 
 
 def test_openai_other_status_errors_are_request_errors(monkeypatch):
@@ -673,3 +735,14 @@ def test_openai_other_status_errors_are_request_errors(monkeypatch):
     install(monkeypatch, "openai", error)
     with pytest.raises(models.RequestError, match="^openai: HTTP 401: x$"):
         call_model(entry("openai"), "prompt", 50)
+
+
+def test_openrouter_key_variable():
+    assert models.KEY_VARIABLES["openrouter"] == "OPENROUTER_API_KEY"
+
+
+def test_openrouter_reply_without_a_model_has_no_served_model(monkeypatch):
+    response = openai_response()
+    response.model = None
+    install(monkeypatch, "openrouter", response)
+    assert call_model(entry("openrouter"), "prompt", 50).served_model == ""

@@ -99,7 +99,7 @@
   // One column per provider. The header's checkbox selects or clears every enabled model of the provider.
   function modelList(bundle, onChange) {
     const rel = bundle.release ? "?release=" + encodeURIComponent(bundle.release) : "";
-    return h("div", { class: "model-cols" }, ...bundle.providers.map((p) => {
+    return h("div", { class: "model-cols" }, ...bundle.providers.filter((p) => p.models.length).map((p) => {
       const enabled = p.models.filter((m) => !m.disabled_reason).map((m) => m.name);
       const all = h("input", { type: "checkbox", "aria-label": `All ${p.name} models` });
       all.disabled = !enabled.length;

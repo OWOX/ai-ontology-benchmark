@@ -244,6 +244,13 @@ def test_decision_providers_are_known():
     assert {"typesafe", "cloudflare", "fake_decision"} <= set(PROVIDERS)
 
 
+def test_openrouter_is_a_known_provider():
+    from src.config import FORBIDDEN_PARAMS, PROVIDERS
+
+    assert "openrouter" in PROVIDERS
+    assert "reasoning" in FORBIDDEN_PARAMS
+
+
 def test_max_moves_default_and_override():
     from src.config import max_moves
 
