@@ -193,6 +193,7 @@ class Bundles(BranchReaders):
         definitions = link("docs/definitions.md")
         return {"schema": 3, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
                 "repo": base, "main_sha": main_sha, "defaults": DEFAULTS,
+                "scramble_count": manifest["release_config"].get("scramble_count") if manifest else None,
                 "providers": build_providers(catalogue, self._prices(), experiments), "puzzles": puzzles, "experiments": rows,
                 "about": {"markdown": self.git.show(main, "README.md"), "source": link("README.md")},
                 "metric_definitions": {"terms": metric_definitions(self.git.show(main, "docs/definitions.md")),
