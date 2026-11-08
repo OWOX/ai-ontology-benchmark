@@ -69,6 +69,7 @@ config/
   templates/       one experiment config per provider to copy, see docs/getting-started.md
   prices.toml      token prices per AI model
   models.toml      model catalogue for the UI
+  site.toml        experiments and copy for the results page
 src/
   config.py        loads and checks the config files
   validator.py     turns a raw response into moves, flags, and an outcome
@@ -78,6 +79,7 @@ src/
   run/             plays a release against each AI model under the three setups
   evaluate/        computes the metrics and writes the experiment report
 ui/                local web page to browse, run, and commit experiments (ui/start.sh)
+site/              static results page for GitHub Pages, built from git by src/site/export.py
 prompts/           working templates: no_model, descriptive, prescriptive
 releases/          one read-only folder per release version
 results/           one folder per experiment: raw records and one report per release

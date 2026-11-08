@@ -35,7 +35,7 @@ It prints one line: experiments, attempts, skipped.
 
 ## Build and publish
 
-After the export, `npm ci && npm run build` in `site/` builds the static page. Publishing is manual: export, build, then push the built files to GitHub Pages.
+After the export, `npm ci && npm run build` in `site/` builds the static page. Publishing is the manual `workflow_dispatch` workflow `.github/workflows/pages.yml`, which fetches `main` and `results/*`, runs the export with `--ref origin/main`, builds, and deploys `site/dist` to GitHub Pages. It has no other trigger while the repo is private.
 
 ## Test
 
