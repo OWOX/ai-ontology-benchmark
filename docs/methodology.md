@@ -8,7 +8,7 @@ Does giving an AI model the rules of a puzzle change how often its answers are r
 
 Twisty puzzles fit this well. Every move is defined, AI models already know the notation, and the input is unambiguous. A wrong answer can be measured instead of argued about.
 
-Puzzles: 2x2, 3x3, 4x4, and 5x5 cubes, an octahedral puzzle, and a tetrahedral puzzle. More can be added later.
+Puzzles: 2x2, 3x3, 4x4, and 5x5 cubes. An octahedral puzzle and a tetrahedral puzzle will be added later, and more can follow.
 
 ## The variable
 

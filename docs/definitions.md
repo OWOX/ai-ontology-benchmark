@@ -5,8 +5,8 @@ Every term below means the same thing in code, configs, records, reports, and do
 ## Puzzles
 
 1. **Twisty puzzle.** A puzzle whose parts turn around fixed axes, so that each turn moves pieces to new positions.
-2. **Puzzle.** A twisty puzzle covered by the study, implemented as one engine. The current puzzles are the 2x2, 3x3, 4x4, and 5x5 cubes, an octahedral puzzle, and a tetrahedral puzzle. The exact octahedral and tetrahedral puzzles are still [open](../AGENTS.md#open).
-3. **Shape.** The solid a puzzle is built on. The cubes are cubes, the octahedral puzzle is an octahedron with 8 faces, and the tetrahedral puzzle is a tetrahedron with 4 faces. The shape fixes the number of faces and colours.
+2. **Puzzle.** A twisty puzzle covered by the study, implemented as one engine. The current puzzles are the 2x2, 3x3, 4x4, and 5x5 cubes. An octahedral puzzle and a tetrahedral puzzle will be added later. Which exact puzzles they are is still [open](../AGENTS.md#open).
+3. **Shape.** The solid a puzzle is built on. The cubes are cubes. The octahedral puzzle, once added, is an octahedron with 8 faces, and the tetrahedral puzzle a tetrahedron with 4 faces. The shape fixes the number of faces and colours.
 4. **Cube.** A puzzle with the shape of a cube and six coloured faces. An NxN cube has N layers along each axis: 2x2, 3x3, 4x4, or 5x5.
 5. **Engine.** The code for one puzzle. It implements the [puzzle engine interface](../AGENTS.md#puzzle-engine-interface) and is the only place that knows the puzzle's rules.
 6. **Registry.** The list that maps each puzzle name to its engine. Adding a puzzle adds one entry.
