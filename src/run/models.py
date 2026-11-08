@@ -196,7 +196,8 @@ def _chat(provider: str, client, request: dict) -> Reply:
         tokens = (response.usage.prompt_tokens, response.usage.completion_tokens)
     choice = response.choices[0]
     stop_reason = {"length": "truncated", "content_filter": "refused"}.get(choice.finish_reason, "ok")
-    return Reply(choice.message.content or "", stop_reason, response.model, *tokens, latency)
+    served = (getattr(response, "model", None) or "") if provider == "openrouter" else response.model
+    return Reply(choice.message.content or "", stop_reason, served, *tokens, latency)
 
 
 def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
