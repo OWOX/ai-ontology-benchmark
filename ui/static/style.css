@@ -391,3 +391,10 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .spend { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
 .spend-fill { height: 100%; background: var(--bar, #4a7); }
 .spend-fill.over { background: var(--danger); }
+
+.estimate-hint { margin: 0; }
+.estimate-preview .shimmer { display: inline-block; width: 56px; height: 10px; border-radius: 3px; vertical-align: middle; background: linear-gradient(90deg, var(--line) 25%, var(--field) 50%, var(--line) 75%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .estimate-preview .shimmer { animation: none; background: var(--line); }
+}

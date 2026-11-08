@@ -40,6 +40,23 @@
     return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
   }
 
+  // A dollar amount in whole dollars, for the estimate table: "$1,178", "<$1" for a value above 0 and below $0.50
+  // so a real cost never reads as $0, and "n/a" for anything that is not a number.
+  function usdWhole(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
+    if (value <= 0) return "$0";
+    if (value < 0.5) return "<$1";
+    return "$" + Math.round(value).toLocaleString("en-GB");
+  }
+
+  // The hint the Estimation block shows when no estimate can be made, or "" when one can.
+  function estimateHint(puzzles, models) {
+    if (!puzzles && !models) return "Select at least one puzzle and one AI model to see the estimate.";
+    if (!models) return "Select at least one AI model to see the estimate.";
+    if (!puzzles) return "Select at least one puzzle to see the estimate.";
+    return "";
+  }
+
   const UI = window.UI = {
     el,
     token: meta ? meta.content : "",
@@ -80,19 +97,18 @@
     mdBase(url) { return url ? url.replace(/[^/]*$/, "") : ""; },
     // A dollar amount. With `fixed`, a number to that many places by toFixed and `na` (default "n/a") for anything else.
     // Otherwise the value is formatted for `locale` (default "en-GB"; "browser" for the browser's own) with
-    // `minDecimals` to `maxDecimals` places (default 2 to 2), `maxBelowOne` places between 0 and 1, and with
-    // `verbatim` set, inf, nan, and amounts too small for `maxBelowOne` places are printed as given.
+    // `minDecimals` to `maxDecimals` places (default 2 to 2).
     usd(value, o = {}) {
       if (o.fixed !== undefined) return typeof value === "number" ? "$" + value.toFixed(o.fixed) : (o.na === undefined ? "n/a" : o.na);
       const min = o.minDecimals === undefined ? 2 : o.minDecimals;  // a maximum below the minimum would make toLocaleString throw
       const n = Number(value), max = Math.max(min, o.maxDecimals === undefined ? 2 : o.maxDecimals);
-      const below = Math.max(min, o.maxBelowOne === undefined ? max : o.maxBelowOne);
-      if (o.verbatim && (!Number.isFinite(n) || (n > 0 && n < 0.5 * 10 ** -below))) return "$" + value;
       return "$" + n.toLocaleString(o.locale === "browser" ? undefined : o.locale === undefined ? "en-GB" : o.locale,
-        { minimumFractionDigits: min, maximumFractionDigits: n > 0 && n < 1 ? below : max });
+        { minimumFractionDigits: min, maximumFractionDigits: max });
     },
     // The validity filter's options as [value, text] pairs. `all` is the value of "all inputs" ("all" or "").
     fmtTime,
+    usdWhole,
+    estimateHint,
     validityOptions(all) { return [[all, "all inputs"], ["valid", "valid only"], ["invalid", "invalid only"]]; },
     // A labelled <select> over [value, text] options; onChange gets the chosen value.
     dropdown(name, value, options, onChange) {
