@@ -135,7 +135,8 @@
       return a;
     },
     // Re-request the bundle for the current release and render again.
-    reload(refresh) { return load(st.params ? st.params.release : "", refresh); },
+    // A reload during ↻ stays a refresh, so it doesn't drop the fetch and the redraw ↻ asked for.
+    reload(refresh) { return load(st.params ? st.params.release : "", refresh || st.refreshing); },
     // Both return a function that removes the listener.
     onJobs(fn) { return listen(st.listeners, fn); },
     onLines(fn) { return listen(st.lineListeners, fn); },
@@ -247,6 +248,7 @@
     const waiting = fresh && !refresh && st.shown !== JSON.stringify(st.params);
     if (waiting) showPreloader();
     st.loading = true;
+    st.refreshing = !!refresh;
     try {
       const b = await UI.bundle(release, refresh, (c) => {
         if (mine !== st.seq) return;
@@ -268,7 +270,7 @@
       }
       showFetchError(e);
     } finally {
-      if (mine === st.seq) { btn.classList.remove("spin"); st.loading = false; }
+      if (mine === st.seq) { btn.classList.remove("spin"); st.loading = st.refreshing = false; }
     }
   }
 
@@ -280,8 +282,12 @@
     const reloadLink = $("fetch-error").querySelector("a");
     if (reloadLink) reloadLink.href = location.href;  // the stale-token link keeps pointing at the current view
     const page = pages[st.params.name];
-    // A fresh page opened while the bundle loads waits for it, which draws the page then.
-    if (st.bundle && prev && prev.release === st.params.release) { if (st.loading && page && page.fresh) showPreloader(); else draw(st.bundle, true); }
+    const same = prev && prev.release === st.params.release, ours = st.bundle && st.bundleFor === st.params.release;
+    // While this release's bundle loads, the load draws the page when it answers: a fresh page, or one with no bundle
+    // of this release yet, waits behind the preloader.
+    if (same && st.loading) { if ((page && page.fresh) || !ours) showPreloader(); else draw(st.bundle, true); }
+    // Another release's bundle is never drawn under this one's hash: a failed load left it, so load again.
+    else if (same && ours) draw(st.bundle, true);
     else load(st.params.release, false);
   }
 
