@@ -280,8 +280,12 @@
     const reloadLink = $("fetch-error").querySelector("a");
     if (reloadLink) reloadLink.href = location.href;  // the stale-token link keeps pointing at the current view
     const page = pages[st.params.name];
-    // A fresh page opened while the bundle loads waits for it, which draws the page then.
-    if (st.bundle && prev && prev.release === st.params.release) { if (st.loading && page && page.fresh) showPreloader(); else draw(st.bundle, true); }
+    const same = prev && prev.release === st.params.release, ours = st.bundle && st.bundleFor === st.params.release;
+    // While this release's bundle loads, the load draws the page when it answers: a fresh page, or one with no bundle
+    // of this release yet, waits behind the preloader.
+    if (same && st.loading) { if ((page && page.fresh) || !ours) showPreloader(); else draw(st.bundle, true); }
+    // Another release's bundle is never drawn under this one's hash: a failed load left it, so load again.
+    else if (same && ours) draw(st.bundle, true);
     else load(st.params.release, false);
   }
 
