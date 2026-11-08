@@ -1,0 +1,8 @@
+model,puzzle,setup,corruption_type,detection_rate,detection_rate_low,detection_rate_high,detection_rate_n,detection_rate_inputs
+claude-haiku-5-5,3x3,no_model,flipped edge,0.6667,n/a,n/a,3,1
+claude-haiku-5-5,3x3,descriptive,flipped edge,0.0000,n/a,n/a,3,1
+claude-haiku-5-5,3x3,prescriptive,flipped edge,0.6667,n/a,n/a,3,1
+gpt-6.1-sol,3x3,no_model,flipped edge,1.0000,n/a,n/a,3,1
+gpt-6.1-sol,3x3,descriptive,flipped edge,1.0000,n/a,n/a,3,1
+gpt-6.1-sol,3x3,prescriptive,flipped edge,1.0000,n/a,n/a,3,1
+gemini-4-argon,3x3,no_model,flipped edge,0.3333,n/a,n/a,3,1
