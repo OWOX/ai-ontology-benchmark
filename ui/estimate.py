@@ -172,7 +172,9 @@ class LiveEstimate:
 
     def costs(self, remote: dict[str, str], main_sha: str | None, prices: dict) -> dict[str, tuple[float, int]]:
         """The mean cost per attempt and the record count of each AI model over every pushed experiment, at the
-        prices of `main`, infrastructure failures included. Cached by the shas of the refs read and of `main`."""
+        prices of `main`, infrastructure failures included. Cached by the shas of the refs read and of `main`. A branch
+        that does not load adds what it could read, and a record with a token field that is not a number is left out,
+        as in `medians`."""
         key = (tuple(sorted(remote.items())), main_sha)
         with self._lock:
             if self._cost and self._cost[0] == key:
@@ -276,11 +278,13 @@ class LiveEstimate:
                          or m["max_request_usd"] > budget["per_request_usd"] + 1e-9)
             times.append(m["time_s"])
         total = result["total"]
-        partial = any(t is None for t in times)
-        total["time_s"] = None if partial else max(times, default=0.0)
+        known = [t for t in times if t is not None]
+        partial = len(known) < len(times)
+        total["time_s"] = max(known, default=0.0) if known or not partial else None
         total["over"] = total["worst_case_usd"] + total["spent_usd"] > budget["per_experiment_usd"] + 1e-9
-        missing = any(v is None for v in expected)
-        total["expected_cost_usd"] = None if missing else sum(expected)
+        have = [v for v in expected if v is not None]
+        missing = len(have) < len(expected)
+        total["expected_cost_usd"] = sum(have) if have or not missing else None
         result["expected"] = "partial" if missing else "full"
         result["timing"] = "partial" if partial else "full"
         planned = inputs * len(config["models"]) * len(SETUPS) * config["attempts"]
