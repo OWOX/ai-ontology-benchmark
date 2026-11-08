@@ -32,3 +32,8 @@ dist/
 .idea/
 .vscode/
 tmp/
+
+site/node_modules/
+site/dist/
+site/.data/
+site/.astro/

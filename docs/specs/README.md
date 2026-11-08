@@ -53,6 +53,7 @@ Listed in build order. Each script depends only on scripts above it.
 12. [report](report.md): `src/evaluate/report.py`.
 13. [evaluate](evaluate.md): `src/evaluate/evaluate.py` and `src/evaluate/metrics.py`.
 14. [ui](ui.md): `ui/`.
+15. [site](site.md): `src/site/export.py`, the data for the public results page in `site/`.
 
 The octahedral and tetrahedral engines have no spec yet. They wait on [open item 4](../../AGENTS.md#open).
 
