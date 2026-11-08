@@ -142,6 +142,30 @@ def test_latency_median_and_timing(server):
     assert body["models"][1]["time_s"] is None and body["models"][1]["latency_n"] == 0
 
 
+def test_expected_cost_from_pushed_history(server):
+    ids = [r["input_id"] for r in inputs_of(server)]
+    records = [record("example-model", ids[0], "no_model", tokens=1000),
+               record("example-model", ids[0], "descriptive", tokens=3000),
+               {**record("example-model", ids[1], "no_model", tokens=0), "outcome": "infrastructure_failure"}]
+    put_branch(server.root, "other", {"results/other/experiment.toml": dumps_config(config_of(FORM, server)),
+                                      **{k.replace("/t1/", "/other/"): v for k, v in raw_files(records).items()}},
+               where="remote")
+    body = call(server, "POST", URL, LIVE)[1]
+    m = body["models"][0]
+    again = call(server, "POST", URL, LIVE)[1]  # the second call is served from the cache
+    assert again["models"][0]["cost_per_attempt_usd"] == m["cost_per_attempt_usd"]
+    assert m["cost_n"] == 3 and m["cost_per_attempt_usd"] > 0  # the infrastructure failure counts
+    assert abs(m["expected_cost_usd"] - m["attempts"] * m["cost_per_attempt_usd"]) < 1e-12
+    assert body["total"]["expected_cost_usd"] == m["expected_cost_usd"] and body["expected"] == "full"
+
+
+def test_expected_cost_partial_without_history(server):
+    body = call(server, "POST", URL, LIVE)[1]
+    m = body["models"][0]
+    assert m["expected_cost_usd"] is None and m["cost_per_attempt_usd"] is None and m["cost_n"] == 0
+    assert body["total"]["expected_cost_usd"] is None and body["expected"] == "partial"
+
+
 def test_errors(server):
     bad = [({"form": {**FORM, "models": ["unpriced"]}}, "unpriced"),
            ({"form": {**FORM, "release": "9.9.9"}}, "release"),

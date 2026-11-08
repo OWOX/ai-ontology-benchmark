@@ -141,6 +141,7 @@ Raw records store these values. Invariant 13 in [AGENTS.md](../AGENTS.md#invaria
    2. **Model budget.** The cost of one AI model's raw records in one experiment may not exceed it. Default 25.00 USD.
    3. **Experiment budget.** The cost of all raw records in one experiment may not exceed it. Default 50.00 USD.
 5. **Budget stop.** The refusal of `run` to send the next request of an attempt, because its worst-case request cost added to the cost already spent would pass the model budget or the experiment budget. `run` then exits with code 1, and a later run with a raised budget resumes.
+6. **Expected cost.** The mean cost per attempt of an AI model over the raw records of its pushed experiments, infrastructure failures included, times the attempts still to run. It is a forecast from past attempts on any puzzle, so it can be lower than the cost of deeper inputs. The [worst-case request cost](#prices) stays the ceiling that the budgets check.
 
 ## Metrics
 
