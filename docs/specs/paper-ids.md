@@ -4,7 +4,7 @@ File: `paper/ids.py`.
 
 ## Purpose
 
-Check that every placeholder ID stamped inside a figure or table box in `paper/main.pdf` matches the number LaTeX printed in its caption. Regenerate the placeholder table in `paper/README.md`. `paper/build.sh` runs it after LaTeX.
+Check that every placeholder ID stamped inside a figure or table box in `paper/main.pdf` matches the number LaTeX printed in its caption. Regenerate the placeholder table in `paper/README.md`. `paper/build.sh` and `make previews` run it after LaTeX, and both fail when it reports a mismatch.
 
 ## Inputs
 

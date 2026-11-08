@@ -17,7 +17,7 @@ python3 ste_check.py
 idout=$(python3 ids.py) || { echo "$idout"; exit 1; }
 echo "$idout" | grep -v FIGURE_HEAVY_PAGE
 heavy=$(echo "$idout" | awk '/FIGURE_HEAVY_PAGE/{print $2}')
-pages=$(pdfinfo main.pdf | awk '/Pages/{print $2}')
+pages=$(pdfinfo main.pdf | awk '/^Pages:/{print $2}')
 python3 make_previews.py "$pages"
 rm -f previews/figure-heavy-page*.png
 pdftoppm -r 150 -png -f "$heavy" -l "$heavy" -singlefile main.pdf "previews/figure-heavy-page$heavy"
