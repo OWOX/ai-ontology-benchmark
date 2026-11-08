@@ -5,11 +5,11 @@
   const h = UI.el;
   const NOTE = ExpMetrics.NOTE, pct = ExpMetrics.pct;
   const DIFFERS = "this experiment's settings for the AI model differ from config/models.toml";
-  const RATES = ["success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate", "malformed_output_rate",
+  const RATES = ["precision", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate", "malformed_output_rate",
     "truncated_rate", "abstention_rate", "format_error_rate"];
   const COLUMNS = [
     ["id", "Experiment id"], ["started_at", "Started"], ["model", "AI model"], ["puzzle", "Puzzle"], ["release", "Release"], ["attempts", "Attempts"],
-    ["success_rate", "Success rate"], ["hallucination_rate", "Hallucination rate"],
+    ["precision", "Precision"], ["hallucination_rate", "Hallucination rate"],
     ["mismatch_detection_rate", "Mismatch detection rate"], ["false_mismatch_rate", "False mismatch rate"],
     ["malformed_output_rate", "Malformed output rate"], ["truncated_rate", "Truncation rate"],
     ["abstention_rate", "Abstention rate"], ["format_error_rate", "Format error rate"], ["infrastructure_failures", "Infrastructure failures"],

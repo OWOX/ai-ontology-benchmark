@@ -41,24 +41,32 @@ Cost spent, at the prices above (USD):
 
 ### M
 
+| Puzzle | Setup | Balanced precision | Coverage | Cost efficiency |
+|---|---|---|---|---|
+| 2x2 | no_model | 0.75 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.0356 |
+| 2x2 | descriptive | 0.75 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.0356 |
+| 2x2 | prescriptive | 0.75 | 0.75 (0.50–1.00) n=4, 2 inputs | 0.0356 |
+
 #### Valid inputs
 
 | Metric | no_model | descriptive | prescriptive |
 |---|---|---|---|
-| Success rate | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
+| Precision | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
+| Coverage | 1.00 (n/a) n=2, 1 input | 1.00 (n/a) n=2, 1 input | 1.00 (n/a) n=2, 1 input |
 | Hallucination rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
 | False mismatch rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
 | Malformed output rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
 | Truncation rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
 | Abstention rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
 | Format error rate | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input |
-| Cost per success | 0.0400 | 0.0400 | 0.0400 |
+| Cost per attempt | 0.0200 | 0.0200 | 0.0200 |
 
 #### Invalid inputs
 
 | Metric | no_model | descriptive | prescriptive |
 |---|---|---|---|
-| Success rate | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
+| Precision | 1.00 (n/a) n=1, 1 input | 1.00 (n/a) n=1, 1 input | 1.00 (n/a) n=1, 1 input |
+| Coverage | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
 | Mismatch detection rate | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
 | Hallucination rate | n/a n=0, 0 inputs | n/a n=0, 0 inputs | n/a n=0, 0 inputs |
 | Malformed output rate | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input | 0.50 (n/a) n=2, 1 input |
@@ -89,15 +97,15 @@ Each row is a [paired setup test](../../docs/definitions.md#metrics) of two setu
 
 | Validity | Metric | Setups | Inputs paired | A higher | B higher | Mean difference | p | Holm p | Significant |
 |---|---|---|---|---|---|---|---|---|---|
-| valid | success_rate | no_model vs descriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
-| valid | success_rate | no_model vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
-| valid | success_rate | descriptive vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| valid | precision | no_model vs descriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| valid | precision | no_model vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| valid | precision | descriptive vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | valid | hallucination_rate | no_model vs descriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | valid | hallucination_rate | no_model vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | valid | hallucination_rate | descriptive vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
-| invalid | success_rate | no_model vs descriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
-| invalid | success_rate | no_model vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
-| invalid | success_rate | descriptive vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| invalid | precision | no_model vs descriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| invalid | precision | no_model vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
+| invalid | precision | descriptive vs prescriptive | 1 | 0 | 0 | 0.00 | 1.000 | 1.000 | no |
 | invalid | hallucination_rate | no_model vs descriptive | 0 | 0 | 0 | n/a | n/a | n/a | n/a |
 | invalid | hallucination_rate | no_model vs prescriptive | 0 | 0 | 0 | n/a | n/a | n/a | n/a |
 | invalid | hallucination_rate | descriptive vs prescriptive | 0 | 0 | 0 | n/a | n/a | n/a | n/a |
@@ -109,14 +117,14 @@ Each row is a [paired setup test](../../docs/definitions.md#metrics) of two setu
 
 ### 2x2
 
-| Setup | AI model | Depth | Validity | Attempts | Infra failures | Success | Hallucination | Mismatch detection | False mismatch | Malformed | Truncated | Abstention | Format error | Consistency | Latency (s) | Input tokens | Output tokens | Cost per success |
+| Setup | AI model | Depth | Validity | Attempts | Infra failures | Precision | Hallucination | Mismatch detection | False mismatch | Malformed | Truncated | Abstention | Format error | Consistency | Latency (s) | Input tokens | Output tokens | Cost per attempt |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| no_model | M | 1 | valid | 2 | 0 | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 1.75 | 10.0 | 5.0 | 0.0400 |
-| no_model | M | 1 | invalid | 2 | 0 | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0400 |
-| descriptive | M | 1 | valid | 2 | 0 | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 1.75 | 10.0 | 5.0 | 0.0400 |
-| descriptive | M | 1 | invalid | 2 | 0 | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0400 |
-| prescriptive | M | 1 | valid | 2 | 0 | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 1.75 | 10.0 | 5.0 | 0.0400 |
-| prescriptive | M | 1 | invalid | 2 | 0 | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0400 |
+| no_model | M | 1 | valid | 2 | 0 | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 1.75 | 10.0 | 5.0 | 0.0200 |
+| no_model | M | 1 | invalid | 2 | 0 | 1.00 (n/a) n=1, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0200 |
+| descriptive | M | 1 | valid | 2 | 0 | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 1.75 | 10.0 | 5.0 | 0.0200 |
+| descriptive | M | 1 | invalid | 2 | 0 | 1.00 (n/a) n=1, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0200 |
+| prescriptive | M | 1 | valid | 2 | 0 | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 1.75 | 10.0 | 5.0 | 0.0200 |
+| prescriptive | M | 1 | invalid | 2 | 0 | 1.00 (n/a) n=1, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | n/a n=0, 0 inputs | 0.50 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.00 (n/a) n=2, 1 input | 0.50 | 0.50 | 10.0 | 5.0 | 0.0200 |
 
 ## Attempts
 

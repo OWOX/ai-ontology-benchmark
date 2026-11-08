@@ -80,3 +80,12 @@ def test_corrupt_that_stays_reachable_is_refused(monkeypatch):
     config = dict(CONFIG, puzzles=["2x2"])
     with pytest.raises(ValidityMismatchError):
         build_inputs(config, "1")
+
+
+def test_depth_table_gives_each_puzzle_its_depths_and_a_list_gives_the_same_inputs():
+    table = dict(CONFIG, scramble_depths={"2x2": [3, 6], "3x3": [4]})
+    rows = parse(build_inputs(table, "1"))
+    assert {r["scramble_depth"] for r in rows if r["puzzle"] == "2x2"} == {3, 6}
+    assert {r["scramble_depth"] for r in rows if r["puzzle"] == "3x3"} == {4}
+    same = dict(CONFIG, scramble_depths={"2x2": [3, 6], "3x3": [3, 6]})
+    assert build_inputs(same, "1") == build_inputs(CONFIG, "1")

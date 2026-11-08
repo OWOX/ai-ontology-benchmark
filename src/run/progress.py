@@ -7,7 +7,7 @@ Display only: nothing here goes into a raw record.
 import sys
 from collections import Counter
 
-from src.evaluate.metrics import attempt_cost
+from src.evaluate.metrics import answer_class, attempt_cost
 
 NA = "n/a"
 
@@ -22,8 +22,9 @@ class Tally:
         self.valid = self.invalid = self.flagged_valid = self.flagged_invalid = 0
         self.decision_counted = 0
         self.gave_moves = 0
+        self.classified = self.hits = 0
 
-    def add(self, record: dict, price: dict) -> None:
+    def add(self, record: dict, price: dict, corruption: str | None = None, reasons: bool = False) -> None:
         self.attempts += 1
         self.tokens_in += record["input_tokens"] + record["retry_input_tokens"]
         self.tokens_out += record["output_tokens"] + record["retry_output_tokens"]
@@ -33,6 +34,9 @@ class Tally:
             return  # left out of every rate
         self.decision_counted += bool(record.get("decision"))
         self.gave_moves += bool(record.get("parsed_moves")) and not record.get("decision")
+        kind = answer_class(dict(record, corruption=corruption, reasons=reasons))
+        self.classified += kind is not None
+        self.hits += kind in ("tp", "tn")
         if record["validity"] == "invalid":
             self.invalid += 1
             self.flagged_invalid += bool(record["mismatch"])
@@ -46,6 +50,10 @@ class Tally:
 
     def share(self, hits: int, n: int) -> str:
         return f"{round(100 * hits / n)}%" if n else NA
+
+    def precision(self) -> str:
+        """Hits (`tp` and `tn`) over the classified answers, both validity labels together."""
+        return self.share(self.hits, self.classified)
 
     def rate(self, outcome: str) -> str:
         return self.share(self.outcomes[outcome], self.counted)
@@ -65,8 +73,12 @@ class Tally:
 
 
 class Progress:
-    def __init__(self, config: dict, prices: dict, totals: dict, prior_records: list[dict], console=None):
-        """`totals` maps (model name, puzzle) to attempts recorded plus attempts still to run."""
+    def __init__(self, config: dict, prices: dict, totals: dict, prior_records: list[dict], console=None,
+                 corruptions: dict[str, str | None] | None = None, reasons: bool = False):
+        """`totals` maps (model name, puzzle) to attempts recorded plus attempts still to run.
+        `corruptions` maps an input id to its corruption, which precision needs. `reasons` says the release offers mismatch reasons."""
+        self.reasons = reasons
+        self.corruptions = corruptions or {}
         self.prices = prices
         self.totals = totals
         self.names = [m["name"] for m in config["models"] if any(k[0] == m["name"] for k in totals)]
@@ -83,8 +95,9 @@ class Progress:
         model = record["model"]
         if model not in self.by_model:
             return
-        self.by_model[model].add(record, self.prices[model])
-        self.total.add(record, self.prices[model])
+        corruption = self.corruptions.get(record["input_id"])
+        self.by_model[model].add(record, self.prices[model], corruption, self.reasons)
+        self.total.add(record, self.prices[model], corruption, self.reasons)
         self.done[(model, record["puzzle"])] += 1
 
     @property
@@ -118,7 +131,7 @@ class Progress:
         return (f"[{t.attempts}/{self.goal}] {record['model']} {record['puzzle']} {record['input_id']} "
                 f"{record['setup']} #{record['attempt_number']} {record['outcome']} | "
                 f"in {t.tokens_in} out {t.tokens_out} | ${t.cost:.4f} | "
-                f"success {t.rate('success')} hallucination {t.hallucination()} "
+                f"precision {t.precision()} hallucination {t.hallucination()} "
                 f"malformed {t.rate('malformed_output')} truncated {t.rate('truncated')} "
                 f"abstention {t.rate('abstention')} format error {t.rate('format_error')}")
 
@@ -158,12 +171,12 @@ class Progress:
 
     def table(self):
         table = self.Table()
-        for title in ("AI model", "attempts", "input tokens*", "output tokens*", "cost USD", "success",
+        for title in ("AI model", "attempts", "input tokens*", "output tokens*", "cost USD", "precision",
                       "hallucination", "malformed", "truncated", "abstention", "format error", "mismatch detection", "false mismatch", "infra failures"):
             table.add_column(title, justify="left" if title == "AI model" else "right")
         for name, t in [*self.by_model.items(), ("total", self.total)]:
             table.add_row(name, str(t.attempts), str(t.tokens_in), str(t.tokens_out), f"{t.cost:.4f}",
-                          t.rate("success"), t.hallucination(), t.rate("malformed_output"),
+                          t.precision(), t.hallucination(), t.rate("malformed_output"),
                           t.rate("truncated"), t.rate("abstention"), t.rate("format_error"),
                           t.detection(), t.false_mismatch(), str(t.outcomes["infrastructure_failure"]))
         table.caption = "* retry tokens included"

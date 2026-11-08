@@ -16,7 +16,7 @@ from pathlib import Path
 
 from src.config import RELEASE_PATTERN, load_release_config
 from src.generate.generate import build_inputs
-from src.run.prompts import both_prompt_versions, prompt_versions
+from src.run.prompts import both_prompt_versions, prompt_versions, uses_mismatch_reasons
 
 # Globs for the assessment. src/evaluate/report.py is left out on purpose.
 ASSESSMENT_PATTERNS = [
@@ -135,11 +135,12 @@ def parse_inputs(text: str) -> list[dict]:
 
 
 def check_bump_rules(bump: str, old: dict, new_versions: dict, old_assessment: str, new_assessment: str,
-                     new_decision_versions: dict) -> None:
+                     new_decision_versions: dict, new_mismatch_reasons: bool = False) -> None:
     """Raise ReleaseError if the changes since the latest release don't fit a minor or patch bump.
     A change in either prompt_versions or decision_prompt_versions is a prompt change for a minor
     bump, and an old release without decision_prompt_versions counts as different there. A patch
-    bump against such a release compares prompt_versions only, so an assessment fix stays possible."""
+    bump against such a release compares prompt_versions only, so an assessment fix stays possible.
+    A patch bump also needs the same mismatch_reasons as the base, read as false when the base lacks it."""
     llm_same = new_versions == old["prompt_versions"]
     prompts_same = llm_same and new_decision_versions == old.get("decision_prompt_versions")
     if bump == "minor" and prompts_same:
@@ -148,6 +149,8 @@ def check_bump_rules(bump: str, old: dict, new_versions: dict, old_assessment: s
         patch_same = llm_same if "decision_prompt_versions" not in old else prompts_same
         if not patch_same:
             raise ReleaseError("prompts: a patch bump needs every prompt version to equal the latest release")
+        if new_mismatch_reasons != old.get("mismatch_reasons", False):
+            raise ReleaseError("prompts: a patch bump needs mismatch_reasons to equal the latest release")
         if new_assessment == old_assessment:
             raise ReleaseError("assessment: a patch bump needs the assessment to differ from the latest release")
 
@@ -236,10 +239,15 @@ def release(bump: str, note: str, releases: Path, base: str | None = None) -> st
         release_config = old["release_config"]
         inputs_text = read_text(releases / latest / "inputs.jsonl")
     inputs = parse_inputs(inputs_text)
+    try:
+        mismatch_reasons = uses_mismatch_reasons(PROMPTS_DIR)
+    except ValueError as error:
+        raise ReleaseError(str(error)) from None
     versions, decision_versions = both_prompt_versions(PROMPTS_DIR, inputs)
     assessment = assessment_sha256()
     if old:
-        check_bump_rules(bump, old, versions, old["assessment_sha256"], assessment, decision_versions)
+        check_bump_rules(bump, old, versions, old["assessment_sha256"], assessment, decision_versions,
+                         mismatch_reasons)
     created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     manifest = {
         "release_version": version,
@@ -250,6 +258,7 @@ def release(bump: str, note: str, releases: Path, base: str | None = None) -> st
         "commit": git("rev-parse", "HEAD").strip(),
         "prompt_versions": versions,
         "decision_prompt_versions": decision_versions,
+        "mismatch_reasons": mismatch_reasons,
         "assessment_sha256": assessment,
     }
     readme = build_readme(version, note, created, inputs, versions, decision_versions, assessment, latest)

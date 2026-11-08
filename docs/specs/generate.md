@@ -28,11 +28,11 @@ The [`generate`](../definitions.md#workflows) workflow. Build one input set from
 | `source_input_id` | for an invalid input, the id it was made from. Otherwise `null`. |
 | `corruption` | for an invalid input, the engine's description. Otherwise `null`. |
 
-Order: by puzzle as listed in config, then by depth, then by `n` from 1. For each puzzle and depth, the first `round(valid_invalid_split × scramble_count)` valid inputs each get an invalid copy, written straight after its source.
+Order: by puzzle as listed in config, then by that puzzle's depths from `depths_for()` in [config](config.md), then by `n` from 1. For each puzzle and depth, the first `round(valid_invalid_split × scramble_count)` valid inputs each get an invalid copy, written straight after its source.
 
 ## How to test
 
 1. Two calls with the same config give identical text.
-2. The line count equals puzzles × depths × scramble count × (1 + split), with the split part rounded per puzzle and depth.
+2. The line count equals the sum over puzzles of that puzzle's depths × scramble count × (1 + split), with the split part rounded per puzzle and depth. A per-puzzle `scramble_depths` table gives each puzzle its own depths, and one list gives the same inputs as before.
 3. Every input passes `load_state()` for its puzzle, and every invalid input's `source_input_id` exists in the text.
 4. Input ids are unique, and so are input seeds.

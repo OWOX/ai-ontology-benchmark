@@ -320,3 +320,20 @@ def test_corrupt_descriptions_per_size(engine):
     assert len(wings) == 24 and "flipped wing UF near R" in wings and "flipped wing UF near L" in wings
     assert any(d.startswith("flipped edge ") for d in descriptions) == (engine is E5)
 
+
+
+@pytest.mark.parametrize("engine", [E2, E3, E4, E5])
+def test_mismatch_and_decoy_reasons_are_the_same_on_every_size(engine):
+    assert engine.mismatch_reasons() == [
+        "twisted corner", "flipped edge", "flipped wing", "swapped corners", "swapped edges",
+        "recoloured sticker", "twisted centre"]
+    assert engine.decoy_reasons() == ["twisted centre"]
+    assert set(engine.decoy_reasons()) <= set(engine.mismatch_reasons())
+
+
+@pytest.mark.parametrize("engine", [E2, E3, E4, E5])
+def test_every_corruption_type_is_an_offered_reason(engine):
+    for seed in range(20):
+        state, _ = engine.scramble(seed, 5)
+        _, description = engine.corrupt(state, seed)
+        assert any(description.startswith(r) for r in engine.mismatch_reasons())

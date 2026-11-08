@@ -8,7 +8,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 
 ## Inputs
 
-`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0, paired_rows=(), detection_rows=(), corruption_rows=())`. [evaluate](evaluate.md) calls it with what `compute()`, `paired_tests()`, `detection_rows()`, and `corruption_rows()` returned and the count of torn raw lines it skipped.
+`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0, paired_rows=(), detection_rows=(), corruption_rows=(), reason_rows=())`. [evaluate](evaluate.md) calls it with what `compute()`, `paired_tests()`, `detection_rows()`, `corruption_rows()`, and `reason_rows()` returned and the count of torn raw lines it skipped.
 
 ## Outputs
 
@@ -28,17 +28,20 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
    5. The line `Torn raw lines skipped: <n>.`
    6. The token prices used, linked to `prices.toml` in the experiment folder.
    7. The three budgets in force, and the cost spent per AI model and in total, at the prices used.
-4. **Summary.** For each AI model, two tables with setups as columns:
-   1. Valid inputs: success rate, hallucination rate, false mismatch rate, malformed output rate, truncation rate, abstention rate, format error rate, and cost per success.
-   2. Invalid inputs: success rate, mismatch detection rate, hallucination rate, malformed output rate, truncation rate, abstention rate, and format error rate.
+4. **Summary.** First, for each AI model, one headline table from `detection_rows`, one row per puzzle and setup, with the columns Balanced precision, Coverage, Critical thinking, and Cost efficiency (USD to 4 places). Then two tables with setups as columns:
+   1. Valid inputs: precision, coverage, hallucination rate, reason hallucination rate, false mismatch rate, malformed output rate, truncation rate, abstention rate, format error rate, and cost per attempt.
+   2. Invalid inputs: precision, coverage, mismatch detection rate, diagnosis rate, hallucination rate, reason hallucination rate, malformed output rate, truncation rate, abstention rate, and format error rate.
+
+   Under a release without mismatch reasons, the reason hallucination rate, diagnosis rate, and critical thinking are left out.
 
    Every rate cell reads `0.42 (0.30–0.55) n=60, 20 inputs` (`1 input` for one): the rate, its 95% bootstrap interval, the attempts, and the inputs behind it. With fewer than 2 inputs the interval reads `n/a`.
-5. **Mismatch detection.** Present only when `detection_rows` is not empty, after Summary. One sentence above the tables links the [balanced accuracy](../definitions.md#metrics) definition. For each AI model, one table with columns Puzzle, Setup, Detection rate, False mismatch rate, and Balanced accuracy (rates shown like the Summary rates, as `0.75 (0.50–1.00) n=4, 4 inputs`, balanced accuracy to 2 places with its interval as `0.75 (0.50–1.00)`, `n/a` when missing). Each puzzle gets one extra row, `always MISMATCH (baseline)`, with 1.00, 1.00, and 0.50.
-6. **Detection by corruption type.** Present only when `corruption_rows` is not empty, after Mismatch detection. For each AI model, one table with columns Puzzle, Setup, Corruption type, and Detection rate (shown like the Summary rates).
-7. **Setup comparison.** Present only when `paired_rows` is not empty. One sentence above the tables links the [paired setup test](../definitions.md#metrics). For each AI model, one table per puzzle with columns Validity, Metric, Setups (`a vs b`), Inputs paired, A higher, B higher, Mean difference (2 places), p (3 places, or `<0.001` when smaller), Holm p (3 places, or `<0.001` when smaller), and Significant (`yes`, `no`, or `n/a`). Mean difference, p, and Holm p show `n/a` when no input is paired.
-8. **Metrics.** Every row of `metric_rows`, one table per puzzle, with rates shown the same way.
-9. **Attempts.** One table per input, headed by the input id linked to its line in the release's `inputs.jsonl` (`#L<n>`). The heading also shows the validity label and depth. Columns are AI model, setup, attempt, outcome, moves joined with spaces, mismatch, input and output tokens, and latency. The token columns are headed `Input tokens (excl. retries)` and `Output tokens (excl. retries)`, because they leave out the retry tokens that the cost and the metrics tables include. Where re-validation changed an outcome, the cell shows `stored → current`.
-10. **Raw responses.** Not copied. One link to the `raw/` folder.
+5. **Mismatch detection.** Present only when `detection_rows` is not empty, after Summary. One sentence above the tables links the [balanced accuracy](../definitions.md#metrics) definition. For each AI model, one table with columns Puzzle, Setup, Detection rate, False mismatch rate, and Balanced accuracy (rates shown like the Summary rates, as `0.75 (0.50–1.00) n=4, 4 inputs`, balanced accuracy to 2 places with its interval as `0.75 (0.50–1.00)`, `n/a` when missing). Each puzzle gets one extra row, `always MISMATCH (baseline)`, with 1.00, 1.00, and 0.50. Under a release with mismatch reasons, the table also has columns Diagnosis rate and Critical thinking, linked to their definitions, and each puzzle gets a second extra row, `always MISMATCH <fixed answer reason> (baseline)`, with 1.00, 1.00, 0.50, the reason's share as diagnosis rate, and `fixed_answer_critical_thinking`. The first baseline row then shows 0.00 for both, since an answer with no reason never diagnoses.
+6. **Detection by corruption type.** Present only when `corruption_rows` is not empty, after Mismatch detection. For each AI model, one table with columns Puzzle, Setup, Corruption type, Detection rate, and, under a release with mismatch reasons, Diagnosis rate (shown like the Summary rates).
+7. **Mismatch reasons.** Present only when `reason_rows` is not empty, after Detection by corruption type. For each AI model and puzzle, one table per setup: a row per `expected` value (`none` labelled `valid input`), a column per `reason` (`none` labelled `no reason`), and the attempt counts in the cells, empty for 0. The decoy reason's column is headed `<reason> (decoy)`. Each setup's table sits under a `#####` heading with its name, and only the expected values and reasons that occur in it are shown.
+8. **Setup comparison.** Present only when `paired_rows` is not empty. One sentence above the tables links the [paired setup test](../definitions.md#metrics). For each AI model, one table per puzzle with columns Validity, Metric, Setups (`a vs b`), Inputs paired, A higher, B higher, Mean difference (2 places), p (3 places, or `<0.001` when smaller), Holm p (3 places, or `<0.001` when smaller), and Significant (`yes`, `no`, or `n/a`). Mean difference, p, and Holm p show `n/a` when no input is paired.
+9. **Metrics.** Every row of `metric_rows`, one table per puzzle, with rates shown the same way.
+10. **Attempts.** One table per input, headed by the input id linked to its line in the release's `inputs.jsonl` (`#L<n>`). The heading also shows the validity label and depth. Columns are AI model, setup, attempt, outcome, moves joined with spaces, mismatch, mismatch reason (only under a release with mismatch reasons, empty when none), input and output tokens, and latency. The token columns are headed `Input tokens (excl. retries)` and `Output tokens (excl. retries)`, because they leave out the retry tokens that the cost and the metrics tables include. Where re-validation changed an outcome, the cell shows `stored → current`.
+11. **Raw responses.** Not copied. One link to the `raw/` folder.
 
 ## How to test
 
@@ -53,6 +56,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 9. With `paired_rows`, the Setup comparison section appears between Summary and Metrics, with the columns above. Without them, it is absent and the report is unchanged.
 10. With `detection_rows`, the Mismatch detection section appears right after Summary, with a baseline row per puzzle. Without them, it is absent.
 11. With `corruption_rows`, the Detection by corruption type section appears right after Mismatch detection. Without them, it is absent.
+12. With `reason_rows`, the Mismatch reasons section appears right after Detection by corruption type, with the decoy column marked. Without them, it is absent, and a report under a release without mismatch reasons has no reason rows, columns, or baseline row.
 
 ## Risk
 

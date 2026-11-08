@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import compute
+from src.evaluate.metrics import answer_class, compute
 from src.run.run import make_record
 from test_release import git, repo  # noqa: F401
 from test_ui import PRICES, ui_repo  # noqa: F401  (ui_repo is a fixture)
@@ -169,15 +169,15 @@ def test_computed_rows_equal_compute(ui_repo, samples):
     summary = compute(records, ui_repo / "releases" / "1.0.0", prices)[2]
     for validity in ("valid", "invalid"):
         mine = [r for r in summary if r["validity"] == validity]
-        for rate in ("success_rate", "hallucination_rate", "malformed_output_rate", "truncated_rate",
+        for rate in ("precision", "hallucination_rate", "malformed_output_rate", "truncated_rate",
                      "abstention_rate", "format_error_rate"):
             n = sum(r[rate + "_n"] for r in mine)
             expected = sum(r[rate] * r[rate + "_n"] for r in mine if r[rate + "_n"]) / n
             assert by[validity][rate] == pytest.approx(expected)
     assert by["valid"]["mismatch_detection_rate"] is None
     assert by["invalid"]["false_mismatch_rate"] is None
-    assert by["invalid"]["mismatch_detection_rate"] == pytest.approx(0.5)
-    assert by["all"]["success_rate"] == pytest.approx(0.25)
+    assert by["invalid"]["mismatch_detection_rate"] == pytest.approx(0.0)  # a bare MISMATCH is a format error under reasons
+    assert by["all"]["precision"] == pytest.approx(0.0)  # the one classified answer is a hallucination
     assert by["all"]["hallucination_rate"] == pytest.approx(0.5)  # 1 of the 2 attempts that gave moves
     assert by["all"]["false_mismatch_rate"] == 0
     assert by["all"]["total_tokens"] == 4 * 20
@@ -202,7 +202,7 @@ def test_infrastructure_failures_change_no_rate(ui_repo, samples):
 
 def test_report_csv_used(ui_repo, samples):
     _, _, records = samples
-    header = "puzzle,setup,model,scramble_depth,validity,attempts,infrastructure_failure_count,success_rate,success_rate_n\n"
+    header = "puzzle,setup,model,scramble_depth,validity,attempts,infrastructure_failure_count,precision,precision_n\n"
     text = (header + "2x2,no_model,example-model,5,valid,2,0,0.5000,2\n"
             + "2x2,descriptive,example-model,5,valid,4,0,0.2500,4\n")
     exp, inputs = open_experiment(ui_repo, "e", files_for(
@@ -211,9 +211,9 @@ def test_report_csv_used(ui_repo, samples):
     assert exp["report_version"] == "1.0.0" and exp["report_md"] == "# report"
     by = rows_by_scope(expdata.experiment_rows(exp, inputs))
     assert {r["metrics_source"] for r in by.values()} == {"report"}
-    assert by["valid"]["success_rate"] == pytest.approx(2 / 6)
+    assert by["valid"]["precision"] == pytest.approx(2 / 6)
     assert by["valid"]["attempts"] == 6 and by["invalid"]["attempts"] == 0
-    assert by["invalid"]["success_rate"] is None
+    assert by["invalid"]["precision"] is None
     assert by["valid"]["total_tokens"] > 0
 
 
@@ -244,7 +244,7 @@ def test_broken_branch_gives_error_row(ui_repo):
     exp, inputs = open_experiment(ui_repo, "e", {"results/e/experiment.toml": "release = 3\n"})
     rows = expdata.experiment_rows(exp, inputs)
     assert len(rows) == 1 and "results/e/experiment.toml" in rows[0]["error"]
-    assert rows[0]["model"] is None and rows[0]["success_rate"] is None
+    assert rows[0]["model"] is None and rows[0]["precision"] is None
 
 
 def test_record_missing_field_gives_error(ui_repo, samples):
@@ -285,22 +285,34 @@ def test_summary_from_csv_equals_compute(ui_repo, samples, tmp_path):
             if key.endswith(("_low", "_high")):
                 continue  # pooled CSV rows keep a Wilson interval for display, so they differ by design
             if isinstance(value, float):
-                assert mine[key] == pytest.approx(value, abs=1e-4 if key == "cost_per_success" else 1e-9)
+                assert mine[key] == pytest.approx(value, abs=1e-4 if key == "cost_per_attempt" else 1e-9)
             else:
                 assert mine[key] == value
 
 
-def test_pooled_cost_counts_groups_without_successes():
+def test_pooled_cost_counts_groups_without_right_answers():
     group = {"model": "m", "setup": "no_model", "validity": "valid"}
     csv_rows = [
         {**group, "puzzle": "2x2", "attempts": 1, "infrastructure_failure_count": 0,
-         "success_rate": 0.0, "success_rate_n": 1, "cost_per_success": "n/a"},
+         "precision": 0.0, "precision_n": 1},
         {**group, "puzzle": "3x3", "attempts": 1, "infrastructure_failure_count": 0,
-         "success_rate": 1.0, "success_rate_n": 1, "cost_per_success": 0.1},
+         "precision": 1.0, "precision_n": 1},
     ]
     costs = [{**group, "cost": 0.1}, {**group, "cost": 0.1}]
     [row] = pooled_summary(csv_rows, ["m"], costs)
-    assert row["cost_per_success"] == pytest.approx(0.2)
+    assert row["cost_per_attempt"] == pytest.approx(0.1)  # a group without right answers still counts its cost
+    assert row["coverage"] == "n/a"  # an old report CSV lacks the column
+
+
+def test_pooled_rates_balance_precision_over_both_validity_labels():
+    from ui.pooling import pooled_rates
+    rows = [{"validity": "valid", "precision": 0.5, "precision_n": 4, "precision_inputs": 2},
+            {"validity": "valid", "precision": 0.5, "precision_n": 4, "precision_inputs": 2},
+            {"validity": "invalid", "precision": 1.0, "precision_n": 2, "precision_inputs": 1}]
+    both = pooled_rates(rows, balanced=True)
+    assert both["precision"] == pytest.approx(0.75) and both["precision_n"] == 10 and both["precision_inputs"] == 5
+    assert pooled_rates(rows[:2], balanced=True)["precision"] == "n/a"  # no invalid rows
+    assert pooled_rates(rows[:2])["precision"] == 0.5  # one label in scope: that label's pooled precision
 
 
 # --- bundle ----------------------------------------------------------------------------------
@@ -582,7 +594,7 @@ def broken_files(kind, records, valid):
         return files_for([bad])
     if kind == "prices_not_table":
         return files_for(records, **{"results/e/prices.toml": 'example-model = 5\n'})
-    header = "puzzle,setup,model,scramble_depth,infrastructure_failure_count,success_rate,success_rate_n\n"
+    header = "puzzle,setup,model,scramble_depth,infrastructure_failure_count,precision,precision_n\n"
     return files_for(records, **{"results/e/1.0.0.metrics.csv": header + "2x2,no_model,example-model,5,0,0.5,2\n"})
 
 
@@ -629,7 +641,7 @@ def test_provider_without_catalogue_models_is_left_out():
 
 def test_decision_model_attempts_are_scored_not_malformed(ui_repo, samples):
     _, invalid, _ = samples
-    calls = json.dumps([{"answers": {"next_move": {"choice": "mismatch"}}}])
+    calls = json.dumps([{"answers": {"next_move": {"choice": "mismatch_1"}}}])
     toml = EXP_TOML.replace('provider = "fake"', 'provider = "fake_decision"')
     old = record(invalid, "no_model", 1, calls)
     del old["decision"], old["requested_model"]  # a record written before the fields existed
@@ -676,7 +688,7 @@ def test_benchmarks_pooled_rates_equal_metrics(ui_repo, samples):
     expected = expdata.all_scope_rates(keyed, "benchmarks|2x2|example-model|all|1.0.0|no_model|descriptive|prescriptive")
     cells = {r["metric"]: r["cells"]["example-model"] for r in out["rows"] if r["puzzle"] == "2x2"}
     assert out["experiments"] == ["e"] and out["releases"] == ["1.0.0"] and out["skipped"] == []
-    for metric in ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
+    for metric in ("hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
                    "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate"):
         assert cells[metric] == {"value": expdata.cell(expected[metric]), "low": expdata.cell(expected[metric + "_low"]),
                                  "high": expdata.cell(expected[metric + "_high"]), "n": expected[metric + "_n"],
@@ -684,11 +696,11 @@ def test_benchmarks_pooled_rates_equal_metrics(ui_repo, samples):
     assert "efficiency" not in cells
     invalid = out_for(ui_repo, validity="invalid")
     only = rates([r for r in keyed if r["validity"] == "invalid"], "invalid", "x")
-    assert invalid["success_rate"]["value"] == only["success_rate"]
+    assert invalid["precision"]["value"] == only["precision"]
     assert invalid["false_mismatch_rate"]["value"] is None
     valid = out_for(ui_repo, validity="valid")
     assert valid["mismatch_detection_rate"]["value"] is None and valid["mismatch_detection_rate"]["n"] == 0
-    assert [r["metric"] for r in out["rows"]][:3] == ["success_rate", "hallucination_rate", "mismatch_detection_rate"]
+    assert [r["metric"] for r in out["rows"]][:3] == ["precision", "hallucination_rate", "mismatch_detection_rate"]
     assert cells["tokens_per_attempt"] == {"value": 20, "n": 4, "experiments": ["e"]}
 
 
@@ -799,18 +811,21 @@ def test_benchmarks_broken_experiment_is_skipped(ui_repo, samples):
 
 def synthetic(model, input_id, outcome, set_id="1", puzzle="2x2", validity="valid", mismatch=False, setup="no_model",
               decision=False, moves=("R",)):
-    return {"model": model, "input_id": input_id, "input_set_id": set_id, "puzzle": puzzle, "validity": validity,
+    row = {"model": model, "input_id": input_id, "input_set_id": set_id, "puzzle": puzzle, "validity": validity,
             "outcome": outcome, "mismatch": mismatch, "setup": setup, "decision": decision, "move_count": len(moves),
             "parsed_moves": list(moves),
             "latency_s": 1.0, "input_tokens": 1, "output_tokens": 1, "retry_input_tokens": 0,
-            "retry_output_tokens": 0, "cost": 0.5, "experiment": "e"}
+            "retry_output_tokens": 0, "cost": 0.5, "experiment": "e", "corruption": None, "reasons": False,
+            "impossible_move": outcome == "hallucination", "mismatch_reason": None, "decoy": False}
+    row["answer_class"] = answer_class(row)
+    return row
 
 
 def test_pairing_uses_input_set_id():
     from ui import benchmarks as bm
     a = [synthetic("a", "i1", "success"), synthetic("a", "i2", "failure")]
     b = [synthetic("b", "i1", "failure", set_id="2"), synthetic("b", "i2", "failure")]
-    test = bm.paired_model_test(a, b, "success_rate")
+    test = bm.paired_model_test(a, b, "precision")
     assert test["inputs_paired"] == 1          # i1 under set 2 is another input
 
 
@@ -823,7 +838,7 @@ def test_model_pair_hallucination_shares_use_attempts_that_gave_moves():
     assert set(bm.shares(a, "hallucination_rate")) == {("1", "i1"), ("1", "i3")}
     test = bm.paired_model_test(a, b, "hallucination_rate")
     assert test["inputs_paired"] == 1
-    assert bm.shares(a + b, "success_rate").keys() >= {("1", "i2")}
+    assert bm.shares(a + b, "precision").keys() >= {("1", "i2")}
 
 
 def test_ties_and_holm_over_distinct_tests():
@@ -833,32 +848,59 @@ def test_ties_and_holm_over_distinct_tests():
     rows = ([synthetic("a", i, "success") for i in ids]
             + [synthetic("b", i, "success" if n < 4 else "failure") for n, i in enumerate(ids)]
             + [synthetic("c", i, "failure") for i in ids])
-    row = next(r for r in bm.build_rows(rows, ["a", "b", "c"], ["2x2"], "valid", "") if r["metric"] == "success_rate")
+    row = next(r for r in bm.build_rows(rows, ["a", "b", "c"], ["2x2"], "valid", "") if r["metric"] == "precision")
     p_ab, p_bc = sign_test(4, 0), sign_test(4, 0)
     assert [(b["model"], b["against"]) for b in row["best"]] == [("a", "b")]
     assert [(w["model"], w["against"]) for w in row["worst"]] == [("c", "b")]
     assert row["best"][0]["p_value"] == p_ab and row["best"][0]["p_holm"] == holm([p_ab, p_bc])[0]
     tied = [synthetic("a", "i0", "success"), synthetic("b", "i0", "success"), synthetic("c", "i0", "failure")]
-    row = next(r for r in bm.build_rows(tied, ["a", "b", "c"], ["2x2"], "valid", "") if r["metric"] == "success_rate")
+    row = next(r for r in bm.build_rows(tied, ["a", "b", "c"], ["2x2"], "valid", "") if r["metric"] == "precision")
     assert [(b["model"], b["against"]) for b in row["best"]] == [("a", "c"), ("b", "c")]
     assert [(w["model"], w["against"]) for w in row["worst"]] == [("c", "b")]
     assert row["best"][0]["p_holm"] == row["worst"][0]["p_holm"] == holm([sign_test(1, 0), sign_test(1, 0)])[0]
     bottom = [synthetic("a", "i0", "success"), synthetic("b", "i0", "failure"), synthetic("c", "i0", "failure")]
-    row = next(r for r in bm.build_rows(bottom, ["a", "b", "c"], ["2x2"], "valid", "") if r["metric"] == "success_rate")
+    row = next(r for r in bm.build_rows(bottom, ["a", "b", "c"], ["2x2"], "valid", "") if r["metric"] == "precision")
     assert [(b["model"], b["against"]) for b in row["best"]] == [("a", "b")]
     assert sorted((w["model"], w["against"]) for w in row["worst"]) == [("b", "a"), ("c", "a")]
     assert all(w["agrees"] for w in row["worst"])
     every = [synthetic(m, "i0", "success") for m in ("a", "b", "c")]
-    row = next(r for r in bm.build_rows(every, ["a", "b", "c"], ["2x2"], "valid", "") if r["metric"] == "success_rate")
+    row = next(r for r in bm.build_rows(every, ["a", "b", "c"], ["2x2"], "valid", "") if r["metric"] == "precision")
     assert row["best"] is None and row["worst"] is None
 
 
-def test_unpriced_model_has_no_cost_per_success():
+def test_unpriced_model_has_no_cost_efficiency():
     from ui import benchmarks as bm
     rows = [dict(synthetic("a", "i1", "success"), priced=False), synthetic("b", "i1", "success")]
-    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "cost_per_success")
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "cost_efficiency")
     assert row["cells"]["a"]["value"] is None and row["cells"]["b"]["value"] == 0.5
     assert row["best"] is None and row["worst"] is None
+
+
+def test_cost_efficiency_divides_cost_by_precision_and_coverage():
+    rows = [synthetic("a", "i1", "success"), synthetic("a", "i2", "failure"),
+            synthetic("a", "i3", "abstention", moves=()), synthetic("a", "i4", "success")]
+    cell = metric_row(rows, ["a"], "cost_efficiency")["cells"]["a"]
+    assert cell["value"] == pytest.approx(0.5 / (2 / 3 * 3 / 4))  # mean cost 0.5, precision 2/3, coverage 3/4
+    none = [synthetic("a", "i1", "abstention", moves=())]
+    assert metric_row(none, ["a"], "cost_efficiency")["cells"]["a"]["value"] is None
+
+
+def test_precision_under_both_labels_is_balanced_precision():
+    rows = ([synthetic("a", f"v{n}", "success") for n in range(3)] + [synthetic("a", "v3", "failure")]
+            + [synthetic("a", "x0", "failure", validity="invalid")])
+    cell = metric_row(rows, ["a"], "precision", scope="all")["cells"]["a"]
+    assert cell["value"] == pytest.approx((3 / 4 + 0) / 2)  # not the pooled 3/5
+    assert cell["n"] == 5
+    one_side = [synthetic("a", "v0", "success")]
+    assert metric_row(one_side, ["a"], "precision", scope="all")["cells"]["a"]["value"] is None
+    assert metric_row(one_side, ["a"], "cost_efficiency", scope="all")["cells"]["a"]["value"] is None
+
+
+def test_report_csv_without_new_columns_pools_to_na():
+    group = {"model": "m", "setup": "no_model", "validity": "valid"}
+    old = [{**group, "puzzle": "2x2", "attempts": 2, "infrastructure_failure_count": 0, "success_rate": 0.5}]
+    [row] = pooled_summary(old, ["m"], [{**group, "cost": 0.2}])
+    assert row["precision"] == "n/a" and row["coverage"] == "n/a" and row["precision_n"] == 0
 
 
 def metric_row(rows, models, metric, scope="valid"):
@@ -904,11 +946,11 @@ def test_decision_hallucination_is_null_and_untested():
 def test_bootstrap_interval_reproducible_over_inputs():
     from src.evaluate.metrics import bootstrap_interval
     rows = [synthetic("a", f"i{n}", "success" if n % 3 else "failure") for n in range(12)]
-    first = metric_row(rows, ["a"], "success_rate")["cells"]["a"]
-    again = metric_row(list(reversed(rows)), ["a"], "success_rate")["cells"]["a"]
+    first = metric_row(rows, ["a"], "precision")["cells"]["a"]
+    again = metric_row(list(reversed(rows)), ["a"], "precision")["cells"]["a"]
     assert first == again and first["n"] == 12 and first["inputs"] == 12
     cells = [(int(n % 3 != 0), 1) for n in range(12)]
-    value, low, high = bootstrap_interval(cells, "benchmarks|2x2|a|valid||success_rate")
+    value, low, high = bootstrap_interval(cells, "benchmarks|2x2|a|valid||precision")
     assert (first["value"], first["low"], first["high"]) == (value, low, high) and low < value < high
 
 
@@ -940,14 +982,14 @@ def test_benchmarks_moved_experiment_ref_is_scored_again(ui_repo, samples, monke
     monkeypatch.setattr(expdata, "attempt_rows", lambda *a, **k: scored.append(a[0]["id"]) or real_rows(*a, **k))
     bundles = make_bundles(ui_repo)
     first = bundles.benchmarks(bench_query(), set())
-    more = records + [record(valid, "no_model", 2, SUCCESS)]
+    more = records + [record(valid, "no_model", 2, HALLUCINATION)]
     push_results(ui_repo, "e", files_for(more), force=True)  # the same branch moves, as a live run's does
     bundles.git.fetch(force=True)
     second = bundles.benchmarks(bench_query(), set())
     assert second != first and second["experiments"] == ["e"]
     assert len(bundles._scored_cache) == 1  # the new entry replaced the old one
     assert loads == ["e", "e"] and scored == ["e", "e"]  # read and scored again, not served from the old entry
-    n = lambda out: sum(c["n"] for r in out["rows"] if r["metric"] == "success_rate" for c in r["cells"].values())
+    n = lambda out: sum(c["n"] for r in out["rows"] if r["metric"] == "precision" for c in r["cells"].values())
     assert n(second) == n(first) + 1
 
 
@@ -989,7 +1031,7 @@ def test_best_disagreeing_with_sign_test_does_not_agree():
     from ui import benchmarks as bm
     # A solves 2/2 on 28 inputs, B 1/2 on the other 49: A leads the pooled rate, B is higher on 49 inputs.
     rows = two_model_rows(lambda n: 2 if n < 28 else 0, lambda n: 0 if n < 28 else 1, 77)
-    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "success_rate")
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "precision")
     assert row["best"][0]["model"] == "a" and row["best"][0]["p_holm"] < 0.05
     assert row["best"][0]["agrees"] is False and row["worst"][0]["agrees"] is False
 
@@ -997,11 +1039,13 @@ def test_best_disagreeing_with_sign_test_does_not_agree():
 def test_best_favoured_on_most_inputs_agrees():
     from ui import benchmarks as bm
     rows = two_model_rows(lambda n: 2, lambda n: 0, 10)
-    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "success_rate")
+    row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "precision")
     assert row["best"][0]["agrees"] is True and row["worst"][0]["agrees"] is True
     rows = two_model_rows(lambda n: 0, lambda n: 2, 10)  # hallucinations: lower is better
     for r in rows:
         r["outcome"] = "hallucination" if r["outcome"] == "success" else "failure"
+        r["impossible_move"] = r["outcome"] == "hallucination"
+        r["answer_class"] = answer_class(r)
     row = next(r for r in bm.build_rows(rows, ["a", "b"], ["2x2"], "valid", "") if r["metric"] == "hallucination_rate")
     assert row["best"][0]["model"] == "a" and row["best"][0]["agrees"] is True
 
@@ -1096,13 +1140,20 @@ def test_all_scope_rates_equal_the_three_call_computation(ui_repo, samples):
     valid = rates([r for r in done if r["validity"] == "valid"], "valid", key)
     expected.update({k: v for k, v in invalid.items() if k.startswith("mismatch_detection_rate")})
     expected.update({k: v for k, v in valid.items() if k.startswith("false_mismatch_rate")})
+    from ui.expdata import precision_stats
+    keyed = [r for r in done]
+    expected.update(precision_stats(keyed, "all", key))  # balanced precision, not the pool over both labels
     actual = expdata.all_scope_rates(done, key)
     assert actual == expected and list(actual) == list(expected)
+    side = {v: rates([r for r in done if r["validity"] == v and r["answer_class"]], v, key)["precision"]
+            for v in ("valid", "invalid")}
+    if all(isinstance(x, float) for x in side.values()):
+        assert actual["precision"] == pytest.approx((side["valid"] + side["invalid"]) / 2)
 
 
 def test_malformed_report_csv_does_not_poison_the_cached_entry(ui_repo, samples):
     _, _, records = samples
-    header = "puzzle,setup,model,scramble_depth,infrastructure_failure_count,success_rate,success_rate_n\n"
+    header = "puzzle,setup,model,scramble_depth,infrastructure_failure_count,precision,precision_n\n"
     push_results(ui_repo, "e", files_for(records, **{"results/e/1.0.0.metrics.csv": header + "2x2,no_model,example-model,5,0,0.5,2\n"}))
     bundles = make_bundles(ui_repo)
     bundle = bundles.get(None, True, set(), {}, set())

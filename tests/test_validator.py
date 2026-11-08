@@ -6,7 +6,7 @@ import json
 import pytest
 
 from src.puzzles.registry import get_engine
-from src.validator import OUTCOMES, Verdict, validate
+from src.validator import OUTCOMES, Verdict, offered_reasons, read_decision_call, validate
 
 ENGINE = get_engine("2x2")
 STATE, SCRAMBLE = ENGINE.scramble(7, 3)
@@ -67,7 +67,8 @@ CASES = {
 def test_validate(name):
     input, response, stop, moves, hallucination, mismatch, count, outcome = CASES[name]
     verdict = validate(input, response, stop)
-    assert verdict == Verdict(moves, hallucination, mismatch, count, outcome)
+    assert verdict == Verdict(moves, hallucination, mismatch, count, outcome, impossible_move=bool(hallucination))
+    assert verdict.mismatch_reason is None and not verdict.decoy
 
 
 def test_scramble_is_not_solved_in_one_move():
@@ -303,3 +304,128 @@ def test_list_markers_count_only_at_the_start_of_a_line():
         v = validate(VALID, response, "ok")
         assert v.outcome == "hallucination", response
     assert validate(VALID, "R U r.", "ok").parsed_moves == ["R", "U", "r"]
+
+
+# Mismatch reasons. The offered list is the engine's, then `other`.
+REASONS = offered_reasons(ENGINE)
+
+
+def test_offered_reasons_end_with_other_on_every_cube():
+    for puzzle in ("2x2", "3x3", "4x4", "5x5"):
+        offered = offered_reasons(get_engine(puzzle))
+        assert offered[-1] == "other" and offered[:-1] == get_engine(puzzle).mismatch_reasons()
+        assert "twisted centre" in offered
+
+
+# (name, input, response, reason, outcome, mismatch, hallucination, decoy, impossible)
+WITH_REASONS = {
+    "valid mismatch bare": (VALID, "MISMATCH", None, "format_error", False, False, False, False),
+    "valid offered reason": (VALID, "MISMATCH twisted corner", "twisted corner", "failure", True, False, False, False),
+    "valid decoy": (VALID, "MISMATCH twisted centre", "twisted centre", "hallucination", True, True, True, False),
+    "invalid other": (INVALID, "MISMATCH other", "other", "success", True, False, False, False),
+    "invalid wrong reason": (INVALID, "MISMATCH swapped edges", "swapped edges", "success", True, False, False, False),
+    "invalid decoy": (INVALID, "MISMATCH twisted centre", "twisted centre", "hallucination", True, True, True, False),
+    "invalid fenced": (INVALID, fenced("MISMATCH twisted corner"), "twisted corner", "success", True, False, False, False),
+    "double space": (VALID, "MISMATCH  twisted corner", "twisted corner", "format_error", False, False, False, False),
+    "bold reason": (VALID, "**MISMATCH twisted corner**", "twisted corner", "format_error", False, False, False, False),
+    "trailing full stop": (VALID, "MISMATCH twisted corner.", "twisted corner", "format_error", False, False, False, False),
+    "free text reason": (VALID, "MISMATCH colours look wrong", None, "format_error", False, False, False, False),
+    "bold decoy": (VALID, "**MISMATCH twisted centre**", "twisted centre", "hallucination", False, True, True, False),
+    "explanation beside": (INVALID, "MISMATCH twisted corner\nbecause", "twisted corner", "format_error", False, False, False, False),
+    "moves then decoy": (VALID, reply(SOLVE) + "\nMISMATCH twisted centre", "twisted centre", "hallucination", False, True, True, False),
+    "moves then reason": (VALID, reply(SOLVE) + "\nMISMATCH twisted corner", "twisted corner", "format_error", False, False, False, False),
+    "illegal move and decoy": (VALID, "M\nMISMATCH twisted centre", "twisted centre", "hallucination", False, True, True, True),
+    "first offered reason wins": (VALID, "MISMATCH colours\n**MISMATCH other**\nMISMATCH twisted corner", "other", "format_error", False, False, False, False),
+}
+
+
+@pytest.mark.parametrize("name", list(WITH_REASONS))
+def test_validate_with_reasons(name):
+    input, response, reason, outcome, mismatch, halluc, decoy, impossible = WITH_REASONS[name]
+    v = validate(input, response, "ok", reasons=REASONS)
+    assert (v.outcome, v.mismatch, v.mismatch_reason, v.hallucination, v.decoy, v.impossible_move) == (
+        outcome, mismatch, reason, halluc, decoy, impossible)
+
+
+def test_lone_mismatch_line_has_no_moves_and_a_zero_count():
+    v = validate(INVALID, "MISMATCH twisted corner", "ok", reasons=REASONS)
+    assert (v.parsed_moves, v.move_count) == ([], 0)
+
+
+def test_rows_without_a_stated_setting_agree_with_and_without_reasons():
+    for input, response in ((VALID, reply(SOLVE)), (VALID, "R "), (VALID, "r"), (VALID, "I can't solve this."),
+                            (INVALID, "X"), (VALID, ""), (VALID, "1. R"), (INVALID, reply(NO_SOLVE))):
+        a = validate(input, response, "ok")
+        b = validate(input, response, "ok", reasons=REASONS)
+        assert (a.outcome, a.parsed_moves, a.mismatch, a.hallucination, a.move_count) == (
+            b.outcome, b.parsed_moves, b.mismatch, b.hallucination, b.move_count)
+        assert b.mismatch_reason is None and not b.decoy
+
+
+def test_stop_reasons_with_reasons_keep_their_outcomes():
+    assert validate(VALID, reply(SOLVE), "truncated", reasons=REASONS).outcome == "truncated"
+    assert validate(VALID, "", "refused", reasons=REASONS).outcome == "malformed_output"
+    assert validate(VALID, "", "infrastructure_failure", reasons=REASONS).outcome == "infrastructure_failure"
+    assert validate(VALID, "", "ok", reasons=REASONS).outcome == "malformed_output"
+    with pytest.raises(ValueError):
+        validate(VALID, "R", "other", reasons=REASONS)
+
+
+# Decision path with reasons.
+def test_decision_mismatch_choice_with_reasons():
+    n = REASONS.index("twisted corner") + 1
+    v = validate(INVALID, calls(f"mismatch_{n}"), "ok", decision=True, reasons=REASONS)
+    assert (v.outcome, v.mismatch, v.mismatch_reason, v.hallucination, v.move_count) == (
+        "success", True, "twisted corner", False, 0)
+    v = validate(ONE_VALID, calls(f"mismatch_{n}"), "ok", decision=True, reasons=REASONS)
+    assert (v.outcome, v.mismatch, v.mismatch_reason, v.hallucination) == ("failure", True, "twisted corner", False)
+
+
+def test_decision_decoy_choice_is_a_hallucination():
+    n = REASONS.index("twisted centre") + 1
+    v = validate(INVALID, calls(f"mismatch_{n}"), "ok", decision=True, reasons=REASONS)
+    assert (v.outcome, v.mismatch, v.hallucination, v.decoy, v.impossible_move) == (
+        "hallucination", True, True, True, False)
+
+
+def test_decision_solves_and_done_with_reasons():
+    v = validate(ONE_VALID, calls(ONE_SOLVE, "done"), "ok", decision=True, reasons=REASONS)
+    assert (v.outcome, v.hallucination, v.mismatch, v.mismatch_reason, v.move_count) == ("success", False, False, None, 1)
+    v = validate(ONE_VALID, calls("done"), "ok", decision=True, reasons=REASONS)
+    assert (v.outcome, v.hallucination) == ("failure", False)
+
+
+def test_decision_ids_must_match_the_release():
+    assert validate(INVALID, calls("mismatch"), "ok", decision=True, reasons=REASONS).outcome == "malformed_output"
+    assert validate(INVALID, calls("mismatch_1"), "ok", decision=True).outcome == "malformed_output"
+    for bad in ("mismatch_0", f"mismatch_{len(REASONS) + 1}", "mismatch_01", "mismatch_"):
+        assert validate(INVALID, calls(bad), "ok", decision=True, reasons=REASONS).outcome == "malformed_output", bad
+
+
+def test_decision_ignores_calls_after_a_mismatch_choice_with_reasons():
+    v = validate(ONE_VALID, calls("mismatch_1", ONE_SOLVE, "done"), "ok", decision=True, reasons=REASONS)
+    assert (v.outcome, v.parsed_moves, v.mismatch_reason) == ("failure", [], REASONS[0])
+
+
+def test_decision_none_hallucination_without_reasons_and_false_with_them():
+    assert validate(INVALID, "", "infrastructure_failure", decision=True).hallucination is None
+    assert validate(INVALID, "", "infrastructure_failure", decision=True, reasons=REASONS).hallucination is False
+    assert validate(INVALID, "not json", "ok", decision=True, reasons=REASONS).hallucination is False
+
+
+def test_read_decision_call_returns_the_text_model_line():
+    legal = ENGINE.legal_moves()
+
+    def call(choice):
+        return {"answers": {"next_move": {"choice": choice}}}
+
+    assert read_decision_call(call("move_1"), legal) == legal[0]
+    assert read_decision_call(call("done"), legal, REASONS) == "done"
+    assert read_decision_call(call("mismatch"), legal) == "MISMATCH"
+    assert read_decision_call(call("mismatch"), legal, REASONS) is None
+    assert read_decision_call(call("mismatch_1"), legal) is None
+    assert read_decision_call(call("mismatch_1"), legal, REASONS) == "MISMATCH " + REASONS[0]
+    assert read_decision_call(call(f"mismatch_{len(REASONS)}"), legal, REASONS) == "MISMATCH other"
+    assert read_decision_call(call("mismatch_01"), legal, REASONS) is None
+    assert read_decision_call(call(5), legal, REASONS) is None
+    assert read_decision_call({}, legal, REASONS) is None

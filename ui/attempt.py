@@ -9,6 +9,7 @@ import json
 from src.puzzles.registry import get_engine
 from src.run.models import DECISION_PROVIDERS
 from src.run.prompts import decision_questions, decision_state, fill_template, parse_questions
+from src.validator import offered_reasons
 from ui import expdata
 from ui.common import ApiError, check_id
 from ui.replay import parse_query
@@ -44,7 +45,9 @@ def attempt(bundles, experiment_id: str, live_ids: set[str], query: dict) -> dic
             questions = parse_questions(text, f"releases/{release}/prompts/decision/questions.txt")
         except ValueError as error:
             raise ApiError(404, str(error)) from None
-        asked = decision_questions(questions, get_engine(row["puzzle"]).legal_moves())
+        engine = get_engine(row["puzzle"])
+        offered = offered_reasons(engine) if exp["reasons"] else None
+        asked = decision_questions(questions, engine.legal_moves(), offered)
         prompt = f"{decision_state(prompt, [])}\n--- questions\n{json.dumps(asked, indent=2)}"
     record = expdata.find_record(exp["records"].get(model_name, []), input_id, setup, number)
     return {"prompt": prompt, "raw_response": record.get("raw_response") if record else None, "record": record}

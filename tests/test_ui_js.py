@@ -135,5 +135,5 @@ def test_experiments_default_columns_follow_the_spec():
     hidden = re.search(r"DEFAULT_HIDDEN = \[(.*?)\]", source, re.S).group(1)
     hidden = re.findall(r'"(\w+)"', hidden)
     assert [c for c in columns if c not in hidden] == [
-        "id", "started_at", "model", "puzzle", "attempts", "success_rate", "hallucination_rate",
+        "id", "started_at", "model", "puzzle", "attempts", "precision", "hallucination_rate",
         "mismatch_detection_rate", "cost_usd"]

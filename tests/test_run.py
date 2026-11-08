@@ -21,7 +21,8 @@ from src.run.models import InfrastructureError, Reply
 from src.run.budget import worst_request, worst_state
 from src.run.prompts import build_prompt, load_questions
 from src.run.raw import read_raw
-from test_release import edit_template, git, release_ok, repo  # noqa: F401  (repo is a fixture)
+from src.validator import offered_reasons
+from test_release import commit_all, edit_template, git, release_ok, repo  # noqa: F401  (repo is a fixture)
 
 EXPERIMENT = (
     'release = "1.0.0"\nattempts = 2\nretry_cap = 3\nmax_output_tokens = 100\n'
@@ -35,7 +36,7 @@ FIELDS = {
     "validity", "setup", "prompt_version", "model", "seed", "input_seed", "attempt_number",
     "raw_response", "parsed_moves", "outcome", "hallucination", "mismatch", "move_count",
     "input_tokens", "output_tokens", "retry_input_tokens", "retry_output_tokens", "latency_s",
-    "stop_reason", "served_model", "decision", "requested_model", "created_at",
+    "stop_reason", "served_model", "decision", "requested_model", "mismatch_reason", "created_at",
 }
 
 
@@ -547,11 +548,11 @@ def test_plain_progress_line_per_attempt(exp, capsys):
     assert go("--model", "A", "--limit", "3", "--no-commit") == 0
     first, second, third = progress_lines(capsys.readouterr().out)
     assert first.startswith("[1/3] A 2x2 ") and " no_model #1 failure | in 10 out 4 | $0.0000 | " in first
-    assert first.endswith("success 0% hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
+    assert first.endswith("precision 0% hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
     assert " no_model #2 hallucination | in 20 out 8 | " in second
-    assert second.endswith("success 0% hallucination 50% malformed 0% truncated 0% abstention 0% format error 0%")
+    assert second.endswith("precision 0% hallucination 50% malformed 0% truncated 0% abstention 0% format error 0%")
     assert " descriptive #1 malformed_output | in 30 out 12 | " in third and third.startswith("[3/3] A ")
-    assert third.endswith("success 0% hallucination 50% malformed 33% truncated 0% abstention 0% format error 0%")
+    assert third.endswith("precision 0% hallucination 50% malformed 33% truncated 0% abstention 0% format error 0%")
 
 
 def test_progress_counts_prior_records(exp, capsys):
@@ -566,8 +567,8 @@ def test_progress_rates_leave_out_infrastructure_failures(exp, capsys):
     models.FAKE_REPLIES[:] = [InfrastructureError("x", 0, 0) for _ in range(4)] + [reply()]
     go("--model", "A", "--limit", "2", "--no-commit")
     first, second = progress_lines(capsys.readouterr().out)
-    assert "infrastructure_failure" in first and first.endswith("success n/a hallucination n/a malformed n/a truncated n/a abstention n/a format error n/a")
-    assert second.endswith("success 0% hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
+    assert "infrastructure_failure" in first and first.endswith("precision n/a hallucination n/a malformed n/a truncated n/a abstention n/a format error n/a")
+    assert second.endswith("precision 0% hallucination 0% malformed 0% truncated 0% abstention 0% format error 0%")
 
 
 def test_no_progress_for_dry_run_and_estimate(exp, capsys):
@@ -788,7 +789,7 @@ def test_decision_model_end_to_end(exp, monkeypatch):
                *[InfrastructureError("x", 5, 1) for _ in range(4)]]
     assert go("--limit", "3") == 0
     solved_row, malformed_row, failed_row = records(exp, "D")
-    assert solved_row["outcome"] == "success" and solved_row["hallucination"] is None
+    assert solved_row["outcome"] == "success" and solved_row["hallucination"] is False
     assert len(json.loads(solved_row["raw_response"])) == len(solved)
     assert solved_row["input_tokens"] == 10 * len(solved) and solved_row["served_model"] == "d-served"
     assert solved_row["latency_s"] == pytest.approx(0.25 * len(solved)) and solved_row["stop_reason"] == "ok"
@@ -805,10 +806,10 @@ def test_decision_model_end_to_end(exp, monkeypatch):
     with open(exp / "results/exp/1.0.0.metrics.csv", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     by_setup = {r["setup"]: r for r in rows if r["model"] == "D"}
-    assert by_setup["no_model"]["success_rate"] == "1.0000" and by_setup["no_model"]["hallucination_rate"] == "n/a"
+    assert by_setup["no_model"]["precision"] == "1.0000" and by_setup["no_model"]["hallucination_rate"] == "n/a"
     assert by_setup["descriptive"]["malformed_output_rate"] == "1.0000"
     assert by_setup["prescriptive"]["infrastructure_failure_count"] == "1"
-    assert by_setup["prescriptive"]["success_rate_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
+    assert by_setup["prescriptive"]["precision_n"] == "0" and by_setup["prescriptive"]["input_tokens_per_attempt"] == "20.0000"
 
 
 def test_decision_reply_without_a_model_keeps_served_empty_and_requests_the_entry_id(exp, monkeypatch):
@@ -821,10 +822,11 @@ def test_decision_reply_without_a_model_keeps_served_empty_and_requests_the_entr
 
 def test_decision_mismatch_choice_ends_the_attempt_and_sets_the_flag(exp, monkeypatch):
     fake = decision_exp(exp, monkeypatch)
-    fake[:] = [d_reply("move_1"), d_reply("mismatch"), d_reply("done")]
+    fake[:] = [d_reply("move_1"), d_reply("mismatch_1"), d_reply("done")]
     assert go("--limit", "1") == 0
     (row,) = records(exp, "D")
     assert row["mismatch"] is True and len(json.loads(row["raw_response"])) == 2 and len(fake) == 1
+    assert row["mismatch_reason"] == offered_reasons(get_engine(row["puzzle"]))[0]
 
 
 def test_decision_infrastructure_failure_keeps_the_completed_calls(exp, monkeypatch):
@@ -881,7 +883,8 @@ def test_decision_estimate_is_cap_calls_of_the_longest_state(exp, monkeypatch, c
             for setup in run_module.SETUPS:
                 state = worst_request(build_prompt(exp / "releases/1.0.0/prompts", row, setup),
                                       get_engine(row["puzzle"]).legal_moves(), cap,
-                                      load_questions(exp / "releases/1.0.0/prompts"))
+                                      load_questions(exp / "releases/1.0.0/prompts"),
+                                      offered_reasons(get_engine(row["puzzle"])))
                 expected += cap * (-(-len(state) // 4) * 1.0 + 100 * 2.0) / 1e6
         assert f"worst case ${expected:.4f}" in line
 
@@ -1237,3 +1240,69 @@ def test_parse_raw_text_counts_the_same_lines_as_read_raw(tmp_path):
     path = tmp_path / "m.jsonl"
     path.write_text(text, encoding="utf-8")
     assert parse_raw_text(text) == read_raw(path) == ([{"a": 1}, {"d": 3}], 2)
+
+
+def test_records_hold_mismatch_reason_and_progress_shows_precision(exp, capsys):
+    reason = offered_reasons(get_engine("2x2"))[0]
+    models.FAKE_REPLIES[:] = [reply(f"MISMATCH {reason}")]
+    go("--model", "A", "--limit", "1", "--no-commit")
+    (line,) = progress_lines(capsys.readouterr().out)
+    (row,) = records(exp, "A")
+    assert row["mismatch_reason"] == reason and "precision 0%" in line
+
+
+def test_progress_precision_counts_tp_and_tn():
+    from src.run.progress import Tally
+    price = {"price_input_per_mtok": 0, "price_output_per_mtok": 0}
+    base = {"input_tokens": 0, "output_tokens": 0, "retry_input_tokens": 0, "retry_output_tokens": 0,
+            "validity": "valid", "mismatch": False, "parsed_moves": []}
+    tally = Tally()
+    tally.add(dict(base, outcome="success", parsed_moves=["R"]), price)
+    tally.add(dict(base, outcome="failure", parsed_moves=["R"]), price)
+    tally.add(dict(base, outcome="success", validity="invalid", mismatch=True, mismatch_reason="twisted corner"),
+              price, "twisted corner at UFR")
+    tally.add(dict(base, outcome="abstention"), price)
+    assert tally.precision() == "67%"
+
+
+def test_per_puzzle_depths_give_each_puzzle_its_cap(exp):
+    from src.config import max_moves
+    release = {"scramble_depths": {"2x2": [3], "4x4": [10, 40]}}
+    assert max_moves({}, release, "2x2") == 6 and max_moves({}, release, "4x4") == 80
+
+
+def test_manifest_mismatch_reasons_must_match_the_prompts(exp, capsys):
+    path = exp / "releases/1.0.0/manifest.json"
+    path.chmod(0o644)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["mismatch_reasons"] = False
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert go("--estimate") == 1
+    assert "mismatch_reasons" in capsys.readouterr().err
+
+
+def test_decision_model_under_a_release_without_mismatch_reasons(repo, monkeypatch):
+    for path in (repo / "prompts").rglob("*.txt"):
+        path.write_text(path.read_text(encoding="utf-8").replace("{mismatch_reasons}", ""), encoding="utf-8")
+    commit_all(repo, "templates without mismatch reasons")
+    release_ok(repo, "major")
+    assert json.loads((repo / "releases/1.0.0/manifest.json").read_text(encoding="utf-8"))["mismatch_reasons"] is False
+    (repo / "config" / "experiments").mkdir()
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(release_module, "REPO_ROOT", repo)
+    fake = decision_exp(repo, monkeypatch)
+    asked = []
+    from src.run import decision as decision_module
+    real = decision_module.call_decision
+
+    def spy(model, state, questions):
+        asked.append(questions)
+        return real(model, state, questions)
+
+    monkeypatch.setattr(decision_module, "call_decision", spy)
+    fake[:] = [d_reply("move_1"), d_reply("mismatch"), d_reply("done")]
+    assert go("--limit", "1") == 0
+    (row,) = records(repo, "D")
+    assert "mismatch" in json.dumps(asked[0]) and "mismatch_1" not in json.dumps(asked[0])
+    assert row["mismatch"] is True and len(json.loads(row["raw_response"])) == 2 and row["hallucination"] is None
+    assert row["mismatch_reason"] is None and row["decision"] is True

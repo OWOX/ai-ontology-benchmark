@@ -2,7 +2,7 @@
 """Re-validates every raw record of one experiment under one release and computes the metrics.
 Reads results/<ID>/experiment.toml, results/<ID>/raw/*.jsonl, the release folder, the assessment
 files and the token prices. Writes results/<ID>/prices.toml (first run only), <VERSION>.metrics.csv,
-<VERSION>.paired.csv, <VERSION>.detection.csv, <VERSION>.corruption.csv and <VERSION>.md. Never edits a raw record, and makes no model calls. The
+<VERSION>.paired.csv, <VERSION>.detection.csv, <VERSION>.corruption.csv, <VERSION>.reasons.csv and <VERSION>.md. Never edits a raw record, and makes no model calls. The
 metric maths is in src/evaluate/metrics.py.
 """
 
@@ -14,7 +14,8 @@ import sys
 from pathlib import Path
 
 from src.config import load_experiment_config, load_prices
-from src.evaluate.metrics import EvalError, compute, CORRUPTION_COLUMNS, DETECTION_COLUMNS, corruption_rows, detection_rows, paired_tests
+from src.evaluate.metrics import (CORRUPTION_COLUMNS, DETECTION_COLUMNS, REASON_COLUMNS, EvalError, compute,
+                                  corruption_rows, detection_rows, paired_tests, reason_rows)
 from src.evaluate.report import write_report
 from src.release.release import ReleaseError, load_release, parse_version
 from src.run.budget import BudgetError, check_prices
@@ -119,14 +120,17 @@ def evaluate(args: argparse.Namespace) -> None:
     detection_content = csv_text(detection, columns=DETECTION_COLUMNS)
     corruption = corruption_rows(attempt_rows, names)
     corruption_content = csv_text(corruption, columns=CORRUPTION_COLUMNS)
+    reasons = reason_rows(attempt_rows, names)
+    reasons_content = csv_text(reasons, columns=REASON_COLUMNS)
     # Every check is done. Write the outputs last, the prices copy after the others.
     write_report(results / f"{version}.md", args.experiment, config, release_dir, prices,
                  attempt_rows, metric_rows, summary_rows, torn, paired_rows=paired_rows, detection_rows=detection,
-                 corruption_rows=corruption)
+                 corruption_rows=corruption, reason_rows=reasons)
     (results / f"{version}.metrics.csv").write_text(csv_content, encoding="utf-8", newline="")
     (results / f"{version}.paired.csv").write_text(paired_content, encoding="utf-8", newline="")
     (results / f"{version}.detection.csv").write_text(detection_content, encoding="utf-8", newline="")
     (results / f"{version}.corruption.csv").write_text(corruption_content, encoding="utf-8", newline="")
+    (results / f"{version}.reasons.csv").write_text(reasons_content, encoding="utf-8", newline="")
     if not saved_prices.exists():
         saved_prices.write_bytes(prices_path.read_bytes())
     print(f"Evaluated {len(attempt_rows)} attempts under release {version}")

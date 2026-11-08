@@ -12,7 +12,7 @@ None.
 
 ## Outputs
 
-An abstract base class `Engine` with the nine abstract methods from AGENTS.md, in the same order: `legal_moves`, `solved_state`, `load_state`, `apply_move`, `is_solved`, `scramble`, `corrupt`, `render`, and `is_move_token`. Each method's docstring repeats its line from AGENTS.md. The class has no logic.
+An abstract base class `Engine` with the eleven abstract methods from AGENTS.md, in the same order: `legal_moves`, `solved_state`, `load_state`, `apply_move`, `is_solved`, `scramble`, `corrupt`, `render`, `is_move_token`, `mismatch_reasons`, and `decoy_reasons`. Each method's docstring repeats its line from AGENTS.md. The class has no logic.
 
 Two exception classes live here too, so that callers can catch them by name:
 
@@ -21,5 +21,5 @@ Two exception classes live here too, so that callers can catch them by name:
 
 ## How to test
 
-1. A subclass that implements all nine methods can be instantiated.
+1. A subclass that implements all eleven methods can be instantiated.
 2. A subclass that leaves out any one method raises `TypeError` on instantiation. One test for each method.

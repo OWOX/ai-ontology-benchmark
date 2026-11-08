@@ -11,7 +11,10 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import CORRUPTION_COLUMNS, DETECTION_COLUMNS, bootstrap_interval, compute, corruption_rows, corruption_type, detection_rows, holm, paired_tests, rates, sign_test
+from src.evaluate.metrics import (CORRUPTION_COLUMNS, CORRUPTION_TYPES, DETECTION_COLUMNS, REASON_COLUMNS, answer_class,
+                                  bootstrap_interval, compute, corruption_rows, corruption_type, detection_rows,
+                                  holm, paired_tests, rates, reason_rows, sign_test)
+from src.puzzles.cube import CUBE_CORRUPTION_TYPES
 from src.puzzles.registry import get_engine
 from src.release import release as release_module
 from src.run import models, run as run_module
@@ -28,13 +31,14 @@ def make_inputs() -> list[dict]:
         state, _ = engine.scramble(seed, 1)
         base = {"puzzle": "2x2", "scramble_depth": 1, "input_seed": seed, "state": state, "validity": "valid"}
         rows.append(dict(base, input_id=f"2x2-d1-00{n}"))
-        bad, _ = engine.corrupt(state, seed)
-        rows.append(dict(base, input_id=f"2x2-d1-00{n}-x", state=bad, validity="invalid"))
+        bad, corruption = engine.corrupt(state, seed)
+        rows.append(dict(base, input_id=f"2x2-d1-00{n}-x", state=bad, validity="invalid", corruption=corruption))
     return rows
 
 
-def write_release_dir(folder: Path) -> Path:
+def write_release_dir(folder: Path, reasons: bool = False) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
+    (folder / "manifest.json").write_text(json.dumps({"mismatch_reasons": reasons}), encoding="utf-8")
     text = "".join(json.dumps(row, sort_keys=True) + "\n" for row in make_inputs())
     (folder / "inputs.jsonl").write_text(text, encoding="utf-8")
     return folder
@@ -150,7 +154,8 @@ def test_hand_worked_metrics(release_dir):
     valid, invalid = metric(metrics, "valid"), metric(metrics, "invalid")
     assert [r["validity"] for r in metrics] == ["valid", "invalid"]
     assert (valid["attempts"], valid["infrastructure_failure_count"]) == (6, 0)
-    assert (valid["success_rate"], valid["success_rate_n"]) == (0.5, 6)
+    assert (valid["precision"], valid["precision_n"]) == (0.5, 6)
+    assert (valid["coverage"], valid["coverage_n"]) == (1.0, 6)
     assert valid["hallucination_rate"] == pytest.approx(1 / 5)  # 5 of the 6 attempts gave moves
     assert valid["hallucination_rate_n"] == 5
     assert valid["false_mismatch_rate"] == pytest.approx(1 / 6)
@@ -160,18 +165,19 @@ def test_hand_worked_metrics(release_dir):
     assert valid["latency_per_attempt_s"] == pytest.approx(3.0)
     assert valid["input_tokens_per_attempt"] == pytest.approx(62 / 6)
     assert valid["output_tokens_per_attempt"] == pytest.approx(31 / 6)
-    assert valid["cost_per_success"] == pytest.approx(0.124 / 3)
-    assert invalid["success_rate"] == pytest.approx(2 / 6)
+    assert valid["cost_per_attempt"] == pytest.approx(0.124 / 6)
+    assert invalid["precision"] == 0.4  # no reasons: the 2 flagged answers are true negatives, the 3 with moves false positives
+    assert (invalid["precision_n"], invalid["coverage"]) == (5, pytest.approx(5 / 6))
+    assert invalid["diagnosis_rate"] == "n/a" and invalid["reason_hallucination_rate"] == "n/a"
     assert invalid["hallucination_rate"] == pytest.approx(2 / 3)  # MISMATCH and malformed attempts left out
     assert invalid["hallucination_rate_n"] == 3
     assert invalid["malformed_output_rate"] == pytest.approx(1 / 6)
     assert invalid["mismatch_detection_rate"] == pytest.approx(2 / 6)
     assert invalid["false_mismatch_rate"] == "n/a"
     assert invalid["consistency"] == pytest.approx(1 / 3)
-    assert invalid["cost_per_success"] == pytest.approx(0.12 / 2)
-    assert invalid["success_rate_low"] <= 2 / 6 <= invalid["success_rate_high"]
-    assert invalid["success_rate_inputs"] == 2 and valid["success_rate_inputs"] == 2
-    assert [(r["validity"], r["success_rate_n"]) for r in summary] == [("valid", 6), ("invalid", 6)]
+    assert invalid["cost_per_attempt"] == pytest.approx(0.12 / 6)
+    assert invalid["precision_inputs"] == 2 and valid["precision_inputs"] == 2
+    assert [(r["validity"], r["precision_n"]) for r in summary] == [("valid", 6), ("invalid", 5)]
 
 
 def test_infrastructure_failures_change_only_counts_tokens_and_cost(release_dir):
@@ -179,19 +185,25 @@ def test_infrastructure_failures_change_only_counts_tokens_and_cost(release_dir)
     _, after, _ = compute(twelve_records() + infra_records(), release_dir, PRICES)
     old, new = metric(before, "invalid"), metric(after, "invalid")
     assert metric(before, "valid") == metric(after, "valid")
-    for name in ("success_rate", "hallucination_rate", "mismatch_detection_rate", "malformed_output_rate",
-                 "success_rate_n", "consistency", "latency_per_attempt_s"):
+    for name in ("precision", "hallucination_rate", "mismatch_detection_rate", "malformed_output_rate",
+                 "precision_n", "consistency", "latency_per_attempt_s"):
         assert new[name] == old[name]
     assert (old["infrastructure_failure_count"], new["infrastructure_failure_count"]) == (0, 2)
     assert new["input_tokens_per_attempt"] == pytest.approx((60 + 14) / 8)
     assert new["output_tokens_per_attempt"] == pytest.approx((30 + 6) / 8)
-    assert new["cost_per_success"] == pytest.approx((0.12 + 2 * (7 * 1000 + 3 * 2000) / 1e6) / 2)
+    assert new["cost_per_attempt"] == pytest.approx((0.12 + 2 * (7 * 1000 + 3 * 2000) / 1e6) / 8)
+    attempts_before, _, _ = compute(twelve_records(), release_dir, PRICES)
+    costly = [raw("2x2-d1-001-x", n, "", "infrastructure_failure", retry=(700, 300)) for n in (4, 5)]
+    attempts_after, _, _ = compute(twelve_records() + costly, release_dir, PRICES)
+    efficiency = lambda rows: [r["cost_efficiency"] for r in detection_rows(rows, ["M"])]
+    assert efficiency(attempts_after)[0] > efficiency(attempts_before)[0]
 
 
-def test_no_successes_gives_no_cost_per_success(release_dir):
-    records = [raw("2x2-d1-001", 1, answer(["U"]), "failure")]
-    _, metrics, _ = compute(records, release_dir, PRICES)
-    assert metrics[0]["cost_per_success"] == "n/a"
+def test_group_without_classified_answer_has_no_precision_or_cost_efficiency(release_dir):
+    records = [raw("2x2-d1-001", 1, "Sorry, no.", "abstention")]
+    attempts, metrics, _ = compute(records, release_dir, PRICES)
+    assert metrics[0]["precision"] == "n/a" and metrics[0]["coverage"] == 0.0
+    assert detection_rows(attempts, ["M"])[0]["cost_efficiency"] == "n/a"
 
 
 def test_changed_stored_outcome_shows_both_and_metrics_use_current(release_dir):
@@ -200,7 +212,7 @@ def test_changed_stored_outcome_shows_both_and_metrics_use_current(release_dir):
     attempts, metrics, _ = compute(records, release_dir, PRICES)
     changed = [r for r in attempts if r["stored_outcome"] != r["outcome"]]
     assert [(r["stored_outcome"], r["outcome"]) for r in changed] == [("failure", "success")]
-    assert metric(metrics, "valid")["success_rate"] == 0.5
+    assert metric(metrics, "valid")["precision"] == 0.5
 
 
 def test_rows_sorted_by_setup_then_model_order(release_dir):
@@ -217,10 +229,18 @@ def test_rows_sorted_by_setup_then_model_order(release_dir):
 # ---- mismatch detection ----
 
 
-def _row(input_id, validity, mismatch, outcome="failure", model="m", setup="no_model", puzzle="2x2"):
-    return {"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
-            "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False,
-            "parsed_moves": ["R"]}
+def finish(row: dict, **extra) -> dict:
+    """Fill the attempt row fields the re-validation would set, then the class of the answer."""
+    row = {"impossible_move": row["outcome"] == "hallucination", "mismatch_reason": None, "decoy": False,
+           "reasons": False, "corruption": None, "cost": 0.0, **row, **extra}
+    row["answer_class"] = answer_class(row)
+    return row
+
+
+def _row(input_id, validity, mismatch, outcome="failure", model="m", setup="no_model", puzzle="2x2", **extra):
+    return finish({"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
+                   "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False,
+                   "parsed_moves": ["R"]}, **extra)
 
 
 def test_balanced_accuracy():
@@ -258,13 +278,14 @@ def test_detection_leaves_out_infrastructure_failures_and_sorts():
 # ---- paired setup test ----
 
 
-def arow(input_id, setup, outcome, model="M", puzzle="2x2", validity="valid", mismatch=False, moves=("R",)):
-    return {"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
-            "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False,
-            "parsed_moves": list(moves)}
+def arow(input_id, setup, outcome, model="M", puzzle="2x2", validity="valid", mismatch=False, moves=("R",),
+         **extra):
+    return finish({"model": model, "puzzle": puzzle, "validity": validity, "setup": setup,
+                   "input_id": input_id, "outcome": outcome, "mismatch": mismatch, "decision": False,
+                   "parsed_moves": list(moves)}, **extra)
 
 
-def pair_row(rows, metric_name="success_rate", pair=("no_model", "descriptive"), **where):
+def pair_row(rows, metric_name="precision", pair=("no_model", "descriptive"), **where):
     (found,) = [r for r in paired_tests(rows) if r["metric"] == metric_name
                 and (r["setup_a"], r["setup_b"]) == pair
                 and all(r[k] == v for k, v in where.items())]
@@ -365,7 +386,7 @@ def test_hallucination_rate_counts_only_attempts_that_gave_moves():
     out = rates(rows, "valid", "k")
     assert out["hallucination_rate"] == pytest.approx(1 / 3)
     assert (out["hallucination_rate_n"], out["hallucination_rate_inputs"]) == (3, 2)
-    assert out["success_rate_n"] == 7
+    assert out["precision_n"] == 4
 
 
 def test_hallucination_rate_is_na_when_no_attempt_gave_moves():
@@ -379,7 +400,7 @@ def test_hallucination_pair_needs_a_move_giving_attempt_under_each_setup():
             arow("i2", "no_model", "success"), arow("i2", "descriptive", "hallucination")]
     row = pair_row(rows, "hallucination_rate")
     assert row["inputs_paired"] == 1 and row["b_higher"] == 1
-    assert pair_row(rows, "success_rate")["inputs_paired"] == 2
+    assert pair_row(rows, "precision")["inputs_paired"] == 1  # an abstention is not a classified answer
 
 
 def test_valid_inputs_get_no_mismatch_detection_rows():
@@ -389,8 +410,8 @@ def test_valid_inputs_get_no_mismatch_detection_rows():
             arow("j1", "descriptive", "failure", validity="invalid")]
     result = paired_tests(rows)
     assert {(r["validity"], r["metric"]) for r in result} == {
-        ("valid", "success_rate"), ("valid", "hallucination_rate"),
-        ("invalid", "success_rate"), ("invalid", "hallucination_rate"),
+        ("valid", "precision"), ("valid", "hallucination_rate"),
+        ("invalid", "precision"), ("invalid", "hallucination_rate"),
         ("invalid", "mismatch_detection_rate")}
     row = pair_row(rows, "mismatch_detection_rate", validity="invalid")
     assert (row["a_higher"], row["b_higher"]) == (1, 0)
@@ -406,7 +427,7 @@ def test_paired_rows_sorted_and_pooled_over_depths():
     keys = [(r["model"], r["puzzle"], r["metric"], r["setup_a"], r["setup_b"]) for r in result]
     assert [k[:2] for k in keys[::6]] == [("B", "2x2"), ("B", "3x3"), ("A", "2x2"), ("A", "3x3")]
     assert [(r["metric"], r["setup_a"], r["setup_b"]) for r in result[:6]] == [
-        (m, a, b) for m in ("success_rate", "hallucination_rate")
+        (m, a, b) for m in ("precision", "hallucination_rate")
         for a, b in (("no_model", "descriptive"), ("no_model", "prescriptive"), ("descriptive", "prescriptive"))]
     assert [r["model"] for r in paired_tests(rows)[::6]] == ["A", "A", "B", "B"]
 
@@ -621,7 +642,7 @@ def test_decision_model_hallucination_rate_is_na(release_dir):
     assert summary[0]["hallucination_rate"] == "n/a"
     assert not any(r["metric"] == "hallucination_rate" and r["model"] == "jev"
                    for r in paired_tests(attempts))
-    assert any(r["metric"] == "success_rate" for r in paired_tests(attempts))
+    assert any(r["metric"] == "precision" for r in paired_tests(attempts))
 
 
 def test_old_records_rescore_without_error(release_dir):
@@ -672,5 +693,170 @@ def test_all_infrastructure_failures_evaluate_with_header_only_csvs(repo, monkey
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     assert go() == 0
     for name, header in (("detection", ",".join(DETECTION_COLUMNS)),
-                         ("corruption", ",".join(CORRUPTION_COLUMNS))):
+                         ("corruption", ",".join(CORRUPTION_COLUMNS)),
+                         ("reasons", ",".join(REASON_COLUMNS))):
         assert (repo / f"results/exp/1.0.0.{name}.csv").read_text(encoding="utf-8") == header + "\n"
+
+
+def test_answer_class():
+    from src.evaluate.metrics import answer_class
+
+    def row(outcome, moves=(), reason=None, corruption=None, mismatch=False, reasons=True):
+        return {"outcome": outcome, "parsed_moves": list(moves), "mismatch_reason": reason,
+                "corruption": corruption, "mismatch": mismatch, "reasons": reasons}
+
+    twisted = "twisted corner at UFR"
+    assert answer_class(row("success", ["R"])) == "tp"
+    assert answer_class(row("failure", ["R"])) == "fp"
+    assert answer_class(row("hallucination", ["Q"])) == "fp"
+    assert answer_class(row("failure", ["R"], corruption=twisted)) == "fp"
+    assert answer_class(row("success", [], "twisted corner", twisted, True)) == "tn"
+    assert answer_class(row("failure", [], "other", twisted, True)) == "fn"
+    assert answer_class(row("failure", [], "twisted corner", None, True)) == "fn"  # false MISMATCH on a valid input
+    assert answer_class(row("failure", [], None, twisted, True)) == "fn"
+    # a decision model that moves and then picks a mismatch option claims the puzzle can't be solved
+    assert answer_class(row("success", ["R"], "twisted corner", twisted, True)) == "tn"
+    assert answer_class(row("failure", ["R"], "other", twisted, True)) == "fn"
+    assert answer_class(row("failure", ["R"], "twisted corner", None, True)) == "fn"
+    # without mismatch reasons a flagged invalid input is a true negative, and a flagged valid one is not
+    assert answer_class(row("success", [], None, twisted, True, reasons=False)) == "tn"
+    assert answer_class(row("failure", [], None, None, True, reasons=False)) == "fn"
+    for outcome in ("abstention", "format_error", "truncated", "malformed_output", "infrastructure_failure"):
+        assert answer_class(row(outcome)) is None
+
+
+# ---- mismatch reasons ----
+
+
+@pytest.fixture
+def reasons_dir(tmp_path):
+    return write_release_dir(tmp_path / "release-reasons", reasons=True)
+
+
+def reason_records() -> list[dict]:
+    """Valid 001: one solve, one false MISMATCH with a reason, one decoy. Invalid 001-x: a diagnosis,
+    a wrong reason, `other`, and a decoy."""
+    v1, i1 = "2x2-d1-001", "2x2-d1-001-x"
+    return [
+        raw(v1, 1, "R", "success"),
+        raw(v1, 2, "MISMATCH twisted corner", "failure"),
+        raw(v1, 3, "MISMATCH twisted centre", "hallucination"),
+        raw(i1, 1, "MISMATCH twisted corner", "success"),
+        raw(i1, 2, "MISMATCH swapped edges", "success"),
+        raw(i1, 3, "MISMATCH other", "success"),
+        raw(i1, 4, "MISMATCH twisted centre", "hallucination"),
+        raw(i1, 5, "M", "hallucination"),
+        raw(i1, 6, "R", "failure"),
+    ]
+
+
+def test_corruption_types_have_one_source():
+    assert CORRUPTION_TYPES == CUBE_CORRUPTION_TYPES
+
+
+def test_reason_metrics_and_classes(reasons_dir):
+    attempts, metrics, _ = compute(reason_records(), reasons_dir, PRICES)
+    classes = {(r["input_id"], r["attempt_number"]): r["answer_class"] for r in attempts}
+    assert [classes[("2x2-d1-001", n)] for n in (1, 2, 3)] == ["tp", "fn", "fn"]
+    assert [classes[("2x2-d1-001-x", n)] for n in range(1, 7)] == ["tn", "fn", "fn", "fn", "fp", "fp"]
+    valid, invalid = metric(metrics, "valid"), metric(metrics, "invalid")
+    assert valid["precision"] == pytest.approx(1 / 3) and invalid["precision"] == pytest.approx(1 / 6)
+    assert invalid["diagnosis_rate"] == pytest.approx(1 / 6) and invalid["diagnosis_rate_n"] == 6
+    # the decoy is a hit for the reason hallucination rate and not for the hallucination rate
+    assert (valid["reason_hallucination_rate"], valid["reason_hallucination_rate_n"]) == (0.5, 2)
+    assert (invalid["reason_hallucination_rate"], invalid["reason_hallucination_rate_n"]) == (pytest.approx(0.25), 4)
+    assert (valid["hallucination_rate"], valid["hallucination_rate_n"]) == (0.0, 1)
+    assert (invalid["hallucination_rate"], invalid["hallucination_rate_n"]) == (pytest.approx(0.5), 2)
+
+
+def test_impossible_move_is_not_a_decoy(reasons_dir):
+    attempts, _, _ = compute(reason_records(), reasons_dir, PRICES)
+    by = {(r["input_id"], r["attempt_number"]): r for r in attempts}
+    assert (by[("2x2-d1-001", 3)]["decoy"], by[("2x2-d1-001", 3)]["impossible_move"]) == (True, False)
+    assert (by[("2x2-d1-001-x", 5)]["decoy"], by[("2x2-d1-001-x", 5)]["impossible_move"]) == (False, True)
+
+
+def test_diagnosis_rate_and_critical_thinking():
+    rows = ([_row(f"x{i}", "invalid", True, reasons=True, mismatch_reason=reason, corruption="twisted corner UBR")
+             for i, reason in ((1, "twisted corner"), (2, "twisted corner"), (3, "other"), (4, None))]
+            + [_row(f"v{i}", "valid", False, reasons=True) for i in (1, 2)])
+    rows[3]["mismatch"] = False
+    [row] = detection_rows(rows, ["m"])
+    assert row["diagnosis_rate"] == 0.5 and row["critical_thinking"] == 0.75
+    assert (row["fixed_answer_reason"], row["fixed_answer_critical_thinking"]) == ("twisted corner", 0.5)
+    corruption = corruption_rows(rows, ["m"])
+    assert [(r["corruption_type"], r["diagnosis_rate"]) for r in corruption] == [("twisted corner", 0.5)]
+
+
+def test_balanced_precision_coverage_and_cost_efficiency():
+    rows = [_row("v1", "valid", False, outcome="success", cost=0.01), _row("v2", "valid", False, cost=0.01),
+            _row("x1", "invalid", True, outcome="success", cost=0.01, reasons=True, mismatch_reason="twisted corner",
+                 parsed_moves=[], corruption="twisted corner U"),
+            _row("x2", "invalid", False, outcome="abstention", cost=0.01, corruption="twisted corner U")]
+    # valid: tp, fp -> 0.5. invalid: tn -> 1.0 over one classified answer
+    [row] = detection_rows(rows, ["m"])
+    assert row["balanced_precision"] == pytest.approx(0.75)
+    assert (row["coverage"], row["coverage_n"]) == (0.75, 4)
+    assert row["cost_efficiency"] == pytest.approx(0.01 / (0.75 * 0.75))
+
+
+def test_precision_half_and_one_gives_balanced_precision():
+    rows = ([_row("v1", "valid", False, outcome="success"), _row("v2", "valid", False)]
+            + [_row("x1", "invalid", True, outcome="success", parsed_moves=[], reasons=True,
+                    mismatch_reason="twisted corner", corruption="twisted corner U")])
+    assert detection_rows(rows, ["m"])[0]["balanced_precision"] == 0.75
+
+
+def test_balanced_precision_interval_needs_two_inputs_per_side():
+    rows = [_row("v1", "valid", False, outcome="success"), _row("x1", "invalid", False)]
+    row = detection_rows(rows, ["m"])[0]
+    assert row["balanced_precision"] == 0.5 and row["balanced_precision_low"] == "n/a"
+    many = ([_row(f"v{i}", "valid", False, outcome="success" if i % 2 else "failure") for i in range(6)]
+            + [_row(f"x{i}", "invalid", False) for i in range(6)])
+    row = detection_rows(many, ["m"])[0]
+    assert 0.0 <= row["balanced_precision_low"] <= row["balanced_precision"] <= row["balanced_precision_high"] <= 1.0
+
+
+def test_decision_model_group_has_reason_hallucination_but_no_hallucination_rate(reasons_dir):
+    reasons = get_engine("2x2").mismatch_reasons() + ["other"]
+    choice = f"mismatch_{reasons.index('twisted centre') + 1}"
+    calls = [{"answers": {"next_move": {"choice": choice}}}]
+    record = raw("2x2-d1-001-x", 1, json.dumps(calls), "hallucination")
+    attempts, metrics, _ = compute([record], reasons_dir, PRICES, decision_models={"M"})
+    assert attempts[0]["decision"] is True
+    invalid = metric(metrics, "invalid")
+    assert invalid["hallucination_rate"] == "n/a"
+    assert (invalid["reason_hallucination_rate"], invalid["reason_hallucination_rate_n"]) == (1.0, 1)
+
+
+def test_release_without_reasons_has_no_reason_columns_or_rows(release_dir):
+    attempts, metrics, _ = compute(reason_records(), release_dir, PRICES)
+    invalid = metric(metrics, "invalid")
+    assert (invalid["diagnosis_rate"], invalid["reason_hallucination_rate"]) == ("n/a", "n/a")
+    assert reason_rows(attempts, ["M"]) == []
+    [row] = detection_rows(attempts, ["M"])
+    assert row["critical_thinking"] == "n/a" and row["fixed_answer_reason"] == "n/a"
+    # no reason is asked for, so a flagged invalid input is a true negative and a flagged valid one a false negative
+    assert all(r["answer_class"] == ("tn" if r["validity"] == "invalid" else "fn") for r in attempts if r["mismatch"])
+
+
+def test_reason_rows_count_expected_against_given(reasons_dir):
+    attempts, _, _ = compute(reason_records(), reasons_dir, PRICES)
+    rows = reason_rows(attempts, ["M"])
+    assert [(r["expected"], r["reason"], r["attempts"]) for r in rows] == [
+        ("none", "none", 1), ("none", "twisted corner", 1), ("none", "twisted centre", 1),
+        ("twisted corner", "none", 2), ("twisted corner", "twisted corner", 1),
+        ("twisted corner", "swapped edges", 1), ("twisted corner", "twisted centre", 1),
+        ("twisted corner", "other", 1)]
+    assert list(rows[0]) == list(REASON_COLUMNS)
+
+
+def test_diagnosis_pairs_only_under_a_release_with_reasons():
+    plain = [arow("x1", s, "success", validity="invalid", mismatch=True) for s in ("no_model", "descriptive")]
+    assert not [r for r in paired_tests(plain) if r["metric"] == "diagnosis_rate"]
+    rows = [arow("x1", "no_model", "success", validity="invalid", mismatch=True, reasons=True,
+                 mismatch_reason="twisted corner", corruption="twisted corner U"),
+            arow("x1", "descriptive", "success", validity="invalid", mismatch=True, reasons=True,
+                 mismatch_reason="other", corruption="twisted corner U")]
+    row = pair_row(rows, "diagnosis_rate", validity="invalid")
+    assert (row["inputs_paired"], row["a_higher"]) == (1, 1)

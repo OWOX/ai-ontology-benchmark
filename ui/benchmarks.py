@@ -12,9 +12,9 @@ from ui.expdata import all_scope_rates
 from ui.expdata import cell as na_to_none
 from ui.pooling import RATES
 
-METRICS = (*RATES, "consistency", "latency_per_attempt_s", "tokens_per_attempt",
-           "cost_per_success")
-HIGHER = ("success_rate", "mismatch_detection_rate", "consistency")
+BENCH_RATES = tuple(r for r in RATES if r not in ("coverage", "reason_hallucination_rate", "diagnosis_rate"))
+METRICS = (*BENCH_RATES, "consistency", "latency_per_attempt_s", "tokens_per_attempt", "cost_efficiency")
+HIGHER = ("precision", "mismatch_detection_rate", "consistency")
 
 
 def direction(metric: str) -> str:
@@ -45,17 +45,18 @@ def cells(rows: list[dict], scope: str, key: str) -> dict[str, dict]:
     names the group for the bootstrap. A hallucination cell is n/a when every attempt is a decision model's."""
     done = [r for r in rows if r["outcome"] != "infrastructure_failure"]
     stats = bootstrap_rates(done, scope, key)
-    out = {m: rate_cell(stats, m) for m in RATES}
+    out = {m: rate_cell(stats, m) for m in BENCH_RATES}
     out["consistency"] = {"value": na_to_none(consistency_of(done)), "n": len(done)}
     latencies = [r["latency_s"] for r in done if r["latency_s"] is not None]
     out["latency_per_attempt_s"] = {"value": na_to_none(mean(latencies)), "n": len(latencies)}
     tokens = [r["input_tokens"] + r["output_tokens"] + r["retry_input_tokens"] + r["retry_output_tokens"]
               for r in rows]
     out["tokens_per_attempt"] = {"value": na_to_none(mean(tokens)), "n": len(rows)}
-    successes = sum(r["outcome"] == "success" for r in rows)
     priced = all(r.get("priced", True) for r in rows)  # an unpriced model's cost is 0, never a result
-    out["cost_per_success"] = {"value": sum(r["cost"] for r in rows) / successes if successes and priced else None,
-                               "n": len(rows)}
+    # A precision of 0 means no right answer, so the cost of one is unbounded: n/a, not a division by zero.
+    right = (na_to_none(stats["precision"]) or 0) * (na_to_none(stats["coverage"]) or 0)
+    out["cost_efficiency"] = {"value": mean([r["cost"] for r in rows]) / right if priced and rows and right else None,
+                              "n": len(rows)}
     ids = list(dict.fromkeys(r["experiment"] for r in rows))  # the experiments behind the cell, in read order
     return {m: {**c, "experiments": ids} for m, c in out.items()}
 
@@ -67,13 +68,15 @@ def hit(row: dict, metric: str) -> bool:
 def shares(rows: list[dict], metric: str) -> dict:
     """Like `src.evaluate.metrics.input_shares`, but per input across setups and keyed by (input set id, input id).
     Mismatch detection counts invalid rows only and false mismatch valid rows only. The hallucination rate counts
-    only rows that gave moves."""
+    only rows that gave moves, and precision only classified answers."""
     counts = defaultdict(lambda: [0, 0])
     wanted = {"mismatch_detection_rate": "invalid", "false_mismatch_rate": "valid"}.get(metric)
     for r in rows:
         if r["outcome"] == "infrastructure_failure" or (wanted and r["validity"] != wanted):
             continue
         if metric == "hallucination_rate" and not gave_moves(r):
+            continue
+        if metric == "precision" and r["answer_class"] is None:  # the share is over the classified answers
             continue
         found = counts[(r["input_set_id"], r["input_id"])]
         found[0] += hit(r, metric)

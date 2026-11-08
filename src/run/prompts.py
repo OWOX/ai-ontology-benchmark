@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 from src.puzzles.registry import get_engine
+from src.validator import offered_reasons
 
 SETUPS = ("no_model", "descriptive", "prescriptive")
 PLACEHOLDER = re.compile(r"\{[a-z_]+\}")
@@ -34,13 +35,14 @@ def _read_template(templates_dir: Path, setup: str, puzzle: str) -> str:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ValueError(f"{path}: template not found") from None
-    allowed = {"{state}"}
+    required = {"{state}"}
     if setup == "prescriptive":
-        allowed.add("{legal_moves}")
+        required.add("{legal_moves}")
+    allowed = required | {"{mismatch_reasons}"}
     for name in PLACEHOLDER.findall(text):
         if name not in allowed:
             raise ValueError(f"{path}: unknown placeholder {name}")
-    for name in sorted(allowed):
+    for name in sorted(required):
         if name not in text:
             raise ValueError(f"{path}: placeholder {name} is missing")
     _TEMPLATES[key] = text
@@ -53,7 +55,7 @@ def fill_template(template: str, input: dict, setup: str) -> str:
     text = template.replace("{state}", engine.render(input["state"]))
     if setup == "prescriptive":
         text = text.replace("{legal_moves}", " ".join(engine.legal_moves()))
-    return text
+    return text.replace("{mismatch_reasons}", ", ".join(f"`{r}`" for r in offered_reasons(engine)))
 
 
 def build_prompt(templates_dir: Path, input: dict, setup: str) -> str:
@@ -66,6 +68,7 @@ def _versions(templates_dir: Path, inputs: list[dict], questions: dict | None) -
     seeded with the questions file's bytes that takes, per input, the state a decision model is sent
     first (`decision_state(prompt, [])`) and its request's questions object. Return (plain, decision),
     decision being None without `questions`."""
+    with_reasons = questions is not None and uses_mismatch_reasons(templates_dir)
     questions_bytes = _questions_path(templates_dir).read_bytes() if questions is not None else None
     puzzles = list(dict.fromkeys(row["puzzle"] for row in inputs))
     plain: dict[str, dict[str, str]] = {}
@@ -79,18 +82,35 @@ def _versions(templates_dir: Path, inputs: list[dict], questions: dict | None) -
             decision_digest = hashlib.sha256(questions_bytes) if questions_bytes is not None else None
             # Check the template even when no input uses it.
             _read_template(templates_dir, setup, puzzle)
-            legal = get_engine(puzzle).legal_moves()
+            engine = get_engine(puzzle)
+            legal = engine.legal_moves()
+            reasons = offered_reasons(engine) if with_reasons else None
             for row in inputs:
                 if row["puzzle"] == puzzle:
                     prompt = build_prompt(templates_dir, row, setup)
                     digest.update((prompt + "\n").encode())
                     if decision_digest is not None:
-                        asked = json.dumps(decision_questions(questions, legal), sort_keys=True)
+                        asked = json.dumps(decision_questions(questions, legal, reasons), sort_keys=True)
                         decision_digest.update((decision_state(prompt, []) + "\n" + asked + "\n").encode())
             plain[setup][puzzle] = digest.hexdigest()[:12]
             if decision is not None:
                 decision[setup][puzzle] = decision_digest.hexdigest()[:12]
     return plain, decision
+
+
+def uses_mismatch_reasons(templates_dir: Path) -> bool:
+    """True when every LLM template holds {mismatch_reasons}, false when none does. Raise
+    ValueError naming the templates that differ when only some do."""
+    held: dict[str, bool] = {}
+    for setup in SETUPS:
+        for path in sorted((Path(templates_dir) / setup).glob("*.txt")):
+            held[f"{setup}/{path.name}"] = "{mismatch_reasons}" in path.read_text(encoding="utf-8")
+    if all(held.values()):
+        return bool(held)
+    if not any(held.values()):
+        return False
+    missing = ", ".join(name for name, has in held.items() if not has)
+    raise ValueError(f"{templates_dir}: {{mismatch_reasons}} is missing from {missing} but held by others")
 
 
 def prompt_versions(templates_dir: Path, inputs: list[dict]) -> dict[str, dict[str, str]]:
@@ -135,12 +155,17 @@ def decision_state(prompt: str, moves: list[str]) -> str:
     return prompt + "\n\nMoves so far: " + (" ".join(moves) or "none")
 
 
-def decision_questions(questions: dict, legal: list[str]) -> dict:
+def decision_questions(questions: dict, legal: list[str], reasons: list[str] | None = None) -> dict:
     """Return the request's questions object. A move's option id is move_<n>, its position in
-    legal from 1, because a move string may hold characters an id may not."""
+    legal from 1, because a move string may hold characters an id may not. With reasons, option
+    mismatch_<n> per reason (position from 1) replaces mismatch."""
     criteria = {f"move_{n}": move for n, move in enumerate(legal, start=1)}
     criteria["done"] = questions["done"]
-    criteria["mismatch"] = questions["mismatch"]
+    if reasons is None:
+        criteria["mismatch"] = questions["mismatch"]
+    else:
+        for n, reason in enumerate(reasons, start=1):
+            criteria[f"mismatch_{n}"] = f"{questions['mismatch']} Reason: {reason}."
     return {"next_move": {"type": "choice", "instructions": questions["next_move"], "criteria": criteria}}
 
 

@@ -12,8 +12,9 @@ from src.evaluate.metrics import NA, summary_sort_key, sorted_keys
 
 Z = 1.96  # 95% confidence, used by `wilson`
 
-RATES = ("success_rate", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
-         "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate")
+RATES = ("precision", "coverage", "hallucination_rate", "mismatch_detection_rate", "false_mismatch_rate",
+         "malformed_output_rate", "truncated_rate", "abstention_rate", "format_error_rate",
+         "reason_hallucination_rate", "diagnosis_rate")
 
 
 def wilson(hits: int, n: int) -> tuple:
@@ -43,16 +44,32 @@ def hits_and_n(rows: list[dict], rate: str) -> tuple[int, int]:
     return hits, total
 
 
-def pooled_rates(rows: list[dict]) -> dict:
+def balanced_precision(rows: list[dict]) -> dict:
+    """The precision columns over rows of both validity labels: the mean of the valid rows' and the invalid rows'
+    pooled precisions, and of their interval ends. n/a when either label has no precision. `_n` and `_inputs`
+    are the sums."""
+    sides = []
+    for validity in ("valid", "invalid"):
+        part = [r for r in rows if r.get("validity") == validity]
+        hits, n = hits_and_n(part, "precision")
+        sides.append((*wilson(hits, n), n, total(part, "precision_inputs")))
+    out = {"precision_n": sum(s[3] for s in sides), "precision_inputs": sum(s[4] for s in sides)}
+    for i, name in enumerate(("precision", "precision_low", "precision_high")):
+        out[name] = sum(s[i] for s in sides) / 2 if all(s[3] for s in sides) else NA
+    return out
+
+
+def pooled_rates(rows: list[dict], balanced: bool = False) -> dict:
     """The rate, interval, and denominator columns pooled over `rows`. The `_inputs` column is the
-    sum over the pooled rows, whose inputs never overlap."""
+    sum over the pooled rows, whose inputs never overlap. `balanced` is true for rows of both validity
+    labels, which show balanced precision in place of the pooled one."""
     out: dict = {}
     for rate in RATES:
         hits, n = hits_and_n(rows, rate)
         out[rate], out[rate + "_low"], out[rate + "_high"] = wilson(hits, n)
         out[rate + "_n"] = n
         out[rate + "_inputs"] = total(rows, rate + "_inputs")
-    return out
+    return out | balanced_precision(rows) if balanced else out
 
 
 def total(rows: list[dict], column: str) -> int:
@@ -60,8 +77,9 @@ def total(rows: list[dict], column: str) -> int:
 
 
 def pooled_summary(csv_rows: list[dict], order: list[str], attempts: list[dict]) -> list[dict]:
-    """One row per AI model, setup, and validity label, as `compute` gives them. Cost comes from the
-    attempt rows (raw records), since the CSV holds only per-group cost per success."""
+    """One row per AI model, setup, and validity label, as `compute` gives them. Cost per attempt comes from the
+    attempt rows (raw records), since the CSV holds it only per puzzle and depth. A rate whose columns an old
+    CSV lacks pools to n/a."""
     costs: dict = defaultdict(float)
     for a in attempts:
         costs[(a["model"], a["setup"], a["validity"])] += a["cost"]
@@ -75,7 +93,6 @@ def pooled_summary(csv_rows: list[dict], order: list[str], attempts: list[dict])
         item["attempts"] = total(rows, "attempts")
         item["infrastructure_failure_count"] = total(rows, "infrastructure_failure_count")
         item.update(pooled_rates(rows))
-        successes = hits_and_n(rows, "success_rate")[0]
-        item["cost_per_success"] = costs[key] / successes if successes else NA
+        item["cost_per_attempt"] = costs[key] / item["attempts"] if item["attempts"] else NA
         out.append(item)
     return out

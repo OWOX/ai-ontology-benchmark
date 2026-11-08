@@ -13,8 +13,9 @@ from collections import defaultdict
 
 from src.config import parse_experiment_config
 from src.evaluate.evaluate import REQUIRED
-from src.evaluate.metrics import (KEY, NA, EvalError, group_metrics, input_cells, make_attempt_rows,
-                                  metric_sort_key, rate_columns, rates, sorted_keys, summary_sort_key)
+from src.evaluate.metrics import (KEY, NA, EvalError, group_metrics, input_cells, is_hit, make_attempt_rows, mean,
+                                  metric_sort_key, rate_columns, rates, sorted_keys, stratified_interval,
+                                  summary_sort_key)
 from src.puzzles.registry import ENGINES
 from src.run.models import DECISION_PROVIDERS
 from src.run.raw import parse_raw_text
@@ -59,12 +60,14 @@ def load_experiment(git: GitData, experiment_id: str, ref: str, main_ref: str) -
     base = f"results/{experiment_id}"
     exp = {"id": experiment_id, "ref": ref, "sha": git.sha(ref), "config": None, "records": {},
            "skipped": 0, "prices": {}, "report_version": None, "csv_rows": None,
-           "report_md": None, "error": None}
+           "report_md": None, "error": None, "reasons": False}
     try:
         text = git.show(ref, f"{base}/experiment.toml")
         if text is None:
             raise ValueError(f"{base}/experiment.toml: file not found")
         exp["config"] = parse_experiment_config(text, experiment_id, f"{base}/experiment.toml")
+        manifest = git.show(main_ref, f"releases/{exp['config']['release']}/manifest.json")
+        exp["reasons"] = bool(manifest and json.loads(manifest).get("mismatch_reasons"))
         saved = git.show(ref, f"{base}/prices.toml")
         exp["prices"] = tomllib.loads(saved if saved is not None
                                       else git.show(main_ref, "config/prices.toml") or "")
@@ -96,7 +99,7 @@ def model_names(exp: dict) -> list[str]:
 
 
 def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
-    """Every record re-validated. A record that cannot be scored sets `exp["error"]` and gives no rows."""
+    """Every record re-validated, offering the mismatch reasons when the release has them (`exp["reasons"]`). A record that cannot be scored sets `exp["error"]` and gives no rows."""
     if exp["error"]:
         return []
     prices = {m: NO_PRICE for m in exp["records"]} | exp["prices"]
@@ -104,7 +107,7 @@ def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
     models = exp["config"]["models"] if exp["config"] else []
     decision_models = {m["name"] for m in models if m["provider"] in DECISION_PROVIDERS}
     try:
-        return make_attempt_rows(records, inputs, prices, decision_models)
+        return make_attempt_rows(records, inputs, prices, decision_models, exp["reasons"])
     except (EvalError, KeyError) as error:
         exp["error"] = str(error.args[0]) if error.args else str(error)
         return []
@@ -113,9 +116,28 @@ def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
         return []
 
 
+def precision_stats(keyed: list[dict], scope: str, key: str) -> dict:
+    """The precision columns of a group. `keyed` are its attempt rows that are not infrastructure failures, each with a
+    unique `input_id`. One validity label shows that label's precision. Both labels (`scope` "all") show the
+    balanced precision of docs/definitions.md: the mean of the two precisions, n/a when either is, with a stratified
+    bootstrap interval over inputs."""
+    keyed = [r for r in keyed if r["answer_class"]]
+    only = lambda stats: {k: v for k, v in stats.items() if k.startswith("precision")}
+    if scope != "all":
+        return only(rates(keyed, scope, key))
+    side = {v: rates([r for r in keyed if r["validity"] == v], v, key) for v in ("valid", "invalid")}
+    values = [side[v]["precision"] for v in side]
+    hit = lambda r: is_hit(r, "precision")
+    low, high = stratified_interval(keyed, key + "|precision", hit, hit, complement=False)
+    return {"precision": mean(values) if all(isinstance(v, float) for v in values) else NA,
+            "precision_low": low, "precision_high": high,
+            "precision_n": sum(side[v]["precision_n"] for v in side),
+            "precision_inputs": sum(side[v]["precision_inputs"] for v in side)}
+
+
 def all_scope_rates(done: list[dict], key: str) -> dict:
-    """Pooled over valid and invalid: detection over the invalid rows, false mismatch over the valid ones."""
-    out = rates(done, "valid", key)
+    """Pooled over valid and invalid: balanced precision, detection over the invalid rows, false mismatch over the valid ones."""
+    out = rates(done, "valid", key) | precision_stats(done, "all", key)
     flagged = lambda r: r["mismatch"]
     rate_columns(out, "mismatch_detection_rate", input_cells([r for r in done if r["validity"] == "invalid"], flagged), key)
     rate_columns(out, "false_mismatch_rate", input_cells([r for r in done if r["validity"] == "valid"], flagged), key)
@@ -179,7 +201,7 @@ def numbers(exp: dict, model: str, puzzle: str, scope: str, part: list[dict]) ->
         pick = [r for r in exp["csv_rows"] if r["model"] == model and r["puzzle"] == puzzle
                 and scope in ("all", r["validity"])]
         stats = {"attempts": total(pick, "attempts"),
-                 "infrastructure_failure_count": total(pick, "infrastructure_failure_count")} | pooled_rates(pick)
+                 "infrastructure_failure_count": total(pick, "infrastructure_failure_count")} | pooled_rates(pick, scope == "all")
     else:
         stats = scope_rates(part, scope, f"ui|{model}|{puzzle}|{scope}")
     tokens = sum(r["input_tokens"] + r["output_tokens"] + r["retry_input_tokens"]

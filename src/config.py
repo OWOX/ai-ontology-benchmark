@@ -70,19 +70,45 @@ def load_release_config(path: Path) -> dict:
     seed = _get(path, config, "seed", int)
     _check_min(path, "seed", seed, 1)
     _check_puzzles(path, config)
-    depths = _get(path, config, "scramble_depths", list)
-    if not depths:
-        _fail(path, "scramble_depths", "must not be empty")
-    for depth in depths:
-        if not isinstance(depth, int) or isinstance(depth, bool):
-            _fail(path, "scramble_depths", "must hold only integers")
-        _check_min(path, "scramble_depths", depth, 1)
+    _check_depths(path, config)
     count = _get(path, config, "scramble_count", int)
     _check_min(path, "scramble_count", count, 1)
     split = _get(path, config, "valid_invalid_split", float)
     if not 0 <= split <= 1:
         _fail(path, "valid_invalid_split", "must be between 0 and 1")
     return config
+
+
+def _check_depth_list(path: object, field: str, depths: object) -> None:
+    if not isinstance(depths, list):
+        _fail(path, field, "must be of type list")
+    if not depths:
+        _fail(path, field, "must not be empty")
+    for depth in depths:
+        if not isinstance(depth, int) or isinstance(depth, bool):
+            _fail(path, field, "must hold only integers")
+        _check_min(path, field, depth, 1)
+
+
+def _check_depths(path: object, config: dict) -> None:
+    """`scramble_depths` is one list for every puzzle, or a table with one list per puzzle."""
+    depths = config.get("scramble_depths")
+    if not isinstance(depths, dict):
+        _check_depth_list(path, "scramble_depths", _get(path, config, "scramble_depths", list))
+        return
+    for puzzle in config["puzzles"]:
+        if puzzle not in depths:
+            _fail(path, "scramble_depths", f"has no entry for puzzle {puzzle!r}")
+    for puzzle, depth_list in depths.items():
+        if puzzle not in config["puzzles"]:
+            _fail(path, "scramble_depths", f"has an entry for {puzzle!r}, which is not in 'puzzles'")
+        _check_depth_list(path, f"scramble_depths.{puzzle}", depth_list)
+
+
+def depths_for(release_config: dict, puzzle: str) -> list[int]:
+    """The scramble depths of one puzzle, from either form of `scramble_depths`."""
+    depths = release_config["scramble_depths"]
+    return depths[puzzle] if isinstance(depths, dict) else depths
 
 
 def _check_model(path: object, model: object, index: int, seen: set[str]) -> None:
@@ -177,9 +203,9 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
     return config
 
 
-def max_moves(config: dict, release_config: dict) -> int:
-    """The move cap of a decision-model attempt: the config value, or twice the largest scramble depth."""
-    return config.get("max_moves", 2 * max(release_config["scramble_depths"]))
+def max_moves(config: dict, release_config: dict, puzzle: str) -> int:
+    """The move cap of a decision-model attempt: the config value, or twice the puzzle's largest scramble depth."""
+    return config.get("max_moves", 2 * max(depths_for(release_config, puzzle)))
 
 
 def load_experiment_config(path: Path) -> dict:
