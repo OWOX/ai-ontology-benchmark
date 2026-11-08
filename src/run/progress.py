@@ -24,7 +24,7 @@ class Tally:
         self.gave_moves = 0
         self.classified = self.hits = 0
 
-    def add(self, record: dict, price: dict, corruption: str | None = None) -> None:
+    def add(self, record: dict, price: dict, corruption: str | None = None, reasons: bool = False) -> None:
         self.attempts += 1
         self.tokens_in += record["input_tokens"] + record["retry_input_tokens"]
         self.tokens_out += record["output_tokens"] + record["retry_output_tokens"]
@@ -34,7 +34,7 @@ class Tally:
             return  # left out of every rate
         self.decision_counted += bool(record.get("decision"))
         self.gave_moves += bool(record.get("parsed_moves")) and not record.get("decision")
-        kind = answer_class(dict(record, corruption=corruption))
+        kind = answer_class(dict(record, corruption=corruption, reasons=reasons))
         self.classified += kind is not None
         self.hits += kind in ("tp", "tn")
         if record["validity"] == "invalid":
@@ -74,9 +74,10 @@ class Tally:
 
 class Progress:
     def __init__(self, config: dict, prices: dict, totals: dict, prior_records: list[dict], console=None,
-                 corruptions: dict[str, str | None] | None = None):
+                 corruptions: dict[str, str | None] | None = None, reasons: bool = False):
         """`totals` maps (model name, puzzle) to attempts recorded plus attempts still to run.
-        `corruptions` maps an input id to its corruption, which precision needs."""
+        `corruptions` maps an input id to its corruption, which precision needs. `reasons` says the release offers mismatch reasons."""
+        self.reasons = reasons
         self.corruptions = corruptions or {}
         self.prices = prices
         self.totals = totals
@@ -95,8 +96,8 @@ class Progress:
         if model not in self.by_model:
             return
         corruption = self.corruptions.get(record["input_id"])
-        self.by_model[model].add(record, self.prices[model], corruption)
-        self.total.add(record, self.prices[model], corruption)
+        self.by_model[model].add(record, self.prices[model], corruption, self.reasons)
+        self.total.add(record, self.prices[model], corruption, self.reasons)
         self.done[(model, record["puzzle"])] += 1
 
     @property

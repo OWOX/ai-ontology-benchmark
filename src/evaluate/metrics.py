@@ -97,15 +97,18 @@ def gave_moves(row: dict) -> bool:
 
 def answer_class(row: dict) -> str | None:
     """The class of a classified answer: `tp`, `fp`, `tn`, or `fn`, or None for an attempt that is
-    not one (abstention, format error, truncated, malformed output, infrastructure failure). Reads
-    `outcome`, `parsed_moves`, `mismatch_reason`, and the input's `corruption`."""
+    not one (abstention, format error, truncated, malformed output, infrastructure failure). An
+    attempt claims the puzzle can't be solved when its mismatch flag is on or it has no parsed
+    moves, and claims a solution otherwise. Reads `outcome`, `mismatch`, `parsed_moves`,
+    `mismatch_reason`, `reasons`, and the input's `corruption`."""
     outcome = row["outcome"]
     if outcome not in ("success", "failure", "hallucination"):
         return None
-    if gave_moves(row):
+    flagged = bool(row.get("mismatch"))
+    if not flagged and gave_moves(row):
         return "tp" if outcome == "success" else "fp"
     corruption = row.get("corruption")
-    if outcome == "success" and corruption and row.get("mismatch_reason") == corruption_type(corruption):
+    if flagged and corruption and (not row.get("reasons") or row.get("mismatch_reason") == corruption_type(corruption)):
         return "tn"
     return "fn"
 

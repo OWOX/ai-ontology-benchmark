@@ -181,7 +181,7 @@ def append_record(raw_path: Path, record: dict) -> None:
 
 
 def make_progress(config: dict, prices: dict, raw_dir: Path, pending: list, only_model: str | None,
-                  inputs: list[dict], console=None) -> Progress:
+                  inputs: list[dict], console=None, reasons: bool = False) -> Progress:
     """Totals are the attempts already recorded plus those still to run, for the models of this process.
     `inputs` are the release's inputs, which give progress each record's corruption."""
     names = [m["name"] for m in config["models"] if only_model in (None, m["name"])]
@@ -189,7 +189,7 @@ def make_progress(config: dict, prices: dict, raw_dir: Path, pending: list, only
     totals = Counter((r["model"], r["puzzle"]) for r in prior)
     totals.update((model["name"], row["puzzle"]) for row, model, _, _ in pending)
     corruptions = {row["input_id"]: row.get("corruption") for row in inputs}
-    return Progress(config, prices, totals, prior, console, corruptions)
+    return Progress(config, prices, totals, prior, console, corruptions, reasons)
 
 
 def run(args: argparse.Namespace) -> int:
@@ -258,7 +258,8 @@ def run(args: argparse.Namespace) -> int:
             temp.write_bytes(config_bytes)  # never read half a file
             os.replace(temp, copy)  # first run, or only [budget] changed
     outcomes: Counter = Counter()
-    progress = None if args.dry_run else make_progress(config, prices, results / "raw", pending, args.model, inputs)
+    progress = None if args.dry_run else make_progress(config, prices, results / "raw", pending, args.model, inputs,
+                                                       reasons=with_reasons)
     try:
         safe_commit(branch, f"Results: experiment {config['experiment_id']}, start")
         with progress or nullcontext():

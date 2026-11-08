@@ -701,19 +701,26 @@ def test_all_infrastructure_failures_evaluate_with_header_only_csvs(repo, monkey
 def test_answer_class():
     from src.evaluate.metrics import answer_class
 
-    def row(outcome, moves=(), reason=None, corruption=None):
+    def row(outcome, moves=(), reason=None, corruption=None, mismatch=False, reasons=True):
         return {"outcome": outcome, "parsed_moves": list(moves), "mismatch_reason": reason,
-                "corruption": corruption}
+                "corruption": corruption, "mismatch": mismatch, "reasons": reasons}
 
     twisted = "twisted corner at UFR"
     assert answer_class(row("success", ["R"])) == "tp"
     assert answer_class(row("failure", ["R"])) == "fp"
     assert answer_class(row("hallucination", ["Q"])) == "fp"
     assert answer_class(row("failure", ["R"], corruption=twisted)) == "fp"
-    assert answer_class(row("success", [], "twisted corner", twisted)) == "tn"
-    assert answer_class(row("failure", [], "other", twisted)) == "fn"
-    assert answer_class(row("failure", [], "twisted corner")) == "fn"  # false MISMATCH on a valid input
-    assert answer_class(row("failure", [], None, twisted)) == "fn"
+    assert answer_class(row("success", [], "twisted corner", twisted, True)) == "tn"
+    assert answer_class(row("failure", [], "other", twisted, True)) == "fn"
+    assert answer_class(row("failure", [], "twisted corner", None, True)) == "fn"  # false MISMATCH on a valid input
+    assert answer_class(row("failure", [], None, twisted, True)) == "fn"
+    # a decision model that moves and then picks a mismatch option claims the puzzle can't be solved
+    assert answer_class(row("success", ["R"], "twisted corner", twisted, True)) == "tn"
+    assert answer_class(row("failure", ["R"], "other", twisted, True)) == "fn"
+    assert answer_class(row("failure", ["R"], "twisted corner", None, True)) == "fn"
+    # without mismatch reasons a flagged invalid input is a true negative, and a flagged valid one is not
+    assert answer_class(row("success", [], None, twisted, True, reasons=False)) == "tn"
+    assert answer_class(row("failure", [], None, None, True, reasons=False)) == "fn"
     for outcome in ("abstention", "format_error", "truncated", "malformed_output", "infrastructure_failure"):
         assert answer_class(row(outcome)) is None
 
@@ -782,20 +789,15 @@ def test_diagnosis_rate_and_critical_thinking():
 
 
 def test_balanced_precision_coverage_and_cost_efficiency():
-    rows = ([_row("v1", "valid", False, outcome="success", cost=0.01), _row("v2", "valid", False, cost=0.01)]
-            + [_row("x1", "invalid", False, outcome="abstention", cost=0.01, corruption="twisted corner U"),
-               _row("x2", "invalid", False, cost=0.01, corruption="twisted corner U")])
-    # valid: tp, fp -> 0.5. invalid: fp -> 0.0 over one classified answer
+    rows = [_row("v1", "valid", False, outcome="success", cost=0.01), _row("v2", "valid", False, cost=0.01),
+            _row("x1", "invalid", True, outcome="success", cost=0.01, reasons=True, mismatch_reason="twisted corner",
+                 parsed_moves=[], corruption="twisted corner U"),
+            _row("x2", "invalid", False, outcome="abstention", cost=0.01, corruption="twisted corner U")]
+    # valid: tp, fp -> 0.5. invalid: tn -> 1.0 over one classified answer
     [row] = detection_rows(rows, ["m"])
-    assert row["balanced_precision"] == pytest.approx(0.25)
+    assert row["balanced_precision"] == pytest.approx(0.75)
     assert (row["coverage"], row["coverage_n"]) == (0.75, 4)
-    assert row["cost_efficiency"] == pytest.approx(0.01 / (0.25 * 0.75))
-    better = [_row("v1", "valid", False, outcome="success", cost=0.01),
-              _row("v2", "valid", False, outcome="failure", cost=0.01),
-              _row("x1", "invalid", True, outcome="success", cost=0.01, reasons=True, mismatch_reason="twisted corner",
-                   parsed_moves=[], corruption="twisted corner U"),
-              _row("x2", "invalid", False, outcome="abstention", cost=0.01, corruption="twisted corner U")]
-    assert detection_rows(better, ["m"])[0]["balanced_precision"] == pytest.approx(0.75)
+    assert row["cost_efficiency"] == pytest.approx(0.01 / (0.75 * 0.75))
 
 
 def test_precision_half_and_one_gives_balanced_precision():
@@ -834,7 +836,8 @@ def test_release_without_reasons_has_no_reason_columns_or_rows(release_dir):
     assert reason_rows(attempts, ["M"]) == []
     [row] = detection_rows(attempts, ["M"])
     assert row["critical_thinking"] == "n/a" and row["fixed_answer_reason"] == "n/a"
-    assert all(r["answer_class"] != "tn" for r in attempts)  # every MISMATCH answer is a false negative
+    # no reason is asked for, so a flagged invalid input is a true negative and a flagged valid one a false negative
+    assert all(r["answer_class"] == ("tn" if r["validity"] == "invalid" else "fn") for r in attempts if r["mismatch"])
 
 
 def test_reason_rows_count_expected_against_given(reasons_dir):
