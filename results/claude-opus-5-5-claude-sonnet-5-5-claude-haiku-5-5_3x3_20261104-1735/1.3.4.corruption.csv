@@ -1,0 +1,18 @@
+model,puzzle,setup,corruption_type,detection_rate,detection_rate_low,detection_rate_high,detection_rate_n,detection_rate_inputs
+claude-opus-5-5,3x3,no_model,twisted corner,0.6667,n/a,n/a,3,1
+claude-opus-5-5,3x3,no_model,flipped edge,1.0000,1.0000,1.0000,6,2
+claude-opus-5-5,3x3,descriptive,twisted corner,0.0000,n/a,n/a,3,1
+claude-opus-5-5,3x3,descriptive,flipped edge,0.6667,0.3333,1.0000,6,2
+claude-opus-5-5,3x3,prescriptive,flipped edge,0.3333,0.3333,0.3333,6,2
+claude-sonnet-5-5,3x3,no_model,twisted corner,1.0000,1.0000,1.0000,9,3
+claude-sonnet-5-5,3x3,no_model,flipped edge,1.0000,1.0000,1.0000,6,2
+claude-sonnet-5-5,3x3,descriptive,twisted corner,1.0000,1.0000,1.0000,9,3
+claude-sonnet-5-5,3x3,descriptive,flipped edge,0.8333,0.6667,1.0000,6,2
+claude-sonnet-5-5,3x3,prescriptive,twisted corner,1.0000,1.0000,1.0000,9,3
+claude-sonnet-5-5,3x3,prescriptive,flipped edge,0.8333,0.6667,1.0000,6,2
+claude-haiku-5-5,3x3,no_model,twisted corner,1.0000,1.0000,1.0000,9,3
+claude-haiku-5-5,3x3,no_model,flipped edge,0.8333,0.6667,1.0000,6,2
+claude-haiku-5-5,3x3,descriptive,twisted corner,1.0000,1.0000,1.0000,9,3
+claude-haiku-5-5,3x3,descriptive,flipped edge,0.1667,0.0000,0.3333,6,2
+claude-haiku-5-5,3x3,prescriptive,twisted corner,1.0000,1.0000,1.0000,9,3
+claude-haiku-5-5,3x3,prescriptive,flipped edge,0.3333,0.0000,0.6667,6,2
