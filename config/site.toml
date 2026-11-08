@@ -1,0 +1,16 @@
+# The public results page (site/). Spec: docs/specs/site.md
+title = "AI Ontology Benchmark"
+description = "How AI models solve twisty puzzles, and how often they hallucinate a move"
+intro = "To evaluate AI models without bias, we test them on ontologies of real-world objects. We use Rubik's cubes as the well-known source of legal moves, constraints and a criterion of success. Each model gets a scrambled cube and must either solve it or say it can't be solved. A script judges every answer, not a person or another AI, so the assessment is objective and the experiments are reproducible. The charts show how often models succeed, hallucinate by making illegal moves, and spot an impossible cube."
+# Experiments shown on the page, by experiment id. Each must have a pushed results/<id> branch.
+experiments = [
+  "7-models_3x3_20261104-1737",
+  "claude-haiku-5-5_2x2-3x3_20261102-2141",
+  "claude-haiku-5-5_2x2-3x3_20261102-2253",
+  "claude-opus-5-5-claude-sonnet-5-5-claude-haiku-5-5_3x3_20261104-1735",
+  "claude-opus-5-5-claude-sonnet-5-5_2x2_20261103-1607",
+  "gemini-4-argon-gemini-3-8-flash-gemini-3-5-flash-lite_2x2-3x3_20261103-1810",
+  "gpt-6-1-sol-gpt-6-luna_2x2_20261103-1846",
+  "gpt-6-astra_4x4_20261105-1246",
+  "gpt-6-luna_2x2-3x3_20261104-1316",
+]
