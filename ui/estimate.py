@@ -17,7 +17,7 @@ from src.run.run import experiment_inputs
 from ui import expdata, forms
 from ui.bundle import Bundles
 from ui.common import ApiError, missing_price_field, timed
-from ui.gitdata import LOCAL_RESULTS, REMOTE_RESULTS
+from ui.gitdata import LOCAL_RESULTS
 
 CACHE_LIMIT = 8
 RELEASE_LIMIT = 4  # each holds every rendered prompt of a release
@@ -153,35 +153,35 @@ class LiveEstimate:
                 self._experiments[experiment_id, sha] = held
         return held
 
-    def medians(self, remote: dict[str, str]) -> dict[str, tuple[float, int]]:
-        """The median `latency_s` and the record count of each AI model over every pushed experiment, outcome
-        `infrastructure_failure` left out. Cached by the shas of the refs read. A branch that does not load adds
-        what it could read."""
-        key = tuple(sorted(remote.items()))
+    def medians(self, pushed: dict[str, tuple[str, str]]) -> dict[str, tuple[float, int]]:
+        """The median `latency_s` and the record count of each AI model over every pushed experiment (`{id: (ref,
+        key)}`, a branch or a folder on main), outcome `infrastructure_failure` left out. Cached by the keys. An
+        experiment that does not load adds what it could read."""
+        key = tuple(sorted(pushed.items()))
         with self._lock:
             if self._latency and self._latency[0] == key:
                 return self._latency[1]
         values: dict[str, list[float]] = {}
-        for experiment_id, sha in sorted(remote.items()):
-            for model, latency in self._experiment(experiment_id, REMOTE_RESULTS + experiment_id, sha)["latencies"]:
+        for experiment_id, (ref, sha) in sorted(pushed.items()):
+            for model, latency in self._experiment(experiment_id, ref, sha)["latencies"]:
                 values.setdefault(model, []).append(latency)
         found = {m: (median(v), len(v)) for m, v in values.items()}
         with self._lock:
             self._latency = (key, found)
         return found
 
-    def costs(self, remote: dict[str, str], main_sha: str | None, prices: dict) -> dict[str, tuple[float, int]]:
+    def costs(self, pushed: dict[str, tuple[str, str]], main_sha: str | None, prices: dict) -> dict[str, tuple[float, int]]:
         """The mean cost per attempt and the record count of each AI model over every pushed experiment, at the
         prices of `main`, infrastructure failures included. Cached by the shas of the refs read and of `main`. A branch
         that does not load adds what it could read, and a record with a token field that is not a number is left out,
         as in `medians`."""
-        key = (tuple(sorted(remote.items())), main_sha)
+        key = (tuple(sorted(pushed.items())), main_sha)
         with self._lock:
             if self._cost and self._cost[0] == key:
                 return self._cost[1]
         sums: dict[str, list[float]] = {}
-        for experiment_id, sha in sorted(remote.items()):
-            held = self._experiment(experiment_id, REMOTE_RESULTS + experiment_id, sha)
+        for experiment_id, (ref, sha) in sorted(pushed.items()):
+            held = self._experiment(experiment_id, ref, sha)
             for model, (tin, tout) in held["tokens"].items():
                 if model in prices:
                     total = sums.setdefault(model, [0.0, 0])
@@ -198,7 +198,7 @@ class LiveEstimate:
     def live(self, form: dict, parallel: int, env: dict) -> dict:
         if not isinstance(form, dict):
             raise ApiError(400, "body must be a JSON object")
-        main_sha, local, remote = self.bundles.git.results_state()
+        main_sha, local, pushed = self.bundles.git.results_state()
         at = self._at(main_sha)
         text = forms.config_text(at["view"], form, env, keyless_ok=True)
         try:
@@ -217,7 +217,7 @@ class LiveEstimate:
         held = self._release(release, tree)
         manifest = held["manifest"]
         names = [m["name"] for m in config["models"]]
-        done, spent = self._branch(config, form["id"], prices, local, remote)
+        done, spent = self._branch(config, form["id"], prices, local, pushed)
         rows = experiment_inputs(config, held["inputs"])
         pending = [(row, model, setup, number) for row in rows for model in config["models"] for setup in SETUPS
                    for number in range(1, config["attempts"] + 1)
@@ -234,16 +234,16 @@ class LiveEstimate:
         caps = {p: max_moves(config, release_config, p) for p in release_config["puzzles"]}
         result = estimate(config, pending, prices, questions, None, caps, prompts,
                           bool(manifest.get("mismatch_reasons", False)), {n: spent.get(n, 0.0) for n in names})
-        return self._finish(result, config, parallel, len(rows), len(pending), remote, main_sha, prices)
+        return self._finish(result, config, parallel, len(rows), len(pending), pushed, main_sha, prices)
 
-    def _branch(self, config: dict, experiment_id: str, prices: dict, local: dict, remote: dict
+    def _branch(self, config: dict, experiment_id: str, prices: dict, local: dict, pushed: dict
                 ) -> tuple[set, dict[str, float]]:
         """The (input id, setup, model, attempt number) keys with a record on the experiment's branch, local first,
-        then origin, and the cost of those records per AI model."""
+        then origin (a branch, else the folder on main), and the cost of those records per AI model."""
         if experiment_id in local:
             ref, sha = LOCAL_RESULTS + experiment_id, local[experiment_id]
-        elif experiment_id in remote:
-            ref, sha = REMOTE_RESULTS + experiment_id, remote[experiment_id]
+        elif experiment_id in pushed:
+            ref, sha = pushed[experiment_id]
         else:
             return set(), {}
         found = self._experiment(experiment_id, ref, sha)
@@ -259,10 +259,10 @@ class LiveEstimate:
                                         "retry_output_tokens": 0}, prices[name])
         return done, spent
 
-    def _finish(self, result: dict, config: dict, parallel: int, inputs: int, to_run: int, remote: dict,
+    def _finish(self, result: dict, config: dict, parallel: int, inputs: int, to_run: int, pushed: dict,
                 main_sha: str | None, prices: dict) -> dict:
-        medians = self.medians(remote)
-        history = self.costs(remote, main_sha, prices)
+        medians = self.medians(pushed)
+        history = self.costs(pushed, main_sha, prices)
         budget = config["budget"]
         times, expected = [], []
         for m in result["models"]:

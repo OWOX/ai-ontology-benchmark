@@ -91,7 +91,7 @@ class App:
         until `run` commits a record. When every run job ends without any branch, the run failed before its first
         commit: log its last stderr line."""
         git, say = self.bundles.git, lambda stream, text: self.jobs.say(experiment_id, "branch", stream, text)
-        exists = lambda: experiment_id in git.local_ids() or experiment_id in git.remote_ids()
+        exists = lambda: experiment_id in git.local_ids() or experiment_id in git.pushed_ids()
         if exists():
             say("stdout", f"results/{experiment_id} exists: resuming")
             return
