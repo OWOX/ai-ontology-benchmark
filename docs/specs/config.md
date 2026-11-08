@@ -40,6 +40,7 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
    reasoning_effort = "medium"    # optional; low, medium, or high; sent to every system-2 model; absent means the provider default
    max_moves = 14                 # optional; decision models only; default is twice the puzzle's largest scramble depth
    puzzles = ["2x2"]              # optional; default is every puzzle in the release
+   inputs_per_depth = 4           # optional; valid inputs per puzzle and scramble depth; default is all of them
 
    [[models]]
    name = "example-model"        # the AI model name written into raw records
@@ -86,7 +87,8 @@ The checks:
 6. `models` has at least one entry, model names are unique, and `provider` is one of the eight listed. `openrouter` sends any model OpenRouter serves ([models](models.md#openrouter)). `typesafe` and `cloudflare` are [decision models](../definitions.md#setups), and `fake_decision` is the offline stand-in for them. `params` is a table, if present, and doesn't set any of these keys, which `models` and the run script set themselves: `model`, `model_id`, `api_model_id`, `prompt`, `messages`, `system`, `input`, `contents`, `max_tokens`, `max_output_tokens`, `max_completion_tokens`, `instructions`, `system_instruction`, `response_format`, `response_mime_type`, `response_schema`, `tools`, `tool_choice`, `reasoning_effort`, `output_config`, `thinking_config`, `thinking`, and `reasoning`. That keeps the request the same shape for every AI model. `kind`, if present, is a string and is `system-1` or `system-2`.
 7. Every budget is a number above 0. They aren't checked against each other, so setting only `per_experiment_usd = 2` is valid, and a model budget above the experiment budget never binds. `load_experiment_config` returns `budget` with every default filled in.
 8. `puzzles`, if present in an experiment config, is a non-empty list of unique strings, each a name in the [registry](registry.md). When it is absent, the experiment covers every puzzle in the release, and `load_experiment_config` leaves the key out of the dict it returns. [run](run.md) checks the names against the release.
-9. The experiment id contains only letters, digits, `-`, and `_`, because it becomes a folder name.
+9. `inputs_per_depth`, if present in an experiment config, is an integer of at least 1 (a float, a bool, and a string are errors). It is the [inputs per depth](../definitions.md#inputs) of the experiment. When it is absent, `load_experiment_config` leaves the key out of the dict it returns.
+10. The experiment id contains only letters, digits, `-`, and `_`, because it becomes a folder name.
 
 ## How to test
 
@@ -95,5 +97,6 @@ The checks:
 3. A config with no `[budget]` returns the three defaults. A config that sets only `per_experiment_usd = 25` returns 25 for it and the defaults for the other two.
 4. `parse_experiment_config` on the text of a valid file returns the same dict as `load_experiment_config` on that file, and its errors name `source`.
 5. In an experiment config, `puzzles` accepts a valid list, and raises `ValueError` naming `puzzles` for an empty list, a repeated name, a value that isn't a list of strings, and an unknown name. With no `puzzles`, the returned dict has no `puzzles` key.
-6. In an experiment config, a model with `kind` set to `system-1` or `system-2` loads, and a model with no `kind` loads. `kind` raises `ValueError` naming `kind` for any other string and for a value that isn't a string.
-7. Every file in `config/templates/` loads as an experiment config, names a release folder in `releases/` (or says `latest` while `releases/` holds one), and has a price in `config/prices.toml` for each AI model.
+6. In an experiment config, `inputs_per_depth` accepts a valid value, and raises `ValueError` naming `inputs_per_depth` for 0, a float, a bool, and a string. With no `inputs_per_depth`, the returned dict has no such key.
+7. In an experiment config, a model with `kind` set to `system-1` or `system-2` loads, and a model with no `kind` loads. `kind` raises `ValueError` naming `kind` for any other string and for a value that isn't a string.
+8. Every file in `config/templates/` loads as an experiment config, names a release folder in `releases/` (or says `latest` while `releases/` holds one), and has a price in `config/prices.toml` for each AI model.

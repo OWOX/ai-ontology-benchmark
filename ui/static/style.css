@@ -35,7 +35,7 @@ body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -app
 .nowrap { white-space: nowrap; }
 .conn { display: inline-block; box-sizing: content-box; width: 9px; height: 9px; padding: 4px; margin-left: 0; border-radius: 50%; vertical-align: middle; background-color: #8a919c; background-clip: content-box; }
 .conn-wrap, .tip-wrap { position: relative; display: inline-block; }
-.tip-fixed { display: none; position: fixed; left: 12px; top: 0; z-index: 30; width: max-content; max-width: min(340px, calc(100vw - 24px)); padding: 10px 14px; background: var(--tip); color: #fff; border-radius: 10px; font: 400 13px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; white-space: normal; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); }
+.tip-fixed { text-align: left; display: none; position: fixed; left: 12px; top: 0; z-index: 30; width: max-content; max-width: min(340px, calc(100vw - 24px)); padding: 10px 14px; background: var(--tip); color: #fff; border-radius: 10px; font: 400 13px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; white-space: normal; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); }
 .tip-src:hover + .tip-fixed, .tip-src:focus + .tip-fixed, .tip-src:focus-visible + .tip-fixed { display: block; }
 .conn.ok { background-color: #2e9e5b; }
 .conn.warn { background-color: #f2b705; }
@@ -274,9 +274,7 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .job-result { margin-top: 10px; }
 .job-result h4 { margin: 0 0 4px; font-size: 13px; }
 .job-result .terminal { height: 200px; border-radius: var(--radius); }
-.job-result .terminal.short { height: auto; max-height: 200px; }
 .estimate { margin-bottom: 8px; overflow-x: auto; }
-.estimate p { margin: 4px 0 0; }
 .estimate-table { border-collapse: collapse; font-size: 13px; background: var(--field); }
 .estimate-table th, .estimate-table td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; white-space: nowrap; }
 .estimate-table thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
@@ -375,3 +373,21 @@ button.linklike { border: 0; background: none; padding: 0; font-weight: 600; fon
 .cell-pop ul { margin: 0; padding-left: 18px; }
 .cell-pop li { overflow-wrap: anywhere; }
 .bench-table thead tr:last-child th { white-space: nowrap; }
+.slider { display: flex; align-items: center; gap: 8px; }
+.slider input[type=range], .newexp .grid .slider input[type=range] { flex: 1; width: auto; padding: 0; border: 0; background: none; }
+.slider-value { min-width: 3em; text-align: right; font-variant-numeric: tabular-nums; color: var(--text, inherit); }
+.estimate-card { margin: 12px 0 8px; }
+.estimate-card[hidden] { display: none; }
+.estimate-formula { margin: 0 0 6px; font-size: 13px; }
+.estimate-table .muted { color: var(--muted); font-weight: normal; }
+.estimate-card .pending { opacity: 0.5; }
+.estimate-formula { min-height: 1.3em; }
+.score-card { margin: 0 0 12px; }
+.score-card h3 { font-size: 18px; margin: 0 0 6px; }
+.score-card .live { font-size: 12px; font-weight: 600; color: var(--accent, #1a7f37); border: 1px solid currentColor; border-radius: 8px; padding: 0 6px; vertical-align: middle; }
+.score-table .n { text-align: right; font-variant-numeric: tabular-nums; }
+.spend-rows { margin: 8px 0; }
+.spend-row { display: grid; grid-template-columns: 22em 1fr 14em; gap: 8px; align-items: center; margin-bottom: 4px; }
+.spend { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.spend-fill { height: 100%; background: var(--bar, #4a7); }
+.spend-fill.over { background: var(--danger); }

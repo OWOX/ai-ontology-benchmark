@@ -108,6 +108,10 @@ EXPERIMENT_CASES = [
     ("puzzles", with_puzzles("[2]")),
     ("puzzles", with_puzzles('"2x2"')),
     ("puzzles", with_puzzles('["6x6"]')),
+    ("inputs_per_depth", bad(EXPERIMENT, "attempts = 3\n", "attempts = 3\ninputs_per_depth = 0\n")),
+    ("inputs_per_depth", bad(EXPERIMENT, "attempts = 3\n", "attempts = 3\ninputs_per_depth = 1.5\n")),
+    ("inputs_per_depth", bad(EXPERIMENT, "attempts = 3\n", "attempts = 3\ninputs_per_depth = true\n")),
+    ("inputs_per_depth", bad(EXPERIMENT, "attempts = 3\n", 'attempts = 3\ninputs_per_depth = "4"\n')),
     ("release", bad(EXPERIMENT, 'release = "1.0.0"\n', "")),
     ("release", bad(EXPERIMENT, "1.0.0", "1.0")),
     ("release", bad(EXPERIMENT, "1.0.0", "newest")),
@@ -208,6 +212,15 @@ def test_experiment_puzzles_valid_list_is_kept(tmp_path):
 
 def test_experiment_without_puzzles_leaves_the_key_absent(tmp_path):
     assert "puzzles" not in load_experiment_config(write(tmp_path, EXPERIMENT, "e.toml"))
+
+
+def test_experiment_inputs_per_depth_valid_value_is_kept(tmp_path):
+    text = bad(EXPERIMENT, "attempts = 3\n", "attempts = 3\ninputs_per_depth = 4\n")
+    assert load_experiment_config(write(tmp_path, text, "e.toml"))["inputs_per_depth"] == 4
+
+
+def test_experiment_without_inputs_per_depth_leaves_the_key_absent(tmp_path):
+    assert "inputs_per_depth" not in load_experiment_config(write(tmp_path, EXPERIMENT, "e.toml"))
 
 
 def test_parse_experiment_config_matches_load(tmp_path):

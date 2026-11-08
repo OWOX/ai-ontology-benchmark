@@ -10,6 +10,24 @@ from src.config import EXPERIMENT_ID_PATTERN
 from src.run.models import ACCOUNT_VARIABLES, KEY_VARIABLES
 
 
+PRICE_FIELDS = ("price_input_per_mtok", "price_output_per_mtok")
+
+
+def missing_price_field(price: object) -> str | None:
+    """The first price field of an AI model's entry in `config/prices.toml` that is not a number, else `None`."""
+    for field in PRICE_FIELDS:
+        value = price.get(field) if isinstance(price, dict) else None
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return field
+    return None
+
+
+def timed(record: dict) -> bool:
+    """True when a record's latency counts for a typical time: not an infrastructure failure, and a number."""
+    latency = record.get("latency_s")
+    return record.get("outcome") != "infrastructure_failure" and isinstance(latency, (int, float))
+
+
 class ApiError(Exception):
     """An error that becomes a JSON {"error": message} reply with the given status."""
 

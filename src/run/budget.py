@@ -11,7 +11,7 @@ from pathlib import Path
 from src.evaluate.metrics import attempt_cost
 from src.puzzles.registry import get_engine
 from src.run.models import DECISION_PROVIDERS
-from src.run.prompts import decision_questions, decision_state, load_questions
+from src.run.prompts import decision_questions, decision_state
 from src.run.raw import read_raw
 from src.validator import offered_reasons
 
@@ -91,19 +91,20 @@ def check_spend(config: dict, model_name: str, next_cost: float, attempts_left: 
             f"(spent {total:.4f}, next request up to {next_cost:.4f})", attempts_left)
 
 
-def print_estimate(config: dict, pending: list, prices: dict, templates: Path, raw_dir: Path,
-                   caps: dict[str, int], prompts: dict, with_reasons: bool = False) -> None:
-    """A decision model's attempt makes up to its puzzle's cap (`caps`) of calls, each as long as
-    the longest state plus the questions object. `with_reasons` says the release offers mismatch reasons."""
-    questions = load_questions(templates) if any(
-        m["provider"] in DECISION_PROVIDERS for _, m, _, _ in pending) else None
-    spent = spent_by_model(config, prices, raw_dir)
+def estimate(config: dict, pending: list, prices: dict, questions: dict | None, raw_dir: Path | None,
+             caps: dict[str, int], prompts: dict, with_reasons: bool = False,
+             spent: dict[str, float] | None = None) -> dict:
+    """The numbers of `--estimate` and the UI, with no printing. A decision model's attempt makes up
+    to its puzzle's cap (`caps`) of calls, each as long as the longest state plus the questions
+    object (`questions`, None when no decision model is pending). `with_reasons` says the release
+    offers mismatch reasons. `spent` maps each AI model to its cost so far; None reads `raw_dir`."""
+    if spent is None:
+        spent = spent_by_model(config, prices, raw_dir)
     budget = config["budget"]
-    total = 0.0
+    models = []
     for model in config["models"]:
         name = model["name"]
         is_decision = model["provider"] in DECISION_PROVIDERS
-        calls = 0
         requests = []
         for row, m, setup, _ in pending:
             if m["name"] == name:
@@ -114,11 +115,30 @@ def print_estimate(config: dict, pending: list, prices: dict, templates: Path, r
                     reasons = offered_reasons(engine) if with_reasons else None
                     prompt = worst_request(prompt, engine.legal_moves(), cap, questions, reasons)
                 requests.append((cap, prompt))
-        cost = sum(c * worst_case_request_cost(p, config["max_output_tokens"], prices[name]) for c, p in requests)
-        tokens_in = sum(c * math.ceil(len(p) / 4) for c, p in requests)
-        total += cost
-        print(f"{name}: {len(requests)} attempts, ~{tokens_in} input tokens, worst case ${cost:.4f}; "
-              f"spent ${spent[name]:.4f} of per_model_usd {budget['per_model_usd']}")
-    print(f"total: {len(pending)} attempts, worst case ${total:.4f}; "
-          f"spent ${sum(spent.values()):.4f} of per_experiment_usd {budget['per_experiment_usd']}; "
-          f"per_request_usd {budget['per_request_usd']}")
+        unit = [worst_case_request_cost(p, config["max_output_tokens"], prices[name]) for _, p in requests]
+        models.append({
+            "name": name, "attempts": len(requests),
+            "input_tokens": sum(c * math.ceil(len(p) / 4) for c, p in requests),
+            "worst_case_usd": sum(c * u for (c, _), u in zip(requests, unit)),
+            "spent_usd": spent.get(name, 0.0), "per_model_usd": budget["per_model_usd"],
+            "max_request_usd": max(unit, default=0.0)})
+    return {"models": models,
+            "total": {"attempts": len(pending),
+                      "worst_case_usd": sum(m["worst_case_usd"] for m in models),
+                      "spent_usd": sum(spent.get(m["name"], 0.0) for m in models),
+                      "per_experiment_usd": budget["per_experiment_usd"]},
+            "per_request_usd": budget["per_request_usd"]}
+
+
+def print_estimate(config: dict, pending: list, prices: dict, questions: dict | None, raw_dir: Path | None,
+                   caps: dict[str, int], prompts: dict, with_reasons: bool = False) -> None:
+    """Print `estimate` as the `--estimate` text."""
+    result = estimate(config, pending, prices, questions, raw_dir, caps, prompts, with_reasons)
+    for m in result["models"]:
+        print(f"{m['name']}: {m['attempts']} attempts, ~{m['input_tokens']} input tokens, "
+              f"worst case ${m['worst_case_usd']:.4f}; "
+              f"spent ${m['spent_usd']:.4f} of per_model_usd {m['per_model_usd']}")
+    t = result["total"]
+    print(f"total: {t['attempts']} attempts, worst case ${t['worst_case_usd']:.4f}; "
+          f"spent ${t['spent_usd']:.4f} of per_experiment_usd {t['per_experiment_usd']}; "
+          f"per_request_usd {result['per_request_usd']}")

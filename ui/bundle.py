@@ -28,13 +28,21 @@ NO_ACCOUNT = "no account id: add it under Models"
 CACHE_LIMIT = 16
 
 
-def metric_definitions(markdown: str | None) -> dict[str, str]:
-    """Each numbered item under `## Metrics` in docs/definitions.md, keyed by its bold term, as plain text:
-    links keep their text and backticks are dropped."""
-    section = re.search(r"^## Metrics\n(.*?)(?=^## |\Z)", markdown or "", re.M | re.S)
-    out = {}
-    for term, text in re.findall(r"^\d+\. \*\*(.+?)\.\*\* (.+)$", section.group(1) if section else "", re.M):
-        out[term] = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text).replace("`", "")
+def section_anchor(heading: str) -> str:
+    """GitHub's anchor for a `## ` heading: lower case, punctuation dropped, spaces to hyphens."""
+    return re.sub(r"[^a-z0-9 _-]", "", heading.strip().lower()).replace(" ", "-")
+
+
+def definition_terms(markdown: str | None, base: str | None) -> dict[str, dict]:
+    """Every numbered bold term of every `## ` section of docs/definitions.md, keyed by the term without its full
+    stop. `text` is plain: links keep their text and backticks are dropped. `source` is `base` plus the section's
+    anchor, or None without a base. A term that appears twice keeps its first definition."""
+    out: dict[str, dict] = {}
+    for heading, body in re.findall(r"^## ([^\n]+)\n(.*?)(?=^## |\Z)", markdown or "", re.M | re.S):
+        source = base and f"{base}#{section_anchor(heading)}"
+        for term, text in re.findall(r"^[ \t]*\d+\. \*\*([^\n]+?)\.\*\* ([^\n]+)$", body, re.M):
+            out.setdefault(term.replace("`", ""), {"text": re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text).replace("`", ""),
+                                                  "source": source})
     return out
 
 
@@ -191,12 +199,12 @@ class Bundles(BranchReaders):
         puzzles = [build_puzzle(self.git, main, link, release, manifest, name, inputs_by_release[release],
                                 experiments, rows_by_exp) for name in names]
         definitions = link("docs/definitions.md")
-        return {"schema": 3, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
+        return {"schema": 4, "release": release, "releases": versions, "fetched_at": None, "fetch_error": None,
                 "repo": base, "main_sha": main_sha, "defaults": DEFAULTS,
+                "scramble_count": manifest["release_config"].get("scramble_count") if manifest else None,
                 "providers": build_providers(catalogue, self._prices(), experiments), "puzzles": puzzles, "experiments": rows,
                 "about": {"markdown": self.git.show(main, "README.md"), "source": link("README.md")},
-                "metric_definitions": {"terms": metric_definitions(self.git.show(main, "docs/definitions.md")),
-                                       "source": definitions and definitions + "#metrics"}}
+                "definitions": {"terms": definition_terms(self.git.show(main, "docs/definitions.md"), definitions)}}
 
     # --- benchmarks ------------------------------------------------------------------------
 
@@ -240,6 +248,18 @@ class Bundles(BranchReaders):
                         and self._rows(h, manifests, inputs_by_release):
                     return [v]
         return versions[:1]
+
+    def manifest(self, release: str) -> dict | None:
+        """The manifest of a release on `main`, or None."""
+        return self._manifest(release)
+
+    def prices(self) -> dict:
+        """`config/prices.toml` on `main`, `{}` when it cannot be read."""
+        return self._prices()
+
+    def scored_rows(self, held: dict, release: str, inputs: list[dict]) -> list[dict]:
+        """The scored attempt rows of a loaded entry (`loaded_entry`) over the release's full `inputs`, cached with it."""
+        return self._rows(held, {release: self._manifest(release)}, {release: inputs})
 
     def _rows(self, held: dict, manifests: dict[str, dict | None], inputs_by_release: dict[str, list[dict]]) -> list[dict]:
         """The scored attempt rows of one experiment with a config, read once. Empty when it has an error."""
@@ -332,7 +352,7 @@ class Bundles(BranchReaders):
                 "pushed": self._pushed(experiment_id, exp["sha"]), "running": experiment_id in running,
                 "branch": f"{base}/tree/{exp['sha']}/results/{experiment_id}" if base and exp["sha"] else None,
                 "metrics_source": source, "report": report,
-                # Work-tree reads (like API 12), with local_report below: Evaluate and Commit need the results on disk.
+                # Work-tree reads (like API 13), with local_report below: Evaluate and Commit need the results on disk.
                 "local_results": (self.root / "results" / experiment_id / "experiment.toml").is_file(),
                 "local_report": bool(config) and (self.root / "results" / experiment_id / f"{config['release']}.md").is_file(),
                 "metric_rows": metric_rows, "summary_rows": summary_rows, "served_models": served,

@@ -34,6 +34,11 @@ def test_summary_intervals_pooled_from_a_report_are_marked():
     assert run.returncode == 0, run.stderr + run.stdout
 
 
+def test_definition_icon_label_and_focus_after_a_rebuild():
+    run = subprocess.run([NODE, "tests/js/definitions.test.mjs"], cwd=ROOT, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
 def test_named_net_follows_the_net_order():
     run = subprocess.run([NODE, "tests/js/cube.test.mjs"], cwd=ROOT, capture_output=True, text=True)
     assert run.returncode == 0, run.stderr + run.stdout
@@ -84,22 +89,44 @@ def test_dropdown_and_check_picker_behaviour():
     assert run.returncode == 0, run.stderr + run.stdout
 
 
-def test_estimate_patterns_read_runs_estimate_lines(exp, capsys):
-    """New Experiment reads `run --estimate` into a table with regexes of its own: keep the two in step."""
+def test_ui_formats_times():
     import json
     import re
-
-    from test_run import go
-    assert go("--estimate") == 0
-    lines = capsys.readouterr().out.splitlines()
-    source = (ROOT / "ui" / "static" / "pages" / "new.js").read_text(encoding="utf-8")
-    patterns = {name: re.search(rf"const {name} = /(.*)/;", source).group(1) for name in ("ESTIMATE_MODEL", "ESTIMATE_TOTAL")}
-    script = (f"const p = {json.dumps(patterns)}, lines = {json.dumps(lines)};"
-              "console.log(JSON.stringify(lines.map((l) => [new RegExp(p.ESTIMATE_MODEL).test(l), new RegExp(p.ESTIMATE_TOTAL).test(l)])));")
+    source = (ROOT / "ui" / "static" / "router.js").read_text(encoding="utf-8")
+    body = re.search(r"  function fmtTime\(seconds\) \{.*?\n  \}\n", source, re.S).group(0)
+    values = [0, 40, 59.6, 60, 720, 3599, 3900, 7384, 36000]
+    script = body + f"console.log(JSON.stringify({json.dumps(values)}.map(fmtTime)));"
     run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
-    matched = json.loads(run.stdout)
-    assert len(lines) >= 2 and all(m == [True, False] for m in matched[:-1]) and matched[-1] == [False, True], lines
+    assert json.loads(run.stdout) == ["0 s", "40 s", "1 min", "1 min", "12 min", "1 h 00 min", "1 h 05 min", "2 h 03 min", "10 h 00 min"]
+
+
+def _new_js_functions(*names):
+    import re
+    source = (ROOT / "ui" / "static" / "pages" / "new.js").read_text(encoding="utf-8")
+    return "".join(re.search(rf"  function {name}\(.*?\n  \}}\n|  function {name}\([^\n]*\}}\n", source, re.S).group(0) for name in names)
+
+
+def test_new_experiment_inputs_per_depth_maps_between_slider_and_form():
+    import json
+    script = _new_js_functions("perDepthPosition", "perDepthFromSlider") + (
+        "console.log(JSON.stringify([perDepthPosition(null, 40), perDepthPosition(40, 40), perDepthPosition(55, 40), perDepthPosition(7, 40),"
+        "perDepthFromSlider(40, 40, null), perDepthFromSlider(39, 40, null), perDepthFromSlider(1, 40, null),"
+        "perDepthFromSlider(40, 40, 55), perDepthFromSlider(39, 40, 55), perDepthFromSlider(40, 40, 7)]));")
+    run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    # The top is "all" (null); a loaded value at or above it shows at the top but is not rewritten by the position alone.
+    assert json.loads(run.stdout) == [40, 40, 40, 7, None, 39, 1, 55, 39, None]
+
+
+def test_new_experiment_drops_a_stale_estimate_response():
+    import json
+    script = _new_js_functions("newestOnly") + (
+        "const a = newestOnly(); const t1 = a.next(), t2 = a.next();"
+        "console.log(JSON.stringify([a.isNewest(t1), a.isNewest(t2)]));")
+    run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout) == [False, True]
 
 
 def test_new_experiment_fills_the_reasoning_effort_a_stale_cached_bundle_lacks():

@@ -130,6 +130,15 @@ def test_puzzles_line_only_when_the_config_sets_it(tree, monkeypatch):
     assert "\nPuzzles: 2x2, 3x3\n" in build(tree)
 
 
+def test_pilot_sentence_only_when_the_config_sets_inputs_per_depth(tree, monkeypatch):
+    assert "pilot" not in build(tree)
+    monkeypatch.setitem(CONFIG, "inputs_per_depth", 4)
+    text = build(tree)
+    assert "a sample of 4 valid inputs per puzzle and depth" in text
+    assert "so it is a pilot and its results are not evidence for the research question." in text
+    assert "definitions.md#inputs)" in text
+
+
 def test_kind_column_shows_the_config_value_or_not_set(tree):
     assert "| M | fake | m-1 | system-2 | m-1 | temperature=0.5 |" in build(tree)
     model = {k: v for k, v in CONFIG["models"][0].items() if k != "kind"}

@@ -14,6 +14,8 @@ from pathlib import Path
 from ui import attempt as attempt_module
 from ui import commit as commit_module
 from ui import experiments, forms
+from ui import scorecard as scorecard_module
+from ui.estimate import LiveEstimate
 from ui import project, replay
 from ui import secrets as key_store
 from ui.bundle import Bundles
@@ -32,6 +34,7 @@ class App:
         self.token = secrets.token_urlsafe(24)
         self.jobs = Jobs(root)
         self.bundles = Bundles(root, GitData(root))
+        self.live_estimate = LiveEstimate(self.bundles)
 
     def evaluate(self, body: dict) -> dict:
         experiment_id = check_id(body.get("id"))
@@ -188,6 +191,9 @@ class App:
             if parts[1] == "state":
                 return experiments.snapshot(self.bundles, experiment_id, live, self.jobs.states(experiment_id),
                                             self.jobs.parallels(experiment_id))
+            if parts[1] == "scorecard":
+                return scorecard_module.scorecard(self.bundles, experiment_id, live, self.jobs.states(experiment_id),
+                                                  self.jobs.parallels(experiment_id), self.live_estimate.medians)
             if parts[1] == "replay":
                 return replay.replay(self.bundles, experiment_id, live, query)
             if parts[1] == "attempt":
@@ -207,6 +213,14 @@ class App:
             else:
                 raise ApiError(400, "field 'action' must be 'save' or 'clear'")
             return key_store.inspect(self.root)
+        if path == "/api/estimate/live":
+            form = body.get("form")
+            if not isinstance(form, dict):
+                raise ApiError(400, "field 'form' must be an object")
+            parallel = body.get("parallel", 1)
+            if not isinstance(parallel, int) or isinstance(parallel, bool) or not 1 <= parallel <= MAX_PARALLEL:
+                raise ApiError(400, f"field 'parallel' must be a whole number from 1 to {MAX_PARALLEL}")
+            return self.live_estimate.live(form, parallel, merged_env(self.root))
         if path in ("/api/estimate", "/api/dry-run", "/api/run"):
             return self.start_form(body, path[len("/api/"):])
         if path == "/api/evaluate":

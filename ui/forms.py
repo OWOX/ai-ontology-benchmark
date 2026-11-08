@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path
 
 from src.config import EFFORTS, parse_experiment_config
-from ui.bundle import Bundles
+from ui.bundle import NO_ACCOUNT, NO_KEY, Bundles
 from ui.common import ApiError, check_id
 from ui.experiments import BUDGET_DEFAULTS
 from ui.tomlw import dumps_config
@@ -33,8 +33,9 @@ def _names(form: dict, field: str, what: str) -> list[str]:
     return names
 
 
-def build_config(bundles: Bundles, form: dict, env: dict) -> dict:
-    """Check the form and build the experiment config dict. Raises ApiError(400)."""
+def build_config(bundles: Bundles, form: dict, env: dict, keyless_ok: bool = False) -> dict:
+    """Check the form and build the experiment config dict. Raises ApiError(400). `keyless_ok` lets a model with no
+    API key or account id through, for the live estimate, which calls nothing."""
     if not isinstance(form, dict):
         raise ApiError(400, "body must be a JSON object")
     check_id(form.get("id"))
@@ -51,7 +52,7 @@ def build_config(bundles: Bundles, form: dict, env: dict) -> dict:
         if name not in catalogue:
             raise ApiError(400, f"field 'models' has {name!r}, which is not in config/models.toml on main")
         entry = catalogue[name]
-        if entry["disabled_reason"]:
+        if entry["disabled_reason"] and not (keyless_ok and entry["disabled_reason"] in (NO_KEY, NO_ACCOUNT)):
             raise ApiError(400, f"field 'models' has {name!r}, which is disabled: {entry['disabled_reason']}")
         model = {"name": name, "provider": entry["provider"], "api_model_id": entry["api_model_id"]}
         if entry.get("kind"):
@@ -71,12 +72,14 @@ def build_config(bundles: Bundles, form: dict, env: dict) -> dict:
         raise ApiError(400, f"field 'reasoning_effort' must be one of {', '.join(EFFORTS)}")
     if effort:
         config["reasoning_effort"] = effort
+    if form.get("inputs_per_depth") is not None:
+        config["inputs_per_depth"] = _number(form, "inputs_per_depth", int, 1)
     return {**config, "models": models, "budget": budget}
 
 
-def config_text(bundles: Bundles, form: dict, env: dict) -> str:
+def config_text(bundles: Bundles, form: dict, env: dict, keyless_ok: bool = False) -> str:
     """The config TOML for a form, checked with `parse_experiment_config`."""
-    text = dumps_config(build_config(bundles, form, env))
+    text = dumps_config(build_config(bundles, form, env, keyless_ok))
     try:
         parse_experiment_config(text, form["id"], f"{form['id']}.toml")
     except ValueError as error:

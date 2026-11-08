@@ -395,6 +395,47 @@ def test_estimate_shows_spent_against_budgets(exp, capsys):
     assert "spent $0.0300 of per_experiment_usd 50.0" in out
 
 
+def test_estimate_dict_takes_spent_and_no_raw_dir():
+    config = {"max_output_tokens": 100, "budget": {"per_model_usd": 5.0, "per_experiment_usd": 9.0,
+                                                   "per_request_usd": 2.0},
+              "models": [{"name": "A", "provider": "openai"}, {"name": "B", "provider": "openai"}]}
+    prices = {n: {"price_input_per_mtok": 1.0, "price_output_per_mtok": 2.0} for n in "AB"}
+    a = {"name": "A", "provider": "openai"}
+    pending = [({"input_id": "i1", "puzzle": "3x3"}, a, "none", 1),
+               ({"input_id": "i2", "puzzle": "3x3"}, a, "none", 1)]
+    prompts = {("i1", "none"): "x" * 400, ("i2", "none"): "x" * 40}
+    got = budget_module.estimate(config, pending, prices, None, None, {}, prompts, spent={"A": 0.5, "B": 0.25})
+    first, second = (100 * 1.0 + 100 * 2.0) / 1e6, (10 * 1.0 + 100 * 2.0) / 1e6
+    assert got["models"] == [
+        {"name": "A", "attempts": 2, "input_tokens": 110, "worst_case_usd": pytest.approx(first + second),
+         "spent_usd": 0.5, "per_model_usd": 5.0, "max_request_usd": pytest.approx(first)},
+        {"name": "B", "attempts": 0, "input_tokens": 0, "worst_case_usd": 0, "spent_usd": 0.25,
+         "per_model_usd": 5.0, "max_request_usd": 0}]
+    assert got["total"] == {"attempts": 2, "worst_case_usd": pytest.approx(first + second),
+                            "spent_usd": 0.75, "per_experiment_usd": 9.0}
+    assert got["per_request_usd"] == 2.0
+
+
+def test_estimate_of_a_decision_model_counts_one_call_as_the_largest_request():
+    cap, max_output = 5, 100
+    config = {"max_output_tokens": max_output,
+              "budget": {"per_model_usd": 5.0, "per_experiment_usd": 9.0, "per_request_usd": 2.0},
+              "models": [{"name": "D", "provider": "fake_decision"}]}
+    prices = {"D": {"price_input_per_mtok": 1.0, "price_output_per_mtok": 2.0}}
+    d = config["models"][0]
+    pending = [({"input_id": "i1", "puzzle": "2x2"}, d, "no_model", 1)]
+    prompt = "x" * 400
+    questions = load_questions(budget_module.Path(__file__).resolve().parent.parent / "prompts")
+    got = budget_module.estimate(config, pending, prices, questions, None, {"2x2": cap}, {("i1", "no_model"): prompt},
+                                 spent={})
+    one_call = budget_module.worst_case_request_cost(
+        worst_request(prompt, get_engine("2x2").legal_moves(), cap, questions), max_output, prices["D"])
+    (model,) = got["models"]
+    assert model["max_request_usd"] == pytest.approx(one_call)
+    assert model["worst_case_usd"] == pytest.approx(cap * model["max_request_usd"])
+    assert model["spent_usd"] == 0.0 and got["total"]["spent_usd"] == 0.0
+
+
 def test_budget_checked_before_each_retry(exp, capsys):
     # Each failed call carries 100 output tokens (0.01 USD). Room for one request only.
     with_budget(exp, per_model_usd=0.015)
@@ -431,6 +472,62 @@ def test_puzzles_filter_writes_only_those_puzzles(repo, monkeypatch):
     inputs = [json.loads(x) for x in (repo / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
     assert {r["puzzle"] for r in inputs} == {"2x2", "3x3"}
     assert len(rows) == sum(r["puzzle"] == "2x2" for r in inputs) * 3 * 2
+
+
+def group(puzzle, depth, valid, invalid):
+    rows = [{"input_id": f"{puzzle}-{depth}-v{i}", "puzzle": puzzle, "scramble_depth": depth, "validity": "valid"}
+            for i in range(valid)]
+    return rows + [{"input_id": f"{puzzle}-{depth}-x{i}", "puzzle": puzzle, "scramble_depth": depth,
+                    "validity": "invalid", "source_input_id": f"{puzzle}-{depth}-v{i}"} for i in range(invalid)]
+
+
+def counts(rows):
+    return sum(r["validity"] == "valid" for r in rows), sum(r["validity"] == "invalid" for r in rows)
+
+
+@pytest.mark.parametrize("k, expected", [(1, (1, 1)), (4, (4, 1)), (5, (5, 2)), (8, (8, 2)), (40, (40, 10)), (100, (40, 10))])
+def test_inputs_per_depth_keeps_the_invalid_share_rounded_up(k, expected):
+    rows = group("2x2", 5, 40, 10)
+    kept = run_module.experiment_inputs({"inputs_per_depth": k}, rows)
+    assert counts(kept) == expected
+    assert kept == [r for r in rows if r in kept]  # release order
+    assert [r["input_id"] for r in kept if r["validity"] == "valid"] == [f"2x2-5-v{i}" for i in range(expected[0])]
+
+
+def test_inputs_per_depth_with_no_invalid_inputs_keeps_k_valid():
+    assert counts(run_module.experiment_inputs({"inputs_per_depth": 3}, group("2x2", 5, 40, 0))) == (3, 0)
+
+
+def test_no_inputs_per_depth_keeps_everything():
+    rows = group("2x2", 5, 4, 1)
+    assert run_module.experiment_inputs({}, rows) == rows
+
+
+def test_puzzles_and_inputs_per_depth_together():
+    rows = group("2x2", 5, 8, 2) + group("2x2", 10, 8, 2) + group("3x3", 5, 8, 2)
+    kept = run_module.experiment_inputs({"puzzles": ["2x2"], "inputs_per_depth": 4}, rows)
+    assert {r["puzzle"] for r in kept} == {"2x2"}
+    assert [counts([r for r in kept if r["scramble_depth"] == d]) for d in (5, 10)] == [(4, 1), (4, 1)]
+    assert kept == [r for r in rows if r in kept]
+
+
+def test_interleaved_unsorted_input_keeps_the_first_k_per_depth_in_release_order():
+    five, ten = group("2x2", 5, 8, 2), group("2x2", 10, 8, 2)
+    rows = [r for pair in zip(reversed(five), reversed(ten)) for r in pair]  # depths alternate, and ids run backwards
+    kept = run_module.experiment_inputs({"inputs_per_depth": 4}, rows)
+    assert [counts([r for r in kept if r["scramble_depth"] == d]) for d in (5, 10)] == [(4, 1), (4, 1)]
+    assert kept == [r for r in rows if r in kept]
+    # the first four valid rows of each depth, as they appear: the backwards ids v7 to v4
+    assert [r["input_id"] for r in kept if r["validity"] == "valid" and r["scramble_depth"] == 5] == [f"2x2-5-v{i}" for i in (7, 6, 5, 4)]
+
+
+def test_inputs_per_depth_limits_the_attempts_run(repo, monkeypatch):
+    two_puzzle_exp(repo, monkeypatch, "inputs_per_depth = 1\n")
+    assert go() == 0
+    inputs = [json.loads(x) for x in (repo / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    expected = run_module.experiment_inputs({"inputs_per_depth": 1}, inputs)
+    assert {r["input_id"] for r in records(repo, "A")} == {r["input_id"] for r in expected}
+    assert len(expected) < len(inputs)
 
 
 def test_no_puzzles_runs_every_puzzle(repo, monkeypatch):

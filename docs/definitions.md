@@ -37,11 +37,12 @@ Every term below means the same thing in code, configs, records, reports, and do
 4. **Source input id.** The id of the valid input an invalid input was made from.
 5. **Validity label.** The valid or invalid label `generate` gives each input. The label is authoritative. `load_state()` only checks it, and a disagreement raises an error, because it means a bug in the engine or in `generate`.
 6. **Valid/invalid split.** The share of valid inputs for which `generate` also makes an invalid copy. A config parameter. A split of 0.25 makes one invalid input for every four valid ones, so 20% of the inputs are invalid.
-7. **Input set.** All inputs made by one `generate` call, under one config.
-8. **Input set id.** The id of an input set. It is the major number of the release that first holds the input set. Every input and every raw record carries it.
-9. **Frozen.** Written once and never changed again. A different input set needs a new major release.
-10. **Development input set.** Input sets 1 and 2, in releases 1.x and 2.x. Prompts were changed while the results of input set 1 were read, so the results on either set show how the method was built and are not evidence for the research question.
-11. **Held-out input set.** The input set frozen in release 3.0.0 from a new seed, with the prompts and assessment as they stand when it is cut. Its results are the evidence for the research question.
+7. **Inputs per depth.** The number of valid inputs per puzzle and scramble depth that an experiment runs, a config parameter of the experiment config. With it, `run` plays the first that many valid inputs of each puzzle and depth, in release order, and the first invalid inputs of the same group, as many as `ceil(k × invalid / valid)`, where `k` is inputs per depth and `invalid` and `valid` are the group's counts in the release. So a sample keeps the release's share of invalid inputs, rounded up, and at least one invalid input when the group has any. Without it, or when it is at least the group's valid count, `run` plays the whole group. A sample is a pilot: its results show how a run will go and are not evidence for the research question.
+8. **Input set.** All inputs made by one `generate` call, under one config.
+9. **Input set id.** The id of an input set. It is the major number of the release that first holds the input set. Every input and every raw record carries it.
+10. **Frozen.** Written once and never changed again. A different input set needs a new major release.
+11. **Development input set.** Input sets 1 and 2, in releases 1.x and 2.x. Prompts were changed while the results of input set 1 were read, so the results on either set show how the method was built and are not evidence for the research question.
+12. **Held-out input set.** The input set frozen in release 3.0.0 from a new seed, with the prompts and assessment as they stand when it is cut. Its results are the evidence for the research question.
 
 ## Releases and experiments
 
