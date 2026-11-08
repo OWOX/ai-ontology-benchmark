@@ -130,39 +130,39 @@ All tests use the `fake` provider and temporary folders.
 18. A model missing from `config/prices.toml` makes `run` exit with code 1 before any call.
 19. On a release with 2x2 and 3x3, `puzzles = ["2x2"]` writes records for 2x2 inputs only, and a config with no `puzzles` writes both.
 20. A `puzzles` name that the release doesn't hold makes `run` exit with code 1 before any call, naming the config path and `puzzles`.
-    1. `experiment_inputs` on a group of 40 valid and 10 invalid inputs with k = 1, 4, 5, 8, 40, and 100 keeps 1+1, 4+1, 5+2, 8+2, 40+10, and 40+10. A group with no invalid inputs keeps k+0. `puzzles` and `inputs_per_depth` together keep the first k valid inputs and their share of invalid inputs in each depth of the named puzzles only, in release order.
-21. After a full run, `refs/heads/results/<ID>` holds every raw file with the same bytes as the work tree, and the work tree status, the index, and `HEAD` are unchanged.
-22. The branch has one commit per new attempt plus the start commit.
-23. With a temporary bare remote as `origin`, the branch is pushed at exit. Without one, `run` exits with code 0 and stderr carries the push warning.
-24. A budget stop still commits and pushes, and the last stderr line starts with `error: budget reached:`.
-25. `--no-commit`, `--dry-run`, and `--estimate` create no branch.
-26. Outside a git work tree, `run` exits with code 1 before any call.
-27. A raw file that is on the branch but gone from the work tree stays on the branch, and a `.experiment.toml.*.tmp` is never committed.
-28. A local branch behind `origin` is moved forward at the start. A diverged one makes `run` exit with code 1 before any call, naming both refs.
-29. A forced commit failure warns, and the `error: budget reached:` line stays the last stderr line.
-30. An interrupt (`KeyboardInterrupt`) and SIGTERM, both raised mid-run, still commit and push the records written, and SIGTERM exits with code 143.
-31. With fake replies in a known order and no terminal, `run` prints one progress line per new attempt with the right counters and rates, and a resumed run counts the records already written.
-32. Rates leave out attempts with outcome `infrastructure_failure`, and show `n/a` for an empty denominator.
-33. `--dry-run` and `--estimate` print no progress line.
-34. A smoke test draws the `rich` display into a string with an injected console and checks that the AI model names appear.
-35. `--config -` with a config on stdin runs like the same config in a file, writes no file under `config/experiments/`, and commits `results/<ID>/experiment.toml` to the branch. A config on stdin that breaks a check exits with code 1 and an error naming `<stdin>`, before any write or call.
-36. A work-tree raw file shorter than the branch's (or missing, for an AI model in scope) makes `run` exit with code 1 before any write or call, naming the file and the `git checkout` fix, and makes no call. A work-tree file that extends the branch file runs, and `--model B` ignores a stale file of A.
-37. A decision attempt of several calls reads the spent cost once, not once per call.
-38. `--parallel 4` writes the same set of records as `--parallel 1`, compared by input id, setup, AI model, and attempt number, apart from `created_at` and `latency_s`.
-39. The fake never sees more than N calls at once, and does see N at once when enough attempts are pending.
-40. While N attempts are in flight, they are the first N pending attempts in loop order.
-41. With `--parallel 4`, fake replies costing 0.01 USD, a worst-case request cost of 0.01 USD, and `per_model_usd = 0.035`, there are never more than 3 records, and `run` exits with code 1 naming the model budget. The first two calls are gated to overlap, and the test asserts that at least two were in flight together.
-42. A budget stop with attempts in flight writes their records before the error, and the error is the last stderr line.
-43. An interrupt with attempts in flight commits the records written and returns promptly, well before the fake's blocked calls would finish.
-44. `--parallel 0` exits with code 1 naming `--parallel`.
-45. A decision attempt counts the records other attempts of the process write after its spent-cost reading, so it cannot pass a budget that way.
-46. A reservation grows with the tokens its attempt has paid, so another attempt's check counts them.
-47. A `BaseException` in a worker is raised in the main thread and ends the run instead of hanging it.
-48. A parallel budget stop reports the attempts to run less the records written, not the refused attempt's own count: with 10 attempts, one refused and three recorded, it says 7 attempts left.
-49. With `--parallel 2`, when the first attempt finishes while the second is still in flight, the next call is the third pending attempt in loop order, started without waiting for the second.
-50. `release = "latest"` picks the highest version folder numerically, and the stored copy and the raw records hold that version.
-51. A resumed run with `latest` keeps the copy's version after a newer release appears, including when only the results branch holds the copy.
-52. A copy that says `latest` makes `run` exit with code 1 before any call, naming the copy and `release`.
-53. `latest` with no release folder makes `run` exit with code 1, naming the `--releases` directory and `release`.
-54. A config whose `release = "latest"` line doesn't match exactly once (for example, a quoted key `"release" = "latest"`) makes `run` exit with code 1, naming the config and `release`.
-55. A scripted `RequestError` makes `run` exit with code 1, with `error: <message>` as the last stderr line, no traceback, no retry, and no raw record for that attempt.
+21. `experiment_inputs` on a group of 40 valid and 10 invalid inputs with k = 1, 4, 5, 8, 40, and 100 keeps 1+1, 4+1, 5+2, 8+2, 40+10, and 40+10. A group with no invalid inputs keeps k+0. `puzzles` and `inputs_per_depth` together keep the first k valid inputs and their share of invalid inputs in each depth of the named puzzles only, in release order. Input that is unsorted, with rows alternating between two depths, keeps the same rows and release order.
+22. After a full run, `refs/heads/results/<ID>` holds every raw file with the same bytes as the work tree, and the work tree status, the index, and `HEAD` are unchanged.
+23. The branch has one commit per new attempt plus the start commit.
+24. With a temporary bare remote as `origin`, the branch is pushed at exit. Without one, `run` exits with code 0 and stderr carries the push warning.
+25. A budget stop still commits and pushes, and the last stderr line starts with `error: budget reached:`.
+26. `--no-commit`, `--dry-run`, and `--estimate` create no branch.
+27. Outside a git work tree, `run` exits with code 1 before any call.
+28. A raw file that is on the branch but gone from the work tree stays on the branch, and a `.experiment.toml.*.tmp` is never committed.
+29. A local branch behind `origin` is moved forward at the start. A diverged one makes `run` exit with code 1 before any call, naming both refs.
+30. A forced commit failure warns, and the `error: budget reached:` line stays the last stderr line.
+31. An interrupt (`KeyboardInterrupt`) and SIGTERM, both raised mid-run, still commit and push the records written, and SIGTERM exits with code 143.
+32. With fake replies in a known order and no terminal, `run` prints one progress line per new attempt with the right counters and rates, and a resumed run counts the records already written.
+33. Rates leave out attempts with outcome `infrastructure_failure`, and show `n/a` for an empty denominator.
+34. `--dry-run` and `--estimate` print no progress line.
+35. A smoke test draws the `rich` display into a string with an injected console and checks that the AI model names appear.
+36. `--config -` with a config on stdin runs like the same config in a file, writes no file under `config/experiments/`, and commits `results/<ID>/experiment.toml` to the branch. A config on stdin that breaks a check exits with code 1 and an error naming `<stdin>`, before any write or call.
+37. A work-tree raw file shorter than the branch's (or missing, for an AI model in scope) makes `run` exit with code 1 before any write or call, naming the file and the `git checkout` fix, and makes no call. A work-tree file that extends the branch file runs, and `--model B` ignores a stale file of A.
+38. A decision attempt of several calls reads the spent cost once, not once per call.
+39. `--parallel 4` writes the same set of records as `--parallel 1`, compared by input id, setup, AI model, and attempt number, apart from `created_at` and `latency_s`.
+40. The fake never sees more than N calls at once, and does see N at once when enough attempts are pending.
+41. While N attempts are in flight, they are the first N pending attempts in loop order.
+42. With `--parallel 4`, fake replies costing 0.01 USD, a worst-case request cost of 0.01 USD, and `per_model_usd = 0.035`, there are never more than 3 records, and `run` exits with code 1 naming the model budget. The first two calls are gated to overlap, and the test asserts that at least two were in flight together.
+43. A budget stop with attempts in flight writes their records before the error, and the error is the last stderr line.
+44. An interrupt with attempts in flight commits the records written and returns promptly, well before the fake's blocked calls would finish.
+45. `--parallel 0` exits with code 1 naming `--parallel`.
+46. A decision attempt counts the records other attempts of the process write after its spent-cost reading, so it cannot pass a budget that way.
+47. A reservation grows with the tokens its attempt has paid, so another attempt's check counts them.
+48. A `BaseException` in a worker is raised in the main thread and ends the run instead of hanging it.
+49. A parallel budget stop reports the attempts to run less the records written, not the refused attempt's own count: with 10 attempts, one refused and three recorded, it says 7 attempts left.
+50. With `--parallel 2`, when the first attempt finishes while the second is still in flight, the next call is the third pending attempt in loop order, started without waiting for the second.
+51. `release = "latest"` picks the highest version folder numerically, and the stored copy and the raw records hold that version.
+52. A resumed run with `latest` keeps the copy's version after a newer release appears, including when only the results branch holds the copy.
+53. A copy that says `latest` makes `run` exit with code 1 before any call, naming the copy and `release`.
+54. `latest` with no release folder makes `run` exit with code 1, naming the `--releases` directory and `release`.
+55. A config whose `release = "latest"` line doesn't match exactly once (for example, a quoted key `"release" = "latest"`) makes `run` exit with code 1, naming the config and `release`.
+56. A scripted `RequestError` makes `run` exit with code 1, with `error: <message>` as the last stderr line, no traceback, no retry, and no raw record for that attempt.
