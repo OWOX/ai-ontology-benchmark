@@ -1,5 +1,5 @@
 # Spec: docs/specs/site.md
-# Manual only until the repo goes public. Do not add push or schedule triggers before then.
+# Manual only: dispatch it from the Actions tab to publish.
 name: Pages
 
 on:
@@ -33,6 +33,8 @@ jobs:
         working-directory: site
         run: |
           npm ci
+          npx playwright install --with-deps chromium
+          npm run og:card
           npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

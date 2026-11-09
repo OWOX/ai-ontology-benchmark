@@ -79,9 +79,19 @@ The Experiment Example (`Player.tsx`) shows State, Model, and Result. In the Mod
 
 Below the Experiment Example is a Source section (`Source.tsx`), in the look of the other sections, with the GitHub mark as its icon (an inline SVG in `icons.tsx`, drawn with the theme tokens). It holds a link reading "github.com/OWOX/ai-ontology-benchmark" to the repository, and a note: the repository holds the experiment design (methodology and definitions), the frozen releases with their inputs and prompts, every AI model's raw answers, and the code that scores them, and every number on the page is recomputed from those raw answers. The footer holds only the theme switcher.
 
+## SEO and share card
+
+`site/src/components/SEO.astro`, ported from the personal site and used by `Layout.astro`, writes the head fields. Title and description come from `page.title` and `page.description` of `config/site.toml`, with no suffix added:
+
+1. `robots` is `index, follow`, the canonical and `og:url` are `https://owox.github.io/ai-ontology-benchmark/`, and the icon is `public/favicon.svg`, the 1x1x1 cube drawn by `OneCube`.
+2. Open Graph: `og:title`, `og:description`, `og:image` (absolute URL of `og.png`), `og:image:width` 1200, `og:image:height` 630, `og:type` `website`, and `og:site_name`. Twitter: `twitter:card` `summary_large_image`, `twitter:title`, `twitter:description`, and `twitter:image`.
+3. JSON-LD, with `<` escaped as `\u003c`, passed by `index.astro`: a schema.org `Dataset` with name, description, url, `license` (CC BY 4.0, the licence of the data; the code is Apache 2.0, see the README), `isAccessibleForFree`, `creator` (Organization OWOX), and `sameAs` (the repo).
+
+`site/scripts/og-card.tsx`, ported from the personal site's `scripts/og-cards.tsx`, renders `site/public/og.png` (1200x630) with Playwright from `site/.data/site.json`: the title, the description, the `OneCube` drawing, and a horizontal bar chart of balanced precision per AI model for the `all` rows, best first, at most 6, with the model names as the page shows them. It uses the page's colour tokens and fonts, and fails when the fonts don't load. `npm run og:card` runs it, and `OG_CHROME` names a Chrome binary to use in place of Playwright's Chromium. The card is generated and gitignored, so it always matches the exported numbers.
+
 ## Build and publish
 
-After the export, `npm ci && npm run build` in `site/` builds the static page. Publishing is the manual `workflow_dispatch` workflow `.github/workflows/pages.yml`, which runs the export with `--ref origin/main`, builds, and deploys `site/dist` to GitHub Pages. The export fetches `main` itself. The workflow reads data and `config/site.toml` from `origin/main`, so dispatch it from `main`. It has no other trigger while the repo is private.
+After the export, `npm ci`, `npx playwright install --with-deps chromium`, `npm run og:card`, and `npm run build` in `site/` build the static page and its share card. Publishing is the manual `workflow_dispatch` workflow `.github/workflows/pages.yml`, which runs the export with `--ref origin/main`, builds, and deploys `site/dist` to GitHub Pages. The export fetches `main` itself. The workflow reads data and `config/site.toml` from `origin/main`, so dispatch it from `main`. It has no other trigger.
 
 ## Test
 
