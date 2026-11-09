@@ -364,6 +364,39 @@ describe('Player', () => {
     expect(screen.queryByRole('button', { name: 'Show another case' })).toBeNull()
   })
 
+  it('the refresh button stays enabled during a replay and a click stops it: no moves or result of the old replay appear', async () => {
+    stub({ '3x3': [attempt({ validity: 'valid' }), attempt({ validity: 'invalid', outcome: 'success', mismatch: true })] })
+    await mount()
+    const before = fact('State:')
+    await run()
+    await act(async () => void vi.advanceTimersByTime(300))
+    expect(screen.getByRole('button', { name: 'Re-run' })).toBeDisabled()
+    expect(result()).toHaveTextContent(/running/)
+    const refresh = screen.getByRole('button', { name: 'Show another case' })
+    expect(refresh).toBeEnabled()
+    fireEvent.click(refresh)
+    expect(fact('State:')).not.toBe(before)
+    const shown = () => document.querySelector('.cube-stage')!.innerHTML
+    const cube = shown()
+    expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
+    expect(row()).toHaveStyle({ visibility: 'hidden' })
+    await finish()
+    expect(shown()).toBe(cube)
+    expect(row()).toHaveStyle({ visibility: 'hidden' })
+    expect(result()).not.toHaveTextContent(/running|Solved|Not solved|Mismatch/)
+    expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('stops the replay on unmount', async () => {
+    stub({ '3x3': [attempt({ validity: 'valid' }), attempt({ validity: 'invalid', outcome: 'success', mismatch: true })] })
+    const view = await mount()
+    await run()
+    await act(async () => void vi.advanceTimersByTime(300))
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('only shows attempts of the selected models', async () => {
     stub({ '3x3': [attempt({ model: 'other', outcome: 'hallucination' }), attempt({})] })
     await mount()

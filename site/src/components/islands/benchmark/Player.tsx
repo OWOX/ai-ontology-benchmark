@@ -154,7 +154,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
     if (attempt || (await load(true))) setRun((r) => r + 1)
   }
 
-  /** Another case from the same pool (model first, never the one shown), back to its unplayed state. */
+  /** Another case from the same pool (model first, never the one shown), back to its unplayed state. Always available: setting `run` to 0 re-runs the replay effect's cleanup, which cancels the animation frame of a replay in progress, so the old replay can't update `frame` after the switch. */
   const another = () => {
     const next = pickCase(pool, attempt)
     if (!next) return
@@ -186,7 +186,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
             <span className="num" aria-hidden="true"><FlaskIcon /></span>
             <span className="label" id={titleId}>Experiment Example</span>
             {attempt && pool.length > 1 && (
-              <button type="button" className="another square" onClick={another} disabled={playing} aria-label="Show another case" title="Show another case"><RefreshIcon /></button>
+              <button type="button" className="another square" onClick={another} aria-label="Show another case" title="Show another case"><RefreshIcon /></button>
             )}
           </div>
           <div className="body">
