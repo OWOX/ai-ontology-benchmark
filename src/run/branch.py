@@ -8,6 +8,7 @@ tree, the real index, or HEAD: it builds each tree in a temporary index file.
 import fcntl
 import hashlib
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -27,9 +28,9 @@ def blob_id(data: bytes, length: int) -> str:
 
 
 def stale_files(root: Path, parent: str, results_dir: str, models: set[str] | None = None) -> list[str]:
-    """Raw files under `results_dir` on `parent` whose bytes the work tree does not start with: the branch
-    holds records this checkout lacks. A raw file gone from the work tree counts only for a model in
-    `models`, because only those files `run` is about to rewrite. Other files are not compared."""
+    """Raw files and batch state files under `results_dir` on `parent` whose bytes the work tree does not
+    start with: the branch holds records this checkout lacks. A file gone from the work tree counts only for
+    a model in `models`, because only those files `run` is about to rewrite. Other files are not compared."""
     env = {k: v for k, v in os.environ.items() if k not in GIT_VARIABLES}
     listed = subprocess.run(["git", "ls-tree", "-r", "-l", "-z", parent, "--", results_dir], cwd=root, env=env,
                             capture_output=True, text=True, stdin=subprocess.DEVNULL)
@@ -42,7 +43,7 @@ def stale_files(root: Path, parent: str, results_dir: str, models: set[str] | No
         head, _, path = entry.partition("\t")
         _, _, sha, size = head.split()
         relative = Path(path).relative_to(results_dir)
-        if relative.parent != Path("raw") or relative.suffix != ".jsonl":
+        if relative.parent not in (Path("raw"), Path("batches")) or relative.suffix != ".jsonl":
             continue
         local = root / path
         if not local.is_file():
@@ -58,7 +59,7 @@ def stale_files(root: Path, parent: str, results_dir: str, models: set[str] | No
 
 def stale_message(files: list[str], ref: str) -> str:
     """`ref` is the ref the files were read from, as a name `git restore --source` accepts."""
-    results = files[0].split("/raw/")[0]
+    results = re.split(r"/(?:raw|batches)/", files[0])[0]
     verb = "holds" if len(files) == 1 else "hold"
     return (f"{', '.join(files)} on {ref} {verb} records this checkout lacks; bring the branch's results into "
             f"the work tree first, after checking that no local records are uncommitted "
@@ -108,6 +109,7 @@ class ResultsBranch:
         self.paths = ([self.relative(config_path)] if config_path else []) + [self.relative(results_dir)]
         common = self.git(["rev-parse", "--git-common-dir"]).stdout.strip()
         self.lock_path = (self.root / common) / f"results-{experiment_id}.lock"
+        self.batch_lock_path = (self.root / common) / f"results-{experiment_id}.batch.lock"  # see src/run/batch.py
         self.exclude = f":(exclude){self.paths[-1]}/.experiment.toml.*.tmp"  # a run's temporary copy
         self.sync()
 
