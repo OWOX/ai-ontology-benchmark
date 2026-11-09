@@ -88,6 +88,15 @@
   // `loaded` is the value a loaded branch came with (null for none): when it is at or above the top, the top maps back to it.
   function perDepthFromSlider(n, top, loaded) { return n >= top ? (loaded !== null && loaded !== undefined && loaded >= top ? loaded : null) : n; }
 
+  // An error in the form's message describes the form as it was sent. Any change to the form clears it, so a
+  // fixed mistake (a model ticked after "select at least one AI model") never leaves the old error showing.
+  // Other messages, such as "Loaded <id>." or "Dry run started.", stay.
+  function clearError(msg) {
+    if (!msg.classList.contains("err")) return;
+    msg.className = "msg";
+    msg.textContent = "";
+  }
+
   // Hands out numbered requests and says whether one is still the newest, so a late answer can be dropped.
   function newestOnly() {
     let last = 0;
@@ -252,7 +261,8 @@
         } catch (e) { say(e.message, "err"); }
       }
 
-      const choose = () => { refreshId(); schedule(); };
+      const edited = () => { clearError(msg); schedule(); };
+      const choose = () => { clearError(msg); refreshId(); schedule(); };
 
       async function pickBranch(value) {
         say("");
@@ -455,7 +465,7 @@
           }
           dropStaleResult();
           ref.note.textContent = branchNote();
-          controls(); schedule();
+          controls(); edited();
         });
         ref.id.addEventListener("change", () => {
           const value = ref.id.value.trim();
@@ -477,7 +487,7 @@
           h("section", {}, h("h2", { text: "New Experiment" }), branchField()),
           h("section", { class: "step" }, h("h3", {}, "Puzzles", ...Defs.info(bundle.definitions, "Puzzles")), puzzleCards(bundle, choose)),
           h("section", { class: "step" }, h("h3", {}, "AI models", ...Defs.info(bundle.definitions, "AI models")), modelList(bundle, choose)),
-          h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(bundle, schedule)),
+          h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(bundle, edited)),
           ref.section = h("section", { class: "step" }, h("h3", { text: "Estimation" }),
             ref.card = h("div", { class: "estimate-card" }, ref.formula = h("p", { class: "estimate-formula", "aria-live": "polite" }), ref.body = h("div")), h("div", { class: "actions" }, ref.dry, ref.run), msg));
         if (S.result) showResult(S.result.label, S.result.job, S.result.id, S.result.after);

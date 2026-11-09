@@ -169,3 +169,17 @@ def test_experiments_default_columns_follow_the_spec():
     assert [c for c in columns if c not in hidden] == [
         "id", "started_at", "model", "puzzle", "attempts", "precision", "hallucination_rate",
         "mismatch_detection_rate", "cost_usd"]
+
+
+def test_new_experiment_clears_only_an_error_message_when_the_form_changes():
+    import json
+    script = _new_js_functions("clearError") + (
+        "const box = (cls, text) => ({ className: cls, textContent: text,"
+        " classList: { contains(c) { return this.owner.className.split(' ').includes(c); } } });"
+        "const out = [];"
+        "for (const [cls, text] of [['msg err', 'models: select at least one AI model'], ['msg ok', 'Dry run started.'], ['msg', '']]) {"
+        " const m = box(cls, text); m.classList.owner = m; clearError(m); out.push([m.className, m.textContent]); }"
+        "console.log(JSON.stringify(out));")
+    run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout) == [["msg", ""], ["msg ok", "Dry run started."], ["msg", ""]]
