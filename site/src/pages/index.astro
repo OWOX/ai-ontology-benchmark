@@ -163,11 +163,8 @@ const jsonLd = {
   :global(.benchmark .facts) { display: grid; gap: 0.25rem; margin: 0; }
   :global(.benchmark .facts dt), :global(.benchmark .facts dd) { display: inline; margin: 0; }
   :global(.benchmark .facts dt) { font-weight: var(--weight-medium); }
-  /* The label and the result never break inside ("Result: Mismatch not detected"); the ". Source" after them may wrap on a narrow screen. */
+  /* The label, the result and the Source icon never break ("Result: Mismatch not detected"). */
   :global(.benchmark .facts .one-line) { white-space: nowrap; }
-  :global(.benchmark .facts .after-result) { white-space: normal; }
-  /* Room for ". Source" on its own line where it wraps, so the run never moves Run down. */
-  @media (max-width: 48rem) { :global(.benchmark .facts .one-line) { min-height: 2lh; } }
   /* The exact prompt the model received: monospace, wrapped, scrolling past 20rem. */
   :global(.benchmark .facts .prompt-text) { margin: 0; max-height: min(20rem, 60vh); overflow: auto; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
   /* "not solvable" and "Prompt": buttons styled as text with a dashed underline, each opening a popover under the facts. The popover is out of flow (it sits at its static position, over the Run button), so opening it moves nothing. */
@@ -196,7 +193,8 @@ const jsonLd = {
   }
   :global(.benchmark .player .actions) { display: flex; align-items: center; gap: 1rem; }
   /* ". Source" after the result: the study repo, a plain content link. */
-  :global(.benchmark .player .source) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
+  :global(.benchmark .player .source) { color: var(--link); text-decoration: none; }
+  :global(.benchmark .player .source .external-icon) { vertical-align: -0.15em; }
   /* The result and its tick or cross: green when the attempt's outcome is success, red otherwise. */
   :global(.benchmark .facts [data-verdict='correct'] .result .value) { color: var(--ok); }
   :global(.benchmark .facts [data-verdict='wrong'] .result .value) { color: var(--danger); }

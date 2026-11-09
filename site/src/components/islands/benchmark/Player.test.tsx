@@ -131,16 +131,19 @@ describe('Player', () => {
     expect(sourceUrl({ model: 'm1' })).toBe(SOURCE)
   })
 
-  it('shows ". Source" after the result, linking to its raw results in a new tab', async () => {
+  it('shows a Source icon link after the result, linking to its raw results in a new tab', async () => {
     stub({ '3x3': [attempt({ experimentId: 'exp-1', branch: 'results/exp-1' })] })
     await mount()
     await run()
     expect(screen.queryByRole('link', { name: /^Source/ })).toBeNull()
     await finish()
-    const link = screen.getByRole('link', { name: /^Source/ })
+    const link = screen.getByRole('link', { name: 'Source (opens in a new tab)' })
+    expect(link).toHaveAttribute('title', 'Source')
+    expect(link.textContent).toBe('')
+    expect(link.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
     expect(link).toHaveAttribute('href', `${SOURCE}/blob/results/exp-1/results/exp-1/raw/m1.jsonl`)
     expect(link).toHaveAttribute('target', '_blank')
-    expect(row().textContent).toMatch(/Solved\. Source/)
+    expect(row().textContent).toMatch(/Solved /)
   })
 
   it('announces the result once the run ends, not while it runs', async () => {

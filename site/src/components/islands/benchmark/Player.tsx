@@ -6,7 +6,7 @@ import type { BenchmarkAttempt } from '../../../lib/types'
 import { loadAttempts } from './attempts'
 import { corruptionSentence, whyUnsolvable } from './unsolvable'
 import { replayFrame, type ReplayFrame } from './replay'
-import { CheckCircleIcon, CrossCircleIcon, FlaskIcon, RefreshIcon } from './icons'
+import { CheckCircleIcon, ExternalLinkIcon, CrossCircleIcon, FlaskIcon, RefreshIcon } from './icons'
 
 /** An attempt as /ai-ontology-benchmark/attempts.json carries it: `inputId` and `depth` are dropped, its experiment's `release` and `experimentId` added. */
 export type ReplayAttempt = Omit<BenchmarkAttempt, 'inputId' | 'depth'> & { release?: string; experimentId?: string; branch?: string; prompt?: string; decision?: boolean }
@@ -231,12 +231,12 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
                     </div>
                   )}
                 </div>
-                {/* Always laid out (two lines on a narrow screen, where ". Source" wraps), so Run never moves the button down; visibility: hidden (which also keeps it from screen readers) until Run. */}
+                {/* Always laid out (its height is fixed by the result row, with or without the Source icon), so Run never moves the button down; visibility: hidden (which also keeps it from screen readers) until Run. */}
                 <div className="one-line" data-verdict={result ? verdict : undefined} style={run > 0 ? undefined : { visibility: 'hidden' }}>
                   <dt>Result:</dt>{' '}
                   <dd className="result">
                     {result ? <span className="value">{verdict === 'correct' ? <CheckCircleIcon /> : <CrossCircleIcon />}{resultText(result, attempt!)}</span> : run > 0 ? <span className="muted">running… {donePct}%</span> : '\u00a0'}
-                    {result && <span className="after-result">. <a className="source" href={sourceUrl(attempt!)} target="_blank" rel="noopener noreferrer">Source<span className="sr-only"> (opens in a new tab)</span></a></span>}
+                    {result && <span className="after-result">{' '}<a className="source" href={sourceUrl(attempt!)} target="_blank" rel="noopener noreferrer" aria-label="Source (opens in a new tab)" title="Source"><ExternalLinkIcon /></a></span>}
                   </dd>
                 </div>
               </dl>

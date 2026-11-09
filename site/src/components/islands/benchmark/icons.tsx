@@ -71,6 +71,16 @@ export function RefreshIcon() {
   )
 }
 
+/** Opens elsewhere: a box with an arrow out of its top-right corner. */
+export function ExternalLinkIcon() {
+  return (
+    <svg {...inline} className="external-icon">
+      <path d="M18 13.5V19a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 19V8a1.5 1.5 0 0 1 1.5-1.5H11" />
+      <path d="M14.5 3.5h6v6M20.5 3.5 10.5 13.5" />
+    </svg>
+  )
+}
+
 /** A result that matches the expected one: a tick in a circle. */
 export function CheckCircleIcon() {
   return (
