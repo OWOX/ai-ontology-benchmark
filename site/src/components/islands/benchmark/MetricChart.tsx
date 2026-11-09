@@ -28,8 +28,6 @@ interface Props {
   layoutKey: string
   /** The bars of the selected metric, for the copy button; empty when the chart shows none. */
   bars: readonly BarRow[]
-  /** One line under the bars, e.g. how many AI models they average; also written under the copied image. */
-  note?: string
   /** The filter in words (puzzle and number of AI models), written under the copied image. */
   filterText: string
   /** The chart of the selected metric. */
@@ -37,7 +35,7 @@ interface Props {
 }
 
 /** A chart section: the metric tabs hanging off a framed panel, and in the panel a figure: the framed chart, then under the frame its numbered caption ending in a "?" popover. Each tab keeps its own "?" for the metric's definition. */
-export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, note, filterText, children }: Props) {
+export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, filterText, children }: Props) {
   const root = useRef<HTMLElement>(null)
   // The metric whose definition popover is open (one at a time).
   const [helpOpen, setHelpOpen] = useState<string | null>(null)
@@ -233,7 +231,7 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
   const copy = async () => {
     let next: 'copied' | 'failed' = 'copied'
     try {
-      await copyChart({ caption: title, rows: bars, higherIsBetter: current.higherIsBetter, filter: filterText, note, url: location.origin + location.pathname })
+      await copyChart({ caption: title, rows: bars, higherIsBetter: current.higherIsBetter, filter: filterText, url: location.origin + location.pathname })
     } catch {
       next = 'failed'
     }
@@ -308,7 +306,6 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
           <figure className="chart-figure" aria-labelledby={captionId}>
             <div className="chart-frame">
               {children}
-              {note && <p className="chart-note">{note}</p>}
             </div>
             <figcaption className="chart-head" ref={head} onBlur={(e) => { if (titleByFocus.current && !e.currentTarget.contains(e.relatedTarget as Node | null)) setTitleOpen(false) }}>
               <span className="chart-title" id={captionId}>{title}</span>{' '}

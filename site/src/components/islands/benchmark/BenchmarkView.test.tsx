@@ -619,25 +619,19 @@ describe('BenchmarkView', () => {
       ])
     })
 
-    const note = () => setupSection().querySelector('.chart-note')!
-
-    it('shows the setups in order with the mean over the ticked AI models, and says how many once', () => {
+    it('shows the setups in order with the mean over the ticked AI models', () => {
       both()
       // claude-a 0.2 and gpt-a 0.6 under no model, whatever their attempt counts; both have a value under every setup.
       expect(setupChart()).toHaveAccessibleName('Precision by setup: No model 40% (worst), Descriptive model 60%, Prescriptive model 70% (best)')
-      expect(note()).toHaveTextContent('Averaged over 2 AI models.')
-      expect(note().textContent).not.toMatch(/left out/)
     })
 
-    it('averages only the AI models that have a value under every setup, and says how many are left out', () => {
+    it('averages only the AI models that have a value under every setup', () => {
       both()
       fireEvent.click(within(setupSection()).getByRole('tab', { name: 'Hallucination rate' }))
       // gpt-a has no hallucination rate (a decision model, say): it is out of all three bars, so they compare the same models.
       expect(setupChart()).toHaveAccessibleName('Hallucination rate by setup: No model 25% (worst), Descriptive model 25% (worst), Prescriptive model 10% (best)')
-      expect(note()).toHaveTextContent('Averaged over 1 AI model. 1 left out for lacking a value under some setup.')
       fireEvent.click(on('claude-a'))
       expect(setupChart()).toHaveAccessibleName('Hallucination rate by setup: No model n/a, Descriptive model n/a, Prescriptive model n/a')
-      expect(note()).toHaveTextContent('Averaged over 0 AI models. 1 left out for lacking a value under some setup.')
     })
 
     it('shows the empty message in both charts when no AI model is selected', () => {
@@ -656,12 +650,61 @@ describe('BenchmarkView', () => {
       fireEvent.click(on('gpt-a'))
       expect(modelChart()).toHaveAccessibleName('Precision: claude-a 50%')
       expect(setupChart()).toHaveAccessibleName('Precision by setup: No model 20% (worst), Descriptive model 40%, Prescriptive model 60% (best)')
-      expect(note()).toHaveTextContent('Averaged over 1 AI model.')
       fireEvent.click(screen.getByRole('button', { name: '4x4 cube' }))
       expect(modelChart()).toHaveAccessibleName('Precision: claude-a 50%')
       // 4x4 has a row for no model only: no AI model has a value under every setup.
       expect(setupChart()).toHaveAccessibleName('Precision by setup: No model n/a, Descriptive model n/a, Prescriptive model n/a')
-      expect(note()).toHaveTextContent('Averaged over 0 AI models. 1 left out')
+    })
+
+    describe('setup label help', () => {
+      const defs = [
+        { key: 'no_model', name: 'No model', definition: 'The setup with no rules.' },
+        { key: 'descriptive', name: 'Descriptive model', definition: 'The setup that explains the rules.' },
+      ]
+      const withDefs = () => render(<BenchmarkView metrics={metrics} setupMetrics={setupMetrics} attemptsUrl="/a.json" definitions={defs} />)
+      const help = (name: string) => screen.getByRole('button', { name: `What is ${name}?` })
+
+      it('puts a "?" after each setup label that has a definition, and none after one that lacks it', () => {
+        withDefs()
+        expect(help('No model')).toHaveTextContent('?')
+        expect(help('Descriptive model')).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.queryByRole('button', { name: 'What is Prescriptive model?' })).toBeNull()
+        expect(screen.queryByRole('dialog')).toBeNull()
+      })
+
+      it('shows no "?" without definitions and keeps the bars one image', () => {
+        both()
+        expect(screen.queryByRole('button', { name: /What is (No|Descriptive|Prescriptive) model\?/ })).toBeNull()
+        expect(setupChart()).toBeInTheDocument()
+      })
+
+      it('opens the definition on a click, and closes on Escape, an outside click, and a second click', () => {
+        withDefs()
+        fireEvent.click(help('No model'))
+        expect(screen.getByRole('dialog', { name: 'No model' })).toHaveTextContent('The setup with no rules.')
+        fireEvent.keyDown(document, { key: 'Escape' })
+        expect(screen.queryByRole('dialog')).toBeNull()
+        fireEvent.click(help('No model'))
+        fireEvent.click(document.body)
+        expect(screen.queryByRole('dialog')).toBeNull()
+        fireEvent.click(help('Descriptive model'))
+        fireEvent.click(help('Descriptive model'))
+        expect(screen.queryByRole('dialog')).toBeNull()
+      })
+
+      it('keeps at most one chart popover open on the page', () => {
+        withDefs()
+        fireEvent.click(help('No model'))
+        fireEvent.click(help('Descriptive model'))
+        expect(screen.getAllByRole('dialog')).toHaveLength(1)
+        expect(screen.getByRole('dialog', { name: 'Descriptive model' })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'About Chart 4' }))
+        expect(screen.getAllByRole('dialog')).toHaveLength(1)
+        expect(screen.getByRole('dialog', { name: 'About Chart 4' })).toBeInTheDocument()
+        fireEvent.click(help('No model'))
+        expect(screen.getAllByRole('dialog')).toHaveLength(1)
+        expect(screen.getByRole('dialog', { name: 'No model' })).toBeInTheDocument()
+      })
     })
 
     describe('title popover', () => {
@@ -707,7 +750,7 @@ describe('BenchmarkView', () => {
         for (const t of [five!, six!]) expect(t.match(/[.?](\s|$)/g)).toHaveLength(3)
       })
 
-      it('puts the caption under the frame, outside it, with the bars and the note inside', () => {
+      it('puts the caption under the frame, outside it, with the bars inside', () => {
         both()
         const figure = button(1).closest('figure')!
         const frame = figure.querySelector('.chart-frame')!

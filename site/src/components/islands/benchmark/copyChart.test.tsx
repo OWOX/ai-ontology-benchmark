@@ -84,11 +84,11 @@ describe('copy chart', () => {
     view()
     await click(copyBtn(4))
     const init = (write.mock.calls[0][0][0] as { init: Record<string, unknown> }).init
-    expect(await (init['text/plain'] as Blob).text()).toBe('Chart 4. Balanced precision by setup\nNo model: 20%\nDescriptive model: 40%\nPrescriptive model: 60%\n3x3 cube, 2 AI models\nAveraged over 1 AI model. 1 left out for lacking a value under some setup.')
+    expect(await (init['text/plain'] as Blob).text()).toBe('Chart 4. Balanced precision by setup\nNo model: 20%\nDescriptive model: 40%\nPrescriptive model: 60%\n3x3 cube, 2 AI models')
   })
 
-  it('formats text as the caption, one label: value line per bar (n/a for no value), then the filter and the note', () => {
-    expect(chartText({ caption: 'Chart 9. X', rows: [{ model: 'a', rate: rate(0.333) }, { model: 'b', rate: rate(null, 0) }], filter: 'All puzzles, 2 AI models', note: 'N' })).toBe('Chart 9. X\na: 33%\nb: n/a\nAll puzzles, 2 AI models\nN')
+  it('formats text as the caption, one label: value line per bar (n/a for no value), then the filter', () => {
+    expect(chartText({ caption: 'Chart 9. X', rows: [{ model: 'a', rate: rate(0.333) }, { model: 'b', rate: rate(null, 0) }], filter: 'All puzzles, 2 AI models' })).toBe('Chart 9. X\na: 33%\nb: n/a\nAll puzzles, 2 AI models')
   })
 
   it('falls back to writeText without ClipboardItem', async () => {
@@ -155,7 +155,7 @@ describe('copy chart', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never)
     history.replaceState(null, '', '/page/#puzzle=4x4')
     const long = 'x'.repeat(200)
-    await drawChart({ caption: long, filter: long, note: long, url: location.origin + location.pathname, higherIsBetter: true, rows: [{ model: long, rate: rate(0.5) }] })
+    await drawChart({ caption: long, filter: long, url: location.origin + location.pathname, higherIsBetter: true, rows: [{ model: long, rate: rate(0.5) }] })
     const widths = texts.filter((t) => t.align === 'left').map((t) => t.text.length * 8)
     expect(widths.every((w) => w <= 592)).toBe(true)
     const label = texts.find((t) => t.text.startsWith('xxx') && t.text.endsWith('…'))!

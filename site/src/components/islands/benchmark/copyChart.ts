@@ -8,14 +8,12 @@ export interface ChartCopy {
   higherIsBetter: boolean
   /** The filter in words, e.g. "All puzzles, 4 AI models". */
   filter: string
-  /** An extra line of small text, e.g. how many AI models the bars average. */
-  note?: string
   url: string
 }
 
-/** The caption, one "label: value" line per bar, then the filter line and the note, as under the image. */
-export function chartText({ caption, rows, filter, note }: Pick<ChartCopy, 'caption' | 'rows' | 'filter' | 'note'>): string {
-  return [caption, ...rows.map((r) => `${r.model}: ${percent(r.rate.value)}`), filter, ...(note ? [note] : [])].join('\n')
+/** The caption, one "label: value" line per bar, then the filter line, as under the image. */
+export function chartText({ caption, rows, filter }: Pick<ChartCopy, 'caption' | 'rows' | 'filter'>): string {
+  return [caption, ...rows.map((r) => `${r.model}: ${percent(r.rate.value)}`), filter].join('\n')
 }
 
 // The light theme's colours (site/src/styles/global.css), on white, whatever theme the page is in.
@@ -42,7 +40,7 @@ export function ellipsize(ctx: Pick<CanvasRenderingContext2D, 'measureText'>, te
 
 /** The chart as a PNG at 2x: the bars with their labels and values, then the caption, then the filter and the page URL in small text. */
 export function drawChart(c: ChartCopy): Promise<Blob> {
-  const lines = c.note ? 3 : 2
+  const lines = 2
   const height = PAD + c.rows.length * ROW + 34 + lines * 18 + PAD - 6
   const canvas = document.createElement('canvas')
   canvas.width = WIDTH * SCALE
@@ -84,8 +82,7 @@ export function drawChart(c: ChartCopy): Promise<Blob> {
   ctx.fillStyle = MUTED
   ctx.font = `12px ${SANS}`
   ctx.fillText(ellipsize(ctx, c.filter, inner), PAD, base + 24)
-  if (c.note) ctx.fillText(ellipsize(ctx, c.note, inner), PAD, base + 42)
-  ctx.fillText(ellipsize(ctx, c.url, inner), PAD, base + (c.note ? 60 : 42))
+  ctx.fillText(ellipsize(ctx, c.url, inner), PAD, base + 42)
   return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('no image'))), 'image/png'))
 }
 
