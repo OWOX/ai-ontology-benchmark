@@ -99,8 +99,8 @@ const jsonLd = {
   /* With none pressed (all puzzles) the options are not faded: they are not disabled, only unselected. */
   :global(.benchmark .options:not(:has(button.square[aria-pressed='true'])) button.square) { opacity: 1; }
   :global(.benchmark .options button.square:hover) { opacity: 1; }
-  /* An unselected thumbnail shows a 1px border on hover, drawn inside the 2px transparent one, so nothing moves. The selected one keeps its 2px border. */
-  :global(.benchmark .options button.square:hover:not([aria-pressed='true'])) { box-shadow: inset 0 0 0 1px var(--text); }
+  /* A thumbnail on hover shows the same 2px border as the selected one; the border is always there, transparent when off, so nothing moves. */
+  :global(.benchmark .options button.square:hover) { border-color: var(--text); }
   :global(.benchmark .options button.square[aria-pressed='true']) { border-color: var(--text); opacity: 1; }
   /* Keyboard focus: a dashed outline drawn inside the button, so it is never clipped by the scrolling row. */
   :global(.benchmark .options button.square:focus-visible) { outline: 2px dashed var(--text); outline-offset: -2px; opacity: 1; }
