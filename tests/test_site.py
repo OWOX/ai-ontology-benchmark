@@ -25,6 +25,14 @@ DEFINITIONS = """# Definitions
    impossible `move`.
 3. **Critical thinking.** The mean of two rates.
 
+## Setups
+
+1. **AI model.** Not a setup.
+2. **No model.** The setup with *no* rules.
+3. **Descriptive model.** The setup where the [prompt](x.md)
+   explains `rules`.
+4. **Prescriptive model.** The setup that lists the moves.
+
 ## Prices
 """
 
@@ -352,8 +360,16 @@ def test_provider_unknown_without_models_entry(repo):
 def test_definitions_parsing_and_missing_name():
     found, missing = site.read_definitions(DEFINITIONS)
     assert missing == []
-    assert [d["key"] for d in found] == ["precision", "hallucination", "critical"]
+    assert [d["key"] for d in found] == ["precision", "hallucination", "critical", "no_model", "descriptive", "prescriptive"]
     assert found[1]["definition"] == "The share of attempts with at least one impossible move."
+    assert found[3]["definition"] == "The setup with no rules."
+    assert found[4] == {"key": "descriptive", "name": "Descriptive model", "definition": "The setup where the prompt explains rules."}
+
+
+def test_missing_setup_name_is_reported():
+    found, missing = site.read_definitions(DEFINITIONS.replace("**Prescriptive model.**", "**Other.**"))
+    assert missing == ["Prescriptive model"]
+    assert "prescriptive" not in [d["key"] for d in found]
 
 
 def test_branch_only_experiment_is_exported_with_releases_from_main(repo):

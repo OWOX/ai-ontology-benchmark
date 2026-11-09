@@ -65,7 +65,7 @@ It prints one line: experiments, attempts, skipped.
 4. A model absent from `[[models]]` gets provider and kind `unknown`.
 5. An experiment folder or branch with no raw file is skipped with one stderr line and does not fail the export. One whose records are all infrastructure failures gets no entry in `experiments`, with one stderr line, but its rows still count in `metrics`. A missing `experiment.toml`, `release`, input file, release `manifest.json`, or price for a model is a checked error: exit 1, naming the ref and the file or experiment.
 6. The skipped count in the printed line adds records whose input is not in the release and raw lines that do not parse as a record.
-7. `definitions` holds the items of the `## Metrics` section matched by bold name: `precision` is "Balanced precision", `hallucination` is "Hallucination rate", and `critical` is "Critical thinking". Markdown is stripped to plain text. A name not found is left out, with one warning line on stderr per name.
+7. `definitions` holds the items of the `## Metrics` section matched by bold name: `precision` is "Balanced precision", `hallucination` is "Hallucination rate", and `critical` is "Critical thinking"; and the items of the `## Setups` section: `no_model` is "No model", `descriptive` is "Descriptive model", and `prescriptive` is "Prescriptive model" (the setup ids of the raw records). Markdown is stripped to plain text. A name not found is left out, with one warning line on stderr per name.
 8. `attempts.json` is `{ "attempts": { "<puzzle>": [...] }, "prompts": {...} }`. Each attempt there has `prompt`, the key of its entry in `prompts`, when the export built one. `prompts` holds only the entries those attempts point at.
 
 ## The page

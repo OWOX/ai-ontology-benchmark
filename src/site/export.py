@@ -191,30 +191,43 @@ def plain_text(md: str) -> str:
     return re.sub(r"\s+", " ", md).strip()
 
 
+SETUP_NAMES = {
+    "No model": "no_model",
+    "Descriptive model": "descriptive",
+    "Prescriptive model": "prescriptive",
+}
+
+
+def read_section(lines: list[str], heading: str) -> list[dict]:
+    start = next((i for i, l in enumerate(lines) if re.fullmatch(rf"## {heading}\s*", l)), None)
+    items: list[dict] = []
+    if start is None:
+        return items
+    is_open = False
+    for line in lines[start + 1:]:
+        if line.startswith("## "):
+            break
+        m = re.match(r"^\s*\d+\.\s+\*\*([^*]+?)\.?\*\*\s*(.*)$", line)
+        if m:
+            items.append({"name": m.group(1).strip(), "text": m.group(2)})
+            is_open = True
+        elif re.match(r"^\s*\d+\.\s", line) or not line.strip():
+            is_open = False
+        elif is_open:
+            items[-1]["text"] += " " + line.strip()
+    return items
+
+
 def read_definitions(markdown: str) -> tuple[list[dict], list[str]]:
     lines = markdown.splitlines()
-    start = next((i for i, l in enumerate(lines) if re.fullmatch(r"## Metrics\s*", l)), None)
-    items: list[dict] = []
-    if start is not None:
-        is_open = False
-        for line in lines[start + 1:]:
-            if line.startswith("## "):
-                break
-            m = re.match(r"^\s*\d+\.\s+\*\*([^*]+?)\.?\*\*\s*(.*)$", line)
-            if m:
-                items.append({"name": m.group(1).strip(), "text": m.group(2)})
-                is_open = True
-            elif re.match(r"^\s*\d+\.\s", line) or not line.strip():
-                is_open = False
-            elif is_open:
-                items[-1]["text"] += " " + line.strip()
     found: dict[str, dict] = {}
-    for it in items:
-        key = METRIC_NAMES.get(it["name"])
-        definition = re.sub(r"^[.:]\s*", "", plain_text(it["text"]))
-        if key and definition and key not in found:
-            found[key] = {"key": key, "name": it["name"], "definition": definition}
-    missing = [n for n, k in METRIC_NAMES.items() if k not in found]
+    for heading, names in (("Metrics", METRIC_NAMES), ("Setups", SETUP_NAMES)):
+        for it in read_section(lines, heading):
+            key = names.get(it["name"])
+            definition = re.sub(r"^[.:]\s*", "", plain_text(it["text"]))
+            if key and definition and key not in found:
+                found[key] = {"key": key, "name": it["name"], "definition": definition}
+    missing = [n for names in (METRIC_NAMES, SETUP_NAMES) for n, k in names.items() if k not in found]
     return list(found.values()), missing
 
 
@@ -254,7 +267,7 @@ def export(gd: GitData, ref: str, remote: str = "origin") -> tuple[dict, int]:
         raise ExportError(f"docs/definitions.md: not found at {ref}")
     definitions, missing = read_definitions(markdown)
     for name in missing:
-        print(f"warning: docs/definitions.md has no metric named {name}", file=sys.stderr)
+        print(f"warning: docs/definitions.md has no metric or setup named {name}", file=sys.stderr)
     page = {k: config[k] for k in ("title", "description", "intro")}
     puzzles = sorted({a["puzzle"] for e in experiments for a in e["attempts"]})
     legal_moves = {name: list(get_engine(name).legal_moves()) for name in puzzles}
