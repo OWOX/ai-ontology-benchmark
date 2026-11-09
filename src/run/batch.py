@@ -434,7 +434,18 @@ def retry_push(context: dict) -> None:
 
 def collect(state: ModelBatches, context: dict, batch: dict, events: list[dict]) -> None:
     """Read a finished batch, append a record for every request that has an answer or ran out of
-    retries, append `collected`, and commit. Only custom ids this batch holds are read."""
+    retries, append `collected`, and commit. Only custom ids this batch holds are read. It holds the
+    experiment lock throughout, and reads the state file and the raw records again inside it, so two
+    processes never collect one batch twice: the one that comes second finds it collected and skips it,
+    and skips any attempt that already has a record."""
+    with experiment_lock(context):
+        events = read_state(state.path)
+        if batch["batch_id"] not in {e["batch_id"] for e in open_batches(events)}:
+            return  # another process collected it
+        collect_locked(state, context, batch, events)
+
+
+def collect_locked(state: ModelBatches, context: dict, batch: dict, events: list[dict]) -> None:
     config, batch_id = context["config"], batch["batch_id"]
 
     every = [item["custom_id"] for item in batch["requests"]]

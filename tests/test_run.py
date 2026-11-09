@@ -1801,6 +1801,39 @@ def test_a_state_file_from_before_submit_ids_still_loads(bexp, monkeypatch):
     assert len(models.FAKE_BATCH_SUBMITS) == 1 and len(records(bexp, "A")) == 3
 
 
+def test_two_collectors_of_one_batch_write_each_record_once(bexp, monkeypatch):
+    import threading
+    import time
+    from src.run import batch as batch_module
+    real_sleep = time.sleep
+    models.FAKE_BATCH_PENDING.add("fake-batch-1")
+    monkeypatch.setattr(batch_module.time, "sleep", lambda seconds: (_ for _ in ()).throw(KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt):
+        go("--limit", "3")  # leaves one open batch of three requests
+    models.FAKE_BATCH_PENDING.clear()
+    monkeypatch.setattr(batch_module.time, "sleep", real_sleep)
+    reads = []
+
+    def slow(model, batch_id):
+        reads.append(batch_id)
+        real_sleep(0.3)  # without the lock, the other collector reads the same batch meanwhile
+        return answer(batch_id)
+
+    monkeypatch.setattr(batch_module, "batch_results", slow)
+    codes = []
+    threads = [threading.Thread(target=lambda: codes.append(go("--limit", "3"))) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert codes == [0, 0] and len(reads) == 1
+    rows = records(bexp, "A")
+    keys = [(r["input_id"], r["setup"], r["attempt_number"]) for r in rows]
+    assert len(rows) == 3 and len(set(keys)) == 3
+    assert [e["event"] for e in state_events(bexp)] == ["submitted", "collected"]
+    assert len(models.FAKE_BATCH_SUBMITS) == 1
+
+
 def test_a_sigterm_during_submit_waits_for_the_state_file_and_its_commit(bexp, monkeypatch):
     import os
     import signal
