@@ -49,19 +49,20 @@ It prints one line: experiments, attempts, skipped.
 1. Experiments are sorted by id. Attempts are sorted by model, puzzle, input id, setup, attempt number, and creation time.
 2. Attempts with outcome `infrastructure_failure` are dropped from `experiments`, but count in `cost`.
 3. A model absent from `[[models]]` gets provider and kind `unknown`.
-4. An experiment folder with no raw file, or whose records are all infrastructure failures, is skipped with one stderr line and does not fail the export. A missing `experiment.toml`, `release`, input file, or price for a model is a checked error: exit 1, naming the ref and the experiment.
-5. `definitions` holds the items of the `## Metrics` section matched by bold name: `precision` is "Balanced precision", `hallucination` is "Hallucination rate", `critical` is "Critical thinking", and `cost` is "Cost efficiency". Markdown is stripped to plain text. A name not found is left out, with one warning line on stderr per name.
+4. An experiment folder with no raw file is skipped with one stderr line and does not fail the export. One whose records are all infrastructure failures gets no entry in `experiments`, with one stderr line, but its rows still count in `metrics` (`cost` includes them). A missing `experiment.toml`, `release`, input file, release `manifest.json`, or price for a model is a checked error: exit 1, naming the ref and the file or experiment.
+5. The skipped count in the printed line adds records whose input is not in the release and raw lines that do not parse as a record.
+6. `definitions` holds the items of the `## Metrics` section matched by bold name: `precision` is "Balanced precision", `hallucination` is "Hallucination rate", `critical` is "Critical thinking", and `cost` is "Cost efficiency". Markdown is stripped to plain text. A name not found is left out, with one warning line on stderr per name.
 
 ## The page
 
-`site/src/components/islands/benchmark/BenchmarkView.tsx` shows four metric tabs, in this order, with `precision` the default (a `#metric=` value that is not one of the four falls back to it):
+`site/src/components/islands/benchmark/BenchmarkView.tsx` shows four metric tabs, in this order, with `precision` the default (a `#metric=` value that is not one of the four falls back to it, except that the old id `detection` means `critical`):
 
 1. Precision (`precision`), a percentage, higher is better.
 2. Hallucination rate (`hallucination`), a percentage, lower is better.
 3. Critical thinking (`critical`), a percentage, higher is better.
 4. Cost efficiency (`cost`), USD per right answer, lower is better.
 
-A percentage bar runs on a fixed 0 to 100% scale. A cost reads `$0.0123` (four decimals, two from $1 up), and its bar is as wide as its share of the largest cost shown. A null value reads `n/a` and has no bar. Best and worst are ranked on the text shown. On a narrow screen the tablist scrolls sideways, its scrollbar hidden and its tabs unwrapped, and a "?" button follows its tab, hiding when the tab is scrolled out of the tablist.
+A percentage bar runs on a fixed 0 to 100% scale. A cost reads `$0.0123` (four decimals, two from $1 up), and its bar is as wide as its share of the largest cost shown. A null value reads `n/a` and has no bar. Best and worst are ranked on the text shown. On a narrow screen the tablist scrolls sideways, its scrollbar hidden and its tabs unwrapped, and a "?" button follows its tab, hiding when the tab is scrolled out of the tablist, which also closes its open definition. Selecting a tab scrolls the tablist, never the page, until the tab is fully shown.
 
 ## Build and publish
 

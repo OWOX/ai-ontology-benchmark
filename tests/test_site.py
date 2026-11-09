@@ -125,6 +125,34 @@ def test_discovery_skips_folder_without_raw_records(repo, capsys):
     assert "b-empty" in capsys.readouterr().err
 
 
+def test_all_infrastructure_failures_still_count_in_cost_but_not_in_experiments(repo):
+    failure = dict(outcome="infrastructure_failure", stop="infrastructure_failure")
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1")), raw("m1", "i1", 1, "MISMATCH")])
+    write_experiment(repo, "b-exp", [raw("m1", "v1", 1, "", **failure), raw("m1", "v1", 2, "", **failure)])
+    data, _, metrics = exported(repo)
+    assert [e["experimentId"] for e in data["experiments"]] == ["a-exp"]
+    # 4 rows at 0.002, precision 1, coverage 1; the two failures only add cost rows
+    assert metrics[("2x2", "m1")]["cost"] == {"value": pytest.approx(0.002), "n": 4}
+
+
+def test_torn_raw_lines_count_as_skipped(repo):
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
+    path = repo / "results" / "a-exp" / "raw" / "m.jsonl"
+    path.write_text(path.read_text() + '{"torn": \n')
+    commit(repo, "torn line")
+    _, skipped, _ = exported(repo)
+    assert skipped == 1
+
+
+def test_missing_manifest_is_checked_error(repo, tmp_path):
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
+    (repo / "releases" / "1.0.0" / "manifest.json").unlink()
+    commit(repo, "no manifest")
+    done = subprocess.run([sys.executable, "-m", "src.site.export", "--root", str(repo), "--ref", "main",
+                           "--no-fetch", "--out", str(tmp_path / "o.json")], capture_output=True, text=True, cwd=ROOT)
+    assert done.returncode == 1 and "releases/1.0.0/manifest.json" in done.stderr
+
+
 def test_main_exits_zero_with_a_skipped_folder(repo, tmp_path):
     write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
     write_experiment(repo, "b-empty", None)

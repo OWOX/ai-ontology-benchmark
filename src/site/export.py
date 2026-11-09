@@ -76,13 +76,17 @@ def read_experiment(gd: GitData, ref: str, experiment_id: str, cache: dict) -> t
     inputs = read_inputs(gd, ref, release, cache)
     by_id = {r["input_id"]: r for r in inputs}
     manifest = gd.show(ref, f"releases/{release}/manifest.json")
-    reasons = bool(json.loads(manifest).get("mismatch_reasons", False)) if manifest else False
+    if manifest is None:
+        raise ExportError(f"{ref}:releases/{release}/manifest.json: not found")
+    reasons = bool(json.loads(manifest).get("mismatch_reasons", False))
     models = {m["name"]: {"name": m["name"], "provider": m.get("provider", "unknown"),
                           "kind": m.get("kind", "unknown")} for m in toml.get("models", [])}
     decision_models = {n for n, m in models.items() if m["provider"] in DECISION_PROVIDERS}
     records, skipped = [], 0
     for name in sorted(n for n in gd.ls(ref, f"{folder}/raw") if n.endswith(".jsonl")):
-        for r in parse_raw_text(gd.show(ref, f"{folder}/raw/{name}") or "")[0]:
+        found, torn = parse_raw_text(gd.show(ref, f"{folder}/raw/{name}") or "")
+        skipped += torn
+        for r in found:
             if r.get("input_id") in by_id:
                 records.append(r)
             else:
@@ -175,9 +179,9 @@ def export(gd: GitData, ref: str) -> tuple[dict, int]:
     for experiment_id in discover(gd, ref):
         experiment, rows, n = read_experiment(gd, ref, experiment_id, cache)
         skipped += n
+        all_rows += rows
         if experiment:
             experiments.append(experiment)
-            all_rows += rows
     markdown = gd.show(ref, "docs/definitions.md")
     if markdown is None:
         raise ExportError(f"docs/definitions.md: not found at {ref}")
