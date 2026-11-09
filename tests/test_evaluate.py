@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from src.evaluate import evaluate as evaluate_module
-from src.evaluate.metrics import (CORRUPTION_COLUMNS, CORRUPTION_TYPES, DETECTION_COLUMNS, REASON_COLUMNS, answer_class,
+from src.evaluate.metrics import (CORRUPTION_COLUMNS, CORRUPTION_TYPES, DETECTION_COLUMNS, REASON_COLUMNS, answer_class, attempt_cost,
                                   bootstrap_interval, compute, corruption_rows, corruption_type, detection_rows,
                                   holm, paired_tests, rates, reason_rows, sign_test)
 from src.puzzles.cube import CUBE_CORRUPTION_TYPES
@@ -860,3 +860,22 @@ def test_diagnosis_pairs_only_under_a_release_with_reasons():
                  mismatch_reason="other", corruption="twisted corner U")]
     row = pair_row(rows, "diagnosis_rate", validity="invalid")
     assert (row["inputs_paired"], row["a_higher"]) == (1, 1)
+
+
+def test_attempt_cost_uses_batch_prices_for_batch_records():
+    price = {"price_input_per_mtok": 1000.0, "price_output_per_mtok": 2000.0,
+             "batch_price_input_per_mtok": 500.0, "batch_price_output_per_mtok": 1000.0}
+    record = raw("2x2-d1-001", 1, "R", "success", retry=(2, 1))
+    standard = attempt_cost(record, price)
+    assert attempt_cost(dict(record, batch=False), price) == standard
+    assert attempt_cost(dict(record, batch=True), price) == pytest.approx(standard / 2)
+
+
+def test_batch_records_without_batch_prices_refused(repo, monkeypatch, capsys):
+    release_ok(repo, "major")
+    prepare(repo, monkeypatch)
+    path = repo / "results/exp/raw/A.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    path.write_text("\n".join(json.dumps(dict(json.loads(l), batch=True)) for l in lines) + "\n", encoding="utf-8")
+    assert go() == 1
+    assert "'A'" in capsys.readouterr().err

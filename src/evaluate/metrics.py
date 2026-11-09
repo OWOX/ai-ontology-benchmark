@@ -197,11 +197,19 @@ def group_metrics(rows: list[dict], validity: str, full: bool, key: str) -> dict
     return out
 
 
+def tier_prices(price: dict, batch: bool) -> tuple[float, float]:
+    """The input and output price per million tokens of the standard tier, or of the batch tier."""
+    if batch:
+        return price["batch_price_input_per_mtok"], price["batch_price_output_per_mtok"]
+    return price["price_input_per_mtok"], price["price_output_per_mtok"]
+
+
 def attempt_cost(raw: dict, price: dict) -> float:
+    """The cost of one raw record, at the batch prices when the record was made by a batch."""
+    price_in, price_out = tier_prices(price, raw.get("batch") is True)
     input_tokens = raw["input_tokens"] + raw["retry_input_tokens"]
     output_tokens = raw["output_tokens"] + raw["retry_output_tokens"]
-    return (input_tokens * price["price_input_per_mtok"]
-            + output_tokens * price["price_output_per_mtok"]) / 1e6
+    return (input_tokens * price_in + output_tokens * price_out) / 1e6
 
 
 def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float,
