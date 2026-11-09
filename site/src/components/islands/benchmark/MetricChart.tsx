@@ -36,7 +36,7 @@ interface Props {
   children: ReactNode
 }
 
-/** A chart section: a subtitle, the metric tabs hanging off a framed panel, and in the panel a figure: the chart, then its numbered caption ending in a "(?)" popover. Each tab keeps its own "?" for the metric's definition. */
+/** A chart section: a subtitle, the metric tabs hanging off a framed panel, and in the panel a figure: the framed chart, then under the frame its numbered caption ending in a "?" popover. Each tab keeps its own "?" for the metric's definition. */
 export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, note, filterText, children }: Props) {
   const headingId = useId()
   const root = useRef<HTMLElement>(null)
@@ -151,6 +151,16 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
 
   // The title's "(?)" popover, the Player's pattern: a text button with aria-controls, a dialog always in the DOM (hidden while closed), closing on an outside click and on Escape.
   const [titleOpen, setTitleOpen] = useState(false)
+  // As for the tab "?": a mouse hover opens it and closes it after the grace delay unless a click pinned it.
+  const titlePinned = useRef(false)
+  const titleLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearTitleLeave = () => { if (titleLeaveTimer.current) clearTimeout(titleLeaveTimer.current); titleLeaveTimer.current = null }
+  useEffect(() => clearTitleLeave, [])
+  const titleHoverLeave = (e: { pointerType: string }) => {
+    if (e.pointerType !== 'mouse' || titlePinned.current) return
+    clearTitleLeave()
+    titleLeaveTimer.current = setTimeout(() => setTitleOpen(false), 150)
+  }
   // One popover at a time in a chart: opening the metric's definition closes the title's, and the other way round.
   useEffect(() => { if (openHelp) setTitleOpen(false) }, [openHelp])
   useEffect(() => { if (titleOpen) setHelpOpen(null) }, [titleOpen])
@@ -284,14 +294,39 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
         </div>
         <div role="tabpanel" id={`${idPrefix}-panel`} aria-labelledby={`${idPrefix}-${metric}`} tabIndex={0}>
           <figure className="chart-figure" aria-labelledby={captionId}>
-            {children}
-            {note && <p className="chart-note">{note}</p>}
+            <div className="chart-frame">
+              {children}
+              {note && <p className="chart-note">{note}</p>}
+            </div>
             <figcaption className="chart-head" ref={head}>
               <span className="chart-title" id={captionId}>{title}</span>{' '}
               {/* The "(?)", the copy button, and the status stay together on the caption's last line. */}
               <span className="chart-tools">
                 <span className="pop-wrap">
-                  <button type="button" className="pop-btn" aria-label={`About Chart ${number}`} aria-expanded={titleOpen} aria-controls={popId} onClick={() => setTitleOpen(!titleOpen)}>(?)</button>
+                  <button
+                    type="button"
+                    className="pop-btn"
+                    aria-label={`About Chart ${number}`}
+                    aria-expanded={titleOpen}
+                    aria-controls={popId}
+                    onClick={() => {
+                      clearTitleLeave()
+                      // Clicking the "?" the hover just opened keeps it open (pinned); otherwise a click toggles.
+                      if (titleOpen && !titlePinned.current) titlePinned.current = true
+                      else { titlePinned.current = !titleOpen; setTitleOpen(!titleOpen) }
+                    }}
+                    onPointerEnter={(e) => {
+                      if (e.pointerType !== 'mouse') return
+                      clearTitleLeave()
+                      if (!titleOpen) { titlePinned.current = false; setTitleOpen(true) }
+                    }}
+                    onPointerLeave={titleHoverLeave}
+                    onFocus={(e) => {
+                      let visible = false
+                      try { visible = e.currentTarget.matches(':focus-visible') } catch { /* no :focus-visible */ }
+                      if (visible && !titleOpen) { titlePinned.current = true; setTitleOpen(true) }
+                    }}
+                  >?</button>
                 </span>
                 {bars.length > 0 && (
                   <button type="button" className="copy-btn" aria-label={`Copy Chart ${number} to clipboard`} title="Copy chart" onClick={copy}>
@@ -301,7 +336,7 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
                 <span className={`copy-status${status === 'failed' ? ' failed' : ''}`} role="status" aria-live="polite">{status === 'copied' ? 'Copied' : status === 'failed' ? 'Copy failed' : ''}</span>
               </span>
               {/* Always in the DOM (hidden while closed), so the button's aria-controls points at an element that exists. */}
-              <div className={`pop pop-wrap${up ? '' : ' below'}`} id={popId} role="dialog" aria-label={`About Chart ${number}`} hidden={!titleOpen}>
+              <div className={`pop pop-wrap${up ? '' : ' below'}`} id={popId} role="dialog" aria-label={`About Chart ${number}`} hidden={!titleOpen} onPointerEnter={(e) => { if (e.pointerType === 'mouse') clearTitleLeave() }} onPointerLeave={titleHoverLeave}>
                 <p>{current.explanation}</p>
               </div>
             </figcaption>
