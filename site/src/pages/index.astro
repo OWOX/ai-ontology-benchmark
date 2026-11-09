@@ -25,11 +25,19 @@ const jsonLd = {
 
 <Layout title={page.title} description={page.description} jsonLd={jsonLd}>
   <h1>{page.title}</h1>
-  <div class="prose"><p>{page.intro}</p><p><a href={`${REPO}#readme`}>About the project</a>.</p></div>
+  <div class="prose"><p>{page.intro}</p>
+    <p class="notice" role="note">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 2.5 20h19L12 3.5Z" /><path d="M12 10v4.5M12 17.5v.01" /></svg>
+      <span>Preview only. The benchmarks shown here are preliminary: research is in progress, and experiment data is still being collected.</span>
+    </p>
+    <p><a href={`${REPO}#readme`}>About the project</a>.</p></div>
   <BenchmarkView client:only="react" metrics={metrics} attemptsUrl={attemptsUrl} legalMoves={legalMoves} definitions={definitions} />
 </Layout>
 
 <style>
+  /* The preview notice: quiet, muted text with a thin rule, the icon aligned with the first line. */
+  .notice { display: flex; gap: 0.6em; align-items: flex-start; color: var(--muted); border: 1px solid var(--rule); border-radius: 4px; padding: 0.6em 0.8em; font-size: 0.9em; }
+  .notice svg { flex: none; width: 1.1em; height: 1.1em; margin-top: 0.15em; }
   /* React renders the island's markup, so these rules reach it with :global. Monochrome: the page's tokens only.
      The island root also wears .cube-solver, so the cube drawing and the text buttons come from src/styles/cube-stage.css, the same source as /cube. */
   /* Status colours (--ok, --danger) live in global.css with the theme tokens. */
