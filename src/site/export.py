@@ -98,8 +98,10 @@ def read_experiment(gd: GitData, ref: str, source: str, branch: str, experiment_
         raise ExportError(f"{ref}:releases/{release}/manifest.json: not found")
     reasons = bool(json.loads(manifest).get("mismatch_reasons", False))
     models = {m["name"]: {"name": m["name"], "provider": m.get("provider", "unknown"),
-                          "kind": m.get("kind", "unknown")} for m in toml.get("models", [])}
-    decision_models = {n for n, m in models.items() if m["provider"] in DECISION_PROVIDERS}
+                          "kind": m.get("kind", "unknown"),
+                          "decision": m.get("provider", "unknown") in DECISION_PROVIDERS}
+              for m in toml.get("models", [])}
+    decision_models = {n for n, m in models.items() if m["decision"]}
     records, skipped = [], 0
     for name in sorted(n for n in gd.ls(source, f"{folder}/raw") if n.endswith(".jsonl")):
         found, torn = parse_raw_text(gd.show(source, f"{folder}/raw/{name}") or "")
@@ -123,7 +125,7 @@ def read_experiment(gd: GitData, ref: str, source: str, branch: str, experiment_
         return {}, rows, skipped
     kept.sort(key=lambda k: (k[1]["model"], k[1]["puzzle"], k[1]["inputId"], k[1]["setup"], k[1]["attempt"], k[0]))
     for _, a in kept:
-        models.setdefault(a["model"], {"name": a["model"], "provider": "unknown", "kind": "unknown"})
+        models.setdefault(a["model"], {"name": a["model"], "provider": "unknown", "kind": "unknown", "decision": False})
     times = sorted(k[0] for k in kept)
     per_input = toml.get("attempts")
     return {

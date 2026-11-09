@@ -26,7 +26,7 @@ Every raw record is scored again by the assessment in this checkout, whatever re
   "metrics": [ { "puzzle": "2x2", "model": "", "provider": "",
     "precision": { "value": 0.5, "n": 10 }, "hallucination": { "value": null, "n": 0 },
     "critical": { "value": null, "n": 0 } } ],
-  "experiments": [ { "experimentId": "", "release": "", "branch": "main", "puzzles": [], "models": [{ "name": "", "provider": "", "kind": "" }],
+  "experiments": [ { "experimentId": "", "release": "", "branch": "main", "puzzles": [], "models": [{ "name": "", "provider": "", "kind": "", "decision": false }],
     "setups": [], "attemptsPerInput": 3, "attemptCount": 0, "firstAt": "", "lastAt": "",
     "attempts": [ { "model": "", "puzzle": "", "inputId": "", "validity": "valid", "setup": "", "attempt": 1,
       "depth": 5, "state": "", "corruption": null, "moves": [], "outcome": "", "mismatch": false } ] } ] }
@@ -35,6 +35,8 @@ Every raw record is scored again by the assessment in this checkout, whatever re
 `legalMoves` holds, for every puzzle in the exported attempts, the list from that puzzle's engine `legal_moves()` (`src.puzzles.registry.get_engine`). The page passes it to the player, which uses it to find the first impossible move of an attempt. No move list exists in `site/`, so invariant 14 holds.
 
 `prompts` holds the exact prompt each attempt's AI model received, once per release, setup, and input id (the key is `<release>/<setup>/<input id>`, so repeated attempts and experiments on one release share one entry). The text is `build_prompt` from `src/run/prompts.py`, filled from the input record of the experiment's release and the template `releases/<release>/prompts/<setup>/<puzzle>.txt`, both read through git at `--ref` and never from the work tree (the templates go into a temporary directory first). Before a release's prompts are built, the export recomputes the release's prompt versions with `prompt_versions` from `src/run/prompts.py`, from the templates and inputs read at `--ref`, and compares them with the manifest's `prompt_versions`. When they differ, or a template is missing or invalid, the release gets no prompts, with one stderr line naming it, so the page never shows a prompt the AI model didn't receive. A decision model's first call receives this prompt followed by its move history, so the entry is the part of its request that is the same for every input. `prompts` is not part of the data the index page inlines: `site/src/pages/attempts.json.ts` serves it with the attempts.
+
+`decision` of a model is true when its provider is in `DECISION_PROVIDERS` (`src/run/models.py`). The player uses it to add a note under a decision model's prompt.
 
 `branch` is `main` for an experiment read from the folder at `--ref`, and `results/<id>` for one read from its branch. The page uses it to link an attempt's raw results.
 

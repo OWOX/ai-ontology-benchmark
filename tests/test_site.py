@@ -201,8 +201,8 @@ def test_attempts_sorted_filtered_and_revalidated(repo):
     assert first["outcome"] == "hallucination" and first["moves"] == ["R", "M"] and first["mismatch"] is False
     assert first["state"] == INPUTS[2]["state"] and first["inputId"] == "v2" and first["depth"] == 5
     assert a["attempts"][1]["outcome"] == "success" and a["attempts"][1]["moves"] == solution("v2").split("\n")
-    assert a["models"] == [{"name": "m1", "provider": "openai", "kind": "system-2"},
-                           {"name": "m2", "provider": "anthropic", "kind": "system-2"}]
+    assert a["models"] == [{"name": "m1", "provider": "openai", "kind": "system-2", "decision": False},
+                           {"name": "m2", "provider": "anthropic", "kind": "system-2", "decision": False}]
     assert data["page"] == {"title": "T", "description": "D", "intro": "I"}
     assert data["legalMoves"] == {"2x2": list(get_engine("2x2").legal_moves())}
 
@@ -280,7 +280,7 @@ def test_provider_unknown_without_models_entry(repo):
     write_experiment(repo, "a-exp", [raw("m3", "v1", 1, solution("v1"))], prices=PRICES.replace("m2", "m3"))
     data, _, metrics = exported(repo)
     assert metrics[("2x2", "m3")]["provider"] == "unknown"
-    assert {"name": "m3", "provider": "unknown", "kind": "unknown"} in data["experiments"][0]["models"]
+    assert {"name": "m3", "provider": "unknown", "kind": "unknown", "decision": False} in data["experiments"][0]["models"]
 
 
 def test_definitions_parsing_and_missing_name():
@@ -405,3 +405,9 @@ def test_template_that_differs_from_the_manifest_leaves_the_release_without_prom
     err = capsys.readouterr().err
     assert "skipped prompts of 1.0.0" in err
     assert "2.0.0" not in err
+
+
+def test_decision_flag_of_a_model_follows_its_provider(repo):
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1")), raw("m2", "v1", 1, solution("v1"))], m2="typesafe")
+    data, _, _ = exported(repo)
+    assert {m["name"]: m["decision"] for m in data["experiments"][0]["models"]} == {"m1": False, "m2": True}

@@ -5,16 +5,18 @@ import type { ReplayAttempt } from '../components/islands/benchmark/Player'
 // Replay data for the island's Run button, loaded lazily so the page itself stays small:
 // `attempts` are the attempts of every shown experiment, keyed by puzzle, without the fields the replay never reads (inputId, depth),
 // each with its experiment's release, id, and branch (for the link to its raw results) and `prompt`, the key of its prompt in `prompts`
-// (release/setup/input id). `prompts` holds each exact prompt once; an attempt whose prompt the export could not build has no `prompt`.
+// (release/setup/input id), and `decision: true` when its model is a decision model. `prompts` holds each exact prompt once; an attempt whose prompt the export could not build has no `prompt`.
 // Order is the stored order inside an experiment, experiments by experimentId.
 export async function GET() {
   const { experiments, prompts = {} } = loadSiteData()
   const attempts: Record<string, ReplayAttempt[]> = {}
   const used: Record<string, string> = {}
   for (const e of experiments) {
+    const decisionModels = new Set((e.models ?? []).filter((m) => m.decision).map((m) => m.name))
     for (const { inputId, depth: _depth, ...attempt } of e.attempts ?? []) {
       const key = `${e.release ?? ''}/${attempt.setup}/${inputId}`
       const out: ReplayAttempt = { ...attempt, release: e.release ?? '', experimentId: e.experimentId, branch: e.branch ?? 'main' }
+      if (decisionModels.has(attempt.model)) out.decision = true
       if (key in prompts) {
         out.prompt = key
         used[key] = prompts[key]
