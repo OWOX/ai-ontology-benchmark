@@ -24,7 +24,8 @@ DEFINITIONS = """# Definitions
 ## Prices
 """
 
-SITE_TOML = '''title = "T"
+SITE_TOML = '''min_release = "1.0.0"
+title = "T"
 description = "D"
 intro = "I"
 '''
@@ -84,7 +85,10 @@ def commit(root, message):
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message], cwd=root, check=True)
 
 
-def write_experiment(root, experiment_id, records, release="1.0.0", m2="anthropic", prices=None):
+def write_experiment(root, experiment_id, records, release="1.0.0", m2="anthropic", prices=None, branch=False):
+    """Commit the experiment on main, or with `branch` on a remote-tracking branch origin/results/<id> only."""
+    if branch:
+        subprocess.run(["git", "checkout", "-q", "-b", "tmp"], cwd=root, check=True)
     folder = root / "results" / experiment_id
     (folder / "raw").mkdir(parents=True)
     (folder / "experiment.toml").write_text(EXPERIMENT_TOML.format(release=release, m2=m2))
@@ -93,6 +97,11 @@ def write_experiment(root, experiment_id, records, release="1.0.0", m2="anthropi
     if prices is not None:
         (folder / "prices.toml").write_text(prices)
     commit(root, experiment_id)
+    if branch:
+        subprocess.run(["git", "update-ref", f"refs/remotes/origin/results/{experiment_id}", "HEAD"], cwd=root,
+                       check=True)
+        subprocess.run(["git", "checkout", "-q", "main"], cwd=root, check=True)
+        subprocess.run(["git", "branch", "-q", "-D", "tmp"], cwd=root, check=True)
 
 
 def exported(root):
@@ -280,3 +289,56 @@ def test_definitions_parsing_and_missing_name():
     assert missing == ["Cost efficiency"]
     assert [d["key"] for d in found] == ["precision", "hallucination", "critical"]
     assert found[1]["definition"] == "The share of attempts with at least one impossible move."
+
+
+def test_branch_only_experiment_is_exported_with_releases_from_main(repo):
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
+    write_experiment(repo, "b-branch", [raw("m1", "v2", 1, solution("v2"))], release="2.0.0", branch=True)
+    assert not (repo / "results" / "b-branch").exists()
+    data, _, _ = exported(repo)
+    assert [(e["experimentId"], e["branch"], e["release"]) for e in data["experiments"]] == [
+        ("a-exp", "main", "1.0.0"), ("b-branch", "results/b-branch", "2.0.0")]
+    assert data["experiments"][1]["attempts"][0]["outcome"] == "success"
+
+
+def test_branch_overrides_a_folder_of_the_same_id(repo):
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
+    write_experiment(repo, "a-exp2", [raw("m1", "v1", 1, solution("v1"))])
+    subprocess.run(["git", "checkout", "-q", "-b", "tmp"], cwd=repo, check=True)
+    path = repo / "results" / "a-exp" / "raw" / "m.jsonl"
+    path.write_text("\n".join(json.dumps(raw("m1", "v1", n, solution("v1"))) for n in (1, 2, 3)) + "\n")
+    commit(repo, "more")
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/results/a-exp", "HEAD"], cwd=repo, check=True)
+    subprocess.run(["git", "checkout", "-q", "main"], cwd=repo, check=True)
+    data, _, _ = exported(repo)
+    by_id = {e["experimentId"]: e for e in data["experiments"]}
+    assert by_id["a-exp"]["branch"] == "results/a-exp" and by_id["a-exp"]["attemptCount"] == 3
+    assert by_id["a-exp2"]["branch"] == "main" and by_id["a-exp2"]["attemptCount"] == 1
+
+
+def test_remote_option_picks_the_branches_of_that_remote(repo):
+    write_experiment(repo, "b-branch", [raw("m1", "v1", 1, solution("v1"))], branch=True)
+    subprocess.run(["git", "update-ref", "refs/remotes/other/results/b-branch",
+                    "refs/remotes/origin/results/b-branch"], cwd=repo, check=True)
+    subprocess.run(["git", "update-ref", "-d", "refs/remotes/origin/results/b-branch"], cwd=repo, check=True)
+    assert site.export(GitData(repo), "main")[0]["experiments"] == []
+    assert len(site.export(GitData(repo), "main", "other")[0]["experiments"]) == 1
+
+
+def test_experiment_below_min_release_is_skipped(repo, capsys):
+    (repo / "config" / "site.toml").write_text(SITE_TOML.replace('"1.0.0"', '"2.0.0"'))
+    commit(repo, "min release")
+    write_experiment(repo, "a-old", [raw("m1", "v1", 1, solution("v1"))])
+    write_experiment(repo, "b-new", [raw("m2", "v1", 1, solution("v1"))], release="2.0.0")
+    data, _, metrics = exported(repo)
+    assert [e["experimentId"] for e in data["experiments"]] == ["b-new"]
+    assert list(metrics) == [("2x2", "m2")]
+    err = capsys.readouterr().err
+    assert "a-old" in err and "1.0.0" in err
+
+
+def test_missing_min_release_is_checked_error(repo):
+    (repo / "config" / "site.toml").write_text(SITE_TOML.replace('min_release = "1.0.0"\n', ""))
+    commit(repo, "no min release")
+    with pytest.raises(site.ExportError, match="min_release"):
+        site.export(GitData(repo), "main")

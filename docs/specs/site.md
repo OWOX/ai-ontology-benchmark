@@ -4,11 +4,11 @@
 
 ## Inputs
 
-1. `config/site.toml` at `--ref` (default `origin/main`): `title`, `description`, and `intro`.
+1. `config/site.toml` at `--ref` (default `origin/main`): `title`, `description`, `intro`, and `min_release`, a release version (a missing or malformed field is a checked error). Only experiments whose `experiment.toml` release is at least `min_release` are shown.
 2. `docs/definitions.md` at `--ref`.
-3. Every experiment folder `results/<id>/` at `--ref` that holds at least one `raw/*.jsonl` file: its `experiment.toml` and raw files, the `releases/<experiment release>/inputs.jsonl` and `manifest.json` of its release, and its prices, from `results/<id>/prices.toml` or else `config/prices.toml` (the same order `evaluate` uses, checked by `src.config.check_prices_table`). Results live on `main`, not on per-experiment branches. A folder without a raw file is skipped with one stderr line naming it.
+3. Every experiment with at least one `raw/*.jsonl` file, found as a `results/<id>/` folder at `--ref` or as a `<remote>/results/<id>` branch (`--remote`, default `origin`). When both exist for one id, the branch wins, as in the UI architecture rule 1 of AGENTS.md. Its `experiment.toml`, raw files, and `results/<id>/prices.toml` are read from the folder at `--ref` or from the branch ref. The `releases/<experiment release>/inputs.jsonl` and `manifest.json`, and the fallback `config/prices.toml` (the same order `evaluate` uses, checked by `src.config.check_prices_table`), are always read at `--ref`. A folder or branch without a raw file is skipped with one stderr line naming it.
 
-The script first runs `git fetch --prune <remote>` (`--remote`, default `origin`) with the refspec `+refs/heads/main:refs/remotes/<remote>/main` and a 60 second timeout, so `<remote>/main` is current, unless `--no-fetch` is given. It reads git objects only, never the work tree.
+The script first runs `git fetch --prune <remote>` (`--remote`, default `origin`) with the refspecs `+refs/heads/main:refs/remotes/<remote>/main` and `+refs/heads/results/*:refs/remotes/<remote>/results/*` in one call and a 60 second timeout, so `<remote>/main` and the result branches are current, unless `--no-fetch` is given. It reads git objects only, never the work tree.
 
 ## Scoring
 
@@ -25,13 +25,15 @@ Every raw record is scored again by the assessment in this checkout, whatever re
   "metrics": [ { "puzzle": "2x2", "model": "", "provider": "",
     "precision": { "value": 0.5, "n": 10 }, "hallucination": { "value": null, "n": 0 },
     "critical": { "value": null, "n": 0 }, "cost": { "value": 0.01, "n": 12 } } ],
-  "experiments": [ { "experimentId": "", "release": "", "puzzles": [], "models": [{ "name": "", "provider": "", "kind": "" }],
+  "experiments": [ { "experimentId": "", "release": "", "branch": "main", "puzzles": [], "models": [{ "name": "", "provider": "", "kind": "" }],
     "setups": [], "attemptsPerInput": 3, "attemptCount": 0, "firstAt": "", "lastAt": "",
     "attempts": [ { "model": "", "puzzle": "", "inputId": "", "validity": "valid", "setup": "", "attempt": 1,
       "depth": 5, "state": "", "corruption": null, "moves": [], "outcome": "", "mismatch": false } ] } ] }
 ```
 
 `legalMoves` holds, for every puzzle in the exported attempts, the list from that puzzle's engine `legal_moves()` (`src.puzzles.registry.get_engine`). The page passes it to the player, which uses it to find the first impossible move of an attempt. No move list exists in `site/`, so invariant 14 holds.
+
+`branch` is `main` for an experiment read from the folder at `--ref`, and `results/<id>` for one read from its branch. The page uses it to link an attempt's raw results.
 
 An attempt's `outcome`, `mismatch`, and `moves` come from the scoring above (`outcome`, `mismatch`, `parsed_moves`), so the player agrees with the charts.
 
@@ -47,11 +49,12 @@ It prints one line: experiments, attempts, skipped.
 ## Rules
 
 1. Experiments are sorted by id. Attempts are sorted by model, puzzle, input id, setup, attempt number, and creation time.
-2. Attempts with outcome `infrastructure_failure` are dropped from `experiments`, but count in `cost`.
-3. A model absent from `[[models]]` gets provider and kind `unknown`.
-4. An experiment folder with no raw file is skipped with one stderr line and does not fail the export. One whose records are all infrastructure failures gets no entry in `experiments`, with one stderr line, but its rows still count in `metrics` (`cost` includes them). A missing `experiment.toml`, `release`, input file, release `manifest.json`, or price for a model is a checked error: exit 1, naming the ref and the file or experiment.
-5. The skipped count in the printed line adds records whose input is not in the release and raw lines that do not parse as a record.
-6. `definitions` holds the items of the `## Metrics` section matched by bold name: `precision` is "Balanced precision", `hallucination` is "Hallucination rate", `critical` is "Critical thinking", and `cost` is "Cost efficiency". Markdown is stripped to plain text. A name not found is left out, with one warning line on stderr per name.
+2. An experiment whose release is below `min_release` is skipped with one stderr line naming it and its release. It adds nothing to `experiments` or `metrics`.
+3. Attempts with outcome `infrastructure_failure` are dropped from `experiments`, but count in `cost`.
+4. A model absent from `[[models]]` gets provider and kind `unknown`.
+5. An experiment folder or branch with no raw file is skipped with one stderr line and does not fail the export. One whose records are all infrastructure failures gets no entry in `experiments`, with one stderr line, but its rows still count in `metrics` (`cost` includes them). A missing `experiment.toml`, `release`, input file, release `manifest.json`, or price for a model is a checked error: exit 1, naming the ref and the file or experiment.
+6. The skipped count in the printed line adds records whose input is not in the release and raw lines that do not parse as a record.
+7. `definitions` holds the items of the `## Metrics` section matched by bold name: `precision` is "Balanced precision", `hallucination` is "Hallucination rate", `critical` is "Critical thinking", and `cost` is "Cost efficiency". Markdown is stripped to plain text. A name not found is left out, with one warning line on stderr per name.
 
 ## The page
 
@@ -70,4 +73,4 @@ After the export, `npm ci && npm run build` in `site/` builds the static page. P
 
 ## Test
 
-`tests/test_site.py` builds a throwaway git repo with a main commit that holds the releases and the results under `results/<id>/`, and covers discovery and the skipped folder, attempt fields, order, and re-validated outcomes, `legalMoves`, dropped and skipped records, each metric with its null cases, decision models, the prices fallback, provider `unknown`, and the definitions parser. Run `pytest tests/test_site.py`.
+`tests/test_site.py` builds a throwaway git repo with a main commit that holds the releases and the results under `results/<id>/`, and remote-tracking branches `origin/results/<id>` made by `git update-ref`, and covers discovery, the skipped folder, a branch-only experiment, a branch overriding a folder, `--remote`, `min_release` (skipped and missing), attempt fields, order, and re-validated outcomes, `legalMoves`, dropped and skipped records, each metric with its null cases, decision models, the prices fallback, provider `unknown`, and the definitions parser. Run `pytest tests/test_site.py`.
