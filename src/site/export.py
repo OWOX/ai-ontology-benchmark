@@ -17,7 +17,7 @@ from src.evaluate.metrics import EvalError, make_attempt_rows
 from src.puzzles.registry import get_engine
 from src.release.release import parse_version
 from src.run.models import DECISION_PROVIDERS
-from src.run.prompts import build_prompt
+from src.run.prompts import SETUPS, build_prompt, prompt_versions
 from src.run.raw import parse_raw_text
 from src.site.metrics import metric_rows
 from ui.gitdata import FETCH_TIMEOUT_S, GitData
@@ -146,7 +146,8 @@ def prompt_key(release: str, setup: str, input_id: str) -> str:
 def build_prompts(gd: GitData, ref: str, experiments: list[dict], cache: dict) -> dict[str, str]:
     """The exact prompt of every (release, setup, input id) the attempts cover, once each. The templates are read
     from `releases/<release>/prompts/` at `ref` through git into a temporary directory, and `build_prompt` fills
-    them. A template that is missing or invalid leaves its prompts out, with one stderr line."""
+    them. The versions they render must equal the manifest's `prompt_versions`; otherwise the release gets no
+    prompts, with one stderr line naming it, so the page never shows a prompt the AI model didn't receive."""
     wanted: dict[str, dict[str, set[tuple[str, str]]]] = {}
     for e in experiments:
         pairs = wanted.setdefault(e["release"], {})
@@ -154,27 +155,28 @@ def build_prompts(gd: GitData, ref: str, experiments: list[dict], cache: dict) -
             pairs.setdefault(a["setup"], set()).add((a["puzzle"], a["inputId"]))
     prompts: dict[str, str] = {}
     for release in sorted(wanted):
-        by_id = {r["input_id"]: r for r in cache[release]}
+        inputs = cache[release]
+        by_id = {r["input_id"]: r for r in inputs}
         with tempfile.TemporaryDirectory() as tmp:
+            for setup in SETUPS:
+                for name in gd.ls(ref, f"releases/{release}/prompts/{setup}"):
+                    text = gd.show(ref, f"releases/{release}/prompts/{setup}/{name}")
+                    if text is not None:
+                        target = Path(tmp) / setup / name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(text, encoding="utf-8")
+            manifest = json.loads(gd.show(ref, f"releases/{release}/manifest.json") or "{}")
+            try:
+                matches = prompt_versions(Path(tmp), inputs) == manifest.get("prompt_versions")
+                reason = "its templates render other prompt versions than its manifest lists"
+            except (ValueError, OSError) as error:
+                matches, reason = False, str(error)
+            if not matches:
+                print(f"skipped prompts of {release}: {reason}", file=sys.stderr)
+                continue
             for setup in sorted(wanted[release]):
-                for puzzle in sorted({p for p, _ in wanted[release][setup]}):
-                    path = f"releases/{release}/prompts/{setup}/{puzzle}.txt"
-                    text = gd.show(ref, path)
-                    if text is None:
-                        print(f"skipped prompts of {release} {setup} {puzzle}: no {path} at {ref}", file=sys.stderr)
-                        continue
-                    target = Path(tmp) / setup / f"{puzzle}.txt"
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_text(text, encoding="utf-8")
                 for puzzle, input_id in sorted(wanted[release][setup]):
-                    if not (Path(tmp) / setup / f"{puzzle}.txt").exists():
-                        continue
-                    try:
-                        prompt = build_prompt(Path(tmp), by_id[input_id], setup)
-                    except ValueError as error:
-                        print(f"skipped prompts of {release} {setup} {puzzle}: {error}", file=sys.stderr)
-                        continue
-                    prompts[prompt_key(release, setup, input_id)] = prompt
+                    prompts[prompt_key(release, setup, input_id)] = build_prompt(Path(tmp), by_id[input_id], setup)
     return prompts
 
 

@@ -9,6 +9,7 @@ import pytest
 from src.puzzles.registry import get_engine
 from src.evaluate.metrics import answer_class
 from src.site.metrics import metric_rows
+from src.run.prompts import prompt_versions
 from src.validator import offered_reasons
 from src.site import export as site
 from ui.gitdata import GitData
@@ -70,6 +71,7 @@ INPUTS = [
 
 TEMPLATES = {
     "no_model": "Solve this 2x2 cube.\n\n{state}\n\nReasons: {mismatch_reasons}.\n",
+    "descriptive": "A 2x2 cube turns by faces.\n\n{state}\n",
     "prescriptive": "Pick from {legal_moves}.\n\n{state}\n",
 }
 
@@ -130,10 +132,11 @@ def repo(tmp_path):
         folder = tmp_path / "releases" / release
         folder.mkdir(parents=True)
         (folder / "inputs.jsonl").write_text("\n".join(json.dumps(r) for r in INPUTS) + "\n")
-        (folder / "manifest.json").write_text(json.dumps({"mismatch_reasons": reasons}))
         for setup, text in TEMPLATES.items():
             (folder / "prompts" / setup).mkdir(parents=True, exist_ok=True)
             (folder / "prompts" / setup / "2x2.txt").write_text(text)
+        (folder / "manifest.json").write_text(json.dumps(
+            {"mismatch_reasons": reasons, "prompt_versions": prompt_versions(folder / "prompts", INPUTS)}))
     commit(tmp_path, "main")
     return tmp_path
 
@@ -382,10 +385,23 @@ def test_prompts_of_two_experiments_on_one_release_are_shared(repo):
     assert list(data["prompts"]) == ["1.0.0/no_model/v1"]
 
 
-def test_missing_template_leaves_its_prompts_out(repo, capsys):
+def test_missing_template_leaves_the_release_without_prompts(repo, capsys):
     (repo / "releases" / "1.0.0" / "prompts" / "no_model" / "2x2.txt").unlink()
     commit(repo, "drop template")
     write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1")), raw("m1", "v1", 1, solution("v1"), setup="prescriptive")])
     data, _, _ = exported(repo)
-    assert list(data["prompts"]) == ["1.0.0/prescriptive/v1"]
-    assert "no_model" in capsys.readouterr().err
+    assert data["prompts"] == {}
+    assert "skipped prompts of 1.0.0" in capsys.readouterr().err
+
+
+def test_template_that_differs_from_the_manifest_leaves_the_release_without_prompts(repo, capsys):
+    path = repo / "releases" / "1.0.0" / "prompts" / "no_model" / "2x2.txt"
+    path.write_text(path.read_text() + "An edited line.\n")
+    commit(repo, "edit template")
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
+    write_experiment(repo, "b-exp", [raw("m1", "v1", 1, solution("v1"))], release="2.0.0")
+    data, _, _ = exported(repo)
+    assert list(data["prompts"]) == ["2.0.0/no_model/v1"]
+    err = capsys.readouterr().err
+    assert "skipped prompts of 1.0.0" in err
+    assert "2.0.0" not in err
