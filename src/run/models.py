@@ -43,7 +43,7 @@ class Reply:
     served_model: str
     input_tokens: int
     output_tokens: int
-    latency_s: float
+    latency_s: float | None  # None for a batched answer, which has no latency of its own
 
 
 class InfrastructureError(Exception):
@@ -116,22 +116,42 @@ def _stream_error_is_transient(error) -> bool:
     return error.status_code == 200 and detail.get("type") in ANTHROPIC_TRANSIENT_STREAM_ERRORS
 
 
+def _anthropic_client(key: str):
+    import anthropic
+    import httpx2
+
+    return anthropic.Anthropic(api_key=key, max_retries=0,
+                               timeout=httpx2.Timeout(REQUEST_TIMEOUT_S, connect=CONNECT_TIMEOUT_S))
+
+
+def _anthropic_request(model: dict, prompt: str, max_output_tokens: int, effort: str | None = None) -> dict:
+    """The body of one Messages request. The direct call and the batch line both carry it."""
+    return {
+        "model": model["api_model_id"],
+        "max_tokens": max_output_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+        **({"output_config": {"effort": effort}} if effort else {}),
+        **model.get("params", {}),
+    }
+
+
+def _anthropic_reply(response, latency: float | None) -> Reply:
+    stop_reason = {"max_tokens": "truncated", "refusal": "refused"}.get(response.stop_reason, "ok")
+    text = "".join(block.text for block in response.content if block.type == "text")
+    return Reply(text, stop_reason, response.model, response.usage.input_tokens,
+                 response.usage.output_tokens, latency)
+
+
 def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
     import anthropic
     import httpx2
 
-    client = anthropic.Anthropic(api_key=key, max_retries=0,
-                                 timeout=httpx2.Timeout(REQUEST_TIMEOUT_S, connect=CONNECT_TIMEOUT_S))
+    client = _anthropic_client(key)
+    body = _anthropic_request(model, prompt, max_output_tokens, effort)
     start = time.perf_counter()
     try:
         # Streamed, because the SDK refuses a non-streaming call with a large max_tokens.
-        with client.messages.stream(
-            model=model["api_model_id"],
-            max_tokens=max_output_tokens,
-            messages=[{"role": "user", "content": prompt}],
-            **({"output_config": {"effort": effort}} if effort else {}),
-            **model.get("params", {}),
-        ) as stream:
+        with client.messages.stream(**body) as stream:
             response = stream.get_final_message()
     except anthropic.APIConnectionError as error:
         raise InfrastructureError(f"anthropic: {error}") from error
@@ -141,11 +161,7 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str, effor
         if error.status_code == 429 or error.status_code >= 500 or _stream_error_is_transient(error):
             raise InfrastructureError(f"anthropic: {error}") from error
         raise _request_error("anthropic", error) from error
-    latency = time.perf_counter() - start
-    stop_reason = {"max_tokens": "truncated", "refusal": "refused"}.get(response.stop_reason, "ok")
-    text = "".join(block.text for block in response.content if block.type == "text")
-    return Reply(text, stop_reason, response.model, response.usage.input_tokens,
-                 response.usage.output_tokens, latency)
+    return _anthropic_reply(response, time.perf_counter() - start)
 
 
 def _openai_client(key: str, base_url: str | None = None):
@@ -162,6 +178,23 @@ def _moderation_flagged(body) -> bool:
     error = body.get("error", body) if isinstance(body, dict) else None
     metadata = error.get("metadata") if isinstance(error, dict) else None
     return isinstance(metadata, dict) and ("reasons" in metadata or "flagged_input" in metadata)
+
+
+def _chat_reply(provider: str, response, latency: float | None) -> Reply:
+    """Read one Chat Completions response, shared by openai and openrouter."""
+    if provider == "openrouter":
+        usage = getattr(response, "usage", None)
+        tokens = (usage.prompt_tokens or 0, usage.completion_tokens or 0) if usage else (0, 0)
+        if not getattr(response, "choices", None):
+            raise InfrastructureError("openrouter: the response has no choices", *tokens)
+        if response.choices[0].finish_reason == "error":  # the upstream provider failed mid-answer
+            raise InfrastructureError("openrouter: the upstream provider ended the answer with an error", *tokens)
+    else:
+        tokens = (response.usage.prompt_tokens, response.usage.completion_tokens)
+    choice = response.choices[0]
+    stop_reason = {"length": "truncated", "content_filter": "refused"}.get(choice.finish_reason, "ok")
+    served = (getattr(response, "model", None) or "") if provider == "openrouter" else response.model
+    return Reply(choice.message.content or "", stop_reason, served, *tokens, latency)
 
 
 def _chat(provider: str, client, request: dict) -> Reply:
@@ -183,67 +216,59 @@ def _chat(provider: str, client, request: dict) -> Reply:
         if provider == "openrouter" and error.status_code == 403 and _moderation_flagged(error.body):
             return Reply("", "refused", "", 0, 0, time.perf_counter() - start)
         raise _request_error(provider, error) from error
-    latency = time.perf_counter() - start
-    if provider == "openrouter":
-        usage = getattr(response, "usage", None)
-        tokens = (usage.prompt_tokens or 0, usage.completion_tokens or 0) if usage else (0, 0)
-        if not getattr(response, "choices", None):
-            raise InfrastructureError("openrouter: the response has no choices", *tokens)
-        if response.choices[0].finish_reason == "error":  # the upstream provider failed mid-answer
-            raise InfrastructureError("openrouter: the upstream provider ended the answer with an error", *tokens)
-    else:
-        tokens = (response.usage.prompt_tokens, response.usage.completion_tokens)
-    choice = response.choices[0]
-    stop_reason = {"length": "truncated", "content_filter": "refused"}.get(choice.finish_reason, "ok")
-    served = (getattr(response, "model", None) or "") if provider == "openrouter" else response.model
-    return Reply(choice.message.content or "", stop_reason, served, *tokens, latency)
+    return _chat_reply(provider, response, time.perf_counter() - start)
 
 
-def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
-    return _chat("openai", _openai_client(key), {
+def _openai_request(model: dict, prompt: str, max_output_tokens: int, effort: str | None = None) -> dict:
+    return {
         "model": model["api_model_id"],
         "max_completion_tokens": max_output_tokens,
         "messages": [{"role": "user", "content": prompt}],
         **({"reasoning_effort": effort} if effort else {}),
         **model.get("params", {}),
-    })
+    }
 
 
-def _openrouter(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+    return _chat("openai", _openai_client(key), _openai_request(model, prompt, max_output_tokens, effort))
+
+
+def _openrouter_request(model: dict, prompt: str, max_output_tokens: int, effort: str | None = None) -> dict:
     # params go in the body unchanged, so OpenRouter's own fields, such as provider routing, pass through the SDK.
-    return _chat("openrouter", _openai_client(key, OPENROUTER_BASE_URL), {
+    return {
         "model": model["api_model_id"],
         "max_tokens": max_output_tokens,
         "messages": [{"role": "user", "content": prompt}],
         "extra_body": {**({"reasoning": {"effort": effort}} if effort else {}), **model.get("params", {})},
-    })
+    }
 
 
-def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
-    import httpx
+def _openrouter(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+    return _chat("openrouter", _openai_client(key, OPENROUTER_BASE_URL),
+                 _openrouter_request(model, prompt, max_output_tokens, effort))
+
+
+def _google_client(key: str):
     from google import genai
-    from google.genai import errors, types
+    from google.genai import types
 
     # attempts=1 means a single try, so the SDK never retries.
     options = types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1),
                                timeout=REQUEST_TIMEOUT_S * 1000)  # milliseconds
-    client = genai.Client(api_key=key, http_options=options)
-    start = time.perf_counter()
-    try:
-        response = client.models.generate_content(
-            model=model["api_model_id"],
-            contents=prompt,
-            config={"max_output_tokens": max_output_tokens,
-                    **({"thinking_config": {"thinking_level": effort.upper()}} if effort else {}),
-                    **model.get("params", {})},
-        )
-    except errors.APIError as error:
-        if error.code == 429 or error.code >= 500:
-            raise InfrastructureError(f"google: {error}") from error
-        raise _request_error("google", error) from error
-    except httpx.TransportError as error:  # connection errors and timeouts
-        raise InfrastructureError(f"google: {error}") from error
-    latency = time.perf_counter() - start
+    return genai.Client(api_key=key, http_options=options)
+
+
+def _google_request(model: dict, prompt: str, max_output_tokens: int, effort: str | None = None) -> dict:
+    return {
+        "model": model["api_model_id"],
+        "contents": prompt,
+        "config": {"max_output_tokens": max_output_tokens,
+                   **({"thinking_config": {"thinking_level": effort.upper()}} if effort else {}),
+                   **model.get("params", {})},
+    }
+
+
+def _google_reply(response, latency: float | None) -> Reply:
     usage = response.usage_metadata
     input_tokens = (usage.prompt_token_count or 0) if usage else 0
     # Gemini bills thoughts as output; the other providers' counts already include reasoning tokens.
@@ -264,6 +289,23 @@ def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: 
                        if part.text and not part.thought)
     return Reply(text, stop_reason, response.model_version or "",
                  input_tokens, output_tokens, latency)
+
+
+def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+    import httpx
+    from google.genai import errors
+
+    client = _google_client(key)
+    start = time.perf_counter()
+    try:
+        response = client.models.generate_content(**_google_request(model, prompt, max_output_tokens, effort))
+    except errors.APIError as error:
+        if error.code == 429 or error.code >= 500:
+            raise InfrastructureError(f"google: {error}") from error
+        raise _request_error("google", error) from error
+    except httpx.TransportError as error:  # connection errors and timeouts
+        raise InfrastructureError(f"google: {error}") from error
+    return _google_reply(response, time.perf_counter() - start)
 
 
 def _fake() -> Reply:
