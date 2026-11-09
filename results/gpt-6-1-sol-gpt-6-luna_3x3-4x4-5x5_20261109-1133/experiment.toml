@@ -1,0 +1,24 @@
+release = "3.1.0"
+puzzles = ["3x3", "4x4", "5x5"]
+attempts = 2
+retry_cap = 3
+max_output_tokens = 32000
+reasoning_effort = "medium"
+inputs_per_depth = 4
+
+[[models]]
+name = "gpt-6.1-sol"
+provider = "openai"
+api_model_id = "gpt-6.1-sol"
+kind = "system-2"
+
+[[models]]
+name = "gpt-6-luna"
+provider = "openai"
+api_model_id = "gpt-6-luna"
+kind = "system-2"
+
+[budget]
+per_request_usd = 2.0
+per_model_usd = 25.0
+per_experiment_usd = 50.0
