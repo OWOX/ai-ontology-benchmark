@@ -879,3 +879,12 @@ def test_batch_records_without_batch_prices_refused(repo, monkeypatch, capsys):
     path.write_text("\n".join(json.dumps(dict(json.loads(l), batch=True)) for l in lines) + "\n", encoding="utf-8")
     assert go() == 1
     assert "'A'" in capsys.readouterr().err
+
+
+def test_attempt_rows_carry_the_batch_flag(release_dir):
+    rows = [json.loads(l) for l in (release_dir / "inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    prices = {"M": dict(PRICES["M"], batch_price_input_per_mtok=500.0, batch_price_output_per_mtok=1000.0)}
+    records = [raw(rows[0]["input_id"], 1, "R", "success"), dict(raw(rows[0]["input_id"], 2, "R", "success"), batch=True)]
+    attempts, _, _ = compute(records, release_dir, prices)
+    assert [a["batch"] for a in attempts] == [False, True]
+    assert attempts[1]["cost"] == pytest.approx(attempts[0]["cost"] / 2)

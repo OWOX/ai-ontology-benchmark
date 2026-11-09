@@ -227,7 +227,7 @@ def make_attempt_row(raw: dict, line: int, source: dict, verdict, cost: float,
         "served_model": raw["served_model"], "created_at": raw["created_at"], "cost": cost,
         "decision": decision, "corruption": source.get("corruption"), "reasons": reasons,
         "impossible_move": verdict.impossible_move, "mismatch_reason": verdict.mismatch_reason,
-        "decoy": verdict.decoy,
+        "decoy": verdict.decoy, "batch": raw.get("batch") is True,
     }
     row["answer_class"] = answer_class(row)
     return row

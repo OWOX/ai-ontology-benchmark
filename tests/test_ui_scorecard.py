@@ -180,3 +180,13 @@ def test_unpriced_model_has_null_cost():
 
 def test_unknown_experiment_is_404(server):
     assert call(server, "GET", "/api/scorecard/nope")[0] == 404
+
+
+def test_batch_rows_are_priced_at_the_batch_tier_and_need_batch_prices():
+    from ui.scorecard import priced
+    rows = [{"batch": True, "input_tokens": 1_000_000, "output_tokens": 0, "retry_input_tokens": 0,
+             "retry_output_tokens": 0}]
+    both = dict(PRICE, batch_price_input_per_mtok=0.5, batch_price_output_per_mtok=1.0)
+    assert priced({"m": PRICE}, "m", rows) is None  # batch rows, no batch prices: cost n/a, no KeyError
+    assert priced({"m": PRICE}, "m", [{"batch": False}]) == PRICE
+    assert attempt_cost(rows[0], priced({"m": both}, "m", rows)) == pytest.approx(0.5)

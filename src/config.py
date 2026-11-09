@@ -12,6 +12,7 @@ from src.puzzles.registry import ENGINES
 
 from src.run.models import BATCH_PROVIDERS  # the one definition: the providers with a Message Batches API
 PROVIDERS = ("anthropic", "openai", "google", "openrouter", "typesafe", "cloudflare", "fake", "fake_decision")
+BATCH_PRICE_FIELDS = ("batch_price_input_per_mtok", "batch_price_output_per_mtok")
 KINDS = ("system-1", "system-2")
 # Settings that `models` and the run script set themselves.
 FORBIDDEN_PARAMS = {
@@ -28,9 +29,6 @@ EXPERIMENT_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 DEFAULT_PER_REQUEST_USD = 2.00
 DEFAULT_PER_MODEL_USD = 25.00
 DEFAULT_PER_EXPERIMENT_USD = 50.00
-
-
-BATCH_PRICE_FIELDS = ("batch_price_input_per_mtok", "batch_price_output_per_mtok")
 
 
 def _fail(path: object, field: str, problem: str) -> None:

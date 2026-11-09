@@ -1276,3 +1276,10 @@ def test_benchmarks_route(server):
     assert status == 200 and data["releases"] == ["1.0.0"] and data["rows"] == [] and data["models"] == []
     status, data = call(server, "GET", "/api/benchmarks?puzzles=7x7")
     assert status == 400 and "'puzzles'" in data["error"]
+
+
+def test_example_model_row_prices_need_no_batch_fields():
+    from src.evaluate.metrics import attempt_cost
+    from ui.expdata import NO_PRICE
+    batch_record = {"batch": True, "input_tokens": 5, "output_tokens": 5, "retry_input_tokens": 0, "retry_output_tokens": 0}
+    assert attempt_cost(batch_record, NO_PRICE) == 0.0  # a batch record of an unpriced model must not raise

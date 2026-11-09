@@ -355,3 +355,30 @@ def test_release_is_read_from_the_cached_tree(server):
     assert call(server, "POST", URL, LIVE)[0] == 200
     held = next(iter(est._releases.values()))
     assert held["tree"] and held["inputs"] and held["manifest"]["release_config"]
+
+
+BATCH_PRICES = ("[example-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n"
+                "batch_price_input_per_mtok = 0.5\nbatch_price_output_per_mtok = 1.0\n")
+
+
+def test_spent_and_expected_cost_price_each_record_at_its_tier(server):
+    root = server.root
+    (root / "config" / "prices.toml").write_text(BATCH_PRICES)
+    commit_all(root, "batch prices")
+    git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
+    ids = [r["input_id"] for r in inputs_of(server)]
+    standard = record("example-model", ids[0], "no_model", tokens=1_000_000)
+    batched = {**record("example-model", ids[0], "descriptive", tokens=1_000_000), "batch": True}
+    put_branch(root, "t1", {"results/t1/experiment.toml": dumps_config(config_of(FORM, server)),
+                            **raw_files([standard, batched])}, where="remote")
+    body = call(server, "POST", URL, LIVE)[1]
+    assert abs(body["models"][0]["spent_usd"] - (3.0 + 1.5)) < 1e-9  # standard 1 + 2, batch 0.5 + 1
+    # History: a batched experiment prices every past token at the batch tier; a direct one at each record's own tier.
+    est, prices = server.app.live_estimate, {"example-model": {
+        "price_input_per_mtok": 1.0, "price_output_per_mtok": 2.0,
+        "batch_price_input_per_mtok": 0.5, "batch_price_output_per_mtok": 1.0}}
+    push_other(server, [standard, batched])
+    pushed = server.app.bundles.git.results_state()[2]
+    main_sha = server.app.bundles.git.results_state()[0]
+    assert abs(est.costs(pushed, main_sha, prices)["example-model"][0] - 2.25) < 1e-9
+    assert abs(est.costs(pushed, main_sha, prices, frozenset({"example-model"}))["example-model"][0] - 1.5) < 1e-9

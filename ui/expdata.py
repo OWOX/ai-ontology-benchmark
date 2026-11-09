@@ -26,7 +26,8 @@ from ui.pooling import RATES, pooled_rates, pooled_summary, total
 SCOPES = ("all", "valid", "invalid")
 REPORT_CSV = re.compile(r"(\d+\.\d+\.\d+)\.metrics\.csv")
 TEXT_COLUMNS = ("puzzle", "setup", "model", "validity")
-NO_PRICE = {"price_input_per_mtok": 0.0, "price_output_per_mtok": 0.0}
+NO_PRICE = {"price_input_per_mtok": 0.0, "price_output_per_mtok": 0.0,
+            "batch_price_input_per_mtok": 0.0, "batch_price_output_per_mtok": 0.0}
 
 
 def read_inputs(git: GitData, ref: str, release: str) -> list[dict]:

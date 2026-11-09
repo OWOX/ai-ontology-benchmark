@@ -13,7 +13,7 @@ import json
 import sys
 from pathlib import Path
 
-from src.config import load_experiment_config, load_prices
+from src.config import BATCH_PRICE_FIELDS, load_experiment_config, load_prices
 from src.evaluate.metrics import (CORRUPTION_COLUMNS, DETECTION_COLUMNS, REASON_COLUMNS, EvalError, compute,
                                   corruption_rows, detection_rows, paired_tests, reason_rows)
 from src.evaluate.report import write_report
@@ -109,7 +109,7 @@ def evaluate(args: argparse.Namespace) -> None:
     except BudgetError as error:
         raise EvalError(error.reason) from None
     for record in records:
-        if record.get("batch") is True and "batch_price_input_per_mtok" not in prices.get(record["model"], {}):
+        if record.get("batch") is True and BATCH_PRICE_FIELDS[0] not in prices.get(record["model"], {}):
             raise EvalError(f"{prices_path}: model {record['model']!r} has batch records but no batch prices")
     names = [m["name"] for m in config["models"]]
     decision_models = {m["name"] for m in config["models"] if m["provider"] in DECISION_PROVIDERS}

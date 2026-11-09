@@ -9,7 +9,8 @@ import threading
 from statistics import median
 
 from src.config import max_moves, parse_experiment_config
-from src.evaluate.metrics import attempt_cost
+from src.evaluate.metrics import tier_prices
+from src.run.budget import is_batched
 from src.run.budget import estimate
 from src.run.models import DECISION_PROVIDERS
 from src.run.prompts import SETUPS, fill_template, parse_questions
@@ -129,7 +130,7 @@ class LiveEstimate:
         if held is None:
             git = self.bundles.git
             held = {"missing": git.show(ref, f"results/{experiment_id}/experiment.toml") is None,
-                    "error": None, "bad": None, "keys": {}, "tokens": {}, "counts": {}, "latencies": []}
+                    "error": None, "bad": None, "keys": {}, "tokens": {}, "batch_tokens": {}, "counts": {}, "latencies": []}
             exp = ({"error": None, "records": {}} if held["missing"]
                    else expdata.load_experiment(git, experiment_id, ref, git.main_ref()))
             held["error"] = exp["error"]
@@ -142,8 +143,9 @@ class LiveEstimate:
                         continue
                     held["keys"].setdefault(model, set()).add((r.get("input_id"), r.get("setup"), model,
                                                                r.get("attempt_number")))
-                    tin, tout = held["tokens"].get(model, (0, 0))
-                    held["tokens"][model] = (tin + fields[0] + fields[2], tout + fields[1] + fields[3])
+                    tier = "batch_tokens" if r.get("batch") is True else "tokens"
+                    tin, tout = held[tier].get(model, (0, 0))
+                    held[tier][model] = (tin + fields[0] + fields[2], tout + fields[1] + fields[3])
                     held["counts"][model] = held["counts"].get(model, 0) + 1
                     if timed(r):
                         held["latencies"].append((model, r["latency_s"]))
@@ -152,6 +154,19 @@ class LiveEstimate:
                     self._experiments.pop(next(iter(self._experiments)))
                 self._experiments[experiment_id, sha] = held
         return held
+
+    @staticmethod
+    def _tokens_cost(price: dict, all_batch: bool, standard: tuple, batch: tuple) -> float:
+        """The cost of token sums: `all_batch` prices every token at the batch tier, else each tier at its own."""
+        if all_batch:
+            b_in, b_out = tier_prices(price, True)
+            return ((standard[0] + batch[0]) * b_in + (standard[1] + batch[1]) * b_out) / 1e6
+        std_in, std_out = tier_prices(price, False)
+        cost = (standard[0] * std_in + standard[1] * std_out) / 1e6
+        if batch != (0, 0):
+            b_in, b_out = tier_prices(price, True)
+            cost += (batch[0] * b_in + batch[1] * b_out) / 1e6
+        return cost
 
     def medians(self, pushed: dict[str, tuple[str, str]]) -> dict[str, tuple[float, int]]:
         """The median `latency_s` and the record count of each AI model over every pushed experiment (`{id: (ref,
@@ -170,23 +185,25 @@ class LiveEstimate:
             self._latency = (key, found)
         return found
 
-    def costs(self, pushed: dict[str, tuple[str, str]], main_sha: str | None, prices: dict) -> dict[str, tuple[float, int]]:
+    def costs(self, pushed: dict[str, tuple[str, str]], main_sha: str | None, prices: dict,
+              batched: frozenset = frozenset()) -> dict[str, tuple[float, int]]:
         """The mean cost per attempt and the record count of each AI model over every pushed experiment, at the
-        prices of `main`, infrastructure failures included. Cached by the shas of the refs read and of `main`. A branch
+        prices of `main`, infrastructure failures included. The tokens of every record are priced at the batch tier
+        for the AI models in `batched` (the ones the new experiment sends through a batch API), else at the standard tier. Cached by the shas of the refs read and of `main`. A branch
         that does not load adds what it could read, and a record with a token field that is not a number is left out,
         as in `medians`."""
-        key = (tuple(sorted(pushed.items())), main_sha)
+        key = (tuple(sorted(pushed.items())), main_sha, batched)
         with self._lock:
             if self._cost and self._cost[0] == key:
                 return self._cost[1]
         sums: dict[str, list[float]] = {}
         for experiment_id, (ref, sha) in sorted(pushed.items()):
             held = self._experiment(experiment_id, ref, sha)
-            for model, (tin, tout) in held["tokens"].items():
+            for model in held["counts"]:
                 if model in prices:
                     total = sums.setdefault(model, [0.0, 0])
-                    total[0] += attempt_cost({"input_tokens": tin, "output_tokens": tout, "retry_input_tokens": 0,
-                                              "retry_output_tokens": 0}, prices[model])
+                    total[0] += self._tokens_cost(prices[model], model in batched, held["tokens"].get(model, (0, 0)),
+                                                  held["batch_tokens"].get(model, (0, 0)))
                     total[1] += held["counts"][model]
         found = {m: (c / n, n) for m, (c, n) in sums.items() if n}
         with self._lock:
@@ -209,7 +226,7 @@ class LiveEstimate:
         for model in config["models"]:
             if model["name"] not in prices:
                 raise ApiError(400, f"no prices for model {model['name']!r} in config/prices.toml on main")
-            field = missing_price_field(prices[model["name"]])
+            field = missing_price_field(prices[model["name"]], is_batched(config, model))
             if field:
                 raise ApiError(400, f"config/prices.toml on main: model {model['name']!r} has no number for {field}")
         release = config["release"]
@@ -254,15 +271,15 @@ class LiveEstimate:
         done, spent = set(), {}
         for name in (m["name"] for m in config["models"]):
             done |= found["keys"].get(name, set())
-            tin, tout = found["tokens"].get(name, (0, 0))
-            spent[name] = attempt_cost({"input_tokens": tin, "output_tokens": tout, "retry_input_tokens": 0,
-                                        "retry_output_tokens": 0}, prices[name])
+            spent[name] = self._tokens_cost(prices[name], False, found["tokens"].get(name, (0, 0)),
+                                            found["batch_tokens"].get(name, (0, 0)))
         return done, spent
 
     def _finish(self, result: dict, config: dict, parallel: int, inputs: int, to_run: int, pushed: dict,
                 main_sha: str | None, prices: dict) -> dict:
         medians = self.medians(pushed)
-        history = self.costs(pushed, main_sha, prices)
+        history = self.costs(pushed, main_sha, prices,
+                              frozenset(m["name"] for m in config["models"] if is_batched(config, m)))
         budget = config["budget"]
         times, expected = [], []
         for m in result["models"]:

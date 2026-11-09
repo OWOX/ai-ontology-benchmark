@@ -48,9 +48,10 @@ def model_values(rows: list[dict], price: dict | None) -> dict:
             "cost_usd": cost, "cost_efficiency": efficiency}
 
 
-def priced(prices: dict, name: str) -> dict | None:
+def priced(prices: dict, name: str, rows: list[dict] = ()) -> dict | None:
+    """The model's price entry, or None when it lacks a field its rows need: the batch fields for batch rows."""
     price = prices.get(name)
-    return None if missing_price_field(price) else price
+    return None if missing_price_field(price, any(r.get("batch") is True for r in rows)) else price
 
 
 def scorecard(bundles, experiment_id: str, live_ids: set[str], job_states: dict, parallels: dict, history,
@@ -83,7 +84,7 @@ def scorecard(bundles, experiment_id: str, live_ids: set[str], job_states: dict,
         done = len(mine)
         is_running = f"run:{name}" in running
         models.append({"name": name, "done": done, "planned": planned, "running": is_running,
-                       **model_values(mine, priced(prices, name))})
+                       **model_values(mine, priced(prices, name, mine))})
         if is_running:
             own = [r["latency_s"] for r in mine if timed(r)]
             typical = median(own) if len(own) >= OWN_LATENCY_MIN else None

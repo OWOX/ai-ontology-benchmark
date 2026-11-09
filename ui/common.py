@@ -6,16 +6,17 @@ Reads <root>/secrets/ and os.environ. Writes nothing.
 import os
 from pathlib import Path
 
-from src.config import EXPERIMENT_ID_PATTERN
+from src.config import BATCH_PRICE_FIELDS, EXPERIMENT_ID_PATTERN
 from src.run.models import ACCOUNT_VARIABLES, KEY_VARIABLES
 
 
 PRICE_FIELDS = ("price_input_per_mtok", "price_output_per_mtok")
 
 
-def missing_price_field(price: object) -> str | None:
-    """The first price field of an AI model's entry in `config/prices.toml` that is not a number, else `None`."""
-    for field in PRICE_FIELDS:
+def missing_price_field(price: object, batch: bool = False) -> str | None:
+    """The first price field of an AI model's entry in `config/prices.toml` that is not a number, else `None`.
+    With `batch`, the batch price fields are checked too."""
+    for field in PRICE_FIELDS + (BATCH_PRICE_FIELDS if batch else ()):
         value = price.get(field) if isinstance(price, dict) else None
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             return field
