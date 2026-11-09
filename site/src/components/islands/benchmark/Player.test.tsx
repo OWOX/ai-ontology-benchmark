@@ -263,4 +263,13 @@ describe('Player', () => {
     expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
     expect(fetch).toHaveBeenCalledTimes(2)
   })
+
+  it('under "all" picks an attempt from any puzzle and draws its own puzzle', async () => {
+    const g2 = cubeGeometry(2)
+    stub({ '2x2': [attempt({ puzzle: '2x2', state: g2.SOLVED, moves: [] })], '3x3': [] })
+    render(<Player puzzle="all" models={['m1']} attemptsUrl="/a.json" legalMoves={LEGAL} />)
+    await act(async () => {})
+    expect(fact('State:')).toMatch(/^2x2 cube/)
+    expect(screen.getByRole('img', { name: '2x2 cube replay' })).toBeInTheDocument()
+  })
 })

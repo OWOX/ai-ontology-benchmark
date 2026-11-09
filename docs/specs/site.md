@@ -58,6 +58,8 @@ It prints one line: experiments, attempts, skipped.
 
 ## The page
 
+The Puzzle filter has "All" as its first option and its default (accessible name "All puzzles"), drawn by `OneCube.tsx` as a 1x1x1 cube, one sticker per face, in the style of the other puzzle thumbnails. Under All, the chart reads the `metrics` rows with puzzle `all`, the Model and AI provider filters list every model and provider, and the Experiment Example picks an attempt of any puzzle and draws that attempt's own puzzle. The hash writes `puzzle=` only for a puzzle other than All, so the plain page has none; `puzzle=all` and any unknown value read as All. Without `all` rows in the data, the first puzzle with data is the default and there is no All option.
+
 `site/src/components/islands/benchmark/BenchmarkView.tsx` shows four metric tabs, in this order, with `precision` the default (a `#metric=` value that is not one of the four falls back to it, except that the old id `detection` means `critical`):
 
 1. Precision (`precision`), a percentage, higher is better.

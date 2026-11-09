@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { cubeGeometry } from '../cube/core/geometry'
 import { CubeView } from '../cube/svg/CubeView'
-import { SOURCE, playable, puzzleSize, resultSign, type ResultSign } from '../../../lib/benchmark'
+import { ALL, SOURCE, playable, puzzleSize, resultSign, type ResultSign } from '../../../lib/benchmark'
 import type { BenchmarkAttempt } from '../../../lib/types'
 import { loadAttempts } from './attempts'
 import { replayFrame, type ReplayFrame } from './replay'
@@ -62,9 +62,8 @@ interface Props {
   legalMoves: Readonly<Record<string, readonly string[]>>
 }
 
-/** Shows one random attempt of the selected puzzle and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). The refresh button next to the state picks another attempt. The parent keys it by the filter, so a change resets it. */
+/** Shows one random attempt of the selected puzzle (any puzzle under "all") and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). The refresh button next to the state picks another attempt. The parent keys it by the filter, so a change resets it. */
 export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
-  const g = useMemo(() => cubeGeometry(puzzleSize(puzzle)), [puzzle])
   const titleId = useId()
   const alive = useRef(true)
   const [loading, setLoading] = useState(false)
@@ -78,6 +77,9 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
     return () => void (alive.current = false)
   }, [])
 
+  // Under "all" the drawing follows the attempt's own puzzle; before one is picked it shows a solved 3x3.
+  const shownPuzzle = attempt?.puzzle ?? (puzzle === ALL ? '3x3' : puzzle)
+  const g = useMemo(() => cubeGeometry(puzzleSize(shownPuzzle)), [shownPuzzle])
   const plan = useMemo(() => (attempt ? playable(attempt, legalMoves[attempt.puzzle] ?? []) : null), [attempt, legalMoves])
   const moves = plan?.moves ?? []
 
@@ -105,7 +107,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
       const all = await loadAttempts(attemptsUrl)
       if (!alive.current) return null
       const wanted = new Set(models)
-      const found = (all[puzzle] ?? []).filter((a) => wanted.has(a.model))
+      const found = (puzzle === ALL ? Object.values(all).flat() : (all[puzzle] ?? [])).filter((a) => wanted.has(a.model))
       if (found.length === 0) throw new Error('no attempts')
       const a = pickCase(found, null)!
       setPool(found)
@@ -194,7 +196,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
       {/* The same markup as /cube's solution player (SolveStage): .cube-stage > .views > the drawing; the rules are in src/styles/cube-stage.css. */}
       <div className={`cube-stage${shake ? ' shake' : ''}`}>
         <div className="views">
-          <CubeView geometry={g} facelets={shown} turn={turning} label={`${puzzle} cube replay`} focusable={false} />
+          <CubeView geometry={g} facelets={shown} turn={turning} label={`${shownPuzzle} cube replay`} focusable={false} />
         </div>
       </div>
     </section>
