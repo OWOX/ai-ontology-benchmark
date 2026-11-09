@@ -723,6 +723,7 @@ def test_server_stops_its_jobs_on_sigterm(ui_repo):
 GH_STUB = """#!/bin/sh
 echo "$@" >> {dir}/gh.log
 if [ "$2" = view ]; then [ -f {dir}/view.json ] && cat {dir}/view.json && exit 0; exit 1; fi
+if [ "$2" = edit ]; then exit 0; fi
 [ -f {dir}/fail_create ] && exit 1
 echo '{{"url": "https://example.test/pr/1", "state": "OPEN"}}' > {dir}/view.json
 echo https://example.test/pr/1
@@ -876,8 +877,25 @@ def test_unfinished_experiment_commits_with_a_labelled_title_and_body(server, gh
     assert status == 200
     create = (gh / "gh.log").read_text()
     assert '--title Results: experiment t1 (unfinished)' in create
-    assert re.search(r"Unfinished: 1 of \d+ planned attempts have a record\.", create)
+    assert re.search(r"Unfinished: 1 of 9 planned attempts have a record\.", create)
     assert "This experiment is [unfinished]" in (server.root / "results" / "t1" / "1.0.0.md").read_text()
+
+    call(server, "POST", "/api/run", FORM)  # Continue to the end, then commit again
+    wait_job(server, "run:example-model")
+    assert call(server, "POST", "/api/evaluate", {"id": "t1"})[0] == 200
+    wait_job(server, "evaluate")
+    assert call(server, "POST", "/api/commit", {"id": "t1"})[0] == 200
+    edit = [l for l in (gh / "gh.log").read_text().splitlines() if l.startswith("pr edit")]
+    assert len(edit) == 1 and "--title Results: experiment t1 --body" in edit[0] and "Unfinished" not in edit[0]
+
+
+def test_commit_without_the_release_inputs_pushes_nothing(server, gh):
+    evaluated(server)
+    remote = git(server.root, "ls-remote", "origin", "refs/heads/results/t1")  # `run` pushed its own commits
+    (server.root / "releases" / "1.0.0" / "inputs.jsonl").unlink()
+    status, data = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 409 and "releases/1.0.0/inputs.jsonl" in data["error"]
+    assert git(server.root, "ls-remote", "origin", "refs/heads/results/t1") == remote
 
 
 def test_pr_body_and_title_are_plain_for_a_finished_experiment():

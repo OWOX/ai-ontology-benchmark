@@ -1,6 +1,6 @@
 # Spec: docs/specs/ui.md
 """Commit preview and commit with a pull request. Reads results/<id>/ in the work tree (its
-experiment.toml is the config) and adds only that folder. Writes git objects, the remote branch results/<id>, and, after a push succeeds,
+experiment.toml is the config) and releases/<release>/inputs.jsonl there, and adds only results/<id>. Writes git objects, the remote branch results/<id>, and, after a push succeeds,
 refs/heads/results/<id>. Never touches the work tree, the real index, or HEAD: it builds the
 tree in a temporary index file.
 """
@@ -104,8 +104,11 @@ def preview(root: Path, experiment_id: str, emit: Emit) -> dict:
 def unfinished(root: Path, config: dict, experiment_id: str) -> tuple[int, int] | None:
     """(records, planned attempts) over all AI models when the experiment is unfinished, else None. Reads the release's
     inputs and the raw files of results/<id>/ in the work tree."""
-    text = (root / "releases" / config["release"] / "inputs.jsonl").read_text(encoding="utf-8")
-    inputs = [json.loads(line) for line in text.splitlines()]
+    path = root / "releases" / config["release"] / "inputs.jsonl"
+    try:
+        inputs = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    except (OSError, ValueError) as error:
+        raise ApiError(409, f"cannot read {path.relative_to(root)}: {error}") from None
     records = []
     for path in sorted((root / "results" / experiment_id / "raw").glob("*.jsonl")):
         records += read_raw(path)[0]
@@ -154,6 +157,8 @@ def open_pr_url(root: Path, branch: str, emit: Emit) -> str:
 def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
     """Push first and move the local ref after, so a failed push or PR step can be run again."""
     info = prepare(root, experiment_id, emit)
+    config = load_config(root, experiment_id)
+    partial = unfinished(root, config, experiment_id)  # before the push: no push without a pull request to open
     branch, parent = info["branch"], info["base"]
     sha = parent
     if info["files"]:
@@ -166,9 +171,9 @@ def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
     url = open_pr_url(root, branch, emit)
     if url and not info["files"] and not info["ahead"]:
         raise ApiError(409, "nothing to commit")
+    title, body = pr_title(experiment_id, partial), pr_body(config, experiment_id, partial)
     if not url:  # a retry after a failed PR step finds the branch already pushed
-        config = load_config(root, experiment_id)
-        partial = unfinished(root, config, experiment_id)
-        url = create_pr(root, emit, "--head", branch, "--title", pr_title(experiment_id, partial),
-                        "--body", pr_body(config, experiment_id, partial))
+        url = create_pr(root, emit, "--head", branch, "--title", title, "--body", body)
+    else:  # the open pull request keeps its title and body in step with the counts
+        sh(root, [gh_binary(root), "pr", "edit", branch, "--title", title, "--body", body], emit)
     return {"branch": branch, "commit": sha, "pr_url": url}
