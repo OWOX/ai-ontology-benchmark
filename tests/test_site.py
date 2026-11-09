@@ -16,10 +16,10 @@ DEFINITIONS = """# Definitions
 
 ## Metrics
 
-1. **Precision.** Share of [right](x.md) answers.
+1. **Balanced precision.** Share of [right](x.md) answers.
 2. **Hallucination rate.** The share of attempts with *at least* one
    impossible `move`.
-3. **Mismatch detection rate.** The share flagged.
+3. **Critical thinking.** The mean of two rates.
 
 ## Prices
 """
@@ -27,37 +27,77 @@ DEFINITIONS = """# Definitions
 SITE_TOML = '''title = "T"
 description = "D"
 intro = "I"
-experiments = ["b-exp", "a-exp"]
 '''
 
-EXPERIMENT_TOML = '''release = "1.0.0"
+PRICES = '''["m1"]
+price_input_per_mtok = 1.0
+price_output_per_mtok = 2.0
+
+["m2"]
+price_input_per_mtok = 1.0
+price_output_per_mtok = 2.0
+'''
+
+EXPERIMENT_TOML = '''release = "{release}"
 attempts = 2
 
 [[models]]
 name = "m1"
 provider = "openai"
 kind = "system-2"
+
+[[models]]
+name = "m2"
+provider = "{m2}"
+kind = "system-2"
 '''
 
+# Real 2x2 inputs of release 3.0.0: a valid one with its invalid copy, and a second pair.
+INPUTS = [
+    {"corruption": None, "input_id": "v1", "puzzle": "2x2", "scramble": ["L2", "D", "B", "F'", "R"],
+     "scramble_depth": 5, "state": "RLRLUUDDFFBBLRLRUUDDBBFF", "validity": "valid"},
+    {"corruption": "recoloured sticker L3 D to U", "input_id": "i1", "puzzle": "2x2",
+     "scramble": ["L2", "D", "B", "F'", "R"], "scramble_depth": 5, "state": "RLRLUUDDFFBBLRLRUUUDBBFF",
+     "validity": "invalid"},
+    {"corruption": None, "input_id": "v2", "puzzle": "2x2", "scramble": ["R2", "L2", "U2", "L", "U2"],
+     "scramble_depth": 5, "state": "DBDFLRRRBUDBFUBULLLRDFFU", "validity": "valid"},
+]
 
-def record(model, input_id, attempt, outcome="success", created="2026-01-01T00:00:01Z", release="1.0.0"):
-    return {"model": model, "puzzle": "2x2", "input_id": input_id, "validity": "valid", "setup": "none",
-            "attempt_number": attempt, "scramble_depth": 5, "parsed_moves": ["R"], "outcome": outcome,
-            "mismatch": False, "created_at": created, "release_version": release}
+
+def solution(input_id: str) -> str:
+    scramble = next(i for i in INPUTS if i["input_id"] == input_id)["scramble"]
+    return "\n".join(m[:-1] if m.endswith("'") else m if m.endswith("2") else m + "'" for m in reversed(scramble))
+
+
+def raw(model, input_id, attempt, response, outcome="success", setup="no_model", stop="ok",
+        created="2026-01-01T00:00:01Z", **extra):
+    source = next((i for i in INPUTS if i["input_id"] == input_id), INPUTS[0])
+    return {"model": model, "puzzle": "2x2", "input_id": input_id, "validity": source["validity"], "setup": setup,
+            "attempt_number": attempt, "scramble_depth": 5, "outcome": outcome, "created_at": created,
+            "raw_response": response, "stop_reason": stop, "input_tokens": 1000, "output_tokens": 500,
+            "retry_input_tokens": 0, "retry_output_tokens": 0, "latency_s": 1.0, "served_model": model,
+            "release_version": "1.0.0", **extra}
 
 
 def commit(root, message):
     subprocess.run(["git", "add", "-A"], cwd=root, check=True)
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message], cwd=root, check=True)
-    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
 
 
-def write_experiment(root, experiment_id, records, toml=EXPERIMENT_TOML):
+def write_experiment(root, experiment_id, records, release="1.0.0", m2="anthropic", prices=None):
     folder = root / "results" / experiment_id
     (folder / "raw").mkdir(parents=True)
-    (folder / "experiment.toml").write_text(toml)
-    (folder / "raw" / "m.jsonl").write_text("\n".join(json.dumps(r) for r in records) + "\n")
+    (folder / "experiment.toml").write_text(EXPERIMENT_TOML.format(release=release, m2=m2))
+    if records is not None:
+        (folder / "raw" / "m.jsonl").write_text("\n".join(json.dumps(r) for r in records) + "\n")
+    if prices is not None:
+        (folder / "prices.toml").write_text(prices)
     commit(root, experiment_id)
+
+
+def exported(root):
+    data, skipped = site.export(GitData(root), "main")
+    return data, skipped, {(m["puzzle"], m["model"]): m for m in data["metrics"]}
 
 
 @pytest.fixture
@@ -65,66 +105,150 @@ def repo(tmp_path):
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "site.toml").write_text(SITE_TOML)
+    (tmp_path / "config" / "prices.toml").write_text(PRICES)
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "definitions.md").write_text(DEFINITIONS)
-    (tmp_path / "releases" / "1.0.0").mkdir(parents=True)
-    inputs = [{"input_id": "i1", "state": "S1", "corruption": None},
-              {"input_id": "i2", "state": "S2", "corruption": "twisted corner UFL clockwise"}]
-    (tmp_path / "releases" / "1.0.0" / "inputs.jsonl").write_text("\n".join(json.dumps(r) for r in inputs) + "\n")
+    for release, reasons in (("1.0.0", False), ("2.0.0", True)):
+        folder = tmp_path / "releases" / release
+        folder.mkdir(parents=True)
+        (folder / "inputs.jsonl").write_text("\n".join(json.dumps(r) for r in INPUTS) + "\n")
+        (folder / "manifest.json").write_text(json.dumps({"mismatch_reasons": reasons}))
     commit(tmp_path, "main")
     return tmp_path
 
 
-def test_attempts_sorted_and_filtered(repo):
+def test_discovery_skips_folder_without_raw_records(repo, capsys):
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
+    write_experiment(repo, "b-empty", None)
+    data, skipped, _ = exported(repo)
+    assert [e["experimentId"] for e in data["experiments"]] == ["a-exp"]
+    assert "b-empty" in capsys.readouterr().err
+
+
+def test_main_exits_zero_with_a_skipped_folder(repo, tmp_path):
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
+    write_experiment(repo, "b-empty", None)
+    out = tmp_path / "out.json"
+    done = subprocess.run([sys.executable, "-m", "src.site.export", "--root", str(repo), "--ref", "main",
+                           "--no-fetch", "--out", str(out)], capture_output=True, text=True, cwd=ROOT)
+    assert done.returncode == 0 and "b-empty" in done.stderr and out.exists()
+
+
+def test_attempts_sorted_filtered_and_revalidated(repo):
     write_experiment(repo, "a-exp", [
-        record("m2", "i2", 1), record("m1", "i2", 2), record("m1", "i2", 1),
-        record("m1", "i1", 1, outcome="infrastructure_failure"), record("m1", "gone", 1)])
-    write_experiment(repo, "b-exp", [record("m1", "i1", 1)])
-    data, skipped = site.export(GitData(repo), "main")
+        raw("m2", "v2", 1, solution("v2")),
+        raw("m1", "v2", 2, solution("v2")),
+        raw("m1", "v2", 1, "R\nM", outcome="success"),  # stored success, but M is an impossible move
+        raw("m1", "v1", 1, "", outcome="infrastructure_failure", stop="infrastructure_failure"),
+        raw("m1", "gone", 1, "R")], )
+    data, skipped, _ = exported(repo)
     assert skipped == 1
-    assert [e["experimentId"] for e in data["experiments"]] == ["a-exp", "b-exp"]
     a = data["experiments"][0]
     assert [(x["model"], x["attempt"]) for x in a["attempts"]] == [("m1", 1), ("m1", 2), ("m2", 1)]
     assert a["attemptCount"] == 3 and a["attemptsPerInput"] == 2 and a["release"] == "1.0.0"
-    assert a["attempts"][0] == {
-        "model": "m1", "puzzle": "2x2", "inputId": "i2", "validity": "valid", "setup": "none", "attempt": 1,
-        "depth": 5, "state": "S2", "corruption": "twisted corner UFL clockwise", "moves": ["R"],
-        "outcome": "success", "mismatch": False}
+    first = a["attempts"][0]
+    assert first["outcome"] == "hallucination" and first["moves"] == ["R", "M"] and first["mismatch"] is False
+    assert first["state"] == INPUTS[2]["state"] and first["inputId"] == "v2" and first["depth"] == 5
+    assert a["attempts"][1]["outcome"] == "success" and a["attempts"][1]["moves"] == solution("v2").split("\n")
     assert a["models"] == [{"name": "m1", "provider": "openai", "kind": "system-2"},
-                           {"name": "m2", "provider": "unknown", "kind": "unknown"}]
+                           {"name": "m2", "provider": "anthropic", "kind": "system-2"}]
     assert data["page"] == {"title": "T", "description": "D", "intro": "I"}
     assert data["legalMoves"] == {"2x2": list(get_engine("2x2").legal_moves())}
 
 
-def test_missing_experiment_is_checked_error(repo, tmp_path):
-    write_experiment(repo, "a-exp", [record("m1", "i1", 1)])
-    out = tmp_path / "out.json"
-    code = subprocess.run([sys.executable, "-m", "src.site.export", "--root", str(repo), "--ref", "main",
-                           "--no-fetch", "--out", str(out)], capture_output=True, text=True,
-                          cwd=ROOT)
-    assert code.returncode == 1
-    assert "b-exp" in code.stderr
-    assert not out.exists()
+def test_metrics_values_and_sort(repo):
+    write_experiment(repo, "a-exp", [
+        raw("m2", "v1", 1, solution("v1")),                      # tp
+        raw("m2", "i1", 1, "MISMATCH"),                          # tn (bare MISMATCH, no reasons)
+        raw("m1", "v1", 1, solution("v1")),                      # tp
+        raw("m1", "v2", 1, "R\nM"),                              # hallucination: fp, impossible move
+        raw("m1", "i1", 1, "R"),                                 # fp on invalid
+        raw("m1", "i1", 2, "MISMATCH"),                          # tn
+        raw("m1", "v1", 2, "I cannot do this"),                  # abstention: not classified
+        raw("m1", "v1", 3, "", outcome="infrastructure_failure", stop="infrastructure_failure"),
+    ])
+    _, _, metrics = exported(repo)
+    assert list(metrics) == [("2x2", "m1"), ("2x2", "m2")]
+    m1, m2 = metrics[("2x2", "m1")], metrics[("2x2", "m2")]
+    assert m1["provider"] == "openai" and m2["provider"] == "anthropic"
+    # valid classified: tp, fp -> 0.5; invalid classified: fp, tn -> 0.5
+    assert m1["precision"] == {"value": 0.5, "n": 4}
+    assert m2["precision"] == {"value": 1.0, "n": 2}
+    # rows that gave moves: tp, hallucination, fp -> 1 of 3
+    assert m1["hallucination"]["n"] == 3 and m1["hallucination"]["value"] == pytest.approx(1 / 3)
+    assert m2["hallucination"] == {"value": 0.0, "n": 1}
+    assert m1["critical"] == {"value": None, "n": 0}  # release 1.0.0 has no mismatch reasons
+    # cost: mean over 6 rows (the infrastructure failure included) / (precision * coverage); a row costs 0.002,
+    # and 4 of the 5 rows that are not infrastructure failures are classified
+    assert m1["cost"]["n"] == 6
+    assert m1["cost"]["value"] == pytest.approx(0.002 / (0.5 * 4 / 5))
+    assert m2["cost"]["value"] == pytest.approx(0.002)
+
+
+def test_precision_null_without_one_label_and_cost_null_when_precision_zero(repo):
+    write_experiment(repo, "a-exp", [
+        raw("m1", "v1", 1, solution("v1")),                      # only valid inputs
+        raw("m2", "v1", 1, "R"),                                 # valid fp
+        raw("m2", "i1", 1, "R"),                                 # invalid fp: precision 0
+    ])
+    _, _, metrics = exported(repo)
+    assert metrics[("2x2", "m1")]["precision"] == {"value": None, "n": 1}
+    assert metrics[("2x2", "m1")]["cost"] == {"value": None, "n": 1}
+    assert metrics[("2x2", "m2")]["precision"]["value"] == 0.0
+    assert metrics[("2x2", "m2")]["cost"] == {"value": None, "n": 2}
+
+
+def test_critical_thinking_with_mismatch_reasons(repo):
+    write_experiment(repo, "a-exp", [
+        raw("m1", "i1", 1, "MISMATCH recoloured sticker", release_version="2.0.0"),   # diagnosis
+        raw("m1", "i1", 2, "MISMATCH twisted corner", release_version="2.0.0"),       # wrong reason
+        raw("m1", "v1", 1, "MISMATCH twisted corner", release_version="2.0.0"),       # false mismatch
+        raw("m1", "v1", 2, solution("v1"), release_version="2.0.0"),
+        raw("m2", "v1", 1, solution("v1"), release_version="2.0.0"),                  # no invalid input
+    ], release="2.0.0")
+    _, _, metrics = exported(repo)
+    # diagnosis rate 1/2, false mismatch rate 1/2 -> (0.5 + 0.5) / 2
+    assert metrics[("2x2", "m1")]["critical"] == {"value": 0.5, "n": 4}
+    assert metrics[("2x2", "m2")]["critical"] == {"value": None, "n": 1}
+
+
+def test_decision_model_hallucination_is_null(repo):
+    legal = list(get_engine("2x2").legal_moves())
+    moves = solution("v1").split("\n")
+    calls = [{"answers": {"next_move": {"choice": f"move_{legal.index(m) + 1}"}}} for m in moves]
+    calls.append({"answers": {"next_move": {"choice": "done"}}})
+    write_experiment(repo, "a-exp", [raw("m2", "v1", 1, json.dumps(calls), decision=True),
+                                     raw("m1", "v1", 1, solution("v1"))], m2="fake_decision")
+    _, _, metrics = exported(repo)
+    assert metrics[("2x2", "m2")]["hallucination"] == {"value": None, "n": 0}
+    assert metrics[("2x2", "m1")]["hallucination"] == {"value": 0.0, "n": 1}
+
+
+def test_prices_fall_back_to_config_and_experiment_prices_win(repo):
+    cheap = PRICES.replace("1.0\n", "0.0\n").replace("2.0\n", "0.0\n")
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1")), raw("m1", "i1", 1, "MISMATCH")])
+    write_experiment(repo, "b-exp", [raw("m2", "v1", 1, solution("v1")), raw("m2", "i1", 1, "MISMATCH")],
+                     prices=cheap)
+    _, _, metrics = exported(repo)
+    assert metrics[("2x2", "m1")]["cost"]["value"] == pytest.approx(0.002)
+    assert metrics[("2x2", "m2")]["cost"]["value"] == 0.0  # b-exp holds its own zero prices
+
+
+def test_model_without_prices_is_checked_error(repo):
+    write_experiment(repo, "a-exp", [raw("m3", "v1", 1, solution("v1"))])
+    with pytest.raises(site.ExportError, match="m3"):
+        site.export(GitData(repo), "main")
+
+
+def test_provider_unknown_without_models_entry(repo):
+    write_experiment(repo, "a-exp", [raw("m3", "v1", 1, solution("v1"))], prices=PRICES.replace("m2", "m3"))
+    data, _, metrics = exported(repo)
+    assert metrics[("2x2", "m3")]["provider"] == "unknown"
+    assert {"name": "m3", "provider": "unknown", "kind": "unknown"} in data["experiments"][0]["models"]
 
 
 def test_definitions_parsing_and_missing_name():
     found, missing = site.read_definitions(DEFINITIONS)
-    assert missing == ["Success rate"]
-    assert [d["key"] for d in found] == ["hallucination", "detection"]
-    assert found[0]["definition"] == "The share of attempts with at least one impossible move."
-
-
-def test_experiment_without_kept_records_is_checked_error(repo, tmp_path):
-    write_experiment(repo, "a-exp", [record("m1", "i1", 1, outcome="infrastructure_failure")])
-    write_experiment(repo, "b-exp", [record("m1", "i1", 1)])
-    done = subprocess.run([sys.executable, "-m", "src.site.export", "--root", str(repo), "--ref", "main",
-                           "--no-fetch", "--out", str(tmp_path / "o.json")], capture_output=True, text=True, cwd=ROOT)
-    assert done.returncode == 1
-    assert "a-exp" in done.stderr
-
-
-def test_duplicate_experiment_id_is_checked_error(repo):
-    (repo / "config" / "site.toml").write_text(SITE_TOML.replace('["b-exp", "a-exp"]', '["a-exp", "b-exp", "a-exp"]'))
-    commit(repo, "duplicate id")
-    with pytest.raises(site.ExportError, match="duplicate experiment id a-exp"):
-        site.export(GitData(repo), "main")
+    assert missing == ["Cost efficiency"]
+    assert [d["key"] for d in found] == ["precision", "hallucination", "critical"]
+    assert found[1]["definition"] == "The share of attempts with at least one impossible move."

@@ -1,6 +1,6 @@
 # Spec: docs/specs/site.md
-"""Reads config/site.toml, docs/definitions.md, and releases/*/inputs.jsonl at one git ref, and
-results/<id>/experiment.toml and results/<id>/raw/*.jsonl, all at one git ref, for every experiment listed in the config. Writes one JSON file for the static results page.
+"""Reads config/site.toml, docs/definitions.md, the releases, and every results/<id>/ folder with raw records,
+all at one git ref. Scores every raw record again with the current assessment and writes one JSON file for the static results page.
 """
 
 import argparse
@@ -11,13 +11,19 @@ import sys
 import tomllib
 from pathlib import Path
 
+from src.config import check_prices_table
+from src.evaluate.metrics import EvalError, make_attempt_rows
 from src.puzzles.registry import get_engine
+from src.run.models import DECISION_PROVIDERS
+from src.run.raw import parse_raw_text
+from src.site.metrics import metric_rows
 from ui.gitdata import FETCH_TIMEOUT_S, GitData
 
 METRIC_NAMES = {
-    "Success rate": "success",
+    "Balanced precision": "precision",
     "Hallucination rate": "hallucination",
-    "Mismatch detection rate": "detection",
+    "Critical thinking": "critical",
+    "Cost efficiency": "cost",
 }
 
 
@@ -25,63 +31,89 @@ class ExportError(Exception):
     pass
 
 
-def read_jsonl(text: str) -> list[dict]:
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
-
-
-def read_inputs(gd: GitData, ref: str, release: str, cache: dict) -> dict:
+def read_inputs(gd: GitData, ref: str, release: str, cache: dict) -> list[dict]:
     if release not in cache:
         path = f"releases/{release}/inputs.jsonl"
-        try:
-            cache[release] = {r["input_id"]: {"state": r["state"], "corruption": r.get("corruption")}
-                              for r in read_jsonl(gd.show(ref, path) or "")}
-        except KeyError as error:
-            raise ExportError(f"{ref}:{path}: input has no field {error.args[0]}") from None
+        text = gd.show(ref, path)
+        if text is None:
+            raise ExportError(f"{ref}:{path}: not found")
+        cache[release] = parse_raw_text(text)[0]
     return cache[release]
 
 
-def read_experiment(gd: GitData, ref: str, experiment_id: str, cache: dict) -> tuple[dict, int]:
+def read_prices(gd: GitData, ref: str, experiment_id: str) -> dict:
+    for path in (f"results/{experiment_id}/prices.toml", "config/prices.toml"):
+        text = gd.show(ref, path)
+        if text is not None:
+            try:
+                return check_prices_table(tomllib.loads(text), f"{ref}:{path}")
+            except (ValueError, tomllib.TOMLDecodeError) as error:
+                raise ExportError(str(error)) from None
+    raise ExportError(f"{ref}: no prices.toml for experiment {experiment_id} and no config/prices.toml")
+
+
+def discover(gd: GitData, ref: str) -> list[str]:
+    """The experiment folders at the ref that hold at least one raw file. Any other folder is named on stderr."""
+    found = []
+    for experiment_id in sorted(gd.ls(ref, "results")):
+        if any(n.endswith(".jsonl") for n in gd.ls(ref, f"results/{experiment_id}/raw")):
+            found.append(experiment_id)
+        else:
+            print(f"skipped results/{experiment_id}: no raw records", file=sys.stderr)
+    return found
+
+
+def read_experiment(gd: GitData, ref: str, experiment_id: str, cache: dict) -> tuple[dict, list[dict], int]:
+    """Return (experiment, re-validated attempt rows, skipped count) for one experiment."""
     folder = f"results/{experiment_id}"
     toml_text = gd.show(ref, f"{folder}/experiment.toml")
     if toml_text is None:
-        raise ExportError(f"no {folder}/ at {ref} for experiment {experiment_id}")
+        raise ExportError(f"no {folder}/experiment.toml at {ref}")
     toml = tomllib.loads(toml_text)
-    kept, skipped = [], 0
-    for name in sorted(n for n in gd.ls(ref, f"{folder}/raw") if n.endswith(".jsonl")):
-        for r in read_jsonl(gd.show(ref, f"{folder}/raw/{name}") or ""):
-            try:
-                if r["outcome"] == "infrastructure_failure":
-                    continue
-                found = read_inputs(gd, ref, r["release_version"], cache).get(r["input_id"])
-                if found is None:
-                    skipped += 1
-                    continue
-                kept.append((r["created_at"], {
-                    "model": r["model"], "puzzle": r["puzzle"], "inputId": r["input_id"],
-                    "validity": r["validity"], "setup": r["setup"], "attempt": r["attempt_number"],
-                    "depth": r["scramble_depth"], "state": found["state"], "corruption": found["corruption"],
-                    "moves": r["parsed_moves"], "outcome": r["outcome"], "mismatch": r["mismatch"]}))
-            except KeyError as error:
-                raise ExportError(f"{ref}:{folder}/raw/{name}: record has no field {error.args[0]}") from None
-    if not kept:
-        raise ExportError(f"{ref}: experiment {experiment_id} has no raw records to show")
-    kept.sort(key=lambda k: (k[1]["model"], k[1]["puzzle"], k[1]["inputId"], k[1]["setup"], k[1]["attempt"], k[0]))
+    release = toml.get("release")
+    if not isinstance(release, str):
+        raise ExportError(f"{ref}:{folder}/experiment.toml: field release is missing")
+    inputs = read_inputs(gd, ref, release, cache)
+    by_id = {r["input_id"]: r for r in inputs}
+    manifest = gd.show(ref, f"releases/{release}/manifest.json")
+    reasons = bool(json.loads(manifest).get("mismatch_reasons", False)) if manifest else False
     models = {m["name"]: {"name": m["name"], "provider": m.get("provider", "unknown"),
                           "kind": m.get("kind", "unknown")} for m in toml.get("models", [])}
+    decision_models = {n for n, m in models.items() if m["provider"] in DECISION_PROVIDERS}
+    records, skipped = [], 0
+    for name in sorted(n for n in gd.ls(ref, f"{folder}/raw") if n.endswith(".jsonl")):
+        for r in parse_raw_text(gd.show(ref, f"{folder}/raw/{name}") or "")[0]:
+            if r.get("input_id") in by_id:
+                records.append(r)
+            else:
+                skipped += 1
+    try:
+        rows = make_attempt_rows(records, inputs, read_prices(gd, ref, experiment_id), decision_models, reasons)
+    except (KeyError, EvalError) as error:
+        raise ExportError(f"{ref}:{folder}: {error}") from None
+    kept = [(r["created_at"], {
+        "model": r["model"], "puzzle": r["puzzle"], "inputId": r["input_id"], "validity": r["validity"],
+        "setup": r["setup"], "attempt": r["attempt_number"], "depth": r["scramble_depth"],
+        "state": by_id[r["input_id"]]["state"], "corruption": r["corruption"], "moves": r["parsed_moves"],
+        "outcome": r["outcome"], "mismatch": r["mismatch"]}) for r in rows if r["outcome"] != "infrastructure_failure"]
+    if not kept:
+        print(f"skipped {folder}: no usable raw records", file=sys.stderr)
+        return {}, rows, skipped
+    kept.sort(key=lambda k: (k[1]["model"], k[1]["puzzle"], k[1]["inputId"], k[1]["setup"], k[1]["attempt"], k[0]))
     for _, a in kept:
         models.setdefault(a["model"], {"name": a["model"], "provider": "unknown", "kind": "unknown"})
     times = sorted(k[0] for k in kept)
     per_input = toml.get("attempts")
     return {
         "experimentId": experiment_id,
-        "release": toml["release"] if isinstance(toml.get("release"), str) else "",
+        "release": release,
         "puzzles": sorted({a["puzzle"] for _, a in kept}),
         "models": sorted(models.values(), key=lambda m: m["name"]),
         "setups": sorted({a["setup"] for _, a in kept}),
         "attemptsPerInput": per_input if type(per_input) is int else None,
         "attemptCount": len(kept), "firstAt": times[0], "lastAt": times[-1],
         "attempts": [a for _, a in kept],
-    }, skipped
+    }, rows, skipped
 
 
 def plain_text(md: str) -> str:
@@ -135,18 +167,17 @@ def export(gd: GitData, ref: str) -> tuple[dict, int]:
     if text is None:
         raise ExportError(f"config/site.toml: not found at {ref}")
     config = tomllib.loads(text)
-    for field in ("title", "description", "intro", "experiments"):
+    for field in ("title", "description", "intro"):
         if field not in config:
             raise ExportError(f"config/site.toml: missing field {field}")
-    duplicates = sorted({i for i in config["experiments"] if config["experiments"].count(i) > 1})
-    if duplicates:
-        raise ExportError(f"config/site.toml, experiments: duplicate experiment id {duplicates[0]}")
     cache: dict = {}
-    experiments, skipped = [], 0
-    for experiment_id in sorted(config["experiments"]):
-        experiment, n = read_experiment(gd, ref, experiment_id, cache)
-        experiments.append(experiment)
+    experiments, all_rows, skipped = [], [], 0
+    for experiment_id in discover(gd, ref):
+        experiment, rows, n = read_experiment(gd, ref, experiment_id, cache)
         skipped += n
+        if experiment:
+            experiments.append(experiment)
+            all_rows += rows
     markdown = gd.show(ref, "docs/definitions.md")
     if markdown is None:
         raise ExportError(f"docs/definitions.md: not found at {ref}")
@@ -156,7 +187,13 @@ def export(gd: GitData, ref: str) -> tuple[dict, int]:
     page = {k: config[k] for k in ("title", "description", "intro")}
     puzzles = sorted({a["puzzle"] for e in experiments for a in e["attempts"]})
     legal_moves = {name: list(get_engine(name).legal_moves()) for name in puzzles}
-    return {"page": page, "legalMoves": legal_moves, "definitions": definitions, "experiments": experiments}, skipped
+    providers: dict[str, str] = {}
+    for m in (m for e in experiments for m in e["models"]):
+        if m["provider"] != "unknown":
+            providers.setdefault(m["name"], m["provider"])
+    return {"page": page, "legalMoves": legal_moves, "definitions": definitions,
+            "metrics": metric_rows(all_rows, providers),
+            "experiments": experiments}, skipped
 
 
 def main() -> int:
