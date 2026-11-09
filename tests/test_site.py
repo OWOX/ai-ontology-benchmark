@@ -7,6 +7,8 @@ import sys
 import pytest
 
 from src.puzzles.registry import get_engine
+from src.evaluate.metrics import answer_class
+from src.site.metrics import metric_rows
 from src.site import export as site
 from ui.gitdata import GitData
 
@@ -205,7 +207,7 @@ def test_metrics_values_and_sort(repo):
         raw("m1", "v1", 3, "", outcome="infrastructure_failure", stop="infrastructure_failure"),
     ])
     _, _, metrics = exported(repo)
-    assert list(metrics) == [("2x2", "m1"), ("2x2", "m2")]
+    assert list(metrics) == [("2x2", "m1"), ("2x2", "m2"), ("all", "m1"), ("all", "m2")]
     m1, m2 = metrics[("2x2", "m1")], metrics[("2x2", "m2")]
     assert m1["provider"] == "openai" and m2["provider"] == "anthropic"
     # valid classified: tp, fp -> 0.5; invalid classified: fp, tn -> 0.5
@@ -215,10 +217,11 @@ def test_metrics_values_and_sort(repo):
     assert m1["hallucination"]["n"] == 3 and m1["hallucination"]["value"] == pytest.approx(1 / 3)
     assert m2["hallucination"] == {"value": 0.0, "n": 1}
     assert m1["critical"] == {"value": None, "n": 0}  # release 1.0.0 has no mismatch reasons
-    # cost: mean over 6 rows (the infrastructure failure included) / (precision * coverage); a row costs 0.002,
-    # and 4 of the 5 rows that are not infrastructure failures are classified
+    # cost: mean over 6 rows (the infrastructure failure included) / precision; a row costs 0.002
     assert m1["cost"]["n"] == 6
-    assert m1["cost"]["value"] == pytest.approx(0.002 / (0.5 * 4 / 5))
+    assert m1["cost"]["value"] == pytest.approx(0.002 / 0.5)
+    # one puzzle only: the pooled row equals the puzzle's row
+    assert {k: v for k, v in metrics[("all", "m1")].items() if k != "puzzle"} == {k: v for k, v in m1.items() if k != "puzzle"}
     assert m2["cost"]["value"] == pytest.approx(0.002)
 
 
@@ -332,7 +335,7 @@ def test_experiment_below_min_release_is_skipped(repo, capsys):
     write_experiment(repo, "b-new", [raw("m2", "v1", 1, solution("v1"))], release="2.0.0")
     data, _, metrics = exported(repo)
     assert [e["experimentId"] for e in data["experiments"]] == ["b-new"]
-    assert list(metrics) == [("2x2", "m2")]
+    assert list(metrics) == [("2x2", "m2"), ("all", "m2")]
     err = capsys.readouterr().err
     assert "a-old" in err and "1.0.0" in err
 
@@ -342,3 +345,25 @@ def test_missing_min_release_is_checked_error(repo):
     commit(repo, "no min release")
     with pytest.raises(site.ExportError, match="min_release"):
         site.export(GitData(repo), "main")
+
+
+def test_all_row_pools_every_puzzle():
+    def row(puzzle, validity, outcome, cost=0.01, moves=("R",), mismatch=False, corruption=None):
+        return {"puzzle": puzzle, "model": "m", "validity": validity, "outcome": outcome, "mismatch": mismatch,
+                "parsed_moves": list(moves), "reasons": False, "corruption": corruption, "cost": cost,
+                "decision": False, "impossible_move": False}
+    rows = [
+        row("2x2", "valid", "success"),                                                         # tp
+        row("3x3", "valid", "failure"),                                                         # fp
+        row("3x3", "invalid", "success", moves=(), mismatch=True, corruption="twisted corner"),  # tn
+        row("2x2", "invalid", "infrastructure_failure", cost=0.04, moves=()),
+    ]
+    for r in rows:
+        r["answer_class"] = answer_class(r)
+    got = {r["puzzle"]: r for r in metric_rows(rows, {"m": "openai"})}
+    assert list(got) == ["2x2", "3x3", "all"]
+    # valid precision 1 of 2, invalid 1 of 1; the failure is left out of precision but counts in cost
+    assert got["all"]["precision"] == {"value": 0.75, "n": 3}
+    assert got["all"]["cost"]["n"] == 4
+    assert got["all"]["cost"]["value"] == pytest.approx(0.0175 / 0.75)
+    assert got["all"]["provider"] == "openai"

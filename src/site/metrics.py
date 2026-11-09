@@ -6,6 +6,8 @@ from collections import defaultdict
 
 from src.evaluate.metrics import NA, answer_class, is_diagnosis, mean, mean_of_two, share
 
+ALL = "all"  # the puzzle value of the rows pooled over every puzzle
+
 
 def value(x: object, n: int) -> dict:
     return {"value": None if x == NA or x is None else x, "n": n}
@@ -37,24 +39,30 @@ def critical(rows: list[dict]) -> dict:
     return value(mean_of_two(diagnosis, false_mismatch, True), len(reasoned))
 
 
-def cost(everything: list[dict], rows: list[dict], balanced: object) -> dict:
-    coverage = share(rows, lambda r: answer_class(r) is not None)
-    if NA in (balanced, coverage) or balanced * coverage == 0:
+def cost(everything: list[dict], balanced: object) -> dict:
+    """Mean cost per attempt, infrastructure failures included, per unit of balanced precision."""
+    if balanced == NA or balanced == 0:
         return value(None, len(everything))
-    return value(mean([r["cost"] for r in everything]) / (balanced * coverage), len(everything))
+    return value(mean([r["cost"] for r in everything]) / balanced, len(everything))
+
+
+def metric_row(puzzle: str, model: str, provider: str, everything: list[dict]) -> dict:
+    rows = [r for r in everything if r["outcome"] != "infrastructure_failure"]
+    balanced, classified = precision(rows)
+    return {"puzzle": puzzle, "model": model, "provider": provider,
+            "precision": value(balanced, classified), "hallucination": hallucination(rows),
+            "critical": critical(rows), "cost": cost(everything, balanced)}
 
 
 def metric_rows(attempt_rows: list[dict], providers: dict[str, str]) -> list[dict]:
-    """One row per puzzle and AI model from re-validated attempt rows (`make_attempt_rows`)."""
+    """One row per puzzle and AI model from re-validated attempt rows (`make_attempt_rows`), then one row per
+    AI model with puzzle `all`, pooled over every puzzle."""
     groups = defaultdict(list)
+    pooled = defaultdict(list)
     for r in attempt_rows:
         groups[(r["puzzle"], r["model"])].append(r)
-    result = []
-    for (puzzle, model) in sorted(groups):
-        everything = groups[(puzzle, model)]
-        rows = [r for r in everything if r["outcome"] != "infrastructure_failure"]
-        balanced, classified = precision(rows)
-        result.append({"puzzle": puzzle, "model": model, "provider": providers.get(model, "unknown"),
-                       "precision": value(balanced, classified), "hallucination": hallucination(rows),
-                       "critical": critical(rows), "cost": cost(everything, rows, balanced)})
+        pooled[r["model"]].append(r)
+    result = [metric_row(puzzle, model, providers.get(model, "unknown"), groups[(puzzle, model)])
+              for (puzzle, model) in sorted(groups)]
+    result += [metric_row(ALL, model, providers.get(model, "unknown"), pooled[model]) for model in sorted(pooled)]
     return result

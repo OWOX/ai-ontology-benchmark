@@ -37,12 +37,12 @@ Every raw record is scored again by the assessment in this checkout, whatever re
 
 An attempt's `outcome`, `mismatch`, and `moves` come from the scoring above (`outcome`, `mismatch`, `parsed_moves`), so the player agrees with the charts.
 
-`metrics` is built by `src/site/metrics.py`: one row per puzzle and AI model, sorted by puzzle then model, pooled over every setup, depth, and experiment. `provider` is the first provider other than `unknown` in the experiments' `[[models]]`. With `everything` the group's scored rows and `rows` those whose outcome is not `infrastructure_failure`, every `value` is null when it is n/a, and `n` is its denominator:
+`metrics` is built by `src/site/metrics.py`: one row per puzzle and AI model, sorted by puzzle then model, pooled over every setup, depth, and experiment, followed by one row per AI model, sorted by model, with `"puzzle": "all"`, pooled the same way and over every puzzle too. The four metrics follow the same rules on the pooled rows. `provider` is the first provider other than `unknown` in the experiments' `[[models]]`. With `everything` the group's scored rows and `rows` those whose outcome is not `infrastructure_failure`, every `value` is null when it is n/a, and `n` is its denominator:
 
 1. `precision`: [balanced precision](../definitions.md#metrics) over the classified answers of `rows`. `n` is the number of classified answers.
 2. `hallucination`: the [hallucination rate](../definitions.md#metrics), over the rows that gave moves. Null, with `n` 0, when none did and when every row is a decision-model row.
 3. `critical`: [critical thinking](../definitions.md#metrics), over the rows from releases with mismatch reasons only. Null when either validity label has none of them. `n` is the number of those rows.
-4. `cost`: [cost efficiency](../definitions.md#metrics), the mean cost over `everything` divided by balanced precision times coverage. Null when balanced precision or coverage is null or their product is 0. `n` is the number of rows in `everything`.
+4. `cost`: [cost efficiency](../definitions.md#metrics), the mean cost over `everything` divided by balanced precision. Coverage is not in it. Null when balanced precision is null or 0. `n` is the number of rows in `everything`.
 
 It prints one line: experiments, attempts, skipped.
 
@@ -63,7 +63,7 @@ It prints one line: experiments, attempts, skipped.
 1. Precision (`precision`), a percentage, higher is better.
 2. Hallucination rate (`hallucination`), a percentage, lower is better.
 3. Critical thinking (`critical`), a percentage, higher is better.
-4. Cost efficiency (`cost`), USD per right answer, lower is better.
+4. Cost efficiency (`cost`), USD per attempt divided by balanced precision, lower is better.
 
 A percentage bar runs on a fixed 0 to 100% scale. A cost reads `$0.0123` (four decimals, two from $1 up), and its bar is as wide as its share of the largest cost shown. A null value reads `n/a` and has no bar. Best and worst are ranked on the text shown. On a narrow screen the tablist scrolls sideways, its scrollbar hidden and its tabs unwrapped, and a "?" button follows its tab, hiding when the tab is scrolled out of the tablist, which also closes its open definition. Selecting a tab scrolls the tablist, never the page, until the tab is fully shown.
 
