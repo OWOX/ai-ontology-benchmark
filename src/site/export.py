@@ -26,7 +26,6 @@ METRIC_NAMES = {
     "Balanced precision": "precision",
     "Hallucination rate": "hallucination",
     "Critical thinking": "critical",
-    "Cost efficiency": "cost",
 }
 
 

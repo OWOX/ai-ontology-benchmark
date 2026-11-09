@@ -146,14 +146,13 @@ def test_discovery_skips_folder_without_raw_records(repo, capsys):
     assert "b-empty" in capsys.readouterr().err
 
 
-def test_all_infrastructure_failures_still_count_in_cost_but_not_in_experiments(repo):
+def test_all_infrastructure_failures_get_no_experiment_entry(repo):
     failure = dict(outcome="infrastructure_failure", stop="infrastructure_failure")
     write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1")), raw("m1", "i1", 1, "MISMATCH")])
     write_experiment(repo, "b-exp", [raw("m1", "v1", 1, "", **failure), raw("m1", "v1", 2, "", **failure)])
     data, _, metrics = exported(repo)
     assert [e["experimentId"] for e in data["experiments"]] == ["a-exp"]
-    # 4 rows at 0.002, precision 1, coverage 1; the two failures only add cost rows
-    assert metrics[("2x2", "m1")]["cost"] == {"value": pytest.approx(0.002), "n": 4}
+    assert metrics[("2x2", "m1")]["precision"] == {"value": 1.0, "n": 2}
 
 
 def test_torn_raw_lines_count_as_skipped(repo):
@@ -227,15 +226,11 @@ def test_metrics_values_and_sort(repo):
     assert m1["hallucination"]["n"] == 3 and m1["hallucination"]["value"] == pytest.approx(1 / 3)
     assert m2["hallucination"] == {"value": 0.0, "n": 1}
     assert m1["critical"] == {"value": None, "n": 0}  # release 1.0.0 has no mismatch reasons
-    # cost: mean over 6 rows (the infrastructure failure included) / precision; a row costs 0.002
-    assert m1["cost"]["n"] == 6
-    assert m1["cost"]["value"] == pytest.approx(0.002 / 0.5)
     # one puzzle only: the pooled row equals the puzzle's row
     assert {k: v for k, v in metrics[("all", "m1")].items() if k != "puzzle"} == {k: v for k, v in m1.items() if k != "puzzle"}
-    assert m2["cost"]["value"] == pytest.approx(0.002)
 
 
-def test_precision_null_without_one_label_and_cost_null_when_precision_zero(repo):
+def test_precision_null_without_one_label(repo):
     write_experiment(repo, "a-exp", [
         raw("m1", "v1", 1, solution("v1")),                      # only valid inputs
         raw("m2", "v1", 1, "R"),                                 # valid fp
@@ -243,9 +238,7 @@ def test_precision_null_without_one_label_and_cost_null_when_precision_zero(repo
     ])
     _, _, metrics = exported(repo)
     assert metrics[("2x2", "m1")]["precision"] == {"value": None, "n": 1}
-    assert metrics[("2x2", "m1")]["cost"] == {"value": None, "n": 1}
     assert metrics[("2x2", "m2")]["precision"]["value"] == 0.0
-    assert metrics[("2x2", "m2")]["cost"] == {"value": None, "n": 2}
 
 
 def test_critical_thinking_with_mismatch_reasons(repo):
@@ -274,16 +267,6 @@ def test_decision_model_hallucination_is_null(repo):
     assert metrics[("2x2", "m1")]["hallucination"] == {"value": 0.0, "n": 1}
 
 
-def test_prices_fall_back_to_config_and_experiment_prices_win(repo):
-    cheap = PRICES.replace("1.0\n", "0.0\n").replace("2.0\n", "0.0\n")
-    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1")), raw("m1", "i1", 1, "MISMATCH")])
-    write_experiment(repo, "b-exp", [raw("m2", "v1", 1, solution("v1")), raw("m2", "i1", 1, "MISMATCH")],
-                     prices=cheap)
-    _, _, metrics = exported(repo)
-    assert metrics[("2x2", "m1")]["cost"]["value"] == pytest.approx(0.002)
-    assert metrics[("2x2", "m2")]["cost"]["value"] == 0.0  # b-exp holds its own zero prices
-
-
 def test_model_without_prices_is_checked_error(repo):
     write_experiment(repo, "a-exp", [raw("m3", "v1", 1, solution("v1"))])
     with pytest.raises(site.ExportError, match="m3"):
@@ -299,7 +282,7 @@ def test_provider_unknown_without_models_entry(repo):
 
 def test_definitions_parsing_and_missing_name():
     found, missing = site.read_definitions(DEFINITIONS)
-    assert missing == ["Cost efficiency"]
+    assert missing == []
     assert [d["key"] for d in found] == ["precision", "hallucination", "critical"]
     assert found[1]["definition"] == "The share of attempts with at least one impossible move."
 
@@ -358,24 +341,22 @@ def test_missing_min_release_is_checked_error(repo):
 
 
 def test_all_row_pools_every_puzzle():
-    def row(puzzle, validity, outcome, cost=0.01, moves=("R",), mismatch=False, corruption=None):
+    def row(puzzle, validity, outcome, moves=("R",), mismatch=False, corruption=None):
         return {"puzzle": puzzle, "model": "m", "validity": validity, "outcome": outcome, "mismatch": mismatch,
-                "parsed_moves": list(moves), "reasons": False, "corruption": corruption, "cost": cost,
+                "parsed_moves": list(moves), "reasons": False, "corruption": corruption,
                 "decision": False, "impossible_move": False}
     rows = [
         row("2x2", "valid", "success"),                                                         # tp
         row("3x3", "valid", "failure"),                                                         # fp
         row("3x3", "invalid", "success", moves=(), mismatch=True, corruption="twisted corner"),  # tn
-        row("2x2", "invalid", "infrastructure_failure", cost=0.04, moves=()),
+        row("2x2", "invalid", "infrastructure_failure", moves=()),
     ]
     for r in rows:
         r["answer_class"] = answer_class(r)
     got = {r["puzzle"]: r for r in metric_rows(rows, {"m": "openai"})}
     assert list(got) == ["2x2", "3x3", "all"]
-    # valid precision 1 of 2, invalid 1 of 1; the failure is left out of precision but counts in cost
+    # valid precision 1 of 2, invalid 1 of 1; the failure is left out of precision
     assert got["all"]["precision"] == {"value": 0.75, "n": 3}
-    assert got["all"]["cost"]["n"] == 4
-    assert got["all"]["cost"]["value"] == pytest.approx(0.0175 / 0.75)
     assert got["all"]["provider"] == "openai"
 
 
