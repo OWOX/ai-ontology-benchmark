@@ -178,7 +178,7 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
 
   const modelBars = selected.map((m) => ({ model: m.model, rate: current.pick(m) }))
   const { bars } = setupResult
-  const setupRows = names.length > 0 ? bars.map((b) => ({ model: b.label, rate: b.rate })) : []
+  const setupRows = names.length > 0 ? bars.map((b) => ({ model: b.label, rate: b.rate, help: definitions.find((d) => d.key === b.setup && d.definition.trim() !== '')?.definition })) : []
   const filterText = `${puzzle === ALL || puzzle === null ? 'All puzzles' : `${puzzle} cube`}, ${names.length} AI ${names.length === 1 ? 'model' : 'models'}`
 
   return (

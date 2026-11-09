@@ -656,6 +656,57 @@ describe('BenchmarkView', () => {
       expect(setupChart()).toHaveAccessibleName('Precision by setup: No model n/a, Descriptive model n/a, Prescriptive model n/a')
     })
 
+    describe('setup label help', () => {
+      const defs = [
+        { key: 'no_model', name: 'No model', definition: 'The setup with no rules.' },
+        { key: 'descriptive', name: 'Descriptive model', definition: 'The setup that explains the rules.' },
+      ]
+      const withDefs = () => render(<BenchmarkView metrics={metrics} setupMetrics={setupMetrics} attemptsUrl="/a.json" definitions={defs} />)
+      const help = (name: string) => screen.getByRole('button', { name: `What is ${name}?` })
+
+      it('puts a "?" after each setup label that has a definition, and none after one that lacks it', () => {
+        withDefs()
+        expect(help('No model')).toHaveTextContent('?')
+        expect(help('Descriptive model')).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.queryByRole('button', { name: 'What is Prescriptive model?' })).toBeNull()
+        expect(screen.queryByRole('dialog')).toBeNull()
+      })
+
+      it('shows no "?" without definitions and keeps the bars one image', () => {
+        both()
+        expect(screen.queryByRole('button', { name: /What is (No|Descriptive|Prescriptive) model\?/ })).toBeNull()
+        expect(setupChart()).toBeInTheDocument()
+      })
+
+      it('opens the definition on a click, and closes on Escape, an outside click, and a second click', () => {
+        withDefs()
+        fireEvent.click(help('No model'))
+        expect(screen.getByRole('dialog', { name: 'No model' })).toHaveTextContent('The setup with no rules.')
+        fireEvent.keyDown(document, { key: 'Escape' })
+        expect(screen.queryByRole('dialog')).toBeNull()
+        fireEvent.click(help('No model'))
+        fireEvent.click(document.body)
+        expect(screen.queryByRole('dialog')).toBeNull()
+        fireEvent.click(help('Descriptive model'))
+        fireEvent.click(help('Descriptive model'))
+        expect(screen.queryByRole('dialog')).toBeNull()
+      })
+
+      it('keeps at most one chart popover open on the page', () => {
+        withDefs()
+        fireEvent.click(help('No model'))
+        fireEvent.click(help('Descriptive model'))
+        expect(screen.getAllByRole('dialog')).toHaveLength(1)
+        expect(screen.getByRole('dialog', { name: 'Descriptive model' })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'About Chart 4' }))
+        expect(screen.getAllByRole('dialog')).toHaveLength(1)
+        expect(screen.getByRole('dialog', { name: 'About Chart 4' })).toBeInTheDocument()
+        fireEvent.click(help('No model'))
+        expect(screen.getAllByRole('dialog')).toHaveLength(1)
+        expect(screen.getByRole('dialog', { name: 'No model' })).toBeInTheDocument()
+      })
+    })
+
     describe('title popover', () => {
       const button = (n: number) => screen.getByRole('button', { name: `About Chart ${n}` })
       const dialog = (n: number) => document.getElementById(button(n).getAttribute('aria-controls')!)!

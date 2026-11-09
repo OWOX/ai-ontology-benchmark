@@ -87,6 +87,7 @@ const jsonLd = {
     /* The open "?" is filled with the selection colours (a plain background would be dropped). The doubled [aria-expanded] outranks the normal open-state rule that comes later in this file. */
     :global(.cube-solver.benchmark .metrics button.help[aria-expanded='true'][aria-expanded='true']:not(.redo):not(.switch):not(.square)) { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
     :global(.cube-solver.benchmark .chart-head button.pop-btn[aria-expanded='true'][aria-expanded='true']:not(.redo):not(.switch):not(.square)) { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
+    :global(.cube-solver.benchmark .chart button.label-help-btn[aria-expanded='true'][aria-expanded='true']:not(.redo):not(.switch):not(.square)) { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
   }
   /* Sizes step 2 to all providers (Filter.tsx): in the same grid cell as the real row, so it adds no row or gap; zero-high and invisible, it only lends its width, and it wraps like the real row on a narrow column. */
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(2) .body > .options) { grid-area: 1 / 1; }
@@ -186,6 +187,24 @@ const jsonLd = {
   :global(.benchmark .empty) { margin: 0; }
   :global(.benchmark .chart .row) { margin-bottom: 0.75rem; }
   :global(.benchmark .chart .label) { display: flex; justify-content: space-between; gap: 1rem; }
+  /* A round "?" after a bar label, sized to the label's text (1em circle); its popover is out of flow, under the row (or over it when there is no room below), so opening it moves nothing. */
+  :global(.benchmark .chart .row) { position: relative; }
+  :global(.cube-solver.benchmark .chart button.label-help-btn:not(.redo):not(.switch):not(.square)) {
+    position: relative; vertical-align: middle; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 1em; height: 1em; min-height: 0; margin: 0 0 0 0.35em; padding: 0;
+    border: 1px solid var(--muted); border-radius: 50%; background: transparent; box-shadow: none; color: var(--muted);
+    font-size: 0.7em; font-weight: var(--weight-medium); line-height: 1; letter-spacing: normal; cursor: pointer;
+  }
+  :global(.cube-solver.benchmark .chart button.label-help-btn:hover:not(.redo):not(.switch):not(.square)) { color: var(--text); border-color: var(--text); }
+  :global(.cube-solver.benchmark .chart button.label-help-btn[aria-expanded='true']:not(.redo):not(.switch):not(.square)) { background: var(--text); border-color: var(--text); color: var(--text-inv); }
+  /* A 24px hit area around the circle. */
+  :global(.benchmark .chart button.label-help-btn::after) { content: ''; position: absolute; inset: -6px; }
+  :global(.cube-solver.benchmark .chart button.label-help-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
+  :global(.benchmark .chart .label-pop) {
+    position: absolute; z-index: 10; left: 0; top: 100%; box-sizing: border-box; width: min(32rem, 100%); margin-top: 0.1rem; padding: 0.6rem 0.8rem;
+    background: var(--panel); border: 1px solid var(--code-rule); box-shadow: var(--pop-shadow); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
+  }
+  :global(.benchmark .chart .label-pop.up) { top: auto; bottom: 100%; margin-top: 0; margin-bottom: 0.1rem; }
+  :global(.benchmark .chart .label-pop[hidden]) { display: none; }
   :global(.benchmark strong) { font-weight: var(--weight-medium); }
   :global(.benchmark .chart .value) { color: var(--muted); font-family: var(--font-mono); }
   :global(.benchmark .chart .track) { height: 6px; background: var(--rule); }
