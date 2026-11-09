@@ -151,6 +151,15 @@ def test_pilot_sentence_only_when_the_config_sets_inputs_per_depth(tree, monkeyp
     assert "definitions.md#inputs)" in text
 
 
+def test_unfinished_notice_only_when_records_are_missing(tree):
+    assert "unfinished" not in build(tree)
+    text = build(tree, recs=records()[:7])  # 7 of the 12 planned attempts
+    assert ("This experiment is [unfinished](../../docs/definitions.md#releases-and-experiments): "
+            "7 of 12 planned attempts have a record.") in text
+    assert "1. M: 7 of 12" in text
+    assert text.index("unfinished") < text.index("| AI model | Provider |")
+
+
 def test_kind_column_shows_the_config_value_or_not_set(tree):
     assert "| M | fake | m-1 | system-2 | m-1 | temperature=0.5 |" in build(tree)
     model = {k: v for k, v in CONFIG["models"][0].items() if k != "kind"}

@@ -116,6 +116,22 @@ def experiment_inputs(config: dict, inputs: list[dict]) -> list[dict]:
     return chosen
 
 
+def planned_attempts(config: dict, inputs: list[dict]) -> int:
+    """Planned attempts per AI model: the inputs played times 3 setups times `attempts`."""
+    return len(experiment_inputs(config, inputs)) * len(SETUPS) * config["attempts"]
+
+
+def recorded_attempts(config: dict, inputs: list[dict], records: list[dict]) -> dict[str, int]:
+    """Per AI model of the config, its records that match a planned (input id, setup, attempt number), each counted once."""
+    ids = {row["input_id"] for row in experiment_inputs(config, inputs)}
+    found = {m["name"]: set() for m in config["models"]}
+    for record in records:
+        key = (record["input_id"], record["setup"], record["attempt_number"])
+        if record["model"] in found and key[0] in ids and key[1] in SETUPS and 1 <= key[2] <= config["attempts"]:
+            found[record["model"]].add(key)
+    return {name: len(keys) for name, keys in found.items()}
+
+
 def pending_attempts(config: dict, inputs: list[dict], raw_dir: Path, only_model: str | None):
     """Yield (input, model, setup, attempt_number) in loop order, skipping recorded attempts."""
     models = [m for m in config["models"] if only_model in (None, m["name"])]

@@ -13,6 +13,7 @@ from src.puzzles.cube import CUBE_CORRUPTION_TYPES
 from src.puzzles.registry import ENGINES
 from src.run.budget import is_batched
 from src.run.prompts import SETUPS
+from src.run.run import planned_attempts, recorded_attempts
 from src.validator import offered_reasons
 
 NA = "n/a"
@@ -130,8 +131,20 @@ def params_text(model: dict) -> str:
     return ", ".join(f"{k}={v}" for k, v in sorted(params.items())) or "provider defaults"
 
 
+def unfinished_lines(config: dict, rows: list[dict], inputs: list[dict], definitions_link: str) -> list[str]:
+    """The notice for an [unfinished experiment](definitions), with each AI model's records over its planned attempts."""
+    planned = planned_attempts(config, inputs)
+    done = recorded_attempts(config, inputs, rows)
+    if all(count >= planned for count in done.values()):
+        return []
+    total = sum(done.values())
+    return [f"This experiment is [unfinished]({definitions_link}#releases-and-experiments): {total} of "
+            f"{planned * len(done)} planned attempts have a record.", "",
+            *[f"{number}. {name}: {count} of {planned}" for number, (name, count) in enumerate(done.items(), 1)], ""]
+
+
 def experiment_section(link, folder: Path, config: dict, prices: dict, rows: list[dict],
-                       torn: int, definitions_link: str = "") -> list[str]:
+                       torn: int, definitions_link: str = "", inputs: list[dict] = ()) -> list[str]:
     served = defaultdict(set)
     for row in rows:
         served[row["model"]].update(filter(None, row["served_model"].split(",")))
@@ -144,6 +157,7 @@ def experiment_section(link, folder: Path, config: dict, prices: dict, rows: lis
     first, last = (times[0], times[-1]) if times else (NA, NA)
     config_link = link(folder / "experiment.toml")
     out = ["## Experiment", "", f"Config: [experiment.toml]({config_link})", ""]
+    out += unfinished_lines(config, rows, list(inputs), definitions_link)
     out += table(["AI model", "Provider", "API model id", "Kind", "Served model ids", "Params"], models)
     if "puzzles" in config:
         out += [f"Puzzles: {', '.join(config['puzzles'])}", ""]
@@ -417,8 +431,10 @@ def write_report(path, experiment_id, experiment_config, release_dir, prices, at
     lines = [f"# Experiment {experiment_id} on release {release_dir.name}", ""]
     lines += release_section(link, release_dir, experiment_config)
     definitions = link(release_dir.parent.parent / "docs" / "definitions.md")
+    inputs_text = (release_dir / "inputs.jsonl").read_text(encoding="utf-8")
+    inputs = [json.loads(line) for line in inputs_text.splitlines()]
     lines += experiment_section(link, path.parent, experiment_config, prices, attempt_rows,
-                                torn_lines, definitions)
+                                torn_lines, definitions, inputs)
     reasons = has_reasons(attempt_rows)
     lines += summary_section(experiment_config, summary_rows, detection_rows, reasons, definitions)
     if detection_rows:
