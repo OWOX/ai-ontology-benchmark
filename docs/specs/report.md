@@ -27,8 +27,8 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
    4. Attempts, retry cap, maximum output tokens, and the reasoning effort as `Reasoning effort: low.` (or `medium` or `high`), or `Reasoning effort: provider default.` when the config has none.
    5. First and last `created_at` across raw records.
    6. The line `Torn raw lines skipped: <n>.`
-   7. The token prices used, linked to `prices.toml` in the experiment folder.
-   8. The three budgets in force, and the cost spent per AI model and in total, at the prices used.
+   7. When the config has `batch = true`, directly before the first-and-last line, the line `Batch mode: attempts of models with a batch API went through it, at the batch prices below.`, with a link to [batch mode](../definitions.md#batches). Then the token prices used, linked to `prices.toml` in the experiment folder. In a batch experiment the price table has two more columns, Batch input and Batch output: the [batch prices](../definitions.md#prices) of each batched AI model, and n/a for one that ran direct, such as a decision model. Without `batch`, the table keeps its three columns.
+   8. The three budgets in force, and the cost spent per AI model and in total, at the prices used, each record at its own tier.
 4. **Summary.** First, for each AI model, one headline table from `detection_rows`, one row per puzzle and setup, with the columns Balanced precision, Coverage, Critical thinking, and Cost efficiency (USD to 4 places). Then two tables with setups as columns:
    1. Valid inputs: precision, coverage, hallucination rate, reason hallucination rate, false mismatch rate, malformed output rate, truncation rate, abstention rate, format error rate, and cost per attempt.
    2. Invalid inputs: precision, coverage, mismatch detection rate, diagnosis rate, hallucination rate, reason hallucination rate, malformed output rate, truncation rate, abstention rate, and format error rate.
@@ -59,6 +59,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 11. With `corruption_rows`, the Detection by corruption type section appears right after Mismatch detection. Without them, it is absent.
 12. With `reason_rows`, the Mismatch reasons section appears right after Detection by corruption type, with the decoy column marked. Without them, it is absent, and a report under a release without mismatch reasons has no reason rows, columns, or baseline row.
 13. The pilot sentence appears only when the config sets `inputs_per_depth`, names its value, and links the Inputs definition.
+14. With `batch = true`, the Batch mode line appears and the price table has the Batch input and Batch output columns, n/a for a model that ran direct. Without it, neither does. A batched attempt's latency shows as n/a in the Attempts tables.
 
 ## Risk
 
