@@ -144,14 +144,19 @@ def create_pr(root: Path, emit: Emit, *args: str) -> str:
     return made.stdout.strip().splitlines()[-1] if made.stdout.strip() else ""
 
 
-def open_pr_url(root: Path, branch: str, emit: Emit) -> str:
-    """The URL of the open pull request for the branch, or "". Closed and merged ones don't count."""
-    found = sh(root, [gh_binary(root), "pr", "view", branch, "--json", "url,state"], emit, check=False)
+def open_pr(root: Path, branch: str, emit: Emit) -> dict:
+    """The open pull request for the branch as {url, state, title, body}, or {}. Closed and merged ones don't count."""
+    found = sh(root, [gh_binary(root), "pr", "view", branch, "--json", "url,state,title,body"], emit, check=False)
     try:
         data = json.loads(found.stdout) if found.returncode == 0 else {}
     except ValueError:
         data = {}
-    return data.get("url", "") if data.get("state") == "OPEN" else ""
+    return data if data.get("state") == "OPEN" else {}
+
+
+def open_pr_url(root: Path, branch: str, emit: Emit) -> str:
+    """The URL of the open pull request for the branch, or ""."""
+    return open_pr(root, branch, emit).get("url", "")
 
 
 def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
@@ -168,12 +173,14 @@ def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
         sh(root, ["git", "update-ref", f"refs/heads/{branch}", sha], emit)
     elif info["ahead"]:  # the run's own commits are not on the remote yet
         sh(root, ["git", "push", "origin", f"{sha}:refs/heads/{branch}"], emit)
-    url = open_pr_url(root, branch, emit)
-    if url and not info["files"] and not info["ahead"]:
-        raise ApiError(409, "nothing to commit")
+    pr = open_pr(root, branch, emit)
     title, body = pr_title(experiment_id, partial), pr_body(config, experiment_id, partial)
+    url = pr.get("url", "")
+    in_step = pr.get("title") == title and pr.get("body", "").strip() == body.strip()
+    if url and not info["files"] and not info["ahead"] and in_step:
+        raise ApiError(409, "nothing to commit")
     if not url:  # a retry after a failed PR step finds the branch already pushed
         url = create_pr(root, emit, "--head", branch, "--title", title, "--body", body)
-    else:  # the open pull request keeps its title and body in step with the counts
+    elif not in_step:  # the open pull request keeps its title and body in step with the counts
         sh(root, [gh_binary(root), "pr", "edit", branch, "--title", title, "--body", body], emit)
     return {"branch": branch, "commit": sha, "pr_url": url}

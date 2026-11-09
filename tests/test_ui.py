@@ -720,13 +720,34 @@ def test_server_stops_its_jobs_on_sigterm(ui_repo):
             proc.kill()
 
 
-GH_STUB = """#!/bin/sh
-echo "$@" >> {dir}/gh.log
-if [ "$2" = view ]; then [ -f {dir}/view.json ] && cat {dir}/view.json && exit 0; exit 1; fi
-if [ "$2" = edit ]; then exit 0; fi
-[ -f {dir}/fail_create ] && exit 1
-echo '{{"url": "https://example.test/pr/1", "state": "OPEN"}}' > {dir}/view.json
-echo https://example.test/pr/1
+GH_STUB = """#!{python}
+import json, os, sys
+folder = {dir!r}
+args = sys.argv[1:]
+with open(os.path.join(folder, "gh.log"), "a") as log:
+    log.write(" ".join(args) + "\\n")
+with open(os.path.join(folder, "gh.calls"), "a") as calls:
+    calls.write(json.dumps(args) + "\\n")  # one JSON list per call, so a multi-line --body stays whole
+view = os.path.join(folder, "view.json")
+flag = lambda name: os.path.exists(os.path.join(folder, name))
+option = lambda name: args[args.index(name) + 1] if name in args else None
+if args[1] == "view":
+    if not os.path.exists(view):
+        sys.exit(1)
+    sys.stdout.write(open(view).read())
+elif args[1] == "edit":
+    if flag("fail_edit"):
+        os.unlink(os.path.join(folder, "fail_edit"))  # fails once
+        sys.exit(1)
+    data = json.load(open(view))
+    data.update(title=option("--title"), body=option("--body"))
+    json.dump(data, open(view, "w"))
+else:
+    if flag("fail_create"):
+        sys.exit(1)
+    json.dump({{"url": "https://example.test/pr/1", "state": "OPEN",
+               "title": option("--title"), "body": option("--body")}}, open(view, "w"))
+    print("https://example.test/pr/1")
 """
 
 
@@ -734,10 +755,20 @@ echo https://example.test/pr/1
 def gh(tmp_path_factory, monkeypatch):
     folder = tmp_path_factory.mktemp("gh")
     stub = folder / "gh"
-    stub.write_text(GH_STUB.format(dir=folder), encoding="utf-8")
+    stub.write_text(GH_STUB.format(dir=str(folder), python=sys.executable), encoding="utf-8")
     stub.chmod(0o755)
     monkeypatch.setenv("UI_GH", str(stub))
     return folder
+
+
+def gh_calls(folder):
+    """Every call the gh stub got, as a list of argument lists."""
+    path = folder / "gh.calls"
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+def option_of(args, name):
+    return args[args.index(name) + 1]
 
 
 def evaluated(server):
@@ -832,7 +863,8 @@ def test_only_an_open_pull_request_counts(server, gh):
     (gh / "view.json").write_text('{"url": "https://example.test/pr/9", "state": "CLOSED"}')
     status, result = call(server, "POST", "/api/commit", {"id": "t1"})
     assert status == 200 and result["pr_url"] == "https://example.test/pr/1"
-    (gh / "view.json").write_text('{"url": "https://example.test/pr/9", "state": "OPEN"}')
+    reopened = json.loads((gh / "view.json").read_text())  # the pull request the second commit opened
+    (gh / "view.json").write_text(json.dumps(dict(reopened, url="https://example.test/pr/9")))
     status, data = call(server, "POST", "/api/commit", {"id": "t1"})
     assert status == 409 and "nothing to commit" in data["error"]
 
@@ -875,9 +907,9 @@ def test_unfinished_experiment_commits_with_a_labelled_title_and_body(server, gh
     wait_job(server, "evaluate")
     status, result = call(server, "POST", "/api/commit", {"id": "t1"})
     assert status == 200
-    create = (gh / "gh.log").read_text()
-    assert '--title Results: experiment t1 (unfinished)' in create
-    assert re.search(r"Unfinished: 1 of 9 planned attempts have a record\.", create)
+    create = next(c for c in gh_calls(gh) if c[1] == "create")
+    assert option_of(create, "--title") == "Results: experiment t1 (unfinished)"
+    assert re.search(r"Unfinished: 1 of 9 planned attempts have a record\.", option_of(create, "--body"))
     assert "This experiment is [unfinished]" in (server.root / "results" / "t1" / "1.0.0.md").read_text()
 
     call(server, "POST", "/api/run", FORM)  # Continue to the end, then commit again
@@ -885,8 +917,31 @@ def test_unfinished_experiment_commits_with_a_labelled_title_and_body(server, gh
     assert call(server, "POST", "/api/evaluate", {"id": "t1"})[0] == 200
     wait_job(server, "evaluate")
     assert call(server, "POST", "/api/commit", {"id": "t1"})[0] == 200
-    edit = [l for l in (gh / "gh.log").read_text().splitlines() if l.startswith("pr edit")]
-    assert len(edit) == 1 and "--title Results: experiment t1 --body" in edit[0] and "Unfinished" not in edit[0]
+    edit = [c for c in gh_calls(gh) if c[1] == "edit"]
+    assert len(edit) == 1 and option_of(edit[0], "--title") == "Results: experiment t1"
+    assert "Unfinished" not in option_of(edit[0], "--body")
+
+
+def test_a_failed_pr_edit_can_be_retried(server, gh):
+    call(server, "POST", "/api/run", dict(FORM, limit=1))
+    wait_job(server, "run:example-model")
+    assert call(server, "POST", "/api/evaluate", {"id": "t1"})[0] == 200
+    wait_job(server, "evaluate")
+    assert call(server, "POST", "/api/commit", {"id": "t1"})[0] == 200
+    call(server, "POST", "/api/run", FORM)
+    wait_job(server, "run:example-model")
+    assert call(server, "POST", "/api/evaluate", {"id": "t1"})[0] == 200
+    wait_job(server, "evaluate")
+    (gh / "fail_edit").write_text("")
+    status, data = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 409 and "/gh pr failed" in data["error"]  # pushed, but the title is still "(unfinished)"
+    status, result = call(server, "POST", "/api/commit", {"id": "t1"})  # nothing to push, yet the edit is retried
+    assert status == 200 and result["pr_url"] == "https://example.test/pr/1"
+    edits = [c for c in gh_calls(gh) if c[1] == "edit"]
+    assert len(edits) == 2 and "Unfinished" not in option_of(edits[1], "--body")
+    status, data = call(server, "POST", "/api/commit", {"id": "t1"})  # now in step
+    assert status == 409 and "nothing to commit" in data["error"]
+    assert len([c for c in gh_calls(gh) if c[1] == "edit"]) == 2
 
 
 def test_commit_without_the_release_inputs_pushes_nothing(server, gh):
