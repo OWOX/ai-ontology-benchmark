@@ -10,9 +10,7 @@ from pathlib import Path
 
 from src.puzzles.registry import ENGINES
 
-# Providers with a Message Batches API at half price, plus `fake` for tests. The decision providers
-# and openrouter have none.
-BATCH_PROVIDERS = ("anthropic", "openai", "google", "fake")
+from src.run.models import BATCH_PROVIDERS  # the one definition: the providers with a Message Batches API
 PROVIDERS = ("anthropic", "openai", "google", "openrouter", "typesafe", "cloudflare", "fake", "fake_decision")
 KINDS = ("system-1", "system-2")
 # Settings that `models` and the run script set themselves.
