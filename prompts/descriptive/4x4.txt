@@ -1,6 +1,6 @@
 This is a 4x4 cube, written in WCA notation.
 
-The puzzle: a cube with six faces, Up (U), Down (D), Right (R), Left (L), Front (F), and Back (B). Each face is a 4x4 grid of stickers. It has 8 corner pieces with three stickers each, 24 edge pieces with two stickers each (two on each edge of the cube), and 24 centre pieces with one sticker each (four on each face). No centre is fixed, so the centres do not mark the faces.
+The puzzle: a cube with six faces, Up (U), Down (D), Right (R), Left (L), Front (F), and Back (B). Each face is a 4x4 grid of stickers. It has 8 corner pieces with three stickers each, 24 wings, edge pieces with two stickers each (two on each edge of the cube), and 24 centre pieces with one sticker each (four on each face). No centre is fixed, so the centres do not mark the faces.
 
 The state is written as one block per face, headed by the face's letter. Each sticker is written as the letter of the face whose colour it has when the cube is solved. Rows are read top to bottom and stickers left to right, with each face seen from outside the cube: U with B at the top, D with F at the top, and R, F, L, and B with U at the top.
 
