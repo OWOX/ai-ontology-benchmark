@@ -4,31 +4,48 @@ import Layout from '../layouts/Layout.astro'
 import '../styles/cube-stage.css'
 import BenchmarkView from '../components/islands/benchmark/BenchmarkView'
 import { loadSiteData } from '../lib/site-data'
-import { metricsByModel } from '../lib/benchmark'
 
-const { page, definitions, experiments, legalMoves } = loadSiteData()
-const metrics = metricsByModel(experiments)
+const { page, definitions, metrics, setupMetrics = [], legalMoves } = loadSiteData()
 const REPO = 'https://github.com/OWOX/ai-ontology-benchmark'
 // BASE_URL may or may not end in a slash, depending on the Astro version and trailingSlash setting.
 const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.json'
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Dataset',
+  name: page.title,
+  description: page.description,
+  url: 'https://owox.github.io/ai-ontology-benchmark/',
+  // Code is Apache-2.0 and data is CC BY 4.0 (README "Licence"); a Dataset names its data licence.
+  license: 'https://creativecommons.org/licenses/by/4.0/',
+  isAccessibleForFree: true,
+  creator: { '@type': 'Organization', name: 'OWOX', url: 'https://www.owox.com/' },
+  sameAs: [REPO],
+}
 ---
 
-<Layout title={page.title} description={page.description}>
+<Layout title={page.title} description={page.description} jsonLd={jsonLd}>
   <h1>{page.title}</h1>
-  <div class="prose"><p>{page.intro} <a href={`${REPO}#readme`}>About the project</a>.</p></div>
-  <BenchmarkView client:only="react" metrics={metrics} attemptsUrl={attemptsUrl} legalMoves={legalMoves} definitions={definitions} />
+  <div class="prose"><p>{page.intro}</p>
+    <p class="notice" role="note">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 2.5 20h19L12 3.5Z" /><path d="M12 10v4.5M12 17.5v.01" /></svg>
+      <span>Preview only. The benchmarks shown here are preliminary: research is in progress, and experiment data is still being collected.</span>
+    </p>
+    <p><a href={`${REPO}#readme`}>About the project</a>.</p></div>
+  <BenchmarkView client:only="react" metrics={metrics} setupMetrics={setupMetrics} attemptsUrl={attemptsUrl} legalMoves={legalMoves} definitions={definitions} />
 </Layout>
 
 <style>
+  /* The preview notice: quiet, muted text with a thin rule, the icon aligned with the first line. */
+  .notice { display: flex; gap: 0.6em; align-items: flex-start; color: var(--muted); border: 1px solid var(--rule); border-radius: 4px; padding: 0.6em 0.8em; font-size: 0.9em; }
+  .notice svg { flex: none; width: 1.1em; height: 1.1em; margin-top: 0.15em; }
   /* React renders the island's markup, so these rules reach it with :global. Monochrome: the page's tokens only.
      The island root also wears .cube-solver, so the cube drawing and the text buttons come from src/styles/cube-stage.css, the same source as /cube. */
   /* Status colours (--ok, --danger) live in global.css with the theme tokens. */
-  :global(.benchmark) { display: grid; gap: 1.5rem; max-width: 40rem; }
-  /* The filter is /cube's numbered steps (rules in src/styles/cube-stage.css); here only the body row: the options side by side, scrolling sideways when they do not fit. */
-  :global(.benchmark .steps.filter .body) { overflow-x: auto; scrollbar-width: none; }
-  :global(.benchmark .steps.filter .body::-webkit-scrollbar) { display: none; }
-  /* Steps 1 and 2 side by side, step 3 below at full width; stacked on a narrow screen. */
-  :global(.cube-solver.benchmark .steps.filter) { grid-template-columns: max-content minmax(0, 1fr); gap: 1rem 1.5rem; }
+  :global(.benchmark) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; max-width: 40rem; }
+  /* The filter is /cube's numbered steps (rules in src/styles/cube-stage.css); here only the body row: the options side by side, wrapping onto more lines when they do not fit their half. */
+  :global(.benchmark .steps.filter .options) { flex-wrap: wrap; }
+  /* Steps 1 and 2 (Puzzle and AI provider) in two equal halves, step 3 below at full width; stacked on a narrow screen, where a half is too narrow to read. */
+  :global(.cube-solver.benchmark .steps.filter) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem 1.5rem; }
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(3)) { grid-column: 1 / -1; margin-top: 1.5rem; }
   /* The options sit close under their title and start where the title text starts. */
   :global(.cube-solver.benchmark .steps.filter .body) { margin-top: 0.35rem; padding-left: 0; }
@@ -69,25 +86,38 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
     :global(.benchmark .chart .row[data-rank] .value) { forced-color-adjust: none; }
     /* The open "?" is filled with the selection colours (a plain background would be dropped). The doubled [aria-expanded] outranks the normal open-state rule that comes later in this file. */
     :global(.cube-solver.benchmark .metrics button.help[aria-expanded='true'][aria-expanded='true']:not(.redo):not(.switch):not(.square)) { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
+    :global(.cube-solver.benchmark .chart-head button.pop-btn[aria-expanded='true'][aria-expanded='true']:not(.redo):not(.switch):not(.square)) { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
+    :global(.cube-solver.benchmark .chart button.label-help-btn[aria-expanded='true'][aria-expanded='true']:not(.redo):not(.switch):not(.square)) { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
   }
   /* Sizes step 2 to all providers (Filter.tsx): in the same grid cell as the real row, so it adds no row or gap; zero-high and invisible, it only lends its width, and it wraps like the real row on a narrow column. */
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(2) .body > .options) { grid-area: 1 / 1; }
   :global(.benchmark .options.checks.sizer) { height: 0; overflow: hidden; visibility: hidden; }
   /* Step 2 is a block of its own pushed to the right edge of the content column (its natural width); inside it everything stays left-aligned. */
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(2)) { justify-self: end; }
-  /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only. Unselected: a transparent border of the same width, 50% transparent. */
+  /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only, with space between it and the cube. Unselected: a transparent border of the same width, 50% transparent. Hovering shows no border. */
+  /* The negative margin-left pulls the row left by the border, the padding, and the cube drawing's inner margin, so the first visible cube lines up with the checkboxes of the filters below. */
+  :global(.benchmark .options:has(button.square)) { gap: 0; justify-content: flex-start; margin-left: -0.82rem; }
   :global(.benchmark .options button.square) { width: 3.9rem; height: 3.9rem; padding: 0.26rem; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
+  /* With none pressed (all puzzles) the options are not faded: they are not disabled, only unselected. */
+  :global(.benchmark .options:not(:has(button.square[aria-pressed='true'])) button.square) { opacity: 1; }
   :global(.benchmark .options button.square:hover) { opacity: 1; }
-  :global(.benchmark .options button.square[aria-checked='true']) { border-color: var(--text); opacity: 1; }
-  /* Keyboard focus: a dashed outline drawn inside the button, so it is never clipped by the scrolling row. */
+  /* With none selected, hovering one thumbnail fades the others, as a selected one would. Only where a pointer can hover: on touch, :hover sticks to the last tapped thumbnail. */
+  @media (hover: hover) {
+    :global(.benchmark .options:not(:has(button.square[aria-pressed='true'])):has(button.square:hover) button.square:not(:hover):not(:focus-visible)) { opacity: 0.5; }
+  }
+  :global(.benchmark .options button.square[aria-pressed='true']) { border-color: var(--text); opacity: 1; }
+  /* Keyboard focus: a 2px dashed line just inside the 2px border, so it shows on a selected thumbnail and is never clipped by the scrolling row. */
   :global(.benchmark .options button.square:focus-visible) { outline: 2px dashed var(--text); outline-offset: -4px; opacity: 1; }
   :global(.benchmark .options button.square span) { display: block; width: 100%; line-height: 0; }
   :global(.benchmark .options button.square .cube-view) { display: block; width: 100%; pointer-events: none; }
   :global(.benchmark .muted) { color: var(--muted); }
   /* The chart sits in a framed panel; the metric tabs hang off its top edge like folder tabs. The selected tab has the panel background and covers the frame's top border, so it merges into the panel. */
   /* 1rem + the island's 1.5rem gap = 2.5rem above the tabs, the same as the puzzle row to the Model step (1rem row gap + 1.5rem). */
-  :global(.benchmark .metrics) { display: grid; gap: 0; margin-top: 1rem; }
-  :global(.benchmark .metrics .options) { flex-wrap: wrap; align-items: flex-end; gap: 0.25rem; }
+  :global(.benchmark .metrics) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin-top: 1rem; }
+  /* The three tabs stay on one row, unwrapped and unsqueezed; the tablist scrolls sideways when they do not fit, its scrollbar hidden. The 1px padding-bottom keeps the selected tab's overlap of the frame inside the scroll box. The "?" buttons are measured from the tabs on every scroll (BenchmarkView). */
+  :global(.benchmark .metrics .options) { flex-wrap: nowrap; align-items: flex-end; gap: 0.25rem; overflow-x: auto; scrollbar-width: none; padding-bottom: 1px; margin-bottom: -1px; }
+  :global(.benchmark .metrics .options::-webkit-scrollbar) { display: none; }
+  :global(.benchmark .metrics .options button) { flex: none; white-space: nowrap; }
   :global(.cube-solver.benchmark .metrics button[role='tab']:not(.redo):not(.switch):not(.square)) {
     position: relative; background: transparent; color: var(--text); border: 1px solid var(--text); border-bottom: 0; border-radius: 3px 3px 0 0;
   }
@@ -119,11 +149,62 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.benchmark .metric-popover p) { margin: 0 0 0.35rem; }
   :global(.benchmark .metric-popover p:last-child) { margin-bottom: 0; }
   :global(.benchmark .metric-popover .direction) { color: var(--head); }
-  :global(.benchmark .metrics [role='tabpanel']) { box-sizing: border-box; border: 1px solid var(--text); background: var(--panel); padding: 1rem 1.25rem 0.5rem; }
+  :global(.benchmark .chart-frame) { box-sizing: border-box; border: 1px solid var(--text); background: var(--panel); padding: 1rem 1.25rem 0.5rem; }
   :global(.benchmark .chart) { margin: 0; }
+  /* A chart section: the tabs and the framed panel, with 2.5rem above the tabs (the .metrics margin plus the island gap) and 2.5rem under the panel, so the two sections and the filter above sit evenly apart. */
+  /* The figure's numbered caption sits under the bars and ends in a "?" round icon button; its popover is the Player's, out of flow, opening upwards over the bars (`.below` flips it under the caption when there is no room above), so opening it moves nothing. */
+  :global(.benchmark .chart-figure) { margin: 0; }
+  :global(.benchmark .chart-head .chart-tools) { white-space: nowrap; }
+  :global(.benchmark .chart-head) { position: relative; margin: 0.4rem 0 0; color: var(--muted); font-size: 0.85rem; font-weight: var(--weight-medium); line-height: 1.35; }
+  :global(.cube-solver.benchmark .chart-head button.pop-btn:not(.redo):not(.switch):not(.square)) {
+    position: relative; vertical-align: middle; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 1rem; height: 1rem; min-height: 0; margin: 0 0 0 0.1rem; padding: 0;
+    border: 1px solid var(--muted); border-radius: 50%; background: transparent; box-shadow: none; color: var(--muted);
+    font-size: 0.65rem; font-weight: var(--weight-medium); line-height: 1; letter-spacing: normal; cursor: pointer;
+  }
+  :global(.cube-solver.benchmark .chart-head button.pop-btn:hover:not(.redo):not(.switch):not(.square)) { color: var(--text); border-color: var(--text); }
+  :global(.cube-solver.benchmark .chart-head button.pop-btn[aria-expanded='true']:not(.redo):not(.switch):not(.square)) { background: var(--text); border-color: var(--text); color: var(--text-inv); }
+  /* A 24px hit area around the 16px circle. */
+  :global(.benchmark .chart-head button.pop-btn::after) { content: ''; position: absolute; inset: -4px; }
+  :global(.cube-solver.benchmark .chart-head button.pop-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
+  /* Only the caption text is italic; the ? and copy buttons stay upright. */
+  :global(.benchmark .chart-head .chart-title) { font-style: italic; }
+  :global(.benchmark .chart-head .pop) {
+    position: absolute; z-index: 10; left: 0; bottom: 100%; box-sizing: border-box; width: min(32rem, 100%); margin-bottom: 0.35rem; padding: 0.6rem 0.8rem;
+    background: var(--panel); border: 1px solid var(--code-rule); box-shadow: var(--pop-shadow); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
+  }
+  /* The copy icon: monochrome, beside the "?", about 18px, a little larger than the round "?", with a 24px hit area. "Copied" is read out only; "Copy failed" is shown. */
+  :global(.cube-solver.benchmark .chart-head button.copy-btn:not(.redo):not(.switch):not(.square)) {
+    display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0 0 0 0.15rem; padding: 0;
+    border: 0; border-radius: 3px; background: none; color: var(--muted); font-size: 1.15rem; line-height: 1; cursor: pointer;
+  }
+  :global(.cube-solver.benchmark .chart-head button.copy-btn:hover) { color: var(--text); }
+  :global(.cube-solver.benchmark .chart-head button.copy-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 1px; }
+  :global(.benchmark .chart-head .copy-status) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :global(.benchmark .chart-head .copy-status.failed) { position: static; width: auto; height: auto; overflow: visible; clip-path: none; margin-left: 0.4rem; font-size: 0.85rem; font-weight: var(--weight-regular); color: var(--danger); }
+  :global(.benchmark .chart-head .pop.below) { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 0.35rem; }
+  :global(.benchmark .chart-head .pop[hidden]) { display: none; }
+  :global(.benchmark .chart-head .pop p) { margin: 0; }
   :global(.benchmark .empty) { margin: 0; }
   :global(.benchmark .chart .row) { margin-bottom: 0.75rem; }
   :global(.benchmark .chart .label) { display: flex; justify-content: space-between; gap: 1rem; }
+  /* A round "?" after a bar label, sized to the label's text (a circle about 0.9 of the label); its popover is out of flow, under the row (or over it when there is no room below), so opening it moves nothing. */
+  :global(.benchmark .chart .row) { position: relative; }
+  :global(.cube-solver.benchmark .chart button.label-help-btn:not(.redo):not(.switch):not(.square)) {
+    position: relative; vertical-align: middle; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 1.2em; height: 1.2em; min-height: 0; margin: 0 0 0 0.35em; padding: 0;
+    border: 1px solid var(--muted); border-radius: 50%; background: transparent; box-shadow: none; color: var(--muted);
+    font-size: 0.75em; font-weight: var(--weight-medium); line-height: 1; letter-spacing: normal; cursor: pointer;
+  }
+  :global(.cube-solver.benchmark .chart button.label-help-btn:hover:not(.redo):not(.switch):not(.square)) { color: var(--text); border-color: var(--text); }
+  :global(.cube-solver.benchmark .chart button.label-help-btn[aria-expanded='true']:not(.redo):not(.switch):not(.square)) { background: var(--text); border-color: var(--text); color: var(--text-inv); }
+  /* A 24px hit area around the circle. */
+  :global(.benchmark .chart button.label-help-btn::after) { content: ''; position: absolute; inset: -6px; }
+  :global(.cube-solver.benchmark .chart button.label-help-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
+  :global(.benchmark .chart .label-pop) {
+    position: absolute; z-index: 10; left: 0; top: 100%; box-sizing: border-box; width: min(32rem, 100%); margin-top: 0.1rem; padding: 0.6rem 0.8rem;
+    background: var(--panel); border: 1px solid var(--code-rule); box-shadow: var(--pop-shadow); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
+  }
+  :global(.benchmark .chart .label-pop.up) { top: auto; bottom: 100%; margin-top: 0; margin-bottom: 0.1rem; }
+  :global(.benchmark .chart .label-pop[hidden]) { display: none; }
   :global(.benchmark strong) { font-weight: var(--weight-medium); }
   :global(.benchmark .chart .value) { color: var(--muted); font-family: var(--font-mono); }
   :global(.benchmark .chart .track) { height: 6px; background: var(--rule); }
@@ -137,7 +218,11 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   /* 1rem + the island's 1.5rem gap = 2.5rem under the chart panel, the same as above its tabs. */
   :global(.benchmark .player) { margin-top: 1rem; display: grid; grid-template-columns: minmax(min-content, 1fr) minmax(0, 14.4rem); gap: 1.5rem; align-items: start; }
   /* The Experiment block wears the filter's step look (title with an icon disc), its body under the title text. */
-  :global(.cube-solver.benchmark .steps.experiment .body) { margin-top: 0.35rem; padding-left: 0; justify-items: start; }
+  :global(.cube-solver.benchmark .steps.experiment .body), :global(.cube-solver.benchmark .steps.source .body) { margin-top: 0.35rem; padding-left: 0; justify-items: start; }
+  /* The Source section: its body is plain text under the title, a link first. */
+  :global(.benchmark .steps.source .body p) { margin: 0; }
+  :global(.benchmark .steps.source .body p + p) { margin-top: 0.5rem; max-width: 36rem; }
+  :global(.benchmark .steps.source .repo) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
   /* The replay cube fills its 14.4rem column (about 20% smaller than /cube's), against the right edge of the content. */
   :global(.benchmark .player .views) { justify-items: end; }
   :global(.benchmark .player .cube-view) { width: min(100%, 14.4rem); }
@@ -147,13 +232,27 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.benchmark .facts) { display: grid; gap: 0.25rem; margin: 0; }
   :global(.benchmark .facts dt), :global(.benchmark .facts dd) { display: inline; margin: 0; }
   :global(.benchmark .facts dt) { font-weight: var(--weight-medium); }
-  /* The label and the result never break inside ("Result: Mismatch not detected"); the ". Source" after them may wrap on a narrow screen. */
+  /* The label, the result and the Source icon never break ("Result: Mismatch not detected"). */
   :global(.benchmark .facts .one-line) { white-space: nowrap; }
-  :global(.benchmark .facts .after-result) { white-space: normal; }
-  /* Room for ". Source" on its own line where it wraps, so the run never moves Run down. */
-  @media (max-width: 48rem) { :global(.benchmark .facts .one-line) { min-height: 2lh; } }
-  /* The link to the prompt the model was sent, like a link in the page's prose (.prose a). */
-  :global(.benchmark .facts .prompt) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
+  /* The exact prompt the model received: monospace, wrapped, scrolling past 20rem. */
+  :global(.benchmark .facts .prompt-text) { margin: 0; max-height: min(20rem, 60vh); overflow: auto; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* "not solvable" and "Prompt": buttons styled as text with a dashed underline, each opening a popover under the facts. The popover is out of flow (it sits at its static position, over the Run button), so opening it moves nothing. */
+  :global(.benchmark .steps.experiment .body) { position: relative; }
+  /* Exactly like inline text but for the dashed underline: the chained :not()s match the specificity of the shared text-button rule in cube-stage.css, which they must beat. */
+  :global(.cube-solver.benchmark .facts button.pop-btn:not(.redo):not(.switch):not(.square)) {
+    display: inline; min-height: 0; width: auto; padding: 0; margin: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: inherit;
+    font: inherit; letter-spacing: inherit; line-height: inherit; text-align: inherit; cursor: pointer;
+    text-decoration: underline dashed; text-underline-offset: 0.2em;
+  }
+  :global(.cube-solver.benchmark .facts button.pop-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
+  /* The popover has a clear edge (border and shadow from the theme) and sits above the player. */
+  :global(.benchmark .facts .pop) {
+    position: absolute; z-index: 10; left: 0; box-sizing: border-box; width: min(32rem, 100%); margin-top: 0.35rem; padding: 0.6rem 0.8rem;
+    background: var(--panel); border: 1px solid var(--code-rule); box-shadow: var(--pop-shadow); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
+  }
+  :global(.benchmark .facts .pop[hidden]) { display: none; }
+  :global(.benchmark .facts .pop .pop-note) { margin-top: 0.5rem; color: var(--muted); }
+  :global(.benchmark .facts .pop p) { margin: 0; }
   /* An illegal move: the cube shakes side to side for one second. */
   :global(.benchmark .player .cube-stage.shake .views) { animation: bench-shake 1s ease-in-out; }
   @keyframes bench-shake {
@@ -162,28 +261,27 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
     20%, 40%, 60%, 80% { transform: translateX(6px); }
   }
   :global(.benchmark .player .actions) { display: flex; align-items: center; gap: 1rem; }
-  /* ". Source" after the result: the study repo, a plain content link. */
-  :global(.benchmark .player .source) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
+  /* The Source icon after the result: a link to the case's raw results, at least 24px square (the padding grows the hit area, and the negative margin keeps the line where it was). */
+  :global(.benchmark .player .source) { color: var(--link); text-decoration: none; display: inline-block; padding: 0.3rem; margin: -0.3rem; }
+  :global(.benchmark .player .source .external-icon) { vertical-align: -0.15em; }
   /* The result and its tick or cross: green when the attempt's outcome is success, red otherwise. */
   :global(.benchmark .facts [data-verdict='correct'] .result .value) { color: var(--ok); }
   :global(.benchmark .facts [data-verdict='wrong'] .result .value) { color: var(--danger); }
   :global(.benchmark .facts .result .value) { font-weight: var(--weight-medium); }
   :global(.benchmark .facts .verdict-icon) { vertical-align: -0.15em; margin-right: 0.3rem; }
-  /* Another case: a bare icon button after the state, its keyboard focus a dashed ring like the puzzle squares. */
-  :global(.cube-solver.benchmark .facts button.another) {
-    display: inline-flex; align-items: center; justify-content: center; vertical-align: -0.2em; width: 1.4rem; height: 1.4rem; padding: 0; margin-left: 0.15rem;
-    border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer;
+  /* Another case: a bare icon button in the title row, after the heading. Its icon is 1em of the title's font size (1rem), and the button is as tall as the row (the circle, 1.6rem). Keyboard focus is a dashed ring like the puzzle squares. */
+  :global(.cube-solver.benchmark .steps.experiment .title button.another) {
+    display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; padding: 0;
+    border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer; font: inherit; line-height: inherit;
   }
-  :global(.cube-solver.benchmark .facts button.another:hover) { background: var(--code-bg); }
-  :global(.cube-solver.benchmark .facts button.another:disabled) { opacity: 0.4; cursor: default; background: transparent; }
-  :global(.cube-solver.benchmark .facts button.another:focus-visible) { outline: 2px dashed var(--text); outline-offset: 1px; }
+  :global(.cube-solver.benchmark .steps.experiment .title button.another:hover) { background: var(--code-bg); }
+  :global(.cube-solver.benchmark .steps.experiment .title button.another:disabled) { opacity: 0.4; cursor: default; background: transparent; }
+  :global(.cube-solver.benchmark .steps.experiment .title button.another:focus-visible) { outline: 2px dashed var(--text); outline-offset: 1px; }
   @media (max-width: 36rem) {
     :global(.benchmark .player) { grid-template-columns: minmax(0, 1fr); }
-    /* The folder tabs stay on one row: smaller type and padding, and the row scrolls sideways if it is still too wide. The 1px padding-bottom keeps the selected tab's overlap of the frame inside the scroll box. */
-    :global(.benchmark .metrics .options) { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 1px; margin-bottom: -1px; }
-    :global(.benchmark .metrics .options::-webkit-scrollbar) { display: none; }
+    /* The folder tabs get smaller type and padding. */
     :global(.cube-solver.benchmark .metrics button[role='tab']:not(.redo):not(.switch):not(.square)) { font-size: 0.78rem; padding-left: 0.4rem; padding-right: 0.4rem; }
-    /* Only the selected tab shows its "?" (and reserves room for it), so the three tabs fit in the row at 390px. */
+    /* Only the selected tab shows its "?" (and reserves room for it), so the tabs take little room; the tablist scrolls sideways for the rest. */
     :global(.cube-solver.benchmark .metrics button[role='tab'].has-help[aria-selected='false']:not(.redo):not(.switch):not(.square)) { padding-right: 0.4rem; }
     :global(.cube-solver.benchmark .metrics button[role='tab'].has-help[aria-selected='true']:not(.redo):not(.switch):not(.square)) { padding-right: 1.6rem; }
     :global(.cube-solver.benchmark .metrics button.help:not(.current):not(.redo):not(.switch):not(.square)) { display: none; }

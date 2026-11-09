@@ -2,13 +2,15 @@
 // Spec: docs/specs/site.md
 import { Font } from 'astro:assets'
 import '../styles/global.css'
+import SEO from '../components/SEO.astro'
 
 interface Props {
   title: string
-  description?: string
+  description: string
+  jsonLd?: object | object[]
 }
 
-const { title, description } = Astro.props
+const { title, description, jsonLd } = Astro.props
 ---
 
 <!doctype html>
@@ -16,9 +18,7 @@ const { title, description } = Astro.props
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title}</title>
-    {description && <meta name="description" content={description} />}
-    <meta name="robots" content="noindex" />
+    <SEO title={title} description={description} jsonLd={jsonLd} />
     <script is:inline>
       try {
         var t = localStorage.getItem('theme')
@@ -35,7 +35,6 @@ const { title, description } = Astro.props
       </div>
     </main>
     <footer>
-      <p>Source: <a href="https://github.com/OWOX/ai-ontology-benchmark">github.com/OWOX/ai-ontology-benchmark</a></p>
       <div class="theme-switch" role="radiogroup" aria-label="Theme">
         <button type="button" role="radio" aria-checked="false" data-theme-choice="light" aria-label="Light theme" title="Light theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" /></svg></button>
         <button type="button" role="radio" aria-checked="false" data-theme-choice="dark" aria-label="Dark theme" title="Dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" /></svg></button>

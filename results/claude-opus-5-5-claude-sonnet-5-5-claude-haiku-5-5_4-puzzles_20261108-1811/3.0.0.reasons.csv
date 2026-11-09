@@ -1,0 +1,42 @@
+model,puzzle,setup,expected,reason,attempts
+claude-opus-5-5,2x2,no_model,none,none,26
+claude-opus-5-5,2x2,no_model,none,recoloured sticker,1
+claude-opus-5-5,2x2,no_model,twisted corner,twisted corner,3
+claude-opus-5-5,2x2,no_model,recoloured sticker,recoloured sticker,9
+claude-opus-5-5,2x2,descriptive,none,none,24
+claude-opus-5-5,2x2,descriptive,twisted corner,twisted corner,3
+claude-opus-5-5,2x2,descriptive,recoloured sticker,recoloured sticker,9
+claude-opus-5-5,2x2,prescriptive,none,none,24
+claude-opus-5-5,2x2,prescriptive,twisted corner,twisted corner,2
+claude-opus-5-5,2x2,prescriptive,twisted corner,other,1
+claude-opus-5-5,2x2,prescriptive,recoloured sticker,recoloured sticker,9
+claude-sonnet-5-5,2x2,no_model,none,none,16
+claude-sonnet-5-5,2x2,no_model,none,twisted corner,3
+claude-sonnet-5-5,2x2,no_model,none,swapped corners,1
+claude-sonnet-5-5,2x2,no_model,none,recoloured sticker,1
+claude-sonnet-5-5,2x2,no_model,twisted corner,twisted corner,3
+claude-sonnet-5-5,2x2,no_model,recoloured sticker,recoloured sticker,6
+claude-sonnet-5-5,2x2,descriptive,none,none,19
+claude-sonnet-5-5,2x2,descriptive,twisted corner,twisted corner,1
+claude-sonnet-5-5,2x2,descriptive,twisted corner,recoloured sticker,2
+claude-sonnet-5-5,2x2,descriptive,recoloured sticker,recoloured sticker,6
+claude-sonnet-5-5,2x2,prescriptive,none,none,16
+claude-sonnet-5-5,2x2,prescriptive,none,twisted corner,1
+claude-sonnet-5-5,2x2,prescriptive,none,swapped corners,1
+claude-sonnet-5-5,2x2,prescriptive,twisted corner,none,1
+claude-sonnet-5-5,2x2,prescriptive,twisted corner,twisted corner,1
+claude-sonnet-5-5,2x2,prescriptive,twisted corner,recoloured sticker,1
+claude-sonnet-5-5,2x2,prescriptive,recoloured sticker,recoloured sticker,6
+claude-haiku-5-5,2x2,no_model,none,none,24
+claude-haiku-5-5,2x2,no_model,none,twisted corner,1
+claude-haiku-5-5,2x2,no_model,none,swapped corners,1
+claude-haiku-5-5,2x2,no_model,none,other,1
+claude-haiku-5-5,2x2,no_model,twisted corner,twisted corner,3
+claude-haiku-5-5,2x2,no_model,recoloured sticker,recoloured sticker,9
+claude-haiku-5-5,2x2,descriptive,none,none,26
+claude-haiku-5-5,2x2,descriptive,none,twisted corner,1
+claude-haiku-5-5,2x2,descriptive,twisted corner,twisted corner,3
+claude-haiku-5-5,2x2,descriptive,recoloured sticker,recoloured sticker,9
+claude-haiku-5-5,2x2,prescriptive,none,none,24
+claude-haiku-5-5,2x2,prescriptive,twisted corner,twisted corner,3
+claude-haiku-5-5,2x2,prescriptive,recoloured sticker,recoloured sticker,9

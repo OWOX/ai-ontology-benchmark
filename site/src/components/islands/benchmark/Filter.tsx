@@ -64,12 +64,13 @@ function Step({ icon, title, id, children }: { icon: ReactNode; title: string; i
   )
 }
 
-/** Puzzle (one, buttons with a cube drawing), AI provider (any) and model (any, checkboxes with their text) as numbered steps, the options of each in a row under its title; the parent owns the state and the cascade between them. */
+/** Puzzle (one or none, toggle buttons with a cube drawing), AI provider (any) and model (any, checkboxes with their text) as numbered steps, the options of each in a row under its title; the parent owns the state and the cascade between them. */
 export function Filter({ puzzles, puzzle, onPuzzle, providers, providerOn, onProvider, models, modelOn, onModel, showModels }: Props) {
   return (
     <ol className="steps filter" role="list" aria-label="Filter">
       <Step icon={<CubeIcon />} title="Puzzle" id="filter-puzzle">
-        <Choice role="radio" label="Puzzle" labelledBy="filter-puzzle" options={puzzles} value={puzzle} onChange={onPuzzle} />
+        <Choice role="toggle" label="Puzzle" labelledBy="filter-puzzle" describedBy="filter-puzzle-hint" options={puzzles} value={puzzle} onChange={onPuzzle} />
+        <span className="sr-only" id="filter-puzzle-hint">None selected shows all puzzles.</span>
       </Step>
       <Step icon={<SparkleIcon />} title="AI provider" id="filter-provider">
         <Toggles labelledBy="filter-provider" options={providers} on={providerOn} onToggle={onProvider} />

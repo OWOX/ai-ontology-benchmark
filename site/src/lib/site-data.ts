@@ -2,12 +2,18 @@
 // Reads site/.data/site.json, which `python -m src.site.export` writes.
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import type { ModelMetrics, SetupMetrics } from './benchmark'
 import type { BenchmarkExperiment } from './types'
 
 export interface SiteData {
   page: { title: string; description: string; intro: string }
   legalMoves: Record<string, string[]>
   definitions: { key: string; name: string; definition: string }[]
+  metrics: ModelMetrics[]
+  /** One row per (puzzle, model, setup), puzzle `all` pooled; absent in data exported before the setup chart. */
+  setupMetrics?: SetupMetrics[]
+  /** Each exact prompt once, keyed `<release>/<setup>/<input id>`; only attempts.json carries it to the page. */
+  prompts?: Record<string, string>
   experiments: BenchmarkExperiment[]
 }
 

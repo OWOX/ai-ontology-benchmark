@@ -20,11 +20,14 @@ export interface BenchmarkModel {
   name: string
   provider: string
   kind: string
+  /** True for a decision model (its provider is in DECISION_PROVIDERS). Absent in data exported before the flag existed. */
+  decision?: boolean
 }
 
 export interface BenchmarkExperiment {
   experimentId: string
   release?: string | null
+  branch?: string | null
   puzzles?: string[] | null
   models?: BenchmarkModel[] | null
   setups?: string[] | null

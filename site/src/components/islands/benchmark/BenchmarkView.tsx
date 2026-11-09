@@ -1,12 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { PROVIDERS, puzzleSize, type ModelMetrics } from '../../../lib/benchmark'
+import { useEffect, useMemo, useState } from 'react'
+import { ALL, PROVIDERS, puzzleSize, setupBars, type ModelMetrics, type SetupMetrics } from '../../../lib/benchmark'
 import { cubeGeometry } from '../cube/core/geometry'
 import { CubeView } from '../cube/svg/CubeView'
 import { BarChart } from './BarChart'
-import { Choice } from './Choice'
 import { Filter, type Option } from './Filter'
 import { parseHash, serializeHash } from './hash'
+import { MetricChart, type ChartTab, type MetricDefinition } from './MetricChart'
 import { Player } from './Player'
+import { Source } from './Source'
 
 export const PUZZLES = ['2x2', '3x3', '4x4', '5x5']
 
@@ -17,10 +18,27 @@ function Preview({ puzzle }: { puzzle: string }) {
 }
 
 const METRICS = [
-  { id: 'success', label: 'Success rate', higherIsBetter: true, pick: (m: ModelMetrics) => m.success },
-  { id: 'hallucination', label: 'Hallucination rate', higherIsBetter: false, pick: (m: ModelMetrics) => m.hallucination },
-  { id: 'detection', label: 'Critical thinking', higherIsBetter: true, pick: (m: ModelMetrics) => m.detection },
+  { id: 'precision', label: 'Precision', title: 'Balanced precision', higherIsBetter: true, pick: (m: ModelMetrics) => m.precision, setupPick: (m: SetupMetrics) => m.precision },
+  { id: 'hallucination', label: 'Hallucination rate', title: 'Hallucination rate', higherIsBetter: false, pick: (m: ModelMetrics) => m.hallucination, setupPick: (m: SetupMetrics) => m.hallucination },
+  { id: 'critical', label: 'Critical thinking', title: 'Critical thinking', higherIsBetter: true, pick: (m: ModelMetrics) => m.critical, setupPick: (m: SetupMetrics) => m.critical },
 ] as const
+
+const SETUP_QUESTION = 'does giving an AI model the rules of a puzzle change'
+const AVERAGE = 'Each bar is the average over the selected AI models that have a value under every setup, each counting equally'
+
+/** The tabs of Charts 1 to 3, which compare AI models. The "?" text says what the chart shows and which question it answers (docs/methodology.md, "The question"). */
+export const MODEL_TABS: readonly ChartTab[] = [
+  { ...METRICS[0], explanation: "Shows how often each AI model's answer is right, as the mean of its precision on solvable and on unsolvable puzzles. It answers which AI models get the answer right." },
+  { ...METRICS[1], explanation: "Shows how often each AI model gives a move that doesn't exist for the puzzle, among the answers that give moves. It answers which AI models hallucinate." },
+  { ...METRICS[2], explanation: 'Shows how well each AI model judges whether a puzzle can be solved at all, by naming the defect in an unsolvable puzzle without claiming one in a solvable puzzle. It answers which AI models spot an impossible puzzle.' },
+]
+
+/** The tabs of Charts 4 to 6, which compare setups. */
+export const SETUP_TABS: readonly ChartTab[] = [
+  { ...METRICS[0], explanation: `Shows how often answers are right when the prompt gives no model, a descriptive model, or a prescriptive model of the puzzle's rules. It addresses the research question: ${SETUP_QUESTION} how often its answers are right? ${AVERAGE}.` },
+  { ...METRICS[1], explanation: `Shows how often answers that give moves contain a move that doesn't exist for the puzzle, under each setup. It addresses the research question: ${SETUP_QUESTION} how often it hallucinates? ${AVERAGE}, so a decision model, which has no hallucination rate, is left out.` },
+  { ...METRICS[2], explanation: `Shows how well answers judge whether a puzzle can be solved at all under each setup. It addresses the research question: ${SETUP_QUESTION} how well it judges whether a puzzle can be solved? ${AVERAGE}.` },
+]
 
 interface Props {
   /** One row per (puzzle, model), from metricsByModel. Each row also carries the model's provider. */
@@ -28,12 +46,13 @@ interface Props {
   attemptsUrl: string
   /** Each puzzle's move group, from the engine's legal_moves() via the export. */
   legalMoves?: Readonly<Record<string, readonly string[]>>
+  /** One row per (puzzle, model, setup), from setupMetrics; without any, the setup chart is not shown. */
+  setupMetrics?: SetupMetrics[]
   /** The study's definitions of the metrics (imported into Payload); a tab only gets its "?" when its metric has one. */
   definitions?: readonly MetricDefinition[]
 }
 
-/** One metric's definition, as imported from the research repo's docs/definitions.md. */
-export interface MetricDefinition { key: string; name: string; definition: string }
+export type { MetricDefinition }
 
 const rank = (provider: string) => {
   const i = PROVIDERS.findIndex((p) => p.id === provider)
@@ -53,12 +72,13 @@ const effectiveTicked = (providerOn: ReadonlySet<string>, here: readonly ModelMe
   return ticked.size > 0 || providerOn.size === 0 ? ticked : present
 }
 
-/** The filter as the URL hash describes it; a key that is missing, or holds nothing that exists, falls back to its default (first puzzle with data, every provider, every model, Success rate). */
+/** The filter as the URL hash describes it; a key that is missing, or holds nothing that exists, falls back to its default (no puzzle selected, which pools all of them, every provider, every model, Precision). */
 function restore(hash: string, metrics: ModelMetrics[]): FilterState {
   const h = parseHash(hash)
   const withData = new Set(metrics.map((m) => m.puzzle))
-  const first = PUZZLES.find((p) => withData.has(p)) ?? null
-  const puzzle = h.puzzle && PUZZLES.includes(h.puzzle) && withData.has(h.puzzle) ? h.puzzle : first
+  // No puzzle selected (the pooled rows) is the default; without pooled rows (older data) the first puzzle with data stands in.
+  const first = withData.has(ALL) ? ALL : PUZZLES.find((p) => withData.has(p)) ?? null
+  const puzzle = h.puzzle && (h.puzzle === ALL || PUZZLES.includes(h.puzzle)) && withData.has(h.puzzle) ? h.puzzle : first
   const known = new Set(metrics.map((m) => m.provider))
   const valid = h.providers?.filter((id) => known.has(id))
   const providerOn = new Set(h.providers && (h.providers.length === 0 || valid!.length > 0) ? valid : known)
@@ -70,11 +90,13 @@ function restore(hash: string, metrics: ModelMetrics[]): FilterState {
     const keep = h.models.filter((n) => ticked.some((m) => m.model === n))
     if (h.models.length === 0 || keep.length > 0) for (const m of ticked) if (!keep.includes(m.model)) modelOff.add(m.model)
   }
-  const metric = METRICS.find((m) => m.id === h.metric)?.id ?? 'success'
+  // `detection`, the old id of the critical thinking tab, keeps old shared links working.
+  const wanted = h.metric === 'detection' ? 'critical' : h.metric
+  const metric = METRICS.find((m) => m.id === wanted)?.id ?? 'precision'
   return { puzzle, providerOn, modelOff, metric }
 }
 
-export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, definitions = [] }: Props) {
+export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl, legalMoves = {}, definitions = [] }: Props) {
   const withData = useMemo(() => new Set(metrics.map((m) => m.puzzle)), [metrics])
   const defaultPuzzle = useMemo(() => restore('', metrics).puzzle, [metrics])
   const [init] = useState(() => restore(typeof location === 'undefined' ? '' : location.hash, metrics))
@@ -82,99 +104,8 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
   const [providerOn, setProviderOn] = useState<Set<string>>(init.providerOn)
   const [modelOff, setModelOff] = useState<Set<string>>(init.modelOff)
   const [metric, setMetric] = useState<MetricId>(init.metric)
-  // The metric whose definition popover is open (one at a time).
-  const [helpOpen, setHelpOpen] = useState<MetricId | null>(null)
-  const defined = (id: string) => definitions.find((d) => d.key === id && d.definition.trim() !== '')
-  const openHelp = helpOpen && defined(helpOpen) ? helpOpen : null
-  // The "?" buttons live in a layer beside the tablist (the tablist holds only tabs); each is laid over its tab's reserved right end from the tab's measured box, and the popover is inset to the chart panel's text.
-  const row = useRef<HTMLDivElement>(null)
-  const pop = useRef<HTMLDivElement>(null)
-  const [spots, setSpots] = useState<Record<string, { x: number; y: number }>>({})
-  // Where the open popover goes: as wide as the chart panel's text (inset by the panel's border and padding); above the tab by default or below when the viewport has no room above, and the arrow's x.
-  const [place, setPlace] = useState({ above: true, bottom: 0, arrow: 0 })
-  // Hover opens it for a mouse only; pinned = opened by click/tap (or clicked while hover-opened), so leaving does not close it.
-  const pinned = useRef(false)
-  const byFocus = useRef(false)
-  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const clearLeave = () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); leaveTimer.current = null }
-  useEffect(() => clearLeave, [])
-  const spotKey = definitions.map((d) => d.key).join('|')
-  useLayoutEffect(() => {
-    const el = row.current
-    if (!el) return
-    const measure = () => {
-      const r = el.getBoundingClientRect()
-      const next: Record<string, { x: number; y: number }> = {}
-      let tabTop = 0
-      let helpX = 0
-      for (const m of METRICS) {
-        const tab = document.getElementById(`metric-${m.id}`)
-        if (!tab) continue
-        const t = tab.getBoundingClientRect()
-        next[m.id] = { x: t.right - r.left, y: t.bottom - r.top }
-        if (m.id === openHelp) {
-          tabTop = t.top
-          const hb = document.getElementById(`metric-help-${m.id}`)?.getBoundingClientRect()
-          helpX = hb ? hb.left + hb.width / 2 - r.left : t.right - r.left
-        }
-      }
-      setSpots((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
-      const w = pop.current?.offsetWidth ?? 0
-      const h = pop.current?.offsetHeight ?? 0
-      const gap = 6.4
-      // Room above counts from the bottom of the sticky site header, which covers the top of the viewport.
-      const headerBottom = document.querySelector('.site-header')?.getBoundingClientRect().bottom ?? 0
-      const above = !openHelp || tabTop - gap - 6 - Math.max(0, headerBottom) >= h
-      const bottom = r.height - (tabTop - r.top) + gap
-      // The arrow's x inside the popover, which is inset from the row by the panel's border and padding.
-      const arrow = Math.max(10, Math.min(helpX - (pop.current?.offsetLeft ?? 0), w - 10))
-      setPlace((prev) => (prev.above === above && prev.bottom === bottom && prev.arrow === arrow ? prev : { above, bottom, arrow }))
-    }
-    measure()
-    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
-    ro?.observe(el)
-    for (const m of METRICS) { const tab = document.getElementById(`metric-${m.id}`); if (tab) ro?.observe(tab) }
-    const list = el.querySelector('[role="tablist"]')
-    list?.addEventListener('scroll', measure)
-    if (openHelp) window.addEventListener('scroll', measure, { passive: true })
-    let cancelled = false
-    document.fonts?.ready.then(() => { if (!cancelled) measure() })
-    return () => {
-      cancelled = true
-      list?.removeEventListener('scroll', measure)
-      window.removeEventListener('scroll', measure)
-      ro?.disconnect()
-    }
-  }, [metric, openHelp, spotKey, puzzle])
-  // After a mouse leaves the "?" or the box it closes once the grace delay passes, unless it was pinned by a click or the pointer came back.
-  const hoverLeave = (e: { pointerType: string }) => {
-    if (e.pointerType !== 'mouse' || pinned.current) return
-    clearLeave()
-    leaveTimer.current = setTimeout(() => setHelpOpen(null), 150)
-  }
-  useEffect(() => {
-    if (!openHelp) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      const help = document.getElementById(`metric-help-${openHelp}`)
-      const active = document.activeElement
-      // Escape closes it from anywhere; focus goes back to the "?" only when it was on the popover or on that "?" (never pulled away from a field elsewhere).
-      if (active && (active === help || active.closest('.metric-popover'))) help?.focus()
-      setHelpOpen(null)
-    }
-    const onDown = (e: Event) => {
-      const t = e.target as Element | null
-      if (t?.closest('.metric-popover, button.help')) return
-      setHelpOpen(null)
-    }
-    document.addEventListener('keydown', onKey)
-    document.addEventListener('pointerdown', onDown)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.removeEventListener('pointerdown', onDown)
-    }
-  }, [openHelp])
-
+  // The setup chart's own tab; the URL hash holds only the model chart's.
+  const [setupMetric, setSetupMetric] = useState<MetricId>('precision')
   const forPuzzle = useMemo(() => sortedModels(metrics, puzzle), [metrics, puzzle])
   // A ticked provider with no model for this puzzle is not listed, so it does not count (it stays in providerOn for the puzzles that have it); when every ticked provider is absent here, all providers of this puzzle count instead.
   const providersHere = new Set(forPuzzle.map((m) => m.provider))
@@ -190,7 +121,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
     puzzle: puzzle !== null && puzzle !== defaultPuzzle ? puzzle : undefined,
     providers: providersHere.size === 0 || ticked.size === providersHere.size ? undefined : PROVIDERS.filter((p) => ticked.has(p.id)).map((p) => p.id),
     models: showModels && selected.length < available.length ? names : undefined,
-    metric: metric !== 'success' ? metric : undefined,
+    metric: metric !== 'precision' ? metric : undefined,
   })
   useEffect(() => {
     const current = location.hash || (location.href.endsWith('#') ? '#' : '')
@@ -211,7 +142,13 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
     return () => window.removeEventListener('hashchange', onHash)
   }, [metrics])
 
-  const choosePuzzle = (id: string) => (setPuzzle(id), setModelOff(new Set()))
+  // Clicking the selected puzzle again switches it off, back to all puzzles (when the data has pooled rows to show); clicking another replaces it.
+  const choosePuzzle = (id: string) => {
+    const next = id === puzzle ? (withData.has(ALL) ? ALL : puzzle) : id
+    if (next === puzzle) return
+    setPuzzle(next)
+    setModelOff(new Set())
+  }
   const toggleProvider = (id: string, on: boolean) => {
     // Edit providerOn itself so providers this puzzle lacks stay ticked; only the fallback (all absent) starts from what is shown.
     // A toggle that leaves none of this puzzle's providers ticked is a deliberate "none": clear the absent ones too, so the click shows and the fallback does not re-tick.
@@ -235,85 +172,66 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
   const models = available.map((m) => ({ id: m.model, label: m.model, provider: m.provider }))
   const modelOn = new Set(names)
   const current = METRICS.find((m) => m.id === metric)!
+  const setupCurrent = METRICS.find((m) => m.id === setupMetric)!
+  // Each setup's mean over the models the filter shows.
+  const setupResult = useMemo(() => setupBars(setupMetrics, puzzle ?? ALL, names, setupCurrent.setupPick), [setupMetrics, puzzle, names.join('\u0000'), setupCurrent])
+
+  const modelBars = selected.map((m) => ({ model: m.model, rate: current.pick(m) }))
+  const { bars } = setupResult
+  const setupRows = names.length > 0 ? bars.map((b) => ({ model: b.label, rate: b.rate, help: definitions.find((d) => d.key === b.setup && d.definition.trim() !== '')?.definition })) : []
+  const filterText = `${puzzle === ALL || puzzle === null ? 'All puzzles' : `${puzzle} cube`}, ${names.length} AI ${names.length === 1 ? 'model' : 'models'}`
 
   return (
     <div className="benchmark cube-solver">
-      <Filter puzzles={puzzles} puzzle={puzzle} onPuzzle={choosePuzzle} providers={providers} providerOn={ticked} onProvider={toggleProvider} models={models} modelOn={modelOn} onModel={toggleModel} showModels={showModels} />
+      <Filter puzzles={puzzles} puzzle={puzzle === ALL ? null : puzzle} onPuzzle={choosePuzzle} providers={providers} providerOn={ticked} onProvider={toggleProvider} models={models} modelOn={modelOn} onModel={toggleModel} showModels={showModels} />
       {puzzle === null ? (
         <p>No results yet.</p>
       ) : (
         <>
-          <div className="metrics">
-            <div className="tabs-row" ref={row}>
-              <Choice
-                role="tab"
-                label="Metric"
-                idPrefix="metric"
-                panelId="metric-panel"
-                options={METRICS.map(({ id, label }) => ({ id, label }))}
-                value={metric}
-                onChange={(id) => setMetric(id as MetricId)}
-                reserve={(o) => !!defined(o.id)}
-              />
-              {METRICS.filter((m) => defined(m.id) && spots[m.id]).map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  className={`help${m.id === metric ? ' current' : ''}`}
-                  id={`metric-help-${m.id}`}
-                  style={{ left: spots[m.id].x, top: spots[m.id].y }}
-                  aria-label={`What is ${m.label}?`}
-                  aria-expanded={openHelp === m.id}
-                  aria-controls="metric-popover"
-                  aria-describedby={openHelp === m.id ? 'metric-popover' : undefined}
-                  onClick={() => {
-                    clearLeave()
-                    byFocus.current = false
-                    // Clicking a "?" the hover just opened keeps it open (pinned); otherwise a click toggles.
-                    if (openHelp === m.id && !pinned.current) pinned.current = true
-                    else {
-                      pinned.current = openHelp !== m.id
-                      setHelpOpen(openHelp === m.id ? null : m.id)
-                    }
-                  }}
-                  onPointerEnter={(e) => {
-                    if (e.pointerType !== 'mouse') return
-                    clearLeave()
-                    if (openHelp !== m.id) { pinned.current = false; byFocus.current = false; setHelpOpen(m.id) }
-                  }}
-                  onPointerLeave={hoverLeave}
-                  onFocus={(e) => {
-                    let visible = false
-                    try { visible = e.currentTarget.matches(':focus-visible') } catch { /* no :focus-visible */ }
-                    if (visible && openHelp !== m.id) { pinned.current = true; byFocus.current = true; setHelpOpen(m.id) }
-                  }}
-                  onBlur={(e) => {
-                    if (byFocus.current && (!e.relatedTarget || !(e.relatedTarget as Element).closest('.metric-popover'))) setHelpOpen((cur) => (cur === m.id ? null : cur))
-                  }}
-                >
-                  ?
-                </button>
-              ))}
-              {openHelp && (
-                <div className={`metric-popover${place.above ? ' above' : ''}`} id="metric-popover" role="region" aria-labelledby="metric-popover-name" ref={pop} onPointerEnter={(e) => { if (e.pointerType === 'mouse') clearLeave() }} onPointerLeave={hoverLeave}
-                  style={{ ...(place.above ? { bottom: place.bottom, ['--arrow-x' as string]: `${place.arrow}px` } : { top: 'calc(100% + 0.35rem)' }) }}>
-                  <p><strong id="metric-popover-name">{defined(openHelp)!.name}</strong></p>
-                  <p>{defined(openHelp)!.definition}</p>
-                  <p className="direction">{METRICS.find((m) => m.id === openHelp)!.higherIsBetter ? 'Higher is better.' : 'Lower is better.'}</p>
-                </div>
-              )}
-            </div>
-            <div role="tabpanel" id="metric-panel" aria-labelledby={`metric-${metric}`} tabIndex={0}>
+          <MetricChart
+            idPrefix="metric"
+            heading="Metrics by AI model"
+            by="AI model"
+            firstNumber={1}
+            tabs={MODEL_TABS}
+            metric={metric}
+            onMetric={(id) => setMetric(id as MetricId)}
+            definitions={definitions}
+            layoutKey={String(puzzle)}
+            bars={modelBars}
+            filterText={filterText}
+          >
+            {showModels ? (
+              <BarChart title={current.label} higherIsBetter={current.higherIsBetter} rows={modelBars} />
+            ) : (
+              <p className="empty">Pick an AI provider to see results.</p>
+            )}
+          </MetricChart>
+          {setupMetrics.length > 0 && (
+            <MetricChart
+              idPrefix="setup-metric"
+              heading="Metrics by setup"
+              by="setup"
+              firstNumber={4}
+              tabs={SETUP_TABS}
+              metric={setupMetric}
+              onMetric={(id) => setSetupMetric(id as MetricId)}
+              definitions={definitions}
+              layoutKey={String(puzzle)}
+              bars={setupRows}
+              filterText={filterText}
+            >
               {showModels ? (
-                <BarChart title={current.label} higherIsBetter={current.higherIsBetter} rows={selected.map((m) => ({ model: m.model, rate: current.pick(m) }))} />
+                <BarChart title={`${setupCurrent.label} by setup`} higherIsBetter={setupCurrent.higherIsBetter} rows={setupRows} />
               ) : (
                 <p className="empty">Pick an AI provider to see results.</p>
               )}
-            </div>
-          </div>
+            </MetricChart>
+          )}
           <Player key={`${puzzle}|${names.join('\u0000')}`} puzzle={puzzle} models={names} attemptsUrl={attemptsUrl} legalMoves={legalMoves} />
         </>
       )}
+      <Source shown={selected.length > 0 ? { attempts: selected.reduce((a, m) => a + m.attempts, 0), tokens: selected.reduce((a, m) => a + m.tokens, 0) } : undefined} />
     </div>
   )
 }

@@ -1,9 +1,29 @@
-// Metrics and replay helpers for /ai-ontology-benchmark. Pure; definitions follow the study's
-// docs/definitions.md "Metrics".
-import type { BenchmarkAttempt, BenchmarkExperiment } from './types'
+// Replay helpers and the metric row type for /ai-ontology-benchmark. Pure. The metrics themselves are computed in
+// Python (src/site/metrics.py) and arrive in site.json.
+import type { BenchmarkAttempt } from './types'
 
+/** One metric cell of site.json's `metrics`: the value (null for n/a) and the number of attempts behind it. */
 export type Rate = { value: number | null; n: number }
-export type Rates = { success: Rate; hallucination: Rate; detection: Rate }
+export type ModelMetrics = {
+  puzzle: string
+  model: string
+  provider: string
+  /** Every scored attempt of the group, infrastructure failures included, and its input, output, retry input, and retry output tokens. */
+  attempts: number
+  tokens: number
+  precision: Rate
+  hallucination: Rate
+  critical: Rate
+}
+/** One metric row of site.json's `setupMetrics`: a model's three metrics under one setup, on one puzzle or pooled (`all`). */
+export type SetupMetrics = {
+  puzzle: string
+  model: string
+  setup: string
+  precision: Rate
+  hallucination: Rate
+  critical: Rate
+}
 export type ResultSign = 'solved' | 'mismatch' | 'hallucinated' | 'unsolved'
 
 export const PROVIDERS = [
@@ -12,57 +32,41 @@ export const PROVIDERS = [
   { id: 'google', label: 'Google' },
 ] as const
 
+/** The setups in the order the study defines them (docs/definitions.md, Setups; the ids are the raw records' `setup`). */
+export const SETUPS = [
+  { id: 'no_model', label: 'No model' },
+  { id: 'descriptive', label: 'Descriptive model' },
+  { id: 'prescriptive', label: 'Prescriptive model' },
+] as const
+
+/** One bar of the setup chart: the setup's mean over the models counted. */
+export type SetupBar = { setup: string; label: string; rate: Rate }
+
+/** The setup chart's bars and how many AI models they average (`used`) and leave out (`left`). */
+export type SetupBars = { bars: SetupBar[]; used: number; left: number }
+
+/** The unweighted mean of each setup's value for the given puzzle, in setup order, over complete cases only: a model counts when it has a value under every setup shown, so every bar averages the same models and the bars can be compared. A model missing a row, or with an n/a value (the hallucination rate of a decision model) under any setup is left out of all three bars. Each model that counts weighs the same whatever its attempt count. The Rate's `n` is the number of models behind the mean, and its value null when none counts. */
+export function setupBars(rows: readonly SetupMetrics[], puzzle: string, models: readonly string[], pick: (r: SetupMetrics) => Rate): SetupBars {
+  const chosen = new Set(models)
+  const here = rows.filter((r) => r.puzzle === puzzle && chosen.has(r.model))
+  const known = new Set<string>(SETUPS.map((s) => s.id))
+  const extra = [...new Set(here.map((r) => r.setup))].filter((id) => !known.has(id)).sort()
+  const all = [...SETUPS.map((s) => ({ id: s.id as string, label: s.label as string })), ...extra.map((id) => ({ id, label: id }))]
+  const value = (model: string, setup: string) => here.find((r) => r.model === model && r.setup === setup && pick(r).value !== null)
+  const counted = [...chosen].filter((m) => all.every(({ id }) => value(m, id)))
+  const bars = all.map(({ id, label }) => {
+    const values = counted.map((m) => pick(value(m, id)!).value as number)
+    const mean = values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length
+    return { setup: id, label, rate: { value: mean, n: values.length } }
+  })
+  return { bars, used: counted.length, left: chosen.size - counted.length }
+}
+
 /** The study's repo: the Experiment block's Source link. */
 export const SOURCE = 'https://github.com/OWOX/ai-ontology-benchmark'
 
-const rate = (hits: number, n: number): Rate => ({ value: n === 0 ? null : hits / n, n })
-
-/** Success: all attempts. Hallucination: attempts with at least one parsed move. Detection: invalid inputs. */
-export function rates(attempts: readonly BenchmarkAttempt[]): Rates {
-  let success = 0
-  let withMoves = 0
-  let hallucinated = 0
-  let invalid = 0
-  let detected = 0
-  for (const a of attempts) {
-    if (a.outcome === 'success') success++
-    if (a.moves.length > 0) {
-      withMoves++
-      if (a.outcome === 'hallucination') hallucinated++
-    }
-    if (a.validity === 'invalid') {
-      invalid++
-      if (a.mismatch) detected++
-    }
-  }
-  return {
-    success: rate(success, attempts.length),
-    hallucination: rate(hallucinated, withMoves),
-    detection: rate(detected, invalid),
-  }
-}
-
-export type ModelMetrics = Rates & { puzzle: string; model: string; provider: string }
-
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-
-/** One row per (puzzle, model), pooling the attempts of every given experiment. */
-export function metricsByModel(experiments: readonly BenchmarkExperiment[]): ModelMetrics[] {
-  const groups = new Map<string, { puzzle: string; model: string; attempts: BenchmarkAttempt[] }>()
-  const provider = new Map<string, string>()
-  for (const e of experiments) {
-    for (const m of e.models ?? []) if (!provider.has(m.name) || provider.get(m.name) === 'unknown') provider.set(m.name, m.provider)
-    for (const a of e.attempts ?? []) {
-      const key = `${a.puzzle}\u0000${a.model}`
-      let g = groups.get(key)
-      if (!g) groups.set(key, (g = { puzzle: a.puzzle, model: a.model, attempts: [] }))
-      g.attempts.push(a)
-    }
-  }
-  return [...groups.values()]
-    .sort((a, b) => cmp(a.puzzle, b.puzzle) || cmp(a.model, b.model))
-    .map((g) => ({ puzzle: g.puzzle, model: g.model, provider: provider.get(g.model) ?? 'unknown', ...rates(g.attempts) }))
-}
+/** The puzzle value of the `metrics` rows pooled over every puzzle, and of the filter's "All" option. */
+export const ALL = 'all'
 
 /** '3x3' -> 3 */
 export const puzzleSize = (puzzle: string): number => Number.parseInt(puzzle, 10)

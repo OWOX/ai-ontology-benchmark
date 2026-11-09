@@ -1,6 +1,6 @@
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { BarChart, rankRows } from './BarChart'
+import { BarChart, label, rankRows } from './BarChart'
 
 afterEach(cleanup)
 const r = (model: string, value: number | null) => ({ model, rate: { value, n: 5 } })
@@ -35,5 +35,17 @@ describe('BarChart', () => {
     const { container, getByRole } = render(<BarChart title="T" higherIsBetter={false} rows={[r('a', 0.1), r('b', 0.4)]} />)
     expect([...container.querySelectorAll('.row')].map((e) => e.getAttribute('data-rank'))).toEqual(['best', 'worst'])
     expect(getByRole('img')).toHaveAccessibleName('T: a 10% (best), b 40% (worst)')
+  })
+})
+
+describe('percent format', () => {
+  it('labels whole percentages, and n/a for null', () => {
+    expect(label(0.333)).toBe('33%')
+    expect(label(null)).toBe('n/a')
+  })
+  it('keeps bars on the fixed 0 to 100 scale, none for null', () => {
+    const { container } = render(<BarChart title="P" rows={[r('a', 0.2), r('b', 0.4), r('c', null)]} />)
+    expect([...container.querySelectorAll<HTMLElement>('.fill')].map((f) => f.style.width)).toEqual(['20%', '40%'])
+    expect([...container.querySelectorAll('.value')].map((e) => e.textContent)).toEqual(['20%', '40%', 'n/a'])
   })
 })

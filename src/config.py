@@ -234,7 +234,11 @@ def load_experiment_config(path: Path) -> dict:
 
 def load_prices(path: Path) -> dict:
     path = Path(path)
-    prices = _read(path)
+    return check_prices_table(_read(path), path)
+
+
+def check_prices_table(prices: dict, path: object) -> dict:
+    """Return the parsed prices after checking that every model has two non-negative price fields."""
     for model_name, entry in prices.items():
         if not isinstance(entry, dict):
             _fail(path, model_name, "must be a table with the two price fields")

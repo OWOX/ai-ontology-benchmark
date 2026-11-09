@@ -1,0 +1,61 @@
+# Token prices in USD per million tokens, standard tier, checked 2026-10-23 against
+# the Anthropic model docs, developers.openai.com/api/docs/pricing, and ai.google.dev/gemini-api/docs/pricing.
+# A price change only means recomputing the reports (AGENTS.md invariant 15).
+
+[example-model]
+price_input_per_mtok = 3.00
+price_output_per_mtok = 15.00
+
+["claude-opus-5-5"]
+price_input_per_mtok = 4.00
+price_output_per_mtok = 20.00
+
+["claude-sonnet-5-5"]
+price_input_per_mtok = 2.00
+price_output_per_mtok = 10.00
+
+# Prompts up to 100K tokens. Every prompt in this study is far shorter.
+["claude-haiku-5-5"]
+price_input_per_mtok = 0.10
+price_output_per_mtok = 0.50
+
+["gpt-6-astra"]
+price_input_per_mtok = 10.00
+price_output_per_mtok = 50.00
+
+["gpt-6.1-sol"]
+price_input_per_mtok = 2.00
+price_output_per_mtok = 10.00
+
+["gpt-6-luna"]
+price_input_per_mtok = 0.10
+price_output_per_mtok = 0.50
+
+# Rises to 4.00 / 20.00 on 2026-12-01.
+["gemini-4-argon"]
+price_input_per_mtok = 2.00
+price_output_per_mtok = 10.00
+
+# Introductory price. Rises to 1.50 / 7.50 on 2027-01-01.
+["gemini-3.8-flash"]
+price_input_per_mtok = 0.75
+price_output_per_mtok = 3.75
+
+["gemini-3.5-flash-lite"]
+price_input_per_mtok = 0.30
+price_output_per_mtok = 2.50
+
+# Decision models. Cloudflare model pages and Workers AI changelog, 2026-10-09 (clef, clef-flash).
+# OpenRouter and Requesty listings, checked 2026-09-19 (jev); TypeSafe's own pricing page was not found.
+# Output is priced at 0 because these models return a decision, not generated text.
+["clef"]
+price_input_per_mtok = 0.24
+price_output_per_mtok = 0
+
+["clef-flash"]
+price_input_per_mtok = 0.038
+price_output_per_mtok = 0
+
+["jev"]
+price_input_per_mtok = 0.042
+price_output_per_mtok = 0

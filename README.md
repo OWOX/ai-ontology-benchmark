@@ -69,7 +69,7 @@ config/
   templates/       one experiment config per provider to copy, see docs/getting-started.md
   prices.toml      token prices per AI model
   models.toml      model catalogue for the UI
-  site.toml        experiments and copy for the results page
+  site.toml        copy for the results page
 src/
   config.py        loads and checks the config files
   validator.py     turns a raw response into moves, flags, and an outcome

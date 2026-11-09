@@ -49,7 +49,7 @@ A hallucination is both a wrong answer and a hallucination, so it counts in both
 2. The [hallucination rate](definitions.md#metrics) and the [reason hallucination rate](definitions.md#metrics).
 3. [Critical thinking](definitions.md#metrics): the mean of the diagnosis rate on unsolvable inputs and one minus the false mismatch rate on solvable ones.
 
-[Cost efficiency](definitions.md#metrics) gives the cost of one right answer. Balanced precision and critical thinking don't depend on the share of unsolvable inputs, so input sets with different splits compare.
+[Cost efficiency](definitions.md#metrics) gives the cost per unit of balanced precision. Balanced precision and critical thinking don't depend on the share of unsolvable inputs, so input sets with different splits compare.
 
 ## Mismatch reasons
 

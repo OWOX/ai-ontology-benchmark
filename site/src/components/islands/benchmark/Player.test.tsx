@@ -2,7 +2,9 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cubeGeometry } from '../cube/core/geometry'
 import { resetAttempts } from './attempts'
-import { Player, pickCase, promptUrl, resultText, sourceUrl, stateText, type ReplayAttempt } from './Player'
+import { corruptionSentence, corruptionType, whyUnsolvable } from './unsolvable'
+import { MetricChart } from './MetricChart'
+import { Player, pickCase, resultText, sourceUrl, stateText, type ReplayAttempt } from './Player'
 
 const g = cubeGeometry(3)
 const attempt = (o: Partial<ReplayAttempt>): ReplayAttempt => ({
@@ -11,7 +13,7 @@ const attempt = (o: Partial<ReplayAttempt>): ReplayAttempt => ({
 })
 
 const LEGAL = { '3x3': ['U', 'R', 'F', 'D', 'L', 'B'].flatMap((f) => [f, `${f}'`, `${f}2`]) }
-const stub = (data: Record<string, ReplayAttempt[]>) => vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => data })))
+const stub = (data: Record<string, ReplayAttempt[]>, prompts: Record<string, string> = {}) => vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ attempts: data, prompts }) })))
 const SOURCE = 'https://github.com/OWOX/ai-ontology-benchmark'
 /** Renders the player and lets its first load (on mount) settle. */
 const mount = async () => {
@@ -32,6 +34,23 @@ beforeEach(() => (vi.useFakeTimers(), resetAttempts()))
 afterEach(() => (vi.useRealTimers(), vi.unstubAllGlobals()))
 
 describe('Player', () => {
+  it('closes its popover on a click in a chart\'s "?" elsewhere on the page, which is also a .pop-wrap', async () => {
+    stub({ '3x3': [attempt({ release: '3.0.0', prompt: '3.0.0/descriptive/i1' })] }, { '3.0.0/descriptive/i1': 'text' })
+    render(
+      <>
+        <MetricChart idPrefix="m" heading="h" by="AI model" firstNumber={1} tabs={[{ id: 'precision', label: 'Precision', title: 'Balanced precision', higherIsBetter: true, explanation: 'e' }]}
+          metric="precision" onMetric={() => {}} definitions={[]} layoutKey="x" bars={[{ model: 'a', rate: { value: 0.5, n: 1 } }]} filterText="f"><div /></MetricChart>
+        <Player puzzle="3x3" models={['m1']} attemptsUrl="/a.json" legalMoves={LEGAL} />
+      </>,
+    )
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Prompt' }))
+    expect(screen.getByRole('dialog', { name: /received/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'About Chart 1' }))
+    expect(screen.queryByRole('dialog', { name: /received/ })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'About Chart 1' })).toBeInTheDocument()
+  })
+
   it('calls an unflagged unsolvable input "Mismatch not detected" and a flagged solvable one "Not solved"', () => {
     expect(resultText('unsolved', { validity: 'invalid' })).toBe('Mismatch not detected')
     expect(resultText('unsolved', { validity: 'valid' })).toBe('Not solved')
@@ -39,17 +58,76 @@ describe('Player', () => {
     expect(resultText('mismatch', { validity: 'valid' })).toBe('Not solved')
   })
 
-  it('links the prompt template of the case in the study repo, only when the release is known', () => {
-    expect(promptUrl({ release: '1.3.1', setup: 'descriptive', puzzle: '2x2' })).toBe(`${SOURCE}/blob/main/releases/1.3.1/prompts/descriptive/2x2.txt`)
-    expect(promptUrl({ release: '', setup: 'descriptive', puzzle: '2x2' })).toBeNull()
+  it('shows the exact prompt of the case in a popover opened by the Prompt button, and no button without one', async () => {
+    const text = 'Solve this 3x3 cube.\n\nU: WWW\n\nReply with moves.'
+    stub({ '3x3': [attempt({ release: '3.0.0', prompt: '3.0.0/descriptive/i1' })] }, { '3.0.0/descriptive/i1': text })
+    const first = await mount()
+    expect(fact('Model:')).toBe('m1. Prompt')
+    expect(screen.queryByRole('link', { name: /Prompt/ })).toBeNull()
+    const button = screen.getByRole('button', { name: 'Prompt' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    // The popover is always in the DOM, hidden while closed, so aria-controls points at an element that exists.
+    const hidden = document.getElementById(button.getAttribute('aria-controls')!)!
+    expect(hidden).toHaveAttribute('hidden')
+    expect(screen.queryByRole('dialog', { name: /received/ })).toBeNull()
+    fireEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    const region = screen.getByRole('dialog', { name: /received/ })
+    expect(button.getAttribute('aria-controls')).toBe(region.id)
+    expect(region.querySelector('pre')!.textContent).toBe(text)
+    expect(region.querySelector('.pop-note')).toBeNull()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: /received/ })).toBeNull()
+    expect(button).toHaveFocus()
+    fireEvent.click(button)
+    fireEvent.click(document.body)
+    expect(screen.queryByRole('dialog', { name: /received/ })).toBeNull()
+    first.unmount()
+    resetAttempts()
+    stub({ '3x3': [attempt({ release: '3.0.0' })] })
+    await mount()
+    expect(fact('Model:')).toBe('m1')
+    expect(screen.queryByRole('button', { name: 'Prompt' })).toBeNull()
   })
 
-  it('shows the model with a link to its prompt, opening in a new window', async () => {
-    stub({ '3x3': [attempt({ release: '1.3.1' })] })
+  it('adds a note under the prompt for a decision model only', async () => {
+    stub({ '3x3': [attempt({ release: '3.0.0', prompt: 'k', decision: true })] }, { k: 'the prompt' })
     await mount()
-    expect(fact('Model:')).toBe('m1. Prompt (opens in a new tab)')
-    expect(screen.getByRole('link', { name: /^Prompt ?\(opens in a new tab\)$/ })).toHaveAttribute('href', `${SOURCE}/blob/main/releases/1.3.1/prompts/descriptive/3x3.txt`)
-    expect(screen.getByRole('link', { name: /^Prompt ?\(opens in a new tab\)$/ })).toHaveAttribute('target', '_blank')
+    fireEvent.click(screen.getByRole('button', { name: 'Prompt' }))
+    const pop = screen.getByRole('dialog', { name: /received/ })
+    expect(pop.querySelector('pre')!.nextElementSibling).toHaveTextContent('A decision model also received the moves so far and the list of options with each call.')
+  })
+
+  it('closes a popover on a click outside without swallowing the click: Run still runs, and so does the reload icon', async () => {
+    stub({ '3x3': [attempt({ validity: 'invalid', corruption: 'twisted corner UFL clockwise', outcome: 'success', mismatch: true }), attempt({ validity: 'invalid', corruption: 'flipped edge UF', outcome: 'success', mismatch: true })] })
+    await mount()
+    const why = screen.getByRole('button', { name: 'not solvable' })
+    fireEvent.click(why)
+    expect(why).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    await act(async () => {})
+    expect(why).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Re-run' })).toBeInTheDocument()
+    await finish()
+    fireEvent.click(why)
+    fireEvent.click(screen.getByRole('button', { name: 'Show another case' }))
+    expect(why).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
+  })
+
+  it('keeps one popover open at a time', async () => {
+    stub({ '3x3': [attempt({ validity: 'invalid', corruption: 'twisted corner UFL clockwise', outcome: 'success', mismatch: true, prompt: 'k' })] }, { k: 'the prompt' })
+    await mount()
+    fireEvent.click(screen.getByRole('button', { name: 'not solvable' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prompt' }))
+    const pops = () => screen.getAllByRole('dialog', { name: /received|not solvable/ })
+    expect(pops()).toHaveLength(1)
+    expect(pops()[0]).toHaveTextContent('the prompt')
+    expect(screen.getByRole('button', { name: 'not solvable' })).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'not solvable' }))
+    expect(pops()).toHaveLength(1)
+    expect(pops()[0]).toHaveTextContent(/total twist/)
+    expect(pops()[0]).toHaveTextContent('Twisted corner UFL clockwise.')
   })
 
   it('picks the model first, so a model with few attempts is as likely as one with many', () => {
@@ -65,20 +143,26 @@ describe('Player', () => {
   })
 
   it('links Source to the raw results of the case, or to the repo without an experiment id', () => {
-    expect(sourceUrl({ experimentId: 'exp-1', model: 'gpt-6.1-sol' })).toBe(`${SOURCE}/blob/results/exp-1/results/exp-1/raw/gpt-6.1-sol.jsonl`)
+    expect(sourceUrl({ experimentId: 'exp-1', model: 'gpt-6.1-sol', branch: 'results/exp-1' })).toBe(`${SOURCE}/blob/results/exp-1/results/exp-1/raw/gpt-6.1-sol.jsonl`)
+    expect(sourceUrl({ experimentId: 'exp-1', model: 'm1', branch: 'main' })).toBe(`${SOURCE}/blob/main/results/exp-1/raw/m1.jsonl`)
+    expect(sourceUrl({ experimentId: 'exp-1', model: 'm1' })).toBe(`${SOURCE}/blob/main/results/exp-1/raw/m1.jsonl`)
     expect(sourceUrl({ model: 'm1' })).toBe(SOURCE)
   })
 
-  it('shows ". Source" after the result, linking to its raw results in a new tab', async () => {
-    stub({ '3x3': [attempt({ experimentId: 'exp-1' })] })
+  it('shows a Source icon link after the result, linking to its raw results in a new tab', async () => {
+    stub({ '3x3': [attempt({ experimentId: 'exp-1', branch: 'results/exp-1' })] })
     await mount()
     await run()
     expect(screen.queryByRole('link', { name: /^Source/ })).toBeNull()
     await finish()
-    const link = screen.getByRole('link', { name: /^Source/ })
+    const link = screen.getByRole('link', { name: 'Source (opens in a new tab)' })
+    expect(link).toHaveAttribute('title', 'Source')
+    expect(link.textContent).toBe('')
+    expect(link.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
     expect(link).toHaveAttribute('href', `${SOURCE}/blob/results/exp-1/results/exp-1/raw/m1.jsonl`)
     expect(link).toHaveAttribute('target', '_blank')
-    expect(row().textContent).toMatch(/Solved\. Source/)
+    expect(row().textContent).toBe('Result: Solved ')
+    expect(result().querySelector('a.source')).toBe(link)
   })
 
   it('announces the result once the run ends, not while it runs', async () => {
@@ -133,11 +217,62 @@ describe('Player', () => {
     expect(stateText({ puzzle: '2x2', validity: 'invalid' })).toBe('2x2 cube, not solvable')
   })
 
+  it('reads the corruption type as the first two words and explains each type, with a generic line for an unknown one', () => {
+    expect(corruptionType('recoloured sticker L3 D to U')).toBe('recoloured sticker')
+    expect(corruptionType(null)).toBe('')
+    expect(whyUnsolvable('twisted corner UFL clockwise')).toMatch(/total twist of the corners/)
+    expect(whyUnsolvable('flipped edge UF')).toMatch(/even number of edges/)
+    expect(whyUnsolvable('flipped wing Uf')).toMatch(/never swap places/)
+    expect(whyUnsolvable('swapped corners UFL UBR')).toMatch(/odd permutation/)
+    expect(whyUnsolvable('swapped edges UF UB')).toMatch(/odd permutation/)
+    expect(whyUnsolvable('recoloured sticker L3 D to U')).toMatch(/keeps its count/)
+    expect(whyUnsolvable('bent axle')).toMatch(/No sequence of legal moves/)
+    expect(whyUnsolvable(undefined)).toMatch(/No sequence of legal moves/)
+    expect(whyUnsolvable('flipped edge UF')).not.toMatch(/two at a time/)
+  })
+
+  it('writes the corruption as a capitalized sentence ending in a full stop', () => {
+    expect(corruptionSentence('twisted corner DBL anticlockwise')).toBe('Twisted corner DBL anticlockwise.')
+    expect(corruptionSentence('flipped edge UF.')).toBe('Flipped edge UF.')
+    expect(corruptionSentence(null)).toBe('')
+  })
+
+  it('opens the "not solvable" explanation on click, led by the bold corruption, and closes it on a second click, Escape, or a click outside', async () => {
+    stub({ '3x3': [attempt({ validity: 'invalid', corruption: 'recoloured sticker L3 D to U', outcome: 'success', mismatch: true })] })
+    await mount()
+    const button = screen.getByRole('button', { name: 'not solvable' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(document.getElementById(button.getAttribute('aria-controls')!)).toHaveAttribute('hidden')
+    expect(screen.queryByRole('dialog', { name: /not solvable/ })).toBeNull()
+    fireEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    const pop = screen.getByRole('dialog', { name: /not solvable/ })
+    expect(pop).toHaveTextContent(/every colour keeps its count/)
+    expect(pop.querySelector('strong')).toHaveTextContent('Recoloured sticker L3 D to U.')
+    expect(button.getAttribute('aria-controls')).toBe(pop.id)
+    fireEvent.click(button)
+    expect(screen.queryByRole('dialog', { name: /not solvable/ })).toBeNull()
+    fireEvent.click(button)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: /not solvable/ })).toBeNull()
+    expect(button).toHaveFocus()
+    fireEvent.click(button)
+    fireEvent.click(document.body)
+    expect(screen.queryByRole('dialog', { name: /not solvable/ })).toBeNull()
+  })
+
+  it('has no "not solvable" button for a solvable state', async () => {
+    stub({ '3x3': [attempt({})] })
+    await mount()
+    expect(screen.queryByRole('button', { name: 'not solvable' })).toBeNull()
+    expect(fact('State:')).toBe('3x3 cube, solvable')
+  })
+
   it('shows the case before Run: state, model, the Result line laid out but hidden, Run, no Source link yet', async () => {
     stub({ '3x3': [attempt({ validity: 'invalid', corruption: 'twisted corner UFL clockwise', outcome: 'success', mismatch: true })] })
     await mount()
     expect(screen.getByText('Experiment Example')).toBeInTheDocument()
-    expect(fact('State:')).toBe('3x3 cube, not solvable: twisted corner UFL clockwise')
+    expect(fact('State:')).toBe('3x3 cube, not solvable')
     expect(fact('Model:')).toBe('m1')
     expect(screen.queryByText(/Expected Result/)).toBeNull()
     expect(screen.getByText('Result:').parentElement).toHaveStyle({ visibility: 'hidden' })
@@ -233,6 +368,7 @@ describe('Player', () => {
     stub({ '3x3': [attempt({ validity: 'valid' }), attempt({ validity: 'invalid', outcome: 'success', mismatch: true })] })
     await mount()
     const before = fact('State:')
+    expect(screen.getByRole('button', { name: 'Show another case' }).closest('.title')).not.toBeNull()
     await run()
     await finish()
     fireEvent.click(screen.getByRole('button', { name: 'Show another case' }))
@@ -244,6 +380,39 @@ describe('Player', () => {
     stub({ '3x3': [attempt({})] })
     await mount()
     expect(screen.queryByRole('button', { name: 'Show another case' })).toBeNull()
+  })
+
+  it('the refresh button stays enabled during a replay and a click stops it: no moves or result of the old replay appear', async () => {
+    stub({ '3x3': [attempt({ validity: 'valid' }), attempt({ validity: 'invalid', outcome: 'success', mismatch: true })] })
+    await mount()
+    const before = fact('State:')
+    await run()
+    await act(async () => void vi.advanceTimersByTime(300))
+    expect(screen.getByRole('button', { name: 'Re-run' })).toBeDisabled()
+    expect(result()).toHaveTextContent(/running/)
+    const refresh = screen.getByRole('button', { name: 'Show another case' })
+    expect(refresh).toBeEnabled()
+    fireEvent.click(refresh)
+    expect(fact('State:')).not.toBe(before)
+    const shown = () => document.querySelector('.cube-stage')!.innerHTML
+    const cube = shown()
+    expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
+    expect(row()).toHaveStyle({ visibility: 'hidden' })
+    await finish()
+    expect(shown()).toBe(cube)
+    expect(row()).toHaveStyle({ visibility: 'hidden' })
+    expect(result()).not.toHaveTextContent(/running|Solved|Not solved|Mismatch/)
+    expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('stops the replay on unmount', async () => {
+    stub({ '3x3': [attempt({ validity: 'valid' }), attempt({ validity: 'invalid', outcome: 'success', mismatch: true })] })
+    const view = await mount()
+    await run()
+    await act(async () => void vi.advanceTimersByTime(300))
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('only shows attempts of the selected models', async () => {
@@ -260,5 +429,14 @@ describe('Player', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
     expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('under "all" picks an attempt from any puzzle and draws its own puzzle', async () => {
+    const g2 = cubeGeometry(2)
+    stub({ '2x2': [attempt({ puzzle: '2x2', state: g2.SOLVED, moves: [] })], '3x3': [] })
+    render(<Player puzzle="all" models={['m1']} attemptsUrl="/a.json" legalMoves={LEGAL} />)
+    await act(async () => {})
+    expect(fact('State:')).toMatch(/^2x2 cube/)
+    expect(screen.getByRole('img', { name: '2x2 cube replay' })).toBeInTheDocument()
   })
 })
