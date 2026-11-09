@@ -93,8 +93,8 @@ const jsonLd = {
   /* Step 2 is a block of its own pushed to the right edge of the content column (its natural width); inside it everything stays left-aligned. */
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(2)) { justify-self: end; }
   /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only. Unselected: a transparent border of the same width, 50% transparent. */
-  :global(.benchmark .options:has(button.square)) { gap: 0.25rem; justify-content: flex-start; }
-  :global(.benchmark .options button.square) { width: 3.9rem; height: 3.9rem; padding: 0.26rem; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
+  :global(.benchmark .options:has(button.square)) { gap: 0; justify-content: flex-start; }
+  :global(.benchmark .options button.square) { width: 2.75rem; height: 2.75rem; padding: 0; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
   /* With none pressed (all puzzles) the options are not faded: they are not disabled, only unselected. */
   :global(.benchmark .options:not(:has(button.square[aria-pressed='true'])) button.square) { opacity: 1; }
   :global(.benchmark .options button.square:hover) { opacity: 1; }
@@ -102,9 +102,10 @@ const jsonLd = {
   :global(.benchmark .options button.square:hover:not([aria-pressed='true'])) { box-shadow: inset 0 0 0 1px var(--text); }
   :global(.benchmark .options button.square[aria-pressed='true']) { border-color: var(--text); opacity: 1; }
   /* Keyboard focus: a dashed outline drawn inside the button, so it is never clipped by the scrolling row. */
-  :global(.benchmark .options button.square:focus-visible) { outline: 2px dashed var(--text); outline-offset: -4px; opacity: 1; }
-  :global(.benchmark .options button.square span) { display: block; width: 100%; line-height: 0; }
-  :global(.benchmark .options button.square .cube-view) { display: block; width: 100%; pointer-events: none; }
+  :global(.benchmark .options button.square:focus-visible) { outline: 2px dashed var(--text); outline-offset: -2px; opacity: 1; }
+  /* The cube drawing has about a seventh of its width as empty margin on each side. It is drawn at its natural 3.125rem with a negative margin that centres it in the smaller button, so its margin overflows invisibly and the border sits snug around the visible cube. */
+  :global(.benchmark .options button.square span) { display: grid; place-items: center; width: 100%; height: 100%; line-height: 0; }
+  :global(.benchmark .options button.square .cube-view) { display: block; flex: none; width: 3.125rem; height: 3.125rem; max-width: none; margin: -0.3125rem; pointer-events: none; }
   :global(.benchmark .muted) { color: var(--muted); }
   /* The chart sits in a framed panel; the metric tabs hang off its top edge like folder tabs. The selected tab has the panel background and covers the frame's top border, so it merges into the panel. */
   /* 1rem + the island's 1.5rem gap = 2.5rem above the tabs, the same as the puzzle row to the Model step (1rem row gap + 1.5rem). */
