@@ -154,13 +154,14 @@ const jsonLd = {
   /* The figure's numbered caption sits under the bars and ends in a "?" round icon button; its popover is the Player's, out of flow, opening upwards over the bars (`.below` flips it under the caption when there is no room above), so opening it moves nothing. */
   :global(.benchmark .chart-figure) { margin: 0; }
   :global(.benchmark .chart-head .chart-tools) { white-space: nowrap; }
-  :global(.benchmark .chart-head) { position: relative; margin: 0.4rem 0 0; font-size: 0.85rem; font-weight: var(--weight-medium); line-height: 1.35; }
+  :global(.benchmark .chart-head) { position: relative; margin: 0.4rem 0 0; color: var(--muted); font-size: 0.85rem; font-weight: var(--weight-medium); line-height: 1.35; }
   :global(.cube-solver.benchmark .chart-head button.pop-btn:not(.redo):not(.switch):not(.square)) {
     position: relative; vertical-align: middle; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 1rem; height: 1rem; min-height: 0; margin: 0 0 0 0.1rem; padding: 0;
-    border: 1px solid var(--text); border-radius: 50%; background: transparent; box-shadow: none; color: var(--text);
+    border: 1px solid var(--muted); border-radius: 50%; background: transparent; box-shadow: none; color: var(--muted);
     font-size: 0.65rem; font-weight: var(--weight-medium); line-height: 1; letter-spacing: normal; cursor: pointer;
   }
-  :global(.cube-solver.benchmark .chart-head button.pop-btn[aria-expanded='true']:not(.redo):not(.switch):not(.square)) { background: var(--text); color: var(--text-inv); }
+  :global(.cube-solver.benchmark .chart-head button.pop-btn:hover:not(.redo):not(.switch):not(.square)) { color: var(--text); border-color: var(--text); }
+  :global(.cube-solver.benchmark .chart-head button.pop-btn[aria-expanded='true']:not(.redo):not(.switch):not(.square)) { background: var(--text); border-color: var(--text); color: var(--text-inv); }
   /* A 24px hit area around the 16px circle. */
   :global(.benchmark .chart-head button.pop-btn::after) { content: ''; position: absolute; inset: -4px; }
   :global(.cube-solver.benchmark .chart-head button.pop-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
