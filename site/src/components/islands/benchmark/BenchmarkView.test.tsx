@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ModelMetrics } from '../../../lib/benchmark'
+import type { ModelMetrics, SetupMetrics } from '../../../lib/benchmark'
 import { resetAttempts } from './attempts'
 import BenchmarkView from './BenchmarkView'
 
@@ -143,7 +143,7 @@ describe('BenchmarkView', () => {
     const { container } = view()
     expect(screen.getByRole('tab', { name: 'Precision' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Precision', 'Hallucination rate', 'Critical thinking'])
-    expect(container.querySelectorAll('figure.chart').length).toBe(1)
+    expect(container.querySelectorAll('figure.chart-figure').length).toBe(1)
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Precision')
     fireEvent.click(screen.getByRole('tab', { name: 'Hallucination rate' }))
     expect(screen.getByRole('img', { name: /^Hallucination rate/ })).toHaveAccessibleName('Hallucination rate: claude-a 25% (best), gpt-a 50% (worst)')
@@ -210,7 +210,7 @@ describe('BenchmarkView', () => {
     const { container } = view()
     const metrics = container.querySelector('.metrics')!
     expect(metrics.querySelector('[role="tablist"]')).not.toBeNull()
-    expect(metrics.querySelector('[role="tabpanel"] figure.chart')).not.toBeNull()
+    expect(metrics.querySelector('[role="tabpanel"] figure .chart')).not.toBeNull()
   })
 
   it('writes the filter into the hash without adding history, a key only when not at its default', () => {
@@ -552,6 +552,237 @@ describe('BenchmarkView', () => {
         expect(screen.getByRole('img', { name: /^Precision|^Critical/ })).toBeInTheDocument()
         cleanup()
       }
+    })
+  })
+
+  describe('setup chart', () => {
+    const srow = (puzzle: string, model: string, setup: string, o: Partial<SetupMetrics> = {}): SetupMetrics => ({
+      puzzle, model, setup, precision: rate(0.5, 10), hallucination: rate(0.25, 8), critical: rate(null, 0), ...o,
+    })
+    const setupMetrics = [
+      srow('3x3', 'claude-a', 'no_model', { precision: rate(0.2, 99) }),
+      srow('3x3', 'claude-a', 'descriptive', { precision: rate(0.4, 10) }),
+      srow('3x3', 'claude-a', 'prescriptive', { precision: rate(0.6, 10), hallucination: rate(0.1, 4) }),
+      srow('3x3', 'gpt-a', 'no_model', { precision: rate(0.6, 1), hallucination: rate(null, 0) }),
+      srow('3x3', 'gpt-a', 'descriptive', { precision: rate(0.8, 10), hallucination: rate(null, 0) }),
+      srow('3x3', 'gpt-a', 'prescriptive', { precision: rate(0.8, 3), hallucination: rate(null, 0) }),
+      srow('4x4', 'claude-a', 'no_model', { precision: rate(0.9, 10) }),
+    ]
+    const both = () => render(<BenchmarkView metrics={metrics} setupMetrics={setupMetrics} attemptsUrl="/a.json" />)
+    const setupChart = () => screen.getByRole('img', { name: / by setup:/ })
+    const modelChart = () => screen.getByRole('img', { name: /^(Precision|Hallucination rate|Critical thinking):/ })
+    const modelSection = () => screen.getByRole('region', { name: 'Metrics by AI model' })
+    const setupSection = () => screen.getByRole('region', { name: 'Metrics by setup' })
+    const heading = (section: HTMLElement) => section.querySelector('figcaption .chart-title')!.textContent!
+
+    it('has no setup section without setup rows', () => {
+      view()
+      expect(screen.queryByRole('heading', { name: 'Metrics by setup' })).toBeNull()
+      expect(screen.getAllByRole('tablist')).toHaveLength(1)
+    })
+
+    it('puts the caption after the chart in a figure named by it, and the chart keeps its own name', () => {
+      both()
+      const figure = within(modelSection()).getByRole('figure', { name: 'Chart 1. Balanced precision by AI model' })
+      const chart = figure.querySelector('.chart')!
+      const caption = figure.querySelector('figcaption')!
+      expect(figure.lastElementChild).toBe(caption)
+      expect(chart.compareDocumentPosition(caption) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(caption).toHaveTextContent('Chart 1. Balanced precision by AI model (?)')
+      expect(within(figure).getByRole('img')).toHaveAccessibleName(/^Precision: claude-a/)
+    })
+
+    it('gives each section a subtitle, the setup one naming the three setups', () => {
+      both()
+      expect(screen.getByRole('heading', { level: 2, name: 'Metrics by AI model' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 2, name: 'Metrics by setup' })).toBeInTheDocument()
+      expect(setupSection()).toHaveTextContent('no model, descriptive model, and prescriptive model')
+    })
+
+    it('numbers the chart titles 1 to 3 on the AI model tabs and 4 to 6 on the setup tabs', () => {
+      both()
+      const titles = (section: HTMLElement) => within(section).getAllByRole('tab').map((t) => {
+        fireEvent.click(t)
+        return heading(section)
+      })
+      expect(titles(modelSection())).toEqual([
+        'Chart 1. Balanced precision by AI model',
+        'Chart 2. Hallucination rate by AI model',
+        'Chart 3. Critical thinking by AI model',
+      ])
+      expect(titles(setupSection())).toEqual([
+        'Chart 4. Balanced precision by setup',
+        'Chart 5. Hallucination rate by setup',
+        'Chart 6. Critical thinking by setup',
+      ])
+    })
+
+    const note = () => setupSection().querySelector('.chart-note')!
+
+    it('shows the setups in order with the mean over the ticked AI models, and says how many once', () => {
+      both()
+      // claude-a 0.2 and gpt-a 0.6 under no model, whatever their attempt counts; both have a value under every setup.
+      expect(setupChart()).toHaveAccessibleName('Precision by setup: No model 40% (worst), Descriptive model 60%, Prescriptive model 70% (best)')
+      expect(note()).toHaveTextContent('Averaged over 2 AI models.')
+      expect(note().textContent).not.toMatch(/left out/)
+    })
+
+    it('averages only the AI models that have a value under every setup, and says how many are left out', () => {
+      both()
+      fireEvent.click(within(setupSection()).getByRole('tab', { name: 'Hallucination rate' }))
+      // gpt-a has no hallucination rate (a decision model, say): it is out of all three bars, so they compare the same models.
+      expect(setupChart()).toHaveAccessibleName('Hallucination rate by setup: No model 25% (worst), Descriptive model 25% (worst), Prescriptive model 10% (best)')
+      expect(note()).toHaveTextContent('Averaged over 1 AI model. 1 left out for lacking a value under some setup.')
+      fireEvent.click(on('claude-a'))
+      expect(setupChart()).toHaveAccessibleName('Hallucination rate by setup: No model n/a, Descriptive model n/a, Prescriptive model n/a')
+      expect(note()).toHaveTextContent('Averaged over 0 AI models. 1 left out for lacking a value under some setup.')
+    })
+
+    it('shows the empty message in both charts when no AI model is selected', () => {
+      both()
+      fireEvent.click(on('claude-a'))
+      fireEvent.click(on('gpt-a'))
+      expect(within(modelSection()).getByText('No model selected.')).toBeInTheDocument()
+      expect(within(setupSection()).getByText('No model selected.')).toBeInTheDocument()
+      expect(screen.queryByRole('img', { name: / by setup:/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Copy Chart 4 to clipboard' })).toBeNull()
+    })
+
+    it('follows the filter in both charts', () => {
+      both()
+      expect(modelChart()).toHaveAccessibleName('Precision: claude-a 50% (worst), gpt-a 100% (best)')
+      fireEvent.click(on('gpt-a'))
+      expect(modelChart()).toHaveAccessibleName('Precision: claude-a 50%')
+      expect(setupChart()).toHaveAccessibleName('Precision by setup: No model 20% (worst), Descriptive model 40%, Prescriptive model 60% (best)')
+      expect(note()).toHaveTextContent('Averaged over 1 AI model.')
+      fireEvent.click(screen.getByRole('button', { name: '4x4 cube' }))
+      expect(modelChart()).toHaveAccessibleName('Precision: claude-a 50%')
+      // 4x4 has a row for no model only: no AI model has a value under every setup.
+      expect(setupChart()).toHaveAccessibleName('Precision by setup: No model n/a, Descriptive model n/a, Prescriptive model n/a')
+      expect(note()).toHaveTextContent('Averaged over 0 AI models. 1 left out')
+    })
+
+    describe('title popover', () => {
+      const button = (n: number) => screen.getByRole('button', { name: `About Chart ${n}` })
+      const dialog = (n: number) => document.getElementById(button(n).getAttribute('aria-controls')!)!
+
+      it('is a button named for its chart, closed at first, controlling a dialog that exists', () => {
+        both()
+        expect(button(1)).toHaveTextContent('(?)')
+        expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        expect(dialog(1)).toHaveAttribute('role', 'dialog')
+        expect(dialog(1)).toHaveAttribute('aria-label', 'About Chart 1')
+        expect(dialog(1)).toHaveProperty('hidden', true)
+        expect(screen.queryByRole('dialog')).toBeNull()
+      })
+
+      it('opens on a click, toggles shut on a second, and says what the chart shows and which question it answers', () => {
+        both()
+        fireEvent.click(button(1))
+        expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+        expect(screen.getByRole('dialog', { name: 'About Chart 1' })).toHaveTextContent(/which AI models get the answer right/)
+        fireEvent.click(button(1))
+        expect(screen.queryByRole('dialog')).toBeNull()
+        fireEvent.click(button(4))
+        const text = screen.getByRole('dialog', { name: 'About Chart 4' }).textContent!
+        expect(text).toMatch(/no model, a descriptive model, or a prescriptive model/)
+        expect(text).toMatch(/does giving an AI model the rules of a puzzle change how often its answers are right/)
+        expect(text).toMatch(/average over the selected AI models that have a value under every setup, each counting equally/)
+      })
+
+      it('says exactly what Charts 5 and 6 show, in three sentences each', () => {
+        both()
+        const every = 'Each bar is the average over the selected AI models that have a value under every setup, each counting equally'
+        const question = 'does giving an AI model the rules of a puzzle change'
+        fireEvent.click(within(setupSection()).getByRole('tab', { name: 'Hallucination rate' }))
+        fireEvent.click(button(5))
+        const five = screen.getByRole('dialog', { name: 'About Chart 5' }).textContent
+        expect(five).toBe(`Shows how often answers that give moves contain a move that doesn't exist for the puzzle, under each setup. It addresses the research question: ${question} how often it hallucinates? ${every}, so a decision model, which has no hallucination rate, is left out.`)
+        fireEvent.click(within(setupSection()).getByRole('tab', { name: 'Critical thinking' }))
+        fireEvent.click(button(6))
+        const six = screen.getByRole('dialog', { name: 'About Chart 6' }).textContent
+        expect(six).toBe(`Shows how well answers judge whether a puzzle can be solved at all under each setup. It addresses the research question: ${question} how well it judges whether a puzzle can be solved? ${every}.`)
+        for (const t of [five!, six!]) expect(t.match(/[.?](\s|$)/g)).toHaveLength(3)
+      })
+
+      it('keeps the (?) and the copy button together in one no-wrap group after the caption', () => {
+        both()
+        const tools = button(1).closest('.chart-tools')!
+        expect(tools.parentElement).toBe(button(1).closest('figcaption'))
+        expect(tools.contains(screen.getByRole('button', { name: 'Copy Chart 1 to clipboard' }))).toBe(true)
+        expect(tools.previousElementSibling).toHaveClass('chart-title')
+      })
+
+      it('is placed again on scroll and resize while open: upwards with room above, below without', () => {
+        let top = 500
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ top, bottom: top, left: 0, right: 0, width: 0, height: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect)
+        both()
+        fireEvent.click(button(1))
+        expect(dialog(1)).not.toHaveClass('below')
+        top = 2
+        act(() => { window.dispatchEvent(new Event('scroll')) })
+        expect(dialog(1)).toHaveClass('below')
+        top = 500
+        act(() => { window.dispatchEvent(new Event('resize')) })
+        expect(dialog(1)).not.toHaveClass('below')
+        vi.restoreAllMocks()
+      })
+
+      it('closes on Escape, returning focus to the button, and on an outside click', () => {
+        both()
+        button(1).focus()
+        fireEvent.click(button(1))
+        fireEvent.keyDown(document, { key: 'Escape' })
+        expect(screen.queryByRole('dialog')).toBeNull()
+        expect(button(1)).toHaveFocus()
+        // Focus elsewhere stays there.
+        fireEvent.click(button(1))
+        const box = screen.getByRole('checkbox', { name: 'claude-a' })
+        box.focus()
+        fireEvent.keyDown(document, { key: 'Escape' })
+        expect(screen.queryByRole('dialog')).toBeNull()
+        expect(box).toHaveFocus()
+        fireEvent.click(button(1))
+        fireEvent.click(document.body)
+        expect(screen.queryByRole('dialog')).toBeNull()
+      })
+
+      it("stays open for a click inside it, and only one chart's opens at a time", () => {
+        both()
+        fireEvent.click(button(1))
+        fireEvent.click(screen.getByRole('dialog'))
+        expect(screen.getByRole('dialog')).toBeInTheDocument()
+        fireEvent.click(button(4))
+        expect(screen.getAllByRole('dialog')).toHaveLength(1)
+        expect(screen.getByRole('dialog', { name: 'About Chart 4' })).toBeInTheDocument()
+      })
+
+      it('is closed by opening the metric definition in the same chart, and the other way round', () => {
+        render(<BenchmarkView metrics={metrics} setupMetrics={setupMetrics} attemptsUrl="/a.json" definitions={[{ key: 'precision', name: 'Balanced precision', definition: 'd' }]} />)
+        fireEvent.click(button(1))
+        expect(screen.getByRole('dialog', { name: 'About Chart 1' })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'What is Precision?' }))
+        expect(screen.queryByRole('dialog')).toBeNull()
+        expect(document.getElementById('metric-popover')).not.toBeNull()
+        fireEvent.click(button(1))
+        expect(document.getElementById('metric-popover')).toBeNull()
+        expect(screen.getByRole('dialog', { name: 'About Chart 1' })).toBeInTheDocument()
+      })
+
+      it('names the setup chart\'s "?" buttons apart from the AI model chart\'s', () => {
+        render(<BenchmarkView metrics={metrics} setupMetrics={setupMetrics} attemptsUrl="/a.json" definitions={[{ key: 'precision', name: 'Balanced precision', definition: 'd' }]} />)
+        expect(screen.getByRole('button', { name: 'What is Precision?' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'What is Precision? (by setup)' })).toBeInTheDocument()
+      })
+
+      it('gets a new number and text with the tab, and closes when the tab changes', () => {
+        both()
+        fireEvent.click(button(4))
+        fireEvent.click(within(setupSection()).getByRole('tab', { name: 'Critical thinking' }))
+        expect(screen.queryByRole('dialog')).toBeNull()
+        fireEvent.click(button(6))
+        expect(screen.getByRole('dialog', { name: 'About Chart 6' })).toHaveTextContent(/how well it judges whether a puzzle can be solved/)
+      })
     })
   })
 })

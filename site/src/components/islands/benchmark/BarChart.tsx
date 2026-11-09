@@ -26,10 +26,11 @@ export function rankRows(rows: readonly BarRow[], higherIsBetter: boolean): BarR
 }
 
 /** One thin horizontal bar (the metric tabs name the chart; the model and the value are all it shows) per model. A bar runs on a fixed 0 to 100% scale. A null value has the label "n/a" and no bar. The best bar is green and the worst red (`data-rank`). Text is HTML so it keeps the page font size. */
+/** The bars only; the parent puts them in a `<figure>` and the caption after them. */
 export function BarChart({ title, rows, higherIsBetter = true }: { title: string; rows: readonly BarRow[]; higherIsBetter?: boolean }) {
   const ranks = rankRows(rows, higherIsBetter)
   return (
-    <figure className="chart">
+    <div className="chart">
       {rows.length === 0 ? (
         <p className="empty">No model selected.</p>
       ) : (
@@ -47,6 +48,6 @@ export function BarChart({ title, rows, higherIsBetter = true }: { title: string
           ))}
         </div>
       )}
-    </figure>
+    </div>
   )
 }

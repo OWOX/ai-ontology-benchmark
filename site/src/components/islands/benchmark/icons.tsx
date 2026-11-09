@@ -118,3 +118,22 @@ export function GitHubIcon() {
     </svg>
   )
 }
+
+/** Copy the chart: two overlapping sheets. */
+export function CopyIcon() {
+  return (
+    <svg {...inline}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V6a2 2 0 0 1 2-2h8" />
+    </svg>
+  )
+}
+
+/** Copied: a tick. */
+export function CheckIcon() {
+  return (
+    <svg {...inline}>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  )
+}

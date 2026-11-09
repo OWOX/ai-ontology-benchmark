@@ -112,7 +112,9 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
     }
     // A click outside closes the popover on the way past: nothing stops it or prevents its default, so the control under the pointer (Run, the reload icon) still does its job.
     const onClick = (e: Event) => {
-      if (!(e.target as Element | null)?.closest?.('.pop-wrap')) setOpen(null)
+      // Only this player's own popovers count: a popover elsewhere on the page (a chart's) is outside.
+      const wrap = (e.target as Element | null)?.closest?.('.pop-wrap')
+      if (!wrap || !root.current?.contains(wrap)) setOpen(null)
     }
     document.addEventListener('keydown', onKey)
     document.addEventListener('click', onClick)
