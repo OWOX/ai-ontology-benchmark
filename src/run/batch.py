@@ -6,8 +6,11 @@ src/run/models.py. Appends to the state files and the raw files, never rewrites 
 carries build_request(), the body a direct call sends, and results are matched by custom_id only.
 """
 
+import contextlib
 import dataclasses
+import json
 import re
+import signal
 import sys
 import time
 from datetime import datetime, timezone
@@ -17,7 +20,7 @@ from src.puzzles.registry import get_engine
 from src.run.budget import TOLERANCE, BudgetError, is_batched, spent_by_model, worst_case_request_cost
 from src.run.models import InfrastructureError, RequestError, batch_done, batch_results, build_request, submit_batch
 from src.run.raw import parse_raw_text
-from src.run.run import append_record, make_record, read_done, safe_commit
+from src.run.run import RunError, append_record, make_record, read_done, safe_commit
 from src.validator import offered_reasons
 
 POLL_S = 60  # seconds between two checks of the open batches; tests patch it
@@ -50,11 +53,15 @@ def open_batches(events: list[dict]) -> list[dict]:
 
 
 def submission_counts(events: list[dict]) -> dict[tuple, int]:
-    """How many times each attempt (input id, setup, attempt number) has been submitted."""
+    """How many times each attempt (input id, setup, attempt number) has been submitted. A submission
+    that ended in a RequestError (listed in its `collected` event) does not count toward the retry cap."""
+    rejected = {e["batch_id"]: set(e.get("request_errors", ())) for e in events if e.get("event") == "collected"}
     counts: dict[tuple, int] = {}
     for event in events:
         if event.get("event") == "submitted":
             for item in event["requests"]:
+                if item["custom_id"] in rejected.get(event["batch_id"], ()):
+                    continue
                 key = (item["input_id"], item["setup"], item["attempt_number"])
                 counts[key] = counts.get(key, 0) + 1
     return counts
@@ -94,7 +101,7 @@ def play_batched(*, config, manifest, results, prices, versions, pending, outcom
         work[model["name"]].attempts.append((row, setup, number))
     context = dict(config=config, manifest=manifest, results=results, prices=prices, versions=versions,
                    outcomes=outcomes, branch=branch, progress=progress, rows=rows, prompt_for=prompt_for,
-                   with_reasons=with_reasons)
+                   with_reasons=with_reasons, work=work)
     finished: set[str] = set()
     while True:
         moved = False
@@ -163,10 +170,12 @@ def step(state: ModelBatches, context: dict) -> tuple[bool, bool]:
             return True, False
         chunk = size_chunk(state, context, remaining, events)
         if not chunk:
-            if any(open_batches(read_state(batch_state_path(context["results"], m["name"])))
-                   for m in config["models"]):
-                return False, False  # a batch of this experiment is open: wait, then look again
-            state.blocked = budget_stop(state, context, remaining)
+            others = [m["name"] for m in config["models"] if m["name"] not in context["work"]
+                      and open_batches(read_state(batch_state_path(context["results"], m["name"])))]
+            if any(open_batches(read_state(batch_state_path(context["results"], n)))
+                   for n in context["work"] if n != state.name):
+                return False, False  # a batch this process collects is open: wait, then look again
+            state.blocked = budget_stop(state, context, remaining, others)
             return False, True
         if not submit(state, context, chunk):
             return False, False
@@ -212,6 +221,11 @@ def write_record(state: ModelBatches, context: dict, row: dict, setup: str, numb
     return record
 
 
+def line_size(cid: str, body: dict) -> int:
+    """The UTF-8 bytes of one batch line, with a margin for each provider's own wrapper."""
+    return len(json.dumps({"custom_id": cid, "params": body}).encode("utf-8")) + 200
+
+
 def size_chunk(state: ModelBatches, context: dict, remaining: list[tuple], events: list[dict]) -> list[tuple]:
     """The first attempts of `remaining`, in order, that fit the provider limits and both budgets
     together with the open batches. Stops at the first that does not fit."""
@@ -227,7 +241,10 @@ def size_chunk(state: ModelBatches, context: dict, remaining: list[tuple], event
         prompt = context["prompt_for"](row["input_id"], setup)
         body = build_request(state.model, prompt, config["max_output_tokens"], config.get("reasoning_effort"))
         cost = worst(config, context["prices"][name], prompt)
-        length = len(repr(body)) + 100
+        cid = custom_id(row["input_id"], setup, number, retry)
+        length = line_size(cid, body)
+        if length > max_bytes:
+            raise RunError(f"{name} {cid}: request larger than the {state.model['provider']} batch limit")
         if (len(chunk) >= max_requests or size + length > max_bytes
                 or model_total + cost > budget["per_model_usd"] + TOLERANCE
                 or experiment_total + cost > budget["per_experiment_usd"] + TOLERANCE):
@@ -239,14 +256,18 @@ def size_chunk(state: ModelBatches, context: dict, remaining: list[tuple], event
     return chunk
 
 
-def budget_stop(state: ModelBatches, context: dict, remaining: list[tuple]) -> BudgetError:
-    """The BudgetError for a model whose next request fits no budget while no batch is open."""
+def budget_stop(state: ModelBatches, context: dict, remaining: list[tuple], others: list[str]) -> BudgetError:
+    """The BudgetError for a model whose next request fits no budget while no batch this process collects
+    is open. `others` are models outside this run (--model) whose open batches hold part of the budget."""
     config, name = context["config"], state.name
     spent = spent_by_model(config, context["prices"], context["results"] / "raw")
     row, setup, _, _ = remaining[0]
     cost = worst(config, context["prices"][name], context["prompt_for"](row["input_id"], setup))
     budget = config["budget"]
     left = len(remaining)
+    if others:
+        return BudgetError(f"budget reached: spent plus the open batches of {', '.join(others)} exceed "
+                           f"per_experiment_usd {budget['per_experiment_usd']}; run without --model to collect them", left)
     if spent[name] + cost > budget["per_model_usd"] + TOLERANCE:
         return BudgetError(f"budget reached: per_model_usd {budget['per_model_usd']} for model {name} "
                            f"(spent {spent[name]:.4f}, next request up to {cost:.4f})", left)
@@ -258,24 +279,58 @@ def now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def submit(state: ModelBatches, context: dict, chunk: list[tuple]) -> bool:
-    """Send the chunk as one batch, then write and commit the state file before anything waits."""
-    lines = [(custom_id(row["input_id"], setup, number, retry), body) for row, setup, number, retry, body in chunk]
+@contextlib.contextmanager
+def deferred_signals():
+    """Hold SIGINT and SIGTERM until the block ends, then restore the handlers and deliver the signal again.
+    Outside the main thread nothing is deferred."""
+    caught: list[int] = []
+    old = {}
     try:
-        batch_id = submit_batch(state.model, lines)
-    except InfrastructureError as error:
-        transient(state, context["config"], error, "batch submit")
-        return False
-    state.path.parent.mkdir(parents=True, exist_ok=True)
-    append_record(state.path, {
-        "event": "submitted", "batch_id": batch_id, "provider": state.model["provider"], "created_at": now(),
-        "requests": [{"custom_id": cid, "input_id": row["input_id"], "setup": setup,
-                      "attempt_number": number, "retry": retry}
-                     for cid, (row, setup, number, retry, _) in zip((c for c, _ in lines), chunk)]})
-    log(f"batch {state.name} {batch_id}: submitted {len(chunk)} requests")
+        for number in (signal.SIGINT, signal.SIGTERM):
+            old[number] = signal.signal(number, lambda signum, frame: caught.append(signum))
+    except ValueError:
+        old = {}
+    try:
+        yield
+    finally:
+        for number, handler in old.items():
+            signal.signal(number, handler)
+        if caught:
+            signal.raise_signal(caught[0])
+
+
+def submit(state: ModelBatches, context: dict, chunk: list[tuple]) -> bool:
+    """Send the chunk as one batch, then write and commit the state file before anything waits, and push.
+    A signal that arrives from the send to the commit waits until the commit is done, so the batch is never
+    paid for without a record of it. A failed send stops the run: the provider may have made the batch."""
+    lines = [(custom_id(row["input_id"], setup, number, retry), body) for row, setup, number, retry, body in chunk]
     experiment = context["config"]["experiment_id"]
-    safe_commit(context["branch"], f"Results: experiment {experiment}, {state.name} batch {batch_id} submitted")
+    with deferred_signals():
+        try:
+            batch_id = submit_batch(state.model, lines)
+        except InfrastructureError as error:
+            raise RequestError(
+                f"{state.name}: the batch submit failed after sending ({' '.join(str(error).split())[:200]}); "
+                "the provider may have created the batch, so check its console before running again; "
+                f"a new run resubmits these {len(chunk)} requests") from error
+        state.path.parent.mkdir(parents=True, exist_ok=True)
+        append_record(state.path, {
+            "event": "submitted", "batch_id": batch_id, "provider": state.model["provider"], "created_at": now(),
+            "requests": [{"custom_id": cid, "input_id": row["input_id"], "setup": setup,
+                          "attempt_number": number, "retry": retry}
+                         for cid, (row, setup, number, retry, _) in zip((c for c, _ in lines), chunk)]})
+        log(f"batch {state.name} {batch_id}: submitted {len(chunk)} requests")
+        safe_commit(context["branch"], f"Results: experiment {experiment}, {state.name} batch {batch_id} submitted")
+    push_branch(context["branch"], experiment)  # a fresh clone sees the open batch even if this machine dies
     return True
+
+
+def push_branch(branch, experiment: str) -> None:
+    """Push the results branch. A failure only warns."""
+    if branch:
+        problem = branch.push()
+        if problem:
+            print(f"warning: push of results/{experiment} failed: {problem}", file=sys.stderr)
 
 
 def collect(state: ModelBatches, context: dict, batch: dict, events: list[dict]) -> None:
@@ -284,19 +339,22 @@ def collect(state: ModelBatches, context: dict, batch: dict, events: list[dict])
     config, experiment, branch = context["config"], context["config"]["experiment_id"], context["branch"]
     batch_id = batch["batch_id"]
 
-    def close() -> None:
-        append_record(state.path, {"event": "collected", "batch_id": batch_id, "created_at": now()})
+    def close(rejected: list[str]) -> None:
+        event = {"event": "collected", "batch_id": batch_id, "created_at": now()}
+        if rejected:
+            event["request_errors"] = rejected  # these submissions don't count toward the retry cap
+        append_record(state.path, event)
         safe_commit(branch, f"Results: experiment {experiment}, {state.name} batch {batch_id} collected")
 
     try:
         answers = batch_results(state.model, batch_id)
     except RequestError:
-        close()  # a restart must not read the same failed batch again
+        close([item["custom_id"] for item in batch["requests"]])  # a restart must not read it again
         raise
     done = done_keys(context, state)
     counts = submission_counts(events)
     succeeded = retrying = failed = 0
-    stop = None
+    stop, rejected = None, []
     for item in batch["requests"]:
         key = (item["input_id"], item["setup"], item["attempt_number"])
         if (key[0], key[1], state.name, key[2]) in done:
@@ -305,6 +363,7 @@ def collect(state: ModelBatches, context: dict, batch: dict, events: list[dict])
         answer = answers.get(item["custom_id"])
         if isinstance(answer, RequestError):
             stop = stop or answer
+            rejected.append(item["custom_id"])
         elif answer is None or isinstance(answer, InfrastructureError):
             if counts[key] >= config["retry_cap"] + 1:
                 write_record(state, context, row, item["setup"], item["attempt_number"], None)
@@ -314,7 +373,7 @@ def collect(state: ModelBatches, context: dict, batch: dict, events: list[dict])
         else:
             write_record(state, context, row, item["setup"], item["attempt_number"], answer)
             succeeded += 1
-    close()
+    close(rejected)
     log(f"batch {state.name} {batch_id}: collected {succeeded} succeeded, {retrying} to retry, {failed} failed")
     if stop:
         raise stop
