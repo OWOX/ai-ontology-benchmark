@@ -183,3 +183,9 @@ def test_new_experiment_clears_only_an_error_message_when_the_form_changes():
     run = subprocess.run([NODE, "-e", script], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     assert json.loads(run.stdout) == [["msg", ""], ["msg ok", "Dry run started."], ["msg", ""]]
+
+
+def test_continue_does_not_depend_on_a_report():
+    source = (ROOT / "ui" / "static" / "pages" / "experiment.js").read_text(encoding="utf-8")
+    line = next(l for l in source.splitlines() if "contBox.hidden =" in l and "running" in l)
+    assert "report" not in line and "t.done >= t.planned" in line and "running" in line
