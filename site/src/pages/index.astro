@@ -150,9 +150,8 @@ const jsonLd = {
   :global(.benchmark .metric-popover .direction) { color: var(--head); }
   :global(.benchmark .chart-frame) { box-sizing: border-box; border: 1px solid var(--text); background: var(--panel); padding: 1rem 1.25rem 0.5rem; }
   :global(.benchmark .chart) { margin: 0; }
-  /* A chart section: a subtitle, then the tabs and the framed panel. Two of them stack with the island's gap between. */
-  :global(.benchmark .chart-section .subtitle) { margin: 0; font-size: 1.15rem; line-height: 1.3; }
-  :global(.benchmark .chart-section .metrics) { margin-top: 0.75rem; }
+  /* A chart section: the tabs and the framed panel. Two of them stack with the island's gap between. */
+  :global(.benchmark .chart-section .metrics) { margin-top: 0; }
   /* The figure's numbered caption sits under the bars and ends in a "?" round icon button; its popover is the Player's, out of flow, opening upwards over the bars (`.below` flips it under the caption when there is no room above), so opening it moves nothing. */
   :global(.benchmark .chart-figure) { margin: 0; }
   :global(.benchmark .chart-head .chart-tools) { white-space: nowrap; }

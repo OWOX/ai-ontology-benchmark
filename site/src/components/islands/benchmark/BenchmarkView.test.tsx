@@ -577,7 +577,7 @@ describe('BenchmarkView', () => {
 
     it('has no setup section without setup rows', () => {
       view()
-      expect(screen.queryByRole('heading', { name: 'Metrics by setup' })).toBeNull()
+      expect(screen.queryByRole('region', { name: 'Metrics by setup' })).toBeNull()
       expect(screen.getAllByRole('tablist')).toHaveLength(1)
     })
 
@@ -592,13 +592,13 @@ describe('BenchmarkView', () => {
       expect(within(figure).getByRole('img')).toHaveAccessibleName(/^Precision: claude-a/)
     })
 
-    it('gives each section a subtitle and no text between it and the tabs', () => {
+    it('names each section as a region, with no visible heading and no text between it and the tabs', () => {
       both()
-      expect(screen.getByRole('heading', { level: 2, name: 'Metrics by AI model' })).toBeInTheDocument()
-      expect(screen.getByRole('heading', { level: 2, name: 'Metrics by setup' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Metrics by AI model' })).toBeNull()
+      expect(screen.queryByRole('heading', { name: 'Metrics by setup' })).toBeNull()
       expect(setupSection().querySelector('.lead')).toBeNull()
-      expect(screen.getByRole('heading', { level: 2, name: 'Metrics by AI model' }).nextElementSibling).toHaveClass('metrics')
-      expect(screen.getByRole('heading', { level: 2, name: 'Metrics by setup' }).nextElementSibling).toHaveClass('metrics')
+      expect(modelSection().firstElementChild).toHaveClass('metrics')
+      expect(setupSection().firstElementChild).toHaveClass('metrics')
     })
 
     it('numbers the chart titles 1 to 3 on the AI model tabs and 4 to 6 on the setup tabs', () => {
