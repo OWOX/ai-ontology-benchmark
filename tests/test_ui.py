@@ -942,6 +942,14 @@ def test_a_failed_pr_edit_can_be_retried(server, gh):
     status, data = call(server, "POST", "/api/commit", {"id": "t1"})  # now in step
     assert status == 409 and "nothing to commit" in data["error"]
     assert len([c for c in gh_calls(gh) if c[1] == "edit"]) == 2
+    view = json.loads((gh / "view.json").read_text())  # a note added by hand, saved with CRLF, and a null body
+    (gh / "view.json").write_text(json.dumps(dict(view, body=view["body"].replace("\n", "\r\n") + "\r\nSee also #12")))
+    status, data = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 409 and "nothing to commit" in data["error"]
+    (gh / "view.json").write_text(json.dumps(dict(view, body=None)))
+    status, data = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 409 and "nothing to commit" in data["error"]
+    assert len([c for c in gh_calls(gh) if c[1] == "edit"]) == 2  # the hand-edited body is kept
 
 
 def test_commit_without_the_release_inputs_pushes_nothing(server, gh):
