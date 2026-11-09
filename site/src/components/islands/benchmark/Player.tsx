@@ -60,7 +60,7 @@ interface Props {
   legalMoves: Readonly<Record<string, readonly string[]>>
 }
 
-/** Shows one random attempt of the selected puzzle (any puzzle under "all") and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). The refresh button next to the state picks another attempt. The parent keys it by the filter, so a change resets it. */
+/** Shows one random attempt of the selected puzzle (any puzzle under "all") and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). The refresh button in the title row picks another attempt. The parent keys it by the filter, so a change resets it. */
 export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
   const titleId = useId()
   const alive = useRef(true)
@@ -185,6 +185,9 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
           <div className="title">
             <span className="num" aria-hidden="true"><FlaskIcon /></span>
             <span className="label" id={titleId}>Experiment Example</span>
+            {attempt && pool.length > 1 && (
+              <button type="button" className="another square" onClick={another} disabled={playing} aria-label="Show another case" title="Show another case"><RefreshIcon /></button>
+            )}
           </div>
           <div className="body">
             {attempt && (
@@ -200,10 +203,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
                         </span>
                       </>
                     )}
-                  </dd>{' '}
-                  {pool.length > 1 && (
-                    <button type="button" className="another square" onClick={another} disabled={playing} aria-label="Show another case" title="Show another case"><RefreshIcon /></button>
-                  )}
+                  </dd>
                   {/* Always in the DOM (hidden while closed), so the button's aria-controls points at an element that exists. */}
                   {attempt.validity === 'invalid' && (
                     <div className="pop pop-wrap" id={`${popId}-why`} role="dialog" aria-label="Why this state is not solvable" hidden={open !== 'why'}>

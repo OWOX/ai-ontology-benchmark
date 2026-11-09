@@ -346,6 +346,7 @@ describe('Player', () => {
     stub({ '3x3': [attempt({ validity: 'valid' }), attempt({ validity: 'invalid', outcome: 'success', mismatch: true })] })
     await mount()
     const before = fact('State:')
+    expect(screen.getByRole('button', { name: 'Show another case' }).closest('.title')).not.toBeNull()
     await run()
     await finish()
     fireEvent.click(screen.getByRole('button', { name: 'Show another case' }))

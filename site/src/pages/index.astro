@@ -202,14 +202,14 @@ const jsonLd = {
   :global(.benchmark .facts [data-verdict='wrong'] .result .value) { color: var(--danger); }
   :global(.benchmark .facts .result .value) { font-weight: var(--weight-medium); }
   :global(.benchmark .facts .verdict-icon) { vertical-align: -0.15em; margin-right: 0.3rem; }
-  /* Another case: a bare icon button after the state, its keyboard focus a dashed ring like the puzzle squares. */
-  :global(.cube-solver.benchmark .facts button.another) {
-    display: inline-flex; align-items: center; justify-content: center; vertical-align: -0.2em; width: 1.4rem; height: 1.4rem; padding: 0; margin-left: 0.15rem;
-    border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer;
+  /* Another case: a bare icon button in the title row, after the heading. Its icon is 1em of the title's font size (1rem), and the button is as tall as the row (the circle, 1.6rem). Keyboard focus is a dashed ring like the puzzle squares. */
+  :global(.cube-solver.benchmark .steps.experiment .title button.another) {
+    display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; padding: 0;
+    border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer; font: inherit; line-height: inherit;
   }
-  :global(.cube-solver.benchmark .facts button.another:hover) { background: var(--code-bg); }
-  :global(.cube-solver.benchmark .facts button.another:disabled) { opacity: 0.4; cursor: default; background: transparent; }
-  :global(.cube-solver.benchmark .facts button.another:focus-visible) { outline: 2px dashed var(--text); outline-offset: 1px; }
+  :global(.cube-solver.benchmark .steps.experiment .title button.another:hover) { background: var(--code-bg); }
+  :global(.cube-solver.benchmark .steps.experiment .title button.another:disabled) { opacity: 0.4; cursor: default; background: transparent; }
+  :global(.cube-solver.benchmark .steps.experiment .title button.another:focus-visible) { outline: 2px dashed var(--text); outline-offset: 1px; }
   @media (max-width: 36rem) {
     :global(.benchmark .player) { grid-template-columns: minmax(0, 1fr); }
     /* The folder tabs get smaller type and padding. */
