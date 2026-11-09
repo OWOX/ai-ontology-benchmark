@@ -160,16 +160,20 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.benchmark .facts .prompt-text) { margin: 0; max-height: min(20rem, 60vh); overflow: auto; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
   /* "not solvable" and "Prompt": buttons styled as text with a dashed underline, each opening a popover under the facts. The popover is out of flow (it sits at its static position, over the Run button), so opening it moves nothing. */
   :global(.benchmark .steps.experiment .body) { position: relative; }
-  :global(.cube-solver.benchmark .facts button.pop-btn) {
-    display: inline; min-height: 0; padding: 0; margin: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;
+  /* Exactly like inline text but for the dashed underline: the chained :not()s match the specificity of the shared text-button rule in cube-stage.css, which they must beat. */
+  :global(.cube-solver.benchmark .facts button.pop-btn:not(.redo):not(.switch):not(.square)) {
+    display: inline; min-height: 0; width: auto; padding: 0; margin: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: inherit;
+    font: inherit; letter-spacing: inherit; line-height: inherit; text-align: inherit; cursor: pointer;
     text-decoration: underline dashed; text-underline-offset: 0.2em;
   }
-  :global(.cube-solver.benchmark .facts button.pop-btn[aria-expanded='true']) { background: var(--code-bg); }
   :global(.cube-solver.benchmark .facts button.pop-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
+  /* The popover has a clear edge (border and shadow from the theme) and sits above the player. */
   :global(.benchmark .facts .pop) {
-    position: absolute; z-index: 3; left: 0; box-sizing: border-box; width: min(32rem, 100%); margin-top: 0.35rem; padding: 0.6rem 0.8rem;
-    background: var(--code-bg); border: 1px solid var(--code-rule); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
+    position: absolute; z-index: 10; left: 0; box-sizing: border-box; width: min(32rem, 100%); margin-top: 0.35rem; padding: 0.6rem 0.8rem;
+    background: var(--panel); border: 1px solid var(--code-rule); box-shadow: var(--pop-shadow); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
   }
+  :global(.benchmark .facts .pop[hidden]) { display: none; }
+  :global(.benchmark .facts .pop .pop-note) { margin-top: 0.5rem; color: var(--muted); }
   :global(.benchmark .facts .pop p) { margin: 0; }
   /* An illegal move: the cube shakes side to side for one second. */
   :global(.benchmark .player .cube-stage.shake .views) { animation: bench-shake 1s ease-in-out; }

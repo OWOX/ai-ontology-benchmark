@@ -4,7 +4,7 @@ import { CubeView } from '../cube/svg/CubeView'
 import { ALL, SOURCE, playable, puzzleSize, resultSign, type ResultSign } from '../../../lib/benchmark'
 import type { BenchmarkAttempt } from '../../../lib/types'
 import { loadAttempts } from './attempts'
-import { whyUnsolvable } from './unsolvable'
+import { corruptionSentence, whyUnsolvable } from './unsolvable'
 import { replayFrame, type ReplayFrame } from './replay'
 import { CheckCircleIcon, CrossCircleIcon, FlaskIcon, RefreshIcon } from './icons'
 
@@ -24,11 +24,11 @@ const RESULT: Record<ResultSign, string> = {
   mismatch: 'Mismatch detected',
 }
 
-/** "3x3 cube, solvable" or "3x3 cube, not solvable: twisted corner UFL clockwise" (the reason only when the import recorded it). */
-export function stateText(a: Pick<ReplayAttempt, 'puzzle' | 'validity' | 'corruption'>): string {
+/** "3x3 cube, solvable" or "3x3 cube, not solvable" (the corruption is in the "not solvable" popover). */
+export function stateText(a: Pick<ReplayAttempt, 'puzzle' | 'validity'>): string {
   const kind = `${a.puzzle} cube`
   if (a.validity === 'valid') return `${kind}, solvable`
-  return a.corruption ? `${kind}, not solvable: ${a.corruption}` : `${kind}, not solvable`
+  return `${kind}, not solvable`
 }
 
 /** The result's words, named by what was missed: an unsolvable input left unflagged reads "Mismatch not detected"; a solvable one flagged as a mismatch reads "Not solved", since there was nothing to detect. */
@@ -110,14 +110,15 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
       setOpen(null)
       root.current?.querySelector<HTMLElement>(`[data-pop="${open}"]`)?.focus()
     }
-    const onDown = (e: Event) => {
+    // A click outside closes the popover on the way past: nothing stops it or prevents its default, so the control under the pointer (Run, the reload icon) still does its job.
+    const onClick = (e: Event) => {
       if (!(e.target as Element | null)?.closest?.('.pop-wrap')) setOpen(null)
     }
     document.addEventListener('keydown', onKey)
-    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('click', onClick)
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('click', onClick)
     }
   }, [open])
 
@@ -197,16 +198,19 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
                         <span className="pop-wrap">
                           <button type="button" className="pop-btn" data-pop="why" aria-expanded={open === 'why'} aria-controls={`${popId}-why`} onClick={() => setOpen(open === 'why' ? null : 'why')}>not solvable</button>
                         </span>
-                        {attempt.corruption ? `: ${attempt.corruption}` : ''}
                       </>
                     )}
                   </dd>{' '}
                   {pool.length > 1 && (
                     <button type="button" className="another square" onClick={another} disabled={playing} aria-label="Show another case" title="Show another case"><RefreshIcon /></button>
                   )}
-                  {open === 'why' && attempt.validity === 'invalid' && (
-                    <div className="pop pop-wrap" id={`${popId}-why`} role="region" aria-label="Why this state is not solvable">
-                      <p>{whyUnsolvable(attempt.corruption)}</p>
+                  {/* Always in the DOM (hidden while closed), so the button's aria-controls points at an element that exists. */}
+                  {attempt.validity === 'invalid' && (
+                    <div className="pop pop-wrap" id={`${popId}-why`} role="dialog" aria-label="Why this state is not solvable" hidden={open !== 'why'}>
+                      <p>
+                        {attempt.corruption && <><strong>{corruptionSentence(attempt.corruption)}</strong>{' '}</>}
+                        {whyUnsolvable(attempt.corruption)}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -220,9 +224,10 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
                       </>
                     )}
                   </dd>
-                  {open === 'prompt' && promptText && (
-                    <div className="pop pop-wrap" id={`${popId}-prompt`} role="region" aria-label="Prompt the model received">
+                  {promptText && (
+                    <div className="pop pop-wrap" id={`${popId}-prompt`} role="dialog" aria-label="Prompt the model received" hidden={open !== 'prompt'}>
                       <pre className="prompt-text" tabIndex={0}>{promptText}</pre>
+                      {attempt.decision && <p className="pop-note">A decision model also received the moves so far and the list of options with each call.</p>}
                     </div>
                   )}
                 </div>

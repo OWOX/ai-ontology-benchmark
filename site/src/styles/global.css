@@ -6,6 +6,7 @@
   /* Dark-mode tokens of owox.com src/design-system/tokens.css, source token in brackets. */
   --bg: #1a1f2e;               /* ink-900, bg-page */
   --panel: #1f2536;            /* ink-850, bg-elevated */
+  --pop-shadow: 0 8px 24px rgb(0 0 0 / 0.55);
   --text: #e9ecf2;             /* text-050 */
   --head: #e9ecf2;             /* text-primary */
   --text-inv: #1a1f2e;         /* ink-900 */
@@ -40,6 +41,7 @@
   color-scheme: light;
   --bg: #f5f7fb;               /* canvas-050 */
   --panel: #ffffff;            /* surface-000 */
+  --pop-shadow: 0 8px 24px rgb(26 31 46 / 0.18);
   --text: #1a1f2e;             /* ink-900 */
   --head: #1a1f2e;             /* ink-900 */
   --text-inv: #f5f7fb;         /* canvas-050 */
@@ -57,6 +59,7 @@
     color-scheme: light;
     --bg: #f5f7fb;               /* canvas-050 */
     --panel: #ffffff;            /* surface-000 */
+  --pop-shadow: 0 8px 24px rgb(26 31 46 / 0.18);
     --text: #1a1f2e;             /* ink-900 */
     --head: #1a1f2e;             /* ink-900 */
     --text-inv: #f5f7fb;         /* canvas-050 */
