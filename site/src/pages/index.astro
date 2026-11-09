@@ -22,11 +22,10 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
      The island root also wears .cube-solver, so the cube drawing and the text buttons come from src/styles/cube-stage.css, the same source as /cube. */
   /* Status colours (--ok, --danger) live in global.css with the theme tokens. */
   :global(.benchmark) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; max-width: 40rem; }
-  /* The filter is /cube's numbered steps (rules in src/styles/cube-stage.css); here only the body row: the options side by side, scrolling sideways when they do not fit. */
-  :global(.benchmark .steps.filter .body) { overflow-x: auto; scrollbar-width: none; }
-  :global(.benchmark .steps.filter .body::-webkit-scrollbar) { display: none; }
-  /* Steps 1 and 2 side by side, step 3 below at full width; stacked on a narrow screen. */
-  :global(.cube-solver.benchmark .steps.filter) { grid-template-columns: max-content minmax(0, 1fr); gap: 1rem 1.5rem; }
+  /* The filter is /cube's numbered steps (rules in src/styles/cube-stage.css); here only the body row: the options side by side, wrapping onto more lines when they do not fit their half. */
+  :global(.benchmark .steps.filter .options) { flex-wrap: wrap; }
+  /* Steps 1 and 2 (Puzzle and AI provider) in two equal halves, step 3 below at full width; stacked on a narrow screen, where a half is too narrow to read. */
+  :global(.cube-solver.benchmark .steps.filter) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem 1.5rem; }
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(3)) { grid-column: 1 / -1; margin-top: 1.5rem; }
   /* The options sit close under their title and start where the title text starts. */
   :global(.cube-solver.benchmark .steps.filter .body) { margin-top: 0.35rem; padding-left: 0; }
@@ -85,7 +84,7 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   /* The chart sits in a framed panel; the metric tabs hang off its top edge like folder tabs. The selected tab has the panel background and covers the frame's top border, so it merges into the panel. */
   /* 1rem + the island's 1.5rem gap = 2.5rem above the tabs, the same as the puzzle row to the Model step (1rem row gap + 1.5rem). */
   :global(.benchmark .metrics) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin-top: 1rem; }
-  /* The four tabs stay on one row, unwrapped and unsqueezed; the tablist scrolls sideways when they do not fit, its scrollbar hidden. The 1px padding-bottom keeps the selected tab's overlap of the frame inside the scroll box. The "?" buttons are measured from the tabs on every scroll (BenchmarkView). */
+  /* The three tabs stay on one row, unwrapped and unsqueezed; the tablist scrolls sideways when they do not fit, its scrollbar hidden. The 1px padding-bottom keeps the selected tab's overlap of the frame inside the scroll box. The "?" buttons are measured from the tabs on every scroll (BenchmarkView). */
   :global(.benchmark .metrics .options) { flex-wrap: nowrap; align-items: flex-end; gap: 0.25rem; overflow-x: auto; scrollbar-width: none; padding-bottom: 1px; margin-bottom: -1px; }
   :global(.benchmark .metrics .options::-webkit-scrollbar) { display: none; }
   :global(.benchmark .metrics .options button) { flex: none; white-space: nowrap; }
@@ -138,7 +137,11 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   /* 1rem + the island's 1.5rem gap = 2.5rem under the chart panel, the same as above its tabs. */
   :global(.benchmark .player) { margin-top: 1rem; display: grid; grid-template-columns: minmax(min-content, 1fr) minmax(0, 14.4rem); gap: 1.5rem; align-items: start; }
   /* The Experiment block wears the filter's step look (title with an icon disc), its body under the title text. */
-  :global(.cube-solver.benchmark .steps.experiment .body) { margin-top: 0.35rem; padding-left: 0; justify-items: start; }
+  :global(.cube-solver.benchmark .steps.experiment .body), :global(.cube-solver.benchmark .steps.source .body) { margin-top: 0.35rem; padding-left: 0; justify-items: start; }
+  /* The Source section: its body is plain text under the title, a link first. */
+  :global(.benchmark .steps.source .body p) { margin: 0; }
+  :global(.benchmark .steps.source .body p + p) { margin-top: 0.5rem; max-width: 36rem; }
+  :global(.benchmark .steps.source .repo) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
   /* The replay cube fills its 14.4rem column (about 20% smaller than /cube's), against the right edge of the content. */
   :global(.benchmark .player .views) { justify-items: end; }
   :global(.benchmark .player .cube-view) { width: min(100%, 14.4rem); }
@@ -153,8 +156,25 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.benchmark .facts .after-result) { white-space: normal; }
   /* Room for ". Source" on its own line where it wraps, so the run never moves Run down. */
   @media (max-width: 48rem) { :global(.benchmark .facts .one-line) { min-height: 2lh; } }
-  /* The link to the prompt the model was sent, like a link in the page's prose (.prose a). */
-  :global(.benchmark .facts .prompt) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
+  /* The exact prompt the model received: monospace, wrapped, scrolling past 20rem. */
+  :global(.benchmark .facts .prompt-text) { margin: 0; max-height: min(20rem, 60vh); overflow: auto; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* "not solvable" and "Prompt": buttons styled as text with a dashed underline, each opening a popover under the facts. The popover is out of flow (it sits at its static position, over the Run button), so opening it moves nothing. */
+  :global(.benchmark .steps.experiment .body) { position: relative; }
+  /* Exactly like inline text but for the dashed underline: the chained :not()s match the specificity of the shared text-button rule in cube-stage.css, which they must beat. */
+  :global(.cube-solver.benchmark .facts button.pop-btn:not(.redo):not(.switch):not(.square)) {
+    display: inline; min-height: 0; width: auto; padding: 0; margin: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: inherit;
+    font: inherit; letter-spacing: inherit; line-height: inherit; text-align: inherit; cursor: pointer;
+    text-decoration: underline dashed; text-underline-offset: 0.2em;
+  }
+  :global(.cube-solver.benchmark .facts button.pop-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
+  /* The popover has a clear edge (border and shadow from the theme) and sits above the player. */
+  :global(.benchmark .facts .pop) {
+    position: absolute; z-index: 10; left: 0; box-sizing: border-box; width: min(32rem, 100%); margin-top: 0.35rem; padding: 0.6rem 0.8rem;
+    background: var(--panel); border: 1px solid var(--code-rule); box-shadow: var(--pop-shadow); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
+  }
+  :global(.benchmark .facts .pop[hidden]) { display: none; }
+  :global(.benchmark .facts .pop .pop-note) { margin-top: 0.5rem; color: var(--muted); }
+  :global(.benchmark .facts .pop p) { margin: 0; }
   /* An illegal move: the cube shakes side to side for one second. */
   :global(.benchmark .player .cube-stage.shake .views) { animation: bench-shake 1s ease-in-out; }
   @keyframes bench-shake {

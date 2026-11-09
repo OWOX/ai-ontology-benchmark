@@ -1,10 +1,10 @@
 # Spec: docs/specs/site.md
-"""The four headline metrics of the public results page, one row per puzzle and AI model, pooled over
+"""The three headline metrics of the public results page, one row per puzzle and AI model, pooled over
 every setup, depth, and experiment. Built on the assessment helpers in src/evaluate/metrics.py."""
 
 from collections import defaultdict
 
-from src.evaluate.metrics import NA, answer_class, is_diagnosis, mean, mean_of_two, share
+from src.evaluate.metrics import NA, answer_class, is_diagnosis, mean_of_two, share
 
 ALL = "all"  # the puzzle value of the rows pooled over every puzzle
 
@@ -39,19 +39,12 @@ def critical(rows: list[dict]) -> dict:
     return value(mean_of_two(diagnosis, false_mismatch, True), len(reasoned))
 
 
-def cost(everything: list[dict], balanced: object) -> dict:
-    """Mean cost per attempt, infrastructure failures included, per unit of balanced precision."""
-    if balanced == NA or balanced == 0:
-        return value(None, len(everything))
-    return value(mean([r["cost"] for r in everything]) / balanced, len(everything))
-
-
 def metric_row(puzzle: str, model: str, provider: str, everything: list[dict]) -> dict:
     rows = [r for r in everything if r["outcome"] != "infrastructure_failure"]
     balanced, classified = precision(rows)
     return {"puzzle": puzzle, "model": model, "provider": provider,
             "precision": value(balanced, classified), "hallucination": hallucination(rows),
-            "critical": critical(rows), "cost": cost(everything, balanced)}
+            "critical": critical(rows)}
 
 
 def metric_rows(attempt_rows: list[dict], providers: dict[str, str]) -> list[dict]:

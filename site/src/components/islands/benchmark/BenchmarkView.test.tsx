@@ -6,11 +6,11 @@ import BenchmarkView from './BenchmarkView'
 
 const rate = (value: number | null, n: number) => ({ value, n })
 const row = (puzzle: string, model: string, provider: string, o: Partial<ModelMetrics> = {}): ModelMetrics => ({
-  puzzle, model, provider, precision: rate(0.5, 10), hallucination: rate(0.25, 8), critical: rate(null, 0), cost: rate(0.0123, 10), ...o,
+  puzzle, model, provider, precision: rate(0.5, 10), hallucination: rate(0.25, 8), critical: rate(null, 0), ...o,
 })
 const metrics = [
   row('3x3', 'claude-a', 'anthropic'),
-  row('3x3', 'gpt-a', 'openai', { precision: rate(1, 4), hallucination: rate(0.5, 8), cost: rate(0.05, 4) }),
+  row('3x3', 'gpt-a', 'openai', { precision: rate(1, 4), hallucination: rate(0.5, 8) }),
   row('4x4', 'claude-a', 'anthropic'),
 ]
 const view = () => render(<BenchmarkView metrics={metrics} attemptsUrl="/a.json" />)
@@ -139,10 +139,10 @@ describe('BenchmarkView', () => {
     expect(on('claude-a')).toBeInTheDocument()
   })
 
-  it('shows one chart at a time through the four metric tabs, Precision first', () => {
+  it('shows one chart at a time through the three metric tabs, Precision first', () => {
     const { container } = view()
     expect(screen.getByRole('tab', { name: 'Precision' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Precision', 'Hallucination rate', 'Critical thinking', 'Cost efficiency'])
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Precision', 'Hallucination rate', 'Critical thinking'])
     expect(container.querySelectorAll('figure.chart').length).toBe(1)
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Precision')
     fireEvent.click(screen.getByRole('tab', { name: 'Hallucination rate' }))
@@ -151,18 +151,18 @@ describe('BenchmarkView', () => {
     expect(screen.getByRole('tab', { name: 'Critical thinking' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('shows the cost tab in dollars with the cheaper model best, and bars scaled to the largest cost', () => {
-    const { container } = view()
-    fireEvent.click(screen.getByRole('tab', { name: 'Cost efficiency' }))
-    expect(screen.getByRole('img', { name: /^Cost efficiency/ })).toHaveAccessibleName('Cost efficiency: claude-a $0.0123 (best), gpt-a $0.0500 (worst)')
-    expect([...container.querySelectorAll<HTMLElement>('.chart .fill')].map((f) => f.style.width)).toEqual([`${(0.0123 / 0.05) * 100}%`, '100%'])
-    expect(location.hash).toBe('#metric=cost')
+
+  it('has no cost tab, and an old #metric=cost falls back to Precision', () => {
+    history.replaceState(null, '', '/#metric=cost')
+    view()
+    expect(screen.queryByRole('tab', { name: 'Cost efficiency' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Precision' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('keeps the four tabs in one unwrapped tablist and moves a "?" with the tablist scroll', () => {
+  it('keeps the three tabs in one unwrapped tablist and moves a "?" with the tablist scroll', () => {
     render(<BenchmarkView metrics={metrics} attemptsUrl="/a.json" definitions={[{ key: 'precision', name: 'Balanced precision', definition: 'd' }]} />)
     const list = screen.getByRole('tablist')
-    expect(within(list).getAllByRole('tab')).toHaveLength(4)
+    expect(within(list).getAllByRole('tab')).toHaveLength(3)
     const tab = screen.getByRole('tab', { name: 'Precision' })
     const rect = (left: number, right: number) => ({ left, right, top: 0, bottom: 10, width: right - left, height: 10, x: left, y: 0, toJSON() {} }) as DOMRect
     const at = { right: 100 }
@@ -286,6 +286,12 @@ describe('BenchmarkView', () => {
     expect(container.textContent).not.toMatch(/Based on/)
   })
 
+  it('shows the Source section after the Experiment Example', () => {
+    const { container } = view()
+    const source = screen.getByRole('region', { name: 'Source' })
+    expect(container.querySelector('.player')!.compareDocumentPosition(source) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('wears the /cube solver classes so the shared stage and button styles apply', () => {
     const { container } = view()
     expect(container.querySelector('.benchmark.cube-solver')).not.toBeNull()
@@ -296,7 +302,7 @@ describe('BenchmarkView', () => {
   it('fetches attempts.json once across filter changes', async () => {
     resetAttempts()
     const data = { '3x3': [{ model: 'claude-a', puzzle: '3x3', validity: 'valid', setup: 'descriptive', attempt: 1, state: '', moves: [], outcome: 'hallucination', mismatch: false }] }
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => data })))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ attempts: data, prompts: {} }) })))
     view()
     fireEvent.click(screen.getByRole('button', { name: 'Run' }))
     await act(async () => {})
@@ -321,7 +327,7 @@ describe('BenchmarkView', () => {
       expect(screen.queryByRole('button', { name: 'What is Critical thinking?' })).toBeNull()
       const help = screen.getByRole('button', { name: 'What is Precision?' })
       expect(help.closest('[role="tab"]')).toBeNull()
-      expect(screen.getAllByRole('tab')).toHaveLength(4)
+      expect(screen.getAllByRole('tab')).toHaveLength(3)
       // The tablist holds only tabs.
       const list = screen.getByRole('tablist')
       expect([...list.children].every((c) => c.getAttribute('role') === 'tab')).toBe(true)
@@ -451,9 +457,9 @@ describe('BenchmarkView', () => {
 
   describe('All puzzles', () => {
     const pooled = [
-      row('all', 'claude-a', 'anthropic', { precision: rate(0.4, 20), cost: rate(0.02, 20) }),
-      row('all', 'gpt-a', 'openai', { precision: rate(0.9, 8), cost: rate(0.07, 8) }),
-      row('all', 'gem-a', 'google', { precision: rate(0.6, 6), cost: rate(0.03, 6) }),
+      row('all', 'claude-a', 'anthropic', { precision: rate(0.4, 20) }),
+      row('all', 'gpt-a', 'openai', { precision: rate(0.9, 8) }),
+      row('all', 'gem-a', 'google', { precision: rate(0.6, 6) }),
       ...metrics,
       row('2x2', 'gem-a', 'google'),
     ]

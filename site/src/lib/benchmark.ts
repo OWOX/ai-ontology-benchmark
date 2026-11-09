@@ -11,7 +11,6 @@ export type ModelMetrics = {
   precision: Rate
   hallucination: Rate
   critical: Rate
-  cost: Rate
 }
 export type ResultSign = 'solved' | 'mismatch' | 'hallucinated' | 'unsolved'
 

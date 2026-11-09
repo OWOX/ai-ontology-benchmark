@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from src.evaluate.metrics import EvalError, make_attempt_rows
 from src.puzzles.registry import get_engine
 from src.release.release import parse_version
 from src.run.models import DECISION_PROVIDERS
+from src.run.prompts import SETUPS, build_prompt, prompt_versions
 from src.run.raw import parse_raw_text
 from src.site.metrics import metric_rows
 from ui.gitdata import FETCH_TIMEOUT_S, GitData
@@ -24,7 +26,6 @@ METRIC_NAMES = {
     "Balanced precision": "precision",
     "Hallucination rate": "hallucination",
     "Critical thinking": "critical",
-    "Cost efficiency": "cost",
 }
 
 
@@ -97,8 +98,10 @@ def read_experiment(gd: GitData, ref: str, source: str, branch: str, experiment_
         raise ExportError(f"{ref}:releases/{release}/manifest.json: not found")
     reasons = bool(json.loads(manifest).get("mismatch_reasons", False))
     models = {m["name"]: {"name": m["name"], "provider": m.get("provider", "unknown"),
-                          "kind": m.get("kind", "unknown")} for m in toml.get("models", [])}
-    decision_models = {n for n, m in models.items() if m["provider"] in DECISION_PROVIDERS}
+                          "kind": m.get("kind", "unknown"),
+                          "decision": m.get("provider", "unknown") in DECISION_PROVIDERS}
+              for m in toml.get("models", [])}
+    decision_models = {n for n, m in models.items() if m["decision"]}
     records, skipped = [], 0
     for name in sorted(n for n in gd.ls(source, f"{folder}/raw") if n.endswith(".jsonl")):
         found, torn = parse_raw_text(gd.show(source, f"{folder}/raw/{name}") or "")
@@ -122,7 +125,7 @@ def read_experiment(gd: GitData, ref: str, source: str, branch: str, experiment_
         return {}, rows, skipped
     kept.sort(key=lambda k: (k[1]["model"], k[1]["puzzle"], k[1]["inputId"], k[1]["setup"], k[1]["attempt"], k[0]))
     for _, a in kept:
-        models.setdefault(a["model"], {"name": a["model"], "provider": "unknown", "kind": "unknown"})
+        models.setdefault(a["model"], {"name": a["model"], "provider": "unknown", "kind": "unknown", "decision": False})
     times = sorted(k[0] for k in kept)
     per_input = toml.get("attempts")
     return {
@@ -136,6 +139,47 @@ def read_experiment(gd: GitData, ref: str, source: str, branch: str, experiment_
         "attemptCount": len(kept), "firstAt": times[0], "lastAt": times[-1],
         "attempts": [a for _, a in kept],
     }, rows, skipped
+
+
+def prompt_key(release: str, setup: str, input_id: str) -> str:
+    return f"{release}/{setup}/{input_id}"
+
+
+def build_prompts(gd: GitData, ref: str, experiments: list[dict], cache: dict) -> dict[str, str]:
+    """The exact prompt of every (release, setup, input id) the attempts cover, once each. The templates are read
+    from `releases/<release>/prompts/` at `ref` through git into a temporary directory, and `build_prompt` fills
+    them. The versions they render must equal the manifest's `prompt_versions`; otherwise the release gets no
+    prompts, with one stderr line naming it, so the page never shows a prompt the AI model didn't receive."""
+    wanted: dict[str, dict[str, set[tuple[str, str]]]] = {}
+    for e in experiments:
+        pairs = wanted.setdefault(e["release"], {})
+        for a in e["attempts"]:
+            pairs.setdefault(a["setup"], set()).add((a["puzzle"], a["inputId"]))
+    prompts: dict[str, str] = {}
+    for release in sorted(wanted):
+        inputs = cache[release]
+        by_id = {r["input_id"]: r for r in inputs}
+        with tempfile.TemporaryDirectory() as tmp:
+            for setup in SETUPS:
+                for name in gd.ls(ref, f"releases/{release}/prompts/{setup}"):
+                    text = gd.show(ref, f"releases/{release}/prompts/{setup}/{name}")
+                    if text is not None:
+                        target = Path(tmp) / setup / name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(text, encoding="utf-8")
+            manifest = json.loads(gd.show(ref, f"releases/{release}/manifest.json") or "{}")
+            try:
+                matches = prompt_versions(Path(tmp), inputs) == manifest.get("prompt_versions")
+                reason = "its templates render other prompt versions than its manifest lists"
+            except (ValueError, OSError) as error:
+                matches, reason = False, str(error)
+            if not matches:
+                print(f"skipped prompts of {release}: {reason}", file=sys.stderr)
+                continue
+            for setup in sorted(wanted[release]):
+                for puzzle, input_id in sorted(wanted[release][setup]):
+                    prompts[prompt_key(release, setup, input_id)] = build_prompt(Path(tmp), by_id[input_id], setup)
+    return prompts
 
 
 def plain_text(md: str) -> str:
@@ -220,6 +264,7 @@ def export(gd: GitData, ref: str, remote: str = "origin") -> tuple[dict, int]:
             providers.setdefault(m["name"], m["provider"])
     return {"page": page, "legalMoves": legal_moves, "definitions": definitions,
             "metrics": metric_rows(all_rows, providers),
+            "prompts": build_prompts(gd, ref, experiments, cache),
             "experiments": experiments}, skipped
 
 

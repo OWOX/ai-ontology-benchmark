@@ -8,6 +8,7 @@ import { Filter, type Option } from './Filter'
 import { parseHash, serializeHash } from './hash'
 import { OneCube } from './OneCube'
 import { Player } from './Player'
+import { Source } from './Source'
 
 export const PUZZLES = ['2x2', '3x3', '4x4', '5x5']
 
@@ -18,10 +19,9 @@ function Preview({ puzzle }: { puzzle: string }) {
 }
 
 const METRICS = [
-  { id: 'precision', label: 'Precision', higherIsBetter: true, format: 'percent', pick: (m: ModelMetrics) => m.precision },
-  { id: 'hallucination', label: 'Hallucination rate', higherIsBetter: false, format: 'percent', pick: (m: ModelMetrics) => m.hallucination },
-  { id: 'critical', label: 'Critical thinking', higherIsBetter: true, format: 'percent', pick: (m: ModelMetrics) => m.critical },
-  { id: 'cost', label: 'Cost efficiency', higherIsBetter: false, format: 'usd', pick: (m: ModelMetrics) => m.cost },
+  { id: 'precision', label: 'Precision', higherIsBetter: true, pick: (m: ModelMetrics) => m.precision },
+  { id: 'hallucination', label: 'Hallucination rate', higherIsBetter: false, pick: (m: ModelMetrics) => m.hallucination },
+  { id: 'critical', label: 'Critical thinking', higherIsBetter: true, pick: (m: ModelMetrics) => m.critical },
 ] as const
 
 interface Props {
@@ -327,7 +327,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
             </div>
             <div role="tabpanel" id="metric-panel" aria-labelledby={`metric-${metric}`} tabIndex={0}>
               {showModels ? (
-                <BarChart title={current.label} higherIsBetter={current.higherIsBetter} format={current.format} rows={selected.map((m) => ({ model: m.model, rate: current.pick(m) }))} />
+                <BarChart title={current.label} higherIsBetter={current.higherIsBetter} rows={selected.map((m) => ({ model: m.model, rate: current.pick(m) }))} />
               ) : (
                 <p className="empty">Pick an AI provider to see results.</p>
               )}
@@ -336,6 +336,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
           <Player key={`${puzzle}|${names.join('\u0000')}`} puzzle={puzzle} models={names} attemptsUrl={attemptsUrl} legalMoves={legalMoves} />
         </>
       )}
+      <Source />
     </div>
   )
 }

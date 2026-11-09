@@ -38,29 +38,14 @@ describe('BarChart', () => {
   })
 })
 
-describe('cost format', () => {
-  it('labels dollars with four decimals, two from $1 up, and n/a for null', () => {
-    expect(label(0.0123, 'usd')).toBe('$0.0123')
-    expect(label(0.00004, 'usd')).toBe('$0.0000')
-    expect(label(0.99996, 'usd')).toBe('$1.0000')
-    expect(label(1, 'usd')).toBe('$1.00')
-    expect(label(12.345, 'usd')).toBe('$12.35')
-    expect(label(null, 'usd')).toBe('n/a')
-    expect(label(0.333, 'percent')).toBe('33%')
+describe('percent format', () => {
+  it('labels whole percentages, and n/a for null', () => {
+    expect(label(0.333)).toBe('33%')
+    expect(label(null)).toBe('n/a')
   })
-  it('ranks costs on the text shown, lower is better', () => {
-    expect(rankRows([r('a', 0.0123), r('b', 0.5), r('c', 0.04)], false, 'usd')).toEqual(['best', 'worst', null])
-    expect(rankRows([r('a', 0.01231), r('b', 0.01234)], false, 'usd')).toEqual([null, null])
-    expect(rankRows([r('a', null), r('b', 0.5)], false, 'usd')).toEqual([null, null])
-  })
-  it('scales bars to the largest cost, none for null, and shows the dollar label', () => {
-    const { container, getByRole } = render(<BarChart title="Cost" format="usd" higherIsBetter={false} rows={[r('a', 0.01), r('b', 0.04), r('c', null)]} />)
-    expect([...container.querySelectorAll<HTMLElement>('.fill')].map((f) => f.style.width)).toEqual(['25%', '100%'])
-    expect([...container.querySelectorAll('.value')].map((e) => e.textContent)).toEqual(['$0.0100', '$0.0400', 'n/a'])
-    expect(getByRole('img')).toHaveAccessibleName('Cost: a $0.0100 (best), b $0.0400 (worst), c n/a')
-  })
-  it('keeps percent bars on the fixed 0 to 100 scale', () => {
-    const { container } = render(<BarChart title="P" rows={[r('a', 0.2), r('b', 0.4)]} />)
+  it('keeps bars on the fixed 0 to 100 scale, none for null', () => {
+    const { container } = render(<BarChart title="P" rows={[r('a', 0.2), r('b', 0.4), r('c', null)]} />)
     expect([...container.querySelectorAll<HTMLElement>('.fill')].map((f) => f.style.width)).toEqual(['20%', '40%'])
+    expect([...container.querySelectorAll('.value')].map((e) => e.textContent)).toEqual(['20%', '40%', 'n/a'])
   })
 })
