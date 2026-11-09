@@ -26,7 +26,7 @@ const METRICS = [
 const SETUP_QUESTION = 'does giving an AI model the rules of a puzzle change'
 const AVERAGE = 'Each bar is the average over the selected AI models that have a value under every setup, each counting equally'
 
-/** The tabs of Charts 1 to 3, which compare AI models. The "(?)" text says what the chart shows and which question it answers (docs/methodology.md, "The question"). */
+/** The tabs of Charts 1 to 3, which compare AI models. The "?" text says what the chart shows and which question it answers (docs/methodology.md, "The question"). */
 export const MODEL_TABS: readonly ChartTab[] = [
   { ...METRICS[0], explanation: "Shows how often each AI model's answer is right, as the mean of its precision on solvable and on unsolvable puzzles. It answers which AI models get the answer right." },
   { ...METRICS[1], explanation: "Shows how often each AI model gives a move that doesn't exist for the puzzle, among the answers that give moves. It answers which AI models hallucinate." },

@@ -34,7 +34,7 @@ beforeEach(() => (vi.useFakeTimers(), resetAttempts()))
 afterEach(() => (vi.useRealTimers(), vi.unstubAllGlobals()))
 
 describe('Player', () => {
-  it('closes its popover on a click in a chart\'s "(?)" elsewhere on the page, which is also a .pop-wrap', async () => {
+  it('closes its popover on a click in a chart\'s "?" elsewhere on the page, which is also a .pop-wrap', async () => {
     stub({ '3x3': [attempt({ release: '3.0.0', prompt: '3.0.0/descriptive/i1' })] }, { '3.0.0/descriptive/i1': 'text' })
     render(
       <>

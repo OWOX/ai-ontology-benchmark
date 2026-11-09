@@ -4,7 +4,7 @@ import { Choice } from './Choice'
 import { copyChart } from './copyChart'
 import { CheckIcon, CopyIcon } from './icons'
 
-/** One metric tab of a chart: `title` names the metric in the chart title ("Chart 1. <title> by AI model"), `explanation` is the title's "(?)" text. */
+/** One metric tab of a chart: `title` names the metric in the chart title ("Chart 1. <title> by AI model"), `explanation` is the caption's "?" text. */
 export interface ChartTab { id: string; label: string; title: string; higherIsBetter: boolean; explanation: string }
 
 /** One metric's definition, as imported from the research repo's docs/definitions.md. */
@@ -149,10 +149,11 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
   }, [openHelp])
 
 
-  // The title's "(?)" popover, the Player's pattern: a text button with aria-controls, a dialog always in the DOM (hidden while closed), closing on an outside click and on Escape.
+  // The caption's "?" popover, the Player's pattern: a round icon button with aria-controls, a dialog always in the DOM (hidden while closed), closing on an outside click and on Escape.
   const [titleOpen, setTitleOpen] = useState(false)
   // As for the tab "?": a mouse hover opens it and closes it after the grace delay unless a click pinned it.
   const titlePinned = useRef(false)
+  const titleByFocus = useRef(false)
   const titleLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clearTitleLeave = () => { if (titleLeaveTimer.current) clearTimeout(titleLeaveTimer.current); titleLeaveTimer.current = null }
   useEffect(() => clearTitleLeave, [])
@@ -165,6 +166,19 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
   useEffect(() => { if (openHelp) setTitleOpen(false) }, [openHelp])
   useEffect(() => { if (titleOpen) setHelpOpen(null) }, [titleOpen])
   const head = useRef<HTMLDivElement>(null)
+  // One popover at a time on the page: any open, by hover, focus, or click, tells the other charts to close theirs.
+  useEffect(() => {
+    if (openHelp || titleOpen) window.dispatchEvent(new CustomEvent('chart-popover', { detail: idPrefix }))
+  }, [openHelp, titleOpen])
+  useEffect(() => {
+    const onOther = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === idPrefix) return
+      setHelpOpen(null)
+      setTitleOpen(false)
+    }
+    window.addEventListener('chart-popover', onOther)
+    return () => window.removeEventListener('chart-popover', onOther)
+  }, [idPrefix])
   const popId = useId()
   const captionId = useId()
   // The popover opens upwards over the chart, the caption being under it, or below the caption when the viewport has no room above (under the sticky header).
@@ -193,7 +207,7 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       setTitleOpen(false)
-      // Focus goes back to the "(?)" only when it was inside the caption (never pulled away from a field elsewhere).
+      // Focus goes back to the "?" only when it was inside the caption (never pulled away from a field elsewhere).
       if (head.current?.contains(document.activeElement)) head.current.querySelector<HTMLElement>('button.pop-btn')?.focus()
     }
     // The click is not stopped, so the control under the pointer still does its job.
@@ -300,7 +314,7 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
             </div>
             <figcaption className="chart-head" ref={head}>
               <span className="chart-title" id={captionId}>{title}</span>{' '}
-              {/* The "(?)", the copy button, and the status stay together on the caption's last line. */}
+              {/* The "?", the copy button, and the status stay together on the caption's last line. */}
               <span className="chart-tools">
                 <span className="pop-wrap">
                   <button
@@ -309,8 +323,10 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
                     aria-label={`About Chart ${number}`}
                     aria-expanded={titleOpen}
                     aria-controls={popId}
+                    aria-describedby={titleOpen ? popId : undefined}
                     onClick={() => {
                       clearTitleLeave()
+                      titleByFocus.current = false
                       // Clicking the "?" the hover just opened keeps it open (pinned); otherwise a click toggles.
                       if (titleOpen && !titlePinned.current) titlePinned.current = true
                       else { titlePinned.current = !titleOpen; setTitleOpen(!titleOpen) }
@@ -318,13 +334,16 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
                     onPointerEnter={(e) => {
                       if (e.pointerType !== 'mouse') return
                       clearTitleLeave()
-                      if (!titleOpen) { titlePinned.current = false; setTitleOpen(true) }
+                      if (!titleOpen) { titlePinned.current = false; titleByFocus.current = false; setTitleOpen(true) }
                     }}
                     onPointerLeave={titleHoverLeave}
                     onFocus={(e) => {
                       let visible = false
                       try { visible = e.currentTarget.matches(':focus-visible') } catch { /* no :focus-visible */ }
-                      if (visible && !titleOpen) { titlePinned.current = true; setTitleOpen(true) }
+                      if (visible && !titleOpen) { titlePinned.current = true; titleByFocus.current = true; setTitleOpen(true) }
+                    }}
+                    onBlur={(e) => {
+                      if (titleByFocus.current && !head.current?.contains(e.relatedTarget as Node | null)) setTitleOpen(false)
                     }}
                   >?</button>
                 </span>

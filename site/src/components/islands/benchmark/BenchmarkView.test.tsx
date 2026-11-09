@@ -597,6 +597,7 @@ describe('BenchmarkView', () => {
       expect(screen.getByRole('heading', { level: 2, name: 'Metrics by AI model' })).toBeInTheDocument()
       expect(screen.getByRole('heading', { level: 2, name: 'Metrics by setup' })).toBeInTheDocument()
       expect(setupSection().querySelector('.lead')).toBeNull()
+      expect(screen.getByRole('heading', { level: 2, name: 'Metrics by AI model' }).nextElementSibling).toHaveClass('metrics')
       expect(screen.getByRole('heading', { level: 2, name: 'Metrics by setup' }).nextElementSibling).toHaveClass('metrics')
     })
 
@@ -754,6 +755,56 @@ describe('BenchmarkView', () => {
         it('never opens on hover for touch', () => {
           both()
           mouse('pointerEnter', button(1), 'touch')
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('closes a hover-opened dialog 150ms after the pointer leaves it', () => {
+          both()
+          mouse('pointerEnter', button(1))
+          mouse('pointerLeave', button(1))
+          mouse('pointerEnter', dialog(1))
+          mouse('pointerLeave', dialog(1))
+          act(() => { vi.advanceTimersByTime(100) })
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          act(() => { vi.advanceTimersByTime(60) })
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('closes a hover-opened dialog on Escape', () => {
+          both()
+          mouse('pointerEnter', button(1))
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          fireEvent.keyDown(document, { key: 'Escape' })
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('describes the ? by the dialog while it is open', () => {
+          both()
+          expect(button(1)).not.toHaveAttribute('aria-describedby')
+          mouse('pointerEnter', button(1))
+          expect(button(1)).toHaveAttribute('aria-describedby', dialog(1).id)
+        })
+
+        it('opens on keyboard focus and closes on blur, unless focus moves within the caption', () => {
+          both()
+          const orig = HTMLElement.prototype.matches
+          vi.spyOn(HTMLElement.prototype, 'matches').mockImplementation(function (this: HTMLElement, q: string) { return q === ':focus-visible' ? true : orig.call(this, q) })
+          act(() => button(1).focus())
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          const copy = screen.getByRole('button', { name: 'Copy Chart 1 to clipboard' })
+          act(() => copy.focus())
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          act(() => button(1).focus())
+          act(() => button(1).blur())
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('closes the other chart\'s pinned popover when one opens by hover', () => {
+          both()
+          fireEvent.click(button(1))
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          mouse('pointerEnter', button(4))
+          expect(button(4)).toHaveAttribute('aria-expanded', 'true')
           expect(button(1)).toHaveAttribute('aria-expanded', 'false')
         })
       })
