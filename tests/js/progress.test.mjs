@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const file = fileURLToPath(new URL("../../ui/static/progress.js", import.meta.url));
 const window = {};
 vm.runInNewContext(fs.readFileSync(file, "utf8"), { window, UI: { el: () => null } });
-const { inFlight, COLORS, OUTCOMES } = window.Progress;
+const { inFlight, COLORS, OUTCOMES, continueHidden, commitHint } = window.Progress;
 
 let failed = 0;
 function check(name, got, want) {
@@ -32,5 +32,17 @@ for (const [k, c] of [["truncated", "#d68910"], ["abstention", "#7f8c8d"], ["for
   check("colour of " + k, COLORS[k], c);
   check("outcome listed " + k, OUTCOMES.includes(k), true);
 }
+
+// Continue ignores the report: it shows for an unfinished experiment with no run job alive.
+const d = { release: "1.0.0", local_report: false };
+check("continue shows when unfinished", continueHidden(false, snap, d, { done: 1, planned: 3 }), false);
+check("continue hidden while running", continueHidden(true, snap, d, { done: 1, planned: 3 }), true);
+check("continue hidden when finished", continueHidden(false, snap, d, { done: 3, planned: 3 }), true);
+check("continue hidden before the snapshot", continueHidden(false, null, d, { done: 1, planned: 3 }), true);
+check("continue hidden before the detail", continueHidden(false, snap, null, { done: 1, planned: 3 }), true);
+check("hint while busy", commitHint(true, true, d), "Commit waits for the running job to end.");
+check("hint names the release", commitHint(false, true, d), "Evaluate under the experiment's release (1.0.0) first: Commit needs its report.");
+check("hint before the detail", commitHint(false, true, null), "Evaluate first: Commit needs a report.");
+check("no hint when enabled", commitHint(false, false, d), "");
 
 process.exit(failed ? 1 : 0);

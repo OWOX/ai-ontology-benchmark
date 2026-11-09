@@ -209,15 +209,14 @@
         // Shown only for an unfinished experiment: no run job alive and attempts left, report or not. The server's 409s
         // stay the authority.
         const t = state.ctl ? state.ctl.totals() : { done: 0, planned: 0 };
-        contBox.hidden = running || !snap || !d || t.done >= t.planned;
+        contBox.hidden = Progress.continueHidden(running, snap, d, t);
         cont.disabled = starting || mine(id, evalJob) || snapRunning(snap, evalJob) || !(d && d.local_results);
         contNote.hidden = contBox.hidden || !d || d.local_results;
         // The server's 409s stay the authority; this only keeps the button honest.
         const busy = mine(id, any) || snapRunning(snap, any);
         commit.disabled = busy || !(d && d.local_results && d.local_report);
         // Say why Commit is disabled: a report must exist first, and no job of the experiment may be running.
-        commitHint.textContent = busy ? "Commit waits for the running job to end."
-          : commit.disabled ? "Evaluate first: Commit needs a report." : "";
+        commitHint.textContent = Progress.commitHint(busy, commit.disabled, d);
         commit.title = commitHint.textContent;
       }
 
