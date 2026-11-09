@@ -69,7 +69,7 @@ export function drawChart(c: ChartCopy): Promise<Blob> {
   const base = PAD + c.rows.length * ROW + 14
   ctx.textAlign = 'left'
   ctx.fillStyle = INK
-  ctx.font = `500 16px ${SANS}`
+  ctx.font = `italic 500 16px ${SANS}`
   ctx.fillText(c.caption, PAD, base)
   ctx.fillStyle = MUTED
   ctx.font = `12px ${SANS}`

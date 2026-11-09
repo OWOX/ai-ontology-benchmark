@@ -156,6 +156,8 @@ const jsonLd = {
     text-decoration: underline dashed; text-underline-offset: 0.2em;
   }
   :global(.cube-solver.benchmark .chart-head button.pop-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
+  /* Only the caption text is italic; the (?) and copy buttons stay upright. */
+  :global(.benchmark .chart-head .chart-title) { font-style: italic; }
   :global(.benchmark .chart-head .pop) {
     position: absolute; z-index: 10; left: 0; bottom: 100%; box-sizing: border-box; width: min(32rem, 100%); margin-bottom: 0.35rem; padding: 0.6rem 0.8rem;
     background: var(--panel); border: 1px solid var(--code-rule); box-shadow: var(--pop-shadow); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
