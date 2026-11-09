@@ -496,6 +496,9 @@ GOOGLE_BATCH_DONE = ("JOB_STATE_SUCCEEDED", "JOB_STATE_PARTIALLY_SUCCEEDED", "JO
                      "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED")
 
 
+GOOGLE_REQUEST_CODES = (3, 5, 7, 9, 16)
+
+
 def _check_batch_provider(model: dict) -> str:
     provider = model["provider"]
     if provider not in BATCH_PROVIDERS:
@@ -631,8 +634,10 @@ def _openai_batch_results(client, batch_id: str) -> dict:
                 results[line["custom_id"]] = _openai_batch_line(line)
     if not results and batch.status == "failed":  # the file was rejected as a whole
         errors = getattr(getattr(batch, "errors", None), "data", None) or []
-        raise RequestError("openai: the batch failed: " + "; ".join(
-            " ".join(str(item.message).split()) for item in errors) if errors else "openai: the batch failed")
+        if any(getattr(item, "code", None) == "token_limit_exceeded" for item in errors):
+            return results  # the queue was full, not the file at fault: the caller retries every request
+        detail = "; ".join(" ".join(str(item.message).split()) for item in errors)
+        raise RequestError("openai: the batch failed" + (f": {detail}" if detail else ""))
     return results
 
 
@@ -650,7 +655,10 @@ def _google_batch_results(client, batch_id: str) -> dict:
         error = item.error
         code = error.code if error and isinstance(error.code, int) else None
         message = f"google: {code or 'error'}: " + " ".join(str((error.message if error else None) or "").split())
-        if code is not None and 400 <= code < 500 and code not in (408, 429):
+        # The code is a gRPC canonical code: 3 INVALID_ARGUMENT, 5 NOT_FOUND, 7 PERMISSION_DENIED,
+        # 9 FAILED_PRECONDITION, 16 UNAUTHENTICATED mean the request itself was rejected. A code of 100 or
+        # more is read as an HTTP status, with 4xx other than 408 and 429 a rejection.
+        if code in GOOGLE_REQUEST_CODES or (code is not None and 400 <= code < 500 and code not in (408, 429)):
             results[key] = RequestError(message)
         else:
             results[key] = InfrastructureError(message)
@@ -660,7 +668,8 @@ def _google_batch_results(client, batch_id: str) -> dict:
 def batch_results(model: dict, batch_id: str) -> dict:
     """The results of a finished batch, keyed by custom_id: a Reply, or an InfrastructureError or RequestError
     instance for a request that failed. A custom_id the provider left out is left out here too, and the
-    caller retries it."""
+    caller retries it. An OpenAI batch that failed validation raises RequestError instead of returning
+    instances, except when the failure is token_limit_exceeded, which returns no results."""
     provider = _check_batch_provider(model)
     if provider == "fake":
         return FAKE_BATCH_RESULTS.pop(0) if FAKE_BATCH_RESULTS else {}

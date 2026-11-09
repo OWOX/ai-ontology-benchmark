@@ -856,7 +856,7 @@ def test_batch_done_per_provider(monkeypatch):
         assert models.batch_done(batch_entry("openai"), "b") is expected
     client = batch_client(monkeypatch, "google")
     for state, expected in (("JOB_STATE_PENDING", False), ("JOB_STATE_RUNNING", False),
-                            ("JOB_STATE_SUCCEEDED", True), ("JOB_STATE_FAILED", True),
+                            ("JOB_STATE_SUCCEEDED", True), ("JOB_STATE_PARTIALLY_SUCCEEDED", True), ("JOB_STATE_FAILED", True),
                             ("JOB_STATE_CANCELLED", True), ("JOB_STATE_EXPIRED", True)):
         client.batches.get.return_value = NS(state=types.JobState(state))
         assert models.batch_done(batch_entry("google"), "b") is expected
@@ -940,6 +940,21 @@ def test_openai_failed_batch_is_a_request_error(monkeypatch):
         models.batch_results(batch_entry("openai"), "b")
 
 
+def test_openai_failed_batch_with_token_limit_is_retried(monkeypatch):
+    client = batch_client(monkeypatch, "openai")
+    client.batches.retrieve.return_value = NS(status="failed", output_file_id=None, error_file_id=None,
+                                              errors=NS(data=[NS(code="token_limit_exceeded", message="full")]))
+    assert models.batch_results(batch_entry("openai"), "b") == {}
+
+
+def test_openai_failed_batch_error_codes_name_the_message(monkeypatch):
+    client = batch_client(monkeypatch, "openai")
+    client.batches.retrieve.return_value = NS(status="failed", output_file_id=None, error_file_id=None,
+                                              errors=NS(data=[NS(code="invalid_json_line", message="line  3")]))
+    with pytest.raises(models.RequestError, match="line 3"):
+        models.batch_results(batch_entry("openai"), "b")
+
+
 def inlined(key, response=None, error=None):
     return NS(metadata={"key": key} if key else None, response=response, error=error)
 
@@ -947,16 +962,18 @@ def inlined(key, response=None, error=None):
 def test_google_batch_results_by_key(monkeypatch):
     items = [inlined("ok", google_response()), inlined("cut", google_response("MAX_TOKENS")),
              inlined("refused", google_response("SAFETY")),
-             inlined("bad", error=NS(code=400, message="bad")), inlined("slow", error=NS(code=429, message="slow")),
-             inlined("down", error=NS(code=503, message="down")), inlined("odd", error=NS(code=None, message="?"))]
+             inlined("bad", error=NS(code=3, message="bad")), inlined("slow", error=NS(code=14, message="slow")),
+             inlined("down", error=NS(code=503, message="down")), inlined("http", error=NS(code=403, message="no")),
+             inlined("odd", error=NS(code=None, message="?"))]
     client = batch_client(monkeypatch, "google")
     client.batches.get.return_value = NS(dest=NS(inlined_responses=shuffled(items)))
     got = models.batch_results(batch_entry("google"), "b")
-    assert set(got) == {"ok", "cut", "refused", "bad", "slow", "down", "odd"}
+    assert set(got) == {"ok", "cut", "refused", "bad", "slow", "down", "http", "odd"}
     assert got["ok"] == Reply("hi", "ok", "gemini-served", 11, 7, None)
     assert got["cut"].stop_reason == "truncated"
     assert got["refused"].stop_reason == "refused"
     assert isinstance(got["bad"], models.RequestError)
+    assert isinstance(got["http"], models.RequestError)
     for custom_id in ("slow", "down", "odd"):
         assert isinstance(got[custom_id], InfrastructureError)
 
