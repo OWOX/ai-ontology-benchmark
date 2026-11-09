@@ -891,6 +891,21 @@ def test_anthropic_batch_results_by_custom_id(monkeypatch):
         assert isinstance(got[custom_id], InfrastructureError)
 
 
+def test_anthropic_unreadable_succeeded_result_is_an_unreadable_reply(monkeypatch):
+    broken = anthropic_response()
+    broken.content = None  # the text can't be read, but usage can
+    nothing = NS(stop_reason="end_turn", content=None, model="m")  # no usage either
+    items = [NS(custom_id="bad", result=NS(type="succeeded", message=broken)),
+             NS(custom_id="worse", result=NS(type="succeeded", message=nothing)),
+             NS(custom_id="ok", result=NS(type="succeeded", message=anthropic_response()))]
+    client = batch_client(monkeypatch, "anthropic")
+    client.messages.batches.results.return_value = iter(items)
+    got = models.batch_results(batch_entry("anthropic"), "b")
+    assert isinstance(got["bad"], models.UnreadableReply) and (got["bad"].input_tokens, got["bad"].output_tokens) == (11, 7)
+    assert isinstance(got["worse"], models.UnreadableReply) and (got["worse"].input_tokens, got["worse"].output_tokens) == (0, 0)
+    assert isinstance(got["ok"], Reply)
+
+
 def chat_body(finish="stop"):
     return {"id": "x", "object": "chat.completion", "created": 1, "model": "gpt-served",
             "choices": [{"index": 0, "finish_reason": finish, "message": {"role": "assistant", "content": "hi"}}],

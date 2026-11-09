@@ -617,7 +617,13 @@ def _anthropic_batch_results(client, batch_id: str) -> dict:
     for item in _batch_sdk_call("anthropic", lambda: list(client.messages.batches.results(batch_id))):
         result = item.result
         if result.type == "succeeded":
-            results[item.custom_id] = _anthropic_reply(result.message, None)
+            try:
+                results[item.custom_id] = _anthropic_reply(result.message, None)
+            except Exception as error:  # it was answered, so billed: never resent
+                usage = getattr(getattr(result, "message", None), "usage", None)
+                results[item.custom_id] = UnreadableReply(
+                    f"anthropic: an unreadable batch result: {' '.join(str(error).split())[:200]}",
+                    _count(getattr(usage, "input_tokens", None)), _count(getattr(usage, "output_tokens", None)))
         elif result.type == "errored":
             detail = result.error.error
             message = f"anthropic: {detail.type}: {' '.join(str(detail.message).split())}"
