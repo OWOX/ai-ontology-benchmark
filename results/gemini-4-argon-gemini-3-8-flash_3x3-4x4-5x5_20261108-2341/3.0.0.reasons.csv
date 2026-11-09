@@ -1,0 +1,147 @@
+model,puzzle,setup,expected,reason,attempts
+gemini-4-argon,3x3,no_model,none,none,4
+gemini-4-argon,3x3,no_model,none,twisted corner,4
+gemini-4-argon,3x3,no_model,none,flipped edge,1
+gemini-4-argon,3x3,no_model,twisted corner,none,3
+gemini-4-argon,3x3,no_model,twisted corner,twisted corner,2
+gemini-4-argon,3x3,no_model,twisted corner,recoloured sticker,1
+gemini-4-argon,3x3,no_model,recoloured sticker,recoloured sticker,3
+gemini-4-argon,3x3,descriptive,none,none,6
+gemini-4-argon,3x3,descriptive,none,twisted corner,2
+gemini-4-argon,3x3,descriptive,none,flipped edge,1
+gemini-4-argon,3x3,descriptive,twisted corner,twisted corner,6
+gemini-4-argon,3x3,descriptive,recoloured sticker,recoloured sticker,3
+gemini-4-argon,3x3,prescriptive,none,none,4
+gemini-4-argon,3x3,prescriptive,none,twisted corner,3
+gemini-4-argon,3x3,prescriptive,none,swapped corners,2
+gemini-4-argon,3x3,prescriptive,twisted corner,none,2
+gemini-4-argon,3x3,prescriptive,twisted corner,twisted corner,4
+gemini-4-argon,3x3,prescriptive,recoloured sticker,twisted corner,2
+gemini-4-argon,3x3,prescriptive,recoloured sticker,flipped edge,1
+gemini-4-argon,4x4,no_model,none,none,8
+gemini-4-argon,4x4,no_model,none,other,1
+gemini-4-argon,4x4,no_model,twisted corner,none,3
+gemini-4-argon,4x4,no_model,twisted corner,twisted corner,6
+gemini-4-argon,4x4,descriptive,none,none,6
+gemini-4-argon,4x4,descriptive,none,twisted corner,1
+gemini-4-argon,4x4,descriptive,none,flipped wing,2
+gemini-4-argon,4x4,descriptive,twisted corner,none,5
+gemini-4-argon,4x4,descriptive,twisted corner,twisted corner,3
+gemini-4-argon,4x4,descriptive,twisted corner,flipped wing,1
+gemini-4-argon,4x4,prescriptive,none,none,4
+gemini-4-argon,4x4,prescriptive,none,twisted corner,4
+gemini-4-argon,4x4,prescriptive,none,flipped wing,1
+gemini-4-argon,4x4,prescriptive,twisted corner,none,7
+gemini-4-argon,4x4,prescriptive,twisted corner,twisted corner,2
+gemini-4-argon,5x5,no_model,none,none,5
+gemini-4-argon,5x5,no_model,none,twisted corner,1
+gemini-4-argon,5x5,no_model,none,flipped edge,2
+gemini-4-argon,5x5,no_model,none,swapped edges,1
+gemini-4-argon,5x5,no_model,twisted corner,twisted corner,3
+gemini-4-argon,5x5,no_model,flipped edge,none,1
+gemini-4-argon,5x5,no_model,flipped edge,flipped edge,2
+gemini-4-argon,5x5,no_model,flipped wing,none,2
+gemini-4-argon,5x5,no_model,flipped wing,swapped corners,1
+gemini-4-argon,5x5,descriptive,none,none,3
+gemini-4-argon,5x5,descriptive,none,flipped edge,3
+gemini-4-argon,5x5,descriptive,none,flipped wing,1
+gemini-4-argon,5x5,descriptive,none,swapped corners,2
+gemini-4-argon,5x5,descriptive,twisted corner,twisted corner,3
+gemini-4-argon,5x5,descriptive,flipped edge,none,1
+gemini-4-argon,5x5,descriptive,flipped edge,swapped corners,1
+gemini-4-argon,5x5,descriptive,flipped edge,twisted centre,1
+gemini-4-argon,5x5,descriptive,flipped wing,swapped corners,1
+gemini-4-argon,5x5,descriptive,flipped wing,twisted centre,2
+gemini-4-argon,5x5,prescriptive,none,flipped edge,2
+gemini-4-argon,5x5,prescriptive,none,flipped wing,1
+gemini-4-argon,5x5,prescriptive,none,swapped corners,3
+gemini-4-argon,5x5,prescriptive,none,swapped edges,1
+gemini-4-argon,5x5,prescriptive,none,recoloured sticker,2
+gemini-4-argon,5x5,prescriptive,twisted corner,none,1
+gemini-4-argon,5x5,prescriptive,twisted corner,flipped wing,2
+gemini-4-argon,5x5,prescriptive,flipped edge,flipped edge,1
+gemini-4-argon,5x5,prescriptive,flipped edge,flipped wing,1
+gemini-4-argon,5x5,prescriptive,flipped edge,recoloured sticker,1
+gemini-4-argon,5x5,prescriptive,flipped wing,swapped corners,1
+gemini-4-argon,5x5,prescriptive,flipped wing,recoloured sticker,1
+gemini-4-argon,5x5,prescriptive,flipped wing,twisted centre,1
+gemini-3.8-flash,3x3,no_model,none,none,5
+gemini-3.8-flash,3x3,no_model,none,twisted corner,1
+gemini-3.8-flash,3x3,no_model,none,flipped edge,1
+gemini-3.8-flash,3x3,no_model,none,other,2
+gemini-3.8-flash,3x3,no_model,twisted corner,none,1
+gemini-3.8-flash,3x3,no_model,twisted corner,twisted corner,5
+gemini-3.8-flash,3x3,no_model,recoloured sticker,recoloured sticker,3
+gemini-3.8-flash,3x3,descriptive,none,none,5
+gemini-3.8-flash,3x3,descriptive,none,twisted corner,1
+gemini-3.8-flash,3x3,descriptive,none,recoloured sticker,2
+gemini-3.8-flash,3x3,descriptive,none,other,1
+gemini-3.8-flash,3x3,descriptive,twisted corner,twisted corner,6
+gemini-3.8-flash,3x3,descriptive,recoloured sticker,recoloured sticker,3
+gemini-3.8-flash,3x3,prescriptive,none,none,4
+gemini-3.8-flash,3x3,prescriptive,none,twisted corner,1
+gemini-3.8-flash,3x3,prescriptive,none,flipped edge,1
+gemini-3.8-flash,3x3,prescriptive,none,recoloured sticker,1
+gemini-3.8-flash,3x3,prescriptive,none,other,2
+gemini-3.8-flash,3x3,prescriptive,twisted corner,twisted corner,5
+gemini-3.8-flash,3x3,prescriptive,twisted corner,flipped edge,1
+gemini-3.8-flash,3x3,prescriptive,recoloured sticker,recoloured sticker,3
+gemini-3.8-flash,4x4,no_model,none,none,4
+gemini-3.8-flash,4x4,no_model,none,flipped wing,1
+gemini-3.8-flash,4x4,no_model,none,other,4
+gemini-3.8-flash,4x4,no_model,twisted corner,none,1
+gemini-3.8-flash,4x4,no_model,twisted corner,twisted corner,6
+gemini-3.8-flash,4x4,no_model,twisted corner,other,2
+gemini-3.8-flash,4x4,descriptive,none,none,1
+gemini-3.8-flash,4x4,descriptive,none,twisted corner,3
+gemini-3.8-flash,4x4,descriptive,none,flipped wing,1
+gemini-3.8-flash,4x4,descriptive,none,twisted centre,1
+gemini-3.8-flash,4x4,descriptive,none,other,3
+gemini-3.8-flash,4x4,descriptive,twisted corner,none,1
+gemini-3.8-flash,4x4,descriptive,twisted corner,twisted corner,6
+gemini-3.8-flash,4x4,descriptive,twisted corner,other,2
+gemini-3.8-flash,4x4,prescriptive,none,none,1
+gemini-3.8-flash,4x4,prescriptive,none,twisted corner,2
+gemini-3.8-flash,4x4,prescriptive,none,flipped edge,2
+gemini-3.8-flash,4x4,prescriptive,none,swapped corners,1
+gemini-3.8-flash,4x4,prescriptive,none,other,3
+gemini-3.8-flash,4x4,prescriptive,twisted corner,none,1
+gemini-3.8-flash,4x4,prescriptive,twisted corner,twisted corner,4
+gemini-3.8-flash,4x4,prescriptive,twisted corner,other,4
+gemini-3.8-flash,5x5,no_model,none,flipped edge,5
+gemini-3.8-flash,5x5,no_model,none,flipped wing,1
+gemini-3.8-flash,5x5,no_model,none,recoloured sticker,1
+gemini-3.8-flash,5x5,no_model,none,other,2
+gemini-3.8-flash,5x5,no_model,twisted corner,twisted corner,2
+gemini-3.8-flash,5x5,no_model,twisted corner,other,1
+gemini-3.8-flash,5x5,no_model,flipped edge,none,1
+gemini-3.8-flash,5x5,no_model,flipped edge,flipped edge,1
+gemini-3.8-flash,5x5,no_model,flipped edge,flipped wing,1
+gemini-3.8-flash,5x5,no_model,flipped wing,flipped edge,1
+gemini-3.8-flash,5x5,no_model,flipped wing,flipped wing,2
+gemini-3.8-flash,5x5,descriptive,none,none,3
+gemini-3.8-flash,5x5,descriptive,none,twisted corner,1
+gemini-3.8-flash,5x5,descriptive,none,flipped edge,1
+gemini-3.8-flash,5x5,descriptive,none,flipped wing,1
+gemini-3.8-flash,5x5,descriptive,none,swapped edges,1
+gemini-3.8-flash,5x5,descriptive,none,recoloured sticker,1
+gemini-3.8-flash,5x5,descriptive,none,other,1
+gemini-3.8-flash,5x5,descriptive,twisted corner,none,1
+gemini-3.8-flash,5x5,descriptive,twisted corner,twisted corner,2
+gemini-3.8-flash,5x5,descriptive,flipped edge,flipped edge,2
+gemini-3.8-flash,5x5,descriptive,flipped edge,other,1
+gemini-3.8-flash,5x5,descriptive,flipped wing,flipped edge,2
+gemini-3.8-flash,5x5,descriptive,flipped wing,twisted centre,1
+gemini-3.8-flash,5x5,prescriptive,none,none,3
+gemini-3.8-flash,5x5,prescriptive,none,flipped edge,3
+gemini-3.8-flash,5x5,prescriptive,none,flipped wing,1
+gemini-3.8-flash,5x5,prescriptive,none,recoloured sticker,1
+gemini-3.8-flash,5x5,prescriptive,none,other,1
+gemini-3.8-flash,5x5,prescriptive,twisted corner,twisted corner,2
+gemini-3.8-flash,5x5,prescriptive,twisted corner,other,1
+gemini-3.8-flash,5x5,prescriptive,flipped edge,flipped edge,1
+gemini-3.8-flash,5x5,prescriptive,flipped edge,flipped wing,1
+gemini-3.8-flash,5x5,prescriptive,flipped edge,other,1
+gemini-3.8-flash,5x5,prescriptive,flipped wing,none,1
+gemini-3.8-flash,5x5,prescriptive,flipped wing,flipped edge,1
+gemini-3.8-flash,5x5,prescriptive,flipped wing,flipped wing,1
