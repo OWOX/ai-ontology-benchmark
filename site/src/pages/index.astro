@@ -102,8 +102,8 @@ const jsonLd = {
   /* A thumbnail on hover shows the same 2px border as the selected one; the border is always there, transparent when off, so nothing moves. */
   :global(.benchmark .options button.square:hover) { border-color: var(--text); }
   :global(.benchmark .options button.square[aria-pressed='true']) { border-color: var(--text); opacity: 1; }
-  /* Keyboard focus: a dashed outline drawn inside the button, so it is never clipped by the scrolling row. */
-  :global(.benchmark .options button.square:focus-visible) { outline: 2px dashed var(--text); outline-offset: -2px; opacity: 1; }
+  /* Keyboard focus: a 1px dashed line just inside the 2px border, so it shows on a selected or hovered thumbnail and is never clipped by the scrolling row. */
+  :global(.benchmark .options button.square:focus-visible) { outline: 1px dashed var(--text); outline-offset: -5px; opacity: 1; }
   /* The cube drawing has about a seventh of its width as empty margin on each side. It is drawn at its natural 3.125rem with a negative margin that centres it in the smaller button, so its margin overflows invisibly and the border sits snug around the visible cube. */
   :global(.benchmark .options button.square span) { display: grid; place-items: center; width: 100%; height: 100%; line-height: 0; }
   :global(.benchmark .options button.square .cube-view) { display: block; flex: none; width: 3.125rem; height: 3.125rem; max-width: none; margin: -0.3125rem; pointer-events: none; }
