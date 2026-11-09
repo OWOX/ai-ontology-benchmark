@@ -13,7 +13,7 @@ export interface MetricDefinition { key: string; name: string; definition: strin
 interface Props {
   /** Prefix of the element ids (`<prefix>-<tab id>`, `<prefix>-panel`, `<prefix>-popover`), so two charts on a page never share one. */
   idPrefix: string
-  /** The section's subtitle. */
+  /** The section's accessible name (its region label); no heading is shown. */
   heading: string
   /** What the bars compare, for the chart title: "AI model" or "setup". */
   by: string
@@ -36,9 +36,8 @@ interface Props {
   children: ReactNode
 }
 
-/** A chart section: a subtitle, the metric tabs hanging off a framed panel, and in the panel a figure: the framed chart, then under the frame its numbered caption ending in a "?" popover. Each tab keeps its own "?" for the metric's definition. */
+/** A chart section: the metric tabs hanging off a framed panel, and in the panel a figure: the framed chart, then under the frame its numbered caption ending in a "?" popover. Each tab keeps its own "?" for the metric's definition. */
 export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, note, filterText, children }: Props) {
-  const headingId = useId()
   const root = useRef<HTMLElement>(null)
   // The metric whose definition popover is open (one at a time).
   const [helpOpen, setHelpOpen] = useState<string | null>(null)
@@ -244,8 +243,7 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
   }
 
   return (
-    <section className="chart-section" aria-labelledby={headingId} ref={root}>
-      <h2 className="subtitle" id={headingId}>{heading}</h2>
+    <section className="chart-section" aria-label={heading} ref={root}>
       <div className="metrics">
         <div className="tabs-row" ref={row}>
           <Choice

@@ -93,28 +93,22 @@ const jsonLd = {
   :global(.benchmark .options.checks.sizer) { height: 0; overflow: hidden; visibility: hidden; }
   /* Step 2 is a block of its own pushed to the right edge of the content column (its natural width); inside it everything stays left-aligned. */
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(2)) { justify-self: end; }
-  /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only. Unselected: a transparent border of the same width, 50% transparent. */
-  /* The -0.25rem pulls the row left by the border and the cube drawing's inner margin, so the first visible cube lines up with the checkboxes of the filters below. */
-  :global(.benchmark .options:has(button.square)) { gap: 1rem; justify-content: flex-start; margin-left: -0.25rem; }
-  :global(.benchmark .options button.square) { width: 2.75rem; height: 2.75rem; padding: 0; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
+  /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only, with space between it and the cube. Unselected: a transparent border of the same width, 50% transparent. Hovering shows no border. */
+  /* The negative margin-left pulls the row left by the border, the padding, and the cube drawing's inner margin, so the first visible cube lines up with the checkboxes of the filters below. */
+  :global(.benchmark .options:has(button.square)) { gap: 0; justify-content: flex-start; margin-left: -0.82rem; }
+  :global(.benchmark .options button.square) { width: 3.9rem; height: 3.9rem; padding: 0.26rem; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
   /* With none pressed (all puzzles) the options are not faded: they are not disabled, only unselected. */
   :global(.benchmark .options:not(:has(button.square[aria-pressed='true'])) button.square) { opacity: 1; }
   :global(.benchmark .options button.square:hover) { opacity: 1; }
-  /* With none selected, hovering one thumbnail fades the others, as a selected one would. */
+  /* With none selected, hovering one thumbnail fades the others, as a selected one would. Only where a pointer can hover: on touch, :hover sticks to the last tapped thumbnail. */
   @media (hover: hover) {
     :global(.benchmark .options:not(:has(button.square[aria-pressed='true'])):has(button.square:hover) button.square:not(:hover):not(:focus-visible)) { opacity: 0.5; }
   }
-  /* A thumbnail on hover shows the selected one's 2px border in the lighter muted colour; the border is always there, transparent when off, so nothing moves. */
-  /* Only where a pointer can hover: on touch, :hover sticks to the last tapped thumbnail. */
-  @media (hover: hover) {
-    :global(.benchmark .options button.square:hover:not([aria-pressed='true'])) { border-color: var(--muted); }
-  }
   :global(.benchmark .options button.square[aria-pressed='true']) { border-color: var(--text); opacity: 1; }
-  /* Keyboard focus: a 1px dashed line just inside the 2px border, so it shows on a selected or hovered thumbnail and is never clipped by the scrolling row. */
-  :global(.benchmark .options button.square:focus-visible) { outline: 1px dashed var(--text); outline-offset: -5px; opacity: 1; }
-  /* The cube drawing has about a seventh of its width as empty margin on each side. It is drawn at its natural 3.125rem with a negative margin that centres it in the smaller button, so its margin overflows invisibly and the border sits snug around the visible cube. */
-  :global(.benchmark .options button.square span) { display: grid; place-items: center; width: 100%; height: 100%; line-height: 0; }
-  :global(.benchmark .options button.square .cube-view) { display: block; flex: none; width: 3.125rem; height: 3.125rem; max-width: none; margin: -0.3125rem; pointer-events: none; }
+  /* Keyboard focus: a 2px dashed line just inside the 2px border, so it shows on a selected thumbnail and is never clipped by the scrolling row. */
+  :global(.benchmark .options button.square:focus-visible) { outline: 2px dashed var(--text); outline-offset: -4px; opacity: 1; }
+  :global(.benchmark .options button.square span) { display: block; width: 100%; line-height: 0; }
+  :global(.benchmark .options button.square .cube-view) { display: block; width: 100%; pointer-events: none; }
   :global(.benchmark .muted) { color: var(--muted); }
   /* The chart sits in a framed panel; the metric tabs hang off its top edge like folder tabs. The selected tab has the panel background and covers the frame's top border, so it merges into the panel. */
   /* 1rem + the island's 1.5rem gap = 2.5rem above the tabs, the same as the puzzle row to the Model step (1rem row gap + 1.5rem). */
@@ -156,9 +150,7 @@ const jsonLd = {
   :global(.benchmark .metric-popover .direction) { color: var(--head); }
   :global(.benchmark .chart-frame) { box-sizing: border-box; border: 1px solid var(--text); background: var(--panel); padding: 1rem 1.25rem 0.5rem; }
   :global(.benchmark .chart) { margin: 0; }
-  /* A chart section: a subtitle, then the tabs and the framed panel. Two of them stack with the island's gap between. */
-  :global(.benchmark .chart-section .subtitle) { margin: 0; font-size: 1.15rem; line-height: 1.3; }
-  :global(.benchmark .chart-section .metrics) { margin-top: 0.75rem; }
+  /* A chart section: the tabs and the framed panel, with 2.5rem above the tabs (the .metrics margin plus the island gap) and 2.5rem under the panel, so the two sections and the filter above sit evenly apart. */
   /* The figure's numbered caption sits under the bars and ends in a "?" round icon button; its popover is the Player's, out of flow, opening upwards over the bars (`.below` flips it under the caption when there is no room above), so opening it moves nothing. */
   :global(.benchmark .chart-figure) { margin: 0; }
   :global(.benchmark .chart-head .chart-tools) { white-space: nowrap; }
@@ -179,10 +171,10 @@ const jsonLd = {
     position: absolute; z-index: 10; left: 0; bottom: 100%; box-sizing: border-box; width: min(32rem, 100%); margin-bottom: 0.35rem; padding: 0.6rem 0.8rem;
     background: var(--panel); border: 1px solid var(--code-rule); box-shadow: var(--pop-shadow); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
   }
-  /* The copy icon: monochrome, beside the "?", about the caption's text height, with a 24px hit area. "Copied" is read out only; "Copy failed" is shown. */
+  /* The copy icon: monochrome, beside the "?", about 18px, a little larger than the round "?", with a 24px hit area. "Copied" is read out only; "Copy failed" is shown. */
   :global(.cube-solver.benchmark .chart-head button.copy-btn:not(.redo):not(.switch):not(.square)) {
     display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0 0 0 0.15rem; padding: 0;
-    border: 0; border-radius: 3px; background: none; color: var(--muted); font-size: 0.85rem; line-height: 1; cursor: pointer;
+    border: 0; border-radius: 3px; background: none; color: var(--muted); font-size: 1.15rem; line-height: 1; cursor: pointer;
   }
   :global(.cube-solver.benchmark .chart-head button.copy-btn:hover) { color: var(--text); }
   :global(.cube-solver.benchmark .chart-head button.copy-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 1px; }
