@@ -162,11 +162,21 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
   const [up, setUp] = useState(true)
   useLayoutEffect(() => {
     if (!titleOpen) return
-    const h = head.current?.getBoundingClientRect()
-    const popH = head.current?.querySelector<HTMLElement>('.pop')?.offsetHeight ?? 0
-    if (!h) return
-    const headerBottom = document.querySelector('.site-header')?.getBoundingClientRect().bottom ?? 0
-    setUp(h.top - Math.max(0, headerBottom) - 8 >= popH)
+    const place = () => {
+      const h = head.current?.getBoundingClientRect()
+      const popH = head.current?.querySelector<HTMLElement>('.pop')?.offsetHeight ?? 0
+      if (!h) return
+      const headerBottom = document.querySelector('.site-header')?.getBoundingClientRect().bottom ?? 0
+      setUp(h.top - Math.max(0, headerBottom) - 8 >= popH)
+    }
+    place()
+    // Scrolling or resizing while it is open moves the room above the caption, so place it again, as the definition popover does.
+    window.addEventListener('scroll', place, { passive: true })
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place)
+      window.removeEventListener('resize', place)
+    }
   }, [titleOpen, metric])
   useEffect(() => setTitleOpen(false), [metric])
   useEffect(() => {
@@ -280,15 +290,18 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
             {note && <p className="chart-note">{note}</p>}
             <figcaption className="chart-head" ref={head}>
               <span className="chart-title" id={captionId}>{title}</span>{' '}
-              <span className="pop-wrap">
-                <button type="button" className="pop-btn" aria-label={`About Chart ${number}`} aria-expanded={titleOpen} aria-controls={popId} onClick={() => setTitleOpen(!titleOpen)}>(?)</button>
+              {/* The "(?)", the copy button, and the status stay together on the caption's last line. */}
+              <span className="chart-tools">
+                <span className="pop-wrap">
+                  <button type="button" className="pop-btn" aria-label={`About Chart ${number}`} aria-expanded={titleOpen} aria-controls={popId} onClick={() => setTitleOpen(!titleOpen)}>(?)</button>
+                </span>
+                {bars.length > 0 && (
+                  <button type="button" className="copy-btn" aria-label={`Copy Chart ${number} to clipboard`} title="Copy chart" onClick={copy}>
+                    {status === 'copied' ? <CheckIcon /> : <CopyIcon />}
+                  </button>
+                )}
+                <span className={`copy-status${status === 'failed' ? ' failed' : ''}`} role="status" aria-live="polite">{status === 'copied' ? 'Copied' : status === 'failed' ? 'Copy failed' : ''}</span>
               </span>
-              {bars.length > 0 && (
-                <button type="button" className="copy-btn" aria-label={`Copy Chart ${number} to clipboard`} title="Copy chart" onClick={copy}>
-                  {status === 'copied' ? <CheckIcon /> : <CopyIcon />}
-                </button>
-              )}
-              <span className={`copy-status${status === 'failed' ? ' failed' : ''}`} role="status" aria-live="polite">{status === 'copied' ? 'Copied' : status === 'failed' ? 'Copy failed' : ''}</span>
               {/* Always in the DOM (hidden while closed), so the button's aria-controls points at an element that exists. */}
               <div className={`pop pop-wrap${up ? '' : ' below'}`} id={popId} role="dialog" aria-label={`About Chart ${number}`} hidden={!titleOpen}>
                 <p>{current.explanation}</p>

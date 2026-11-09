@@ -705,6 +705,29 @@ describe('BenchmarkView', () => {
         for (const t of [five!, six!]) expect(t.match(/[.?](\s|$)/g)).toHaveLength(3)
       })
 
+      it('keeps the (?) and the copy button together in one no-wrap group after the caption', () => {
+        both()
+        const tools = button(1).closest('.chart-tools')!
+        expect(tools.parentElement).toBe(button(1).closest('figcaption'))
+        expect(tools.contains(screen.getByRole('button', { name: 'Copy Chart 1 to clipboard' }))).toBe(true)
+        expect(tools.previousElementSibling).toHaveClass('chart-title')
+      })
+
+      it('is placed again on scroll and resize while open: upwards with room above, below without', () => {
+        let top = 500
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ top, bottom: top, left: 0, right: 0, width: 0, height: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect)
+        both()
+        fireEvent.click(button(1))
+        expect(dialog(1)).not.toHaveClass('below')
+        top = 2
+        act(() => { window.dispatchEvent(new Event('scroll')) })
+        expect(dialog(1)).toHaveClass('below')
+        top = 500
+        act(() => { window.dispatchEvent(new Event('resize')) })
+        expect(dialog(1)).not.toHaveClass('below')
+        vi.restoreAllMocks()
+      })
+
       it('closes on Escape, returning focus to the button, and on an outside click', () => {
         both()
         button(1).focus()
