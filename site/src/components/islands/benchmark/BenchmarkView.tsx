@@ -180,7 +180,7 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
   const { bars, used, left } = setupResult
   const setupRows = names.length > 0 ? bars.map((b) => ({ model: b.label, rate: b.rate })) : []
   const aiModels = (n: number) => `${n} AI ${n === 1 ? 'model' : 'models'}`
-  const setupNote = `Averaged over ${aiModels(used)}.${left > 0 ? ` ${left} left out: no value under every setup.` : ''}`
+  const setupNote = `Averaged over ${aiModels(used)}.${left > 0 ? ` ${left} left out for lacking a value under some setup.` : ''}`
   const filterText = `${puzzle === ALL || puzzle === null ? 'All puzzles' : `${puzzle} cube`}, ${names.length} AI ${names.length === 1 ? 'model' : 'models'}`
 
   return (

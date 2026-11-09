@@ -632,10 +632,10 @@ describe('BenchmarkView', () => {
       fireEvent.click(within(setupSection()).getByRole('tab', { name: 'Hallucination rate' }))
       // gpt-a has no hallucination rate (a decision model, say): it is out of all three bars, so they compare the same models.
       expect(setupChart()).toHaveAccessibleName('Hallucination rate by setup: No model 25% (worst), Descriptive model 25% (worst), Prescriptive model 10% (best)')
-      expect(note()).toHaveTextContent('Averaged over 1 AI model. 1 left out: no value under every setup.')
+      expect(note()).toHaveTextContent('Averaged over 1 AI model. 1 left out for lacking a value under some setup.')
       fireEvent.click(on('claude-a'))
       expect(setupChart()).toHaveAccessibleName('Hallucination rate by setup: No model n/a, Descriptive model n/a, Prescriptive model n/a')
-      expect(note()).toHaveTextContent('Averaged over 0 AI models. 1 left out: no value under every setup.')
+      expect(note()).toHaveTextContent('Averaged over 0 AI models. 1 left out for lacking a value under some setup.')
     })
 
     it('shows the empty message in both charts when no AI model is selected', () => {
