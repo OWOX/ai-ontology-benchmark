@@ -41,6 +41,7 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
    max_moves = 14                 # optional; decision models only; default is twice the puzzle's largest scramble depth
    puzzles = ["2x2"]              # optional; default is every puzzle in the release
    inputs_per_depth = 4           # optional; valid inputs per puzzle and scramble depth; default is all of them
+   batch = false                  # optional; true sends the attempts of anthropic, openai, and google models through their batch APIs; default false
 
    [[models]]
    name = "example-model"        # the AI model name written into raw records
@@ -57,6 +58,8 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
 
    [Budgets](../definitions.md#prices) limit what the experiment can spend. `[budget]` and each of its fields are optional. A missing field takes the default shown. It is the only part of an experiment config that may change after the experiment starts, so a stopped run can resume with a higher budget.
 
+   `batch` turns on [batch mode](../definitions.md#batches). It is part of the experiment, so it can't change once the experiment starts: only `[budget]` may. The UI sends it as the checkbox "Batch" ([ui](ui.md)).
+
    `kind` says whether the AI model is a [system-1 or system-2 model](../definitions.md#setups). It is optional in an experiment config, because experiments committed before the field existed have none and must still evaluate.
 
    `params` pins every sampling setting the experiment uses, such as temperature or reasoning effort, in the provider's own parameter names. Anything left out takes the provider's default, and the report says so.
@@ -67,7 +70,11 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
    [example-model]
    price_input_per_mtok = 3.00   # price per million input tokens
    price_output_per_mtok = 15.00 # price per million output tokens
+   batch_price_input_per_mtok = 1.50   # optional; price per million input tokens in a batch
+   batch_price_output_per_mtok = 7.50  # optional; price per million output tokens in a batch
    ```
+
+   The two `batch_price_*` fields are the [batch prices](../definitions.md#prices). An entry holds both or neither, and each is written out, never computed from the token price. [run](run.md) and [evaluate](evaluate.md) need them only for an AI model that goes through a [batch](../definitions.md#batches).
 
 4. `config/templates/<provider>.toml`, one experiment config per provider for [getting started](../getting-started.md). No script reads them. A user copies one to `config/experiments/` and runs it.
 
@@ -88,7 +95,9 @@ The checks:
 7. Every budget is a number above 0. They aren't checked against each other, so setting only `per_experiment_usd = 2` is valid, and a model budget above the experiment budget never binds. `load_experiment_config` returns `budget` with every default filled in.
 8. `puzzles`, if present in an experiment config, is a non-empty list of unique strings, each a name in the [registry](registry.md). When it is absent, the experiment covers every puzzle in the release, and `load_experiment_config` leaves the key out of the dict it returns. [run](run.md) checks the names against the release.
 9. `inputs_per_depth`, if present in an experiment config, is an integer of at least 1 (a float, a bool, and a string are errors). It is the [inputs per depth](../definitions.md#inputs) of the experiment. When it is absent, `load_experiment_config` leaves the key out of the dict it returns.
-10. The experiment id contains only letters, digits, `-`, and `_`, because it becomes a folder name.
+10. `batch`, if present, is a bool, else `ValueError` naming `batch`. With `batch = true`, a model with provider `openrouter` is refused, with the message `field 'batch' can't be true with openrouter model <name>: OpenRouter routes a batch to the cheapest upstream provider, so its answers are not comparable with direct calls`. A decision model is allowed: it has no batch API and runs direct. `BATCH_PROVIDERS` in `src/run/models.py` (`anthropic`, `openai`, `google`, and `fake` for tests) lists the providers that have one, and `src/config.py` imports it.
+11. In `load_prices`, each entry's `batch_price_input_per_mtok` and `batch_price_output_per_mtok` are both present or both absent, else `ValueError` naming the model (`must have both batch price fields or neither`), and each, if present, is a number that is not negative.
+12. The experiment id contains only letters, digits, `-`, and `_`, because it becomes a folder name.
 
 ## How to test
 
@@ -99,4 +108,6 @@ The checks:
 5. In an experiment config, `puzzles` accepts a valid list, and raises `ValueError` naming `puzzles` for an empty list, a repeated name, a value that isn't a list of strings, and an unknown name. With no `puzzles`, the returned dict has no `puzzles` key.
 6. In an experiment config, `inputs_per_depth` accepts a valid value, and raises `ValueError` naming `inputs_per_depth` for 0, a float, a bool, and a string. With no `inputs_per_depth`, the returned dict has no such key.
 7. In an experiment config, a model with `kind` set to `system-1` or `system-2` loads, and a model with no `kind` loads. `kind` raises `ValueError` naming `kind` for any other string and for a value that isn't a string.
-8. Every file in `config/templates/` loads as an experiment config, names a release folder in `releases/` (or says `latest` while `releases/` holds one), and has a price in `config/prices.toml` for each AI model.
+8. `batch` accepts `true` and `false` and raises `ValueError` naming `batch` for a string or a number. `batch = true` with an `openrouter` model raises `ValueError` with the message above, and the same file with `batch = false` loads.
+9. A prices entry with one batch field, or a negative one, raises `ValueError`. An entry with both loads.
+10. Every file in `config/templates/` loads as an experiment config, names a release folder in `releases/` (or says `latest` while `releases/` holds one), and has a price in `config/prices.toml` for each AI model.
