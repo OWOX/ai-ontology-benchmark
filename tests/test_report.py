@@ -151,6 +151,15 @@ def test_pilot_sentence_only_when_the_config_sets_inputs_per_depth(tree, monkeyp
     assert "definitions.md#inputs)" in text
 
 
+def test_unfinished_notice_only_when_records_are_missing(tree):
+    assert "unfinished" not in build(tree)
+    text = build(tree, recs=records()[:7])  # 7 of the 12 planned attempts
+    assert ("This experiment is [unfinished](../../docs/definitions.md#releases-and-experiments): "
+            "7 of 12 planned attempts have a record.") in text
+    assert "1. M: 7 of 12" in text
+    assert text.index("unfinished") < text.index("| AI model | Provider |")
+
+
 def test_kind_column_shows_the_config_value_or_not_set(tree):
     assert "| M | fake | m-1 | system-2 | m-1 | temperature=0.5 |" in build(tree)
     model = {k: v for k, v in CONFIG["models"][0].items() if k != "kind"}
@@ -308,3 +317,17 @@ def test_headline_table_without_reasons_has_no_critical_thinking(tree):
     text = build(tree, with_paired=True)
     assert "| Puzzle | Setup | Balanced precision | Coverage | Cost efficiency |" in text
     assert text.index("Balanced precision") < text.index("#### Valid inputs")
+
+
+def test_unfinished_notice_names_each_model_and_a_complete_one_does_not_hide_it(tree):
+    root, _ = tree
+    release, path = root / "releases" / "1.0.0", root / "results" / "exp" / "1.0.0.md"
+    second = dict(CONFIG["models"][0], name="N")
+    config = dict(CONFIG, models=[CONFIG["models"][0], second])
+    prices = {**PRICES, "N": PRICES["M"]}
+    recs = records() + [dict(r, model="N") for r in records()[:3]]  # M has all 12 planned attempts, N has 3
+    rows = compute(recs, release, prices, ["M", "N"])
+    write_report(path, "exp", config, release, prices, *rows, torn_lines=0)
+    text = path.read_text(encoding="utf-8")
+    assert "15 of 24 planned attempts have a record." in text
+    assert "1. M: 12 of 12" in text and "2. N: 3 of 12" in text

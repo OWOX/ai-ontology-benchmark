@@ -2,7 +2,8 @@
 // The Plan of the Experiment page: a legend and a tree of foldable nodes (puzzle, AI model, input with its ring, attempt),
 // the job banners, and the data the Cube panel and the terminal read. Reads GET /api/state/<id>; writes only its DOM.
 // Interface: Progress.mount(el, experimentId, opts) -> {refresh(), destroy(), snapshot(), panelNode, records(), pending() ->
-// {model: [key]}, inputs(), totals()} and Progress.COLORS, Progress.OUTCOMES. opts: onSnapshot(snap) after every applied snapshot,
+// {model: [key]}, inputs(), totals()} and Progress.COLORS, Progress.OUTCOMES, and the pure rules Progress.continueHidden(running, snap, detail, totals) and
+// Progress.commitHint(busy, disabled, detail) for the Continue box and the Commit hint. opts: onSnapshot(snap) after every applied snapshot,
 // onStep(step) on a click of a node, arc, or leaf, bannerEl for the banners. Mounting again replaces the previous mount.
 (function () {
   const h = UI.el;
@@ -343,5 +344,12 @@
     return out;
   }
 
-  window.Progress = { COLORS, OUTCOMES, mount, inFlight };
+  // Pure rules the Experiment page's buttons follow. Continue shows for an unfinished experiment with no run job alive,
+  // report or not. The Commit hint says why Commit is disabled.
+  const continueHidden = (running, snap, d, t) => !!(running || !snap || !d || t.done >= t.planned);
+  const commitHint = (busy, disabled, d) => busy ? "Commit waits for the running job to end."
+    : disabled ? (d && d.release ? `Evaluate under the experiment's release (${d.release}) first: Commit needs its report.`
+      : "Evaluate first: Commit needs a report.") : "";
+
+  window.Progress = { COLORS, OUTCOMES, mount, inFlight, continueHidden, commitHint };
 })();

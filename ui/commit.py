@@ -1,6 +1,6 @@
 # Spec: docs/specs/ui.md
 """Commit preview and commit with a pull request. Reads results/<id>/ in the work tree (its
-experiment.toml is the config) and adds only that folder. Writes git objects, the remote branch results/<id>, and, after a push succeeds,
+experiment.toml is the config) and releases/<release>/inputs.jsonl there, and adds only results/<id>. Writes git objects, the remote branch results/<id>, and, after a push succeeds,
 refs/heads/results/<id>. Never touches the work tree, the real index, or HEAD: it builds the
 tree in a temporary index file.
 """
@@ -14,6 +14,8 @@ from typing import Callable
 
 from src.config import parse_experiment_config
 from src.run.branch import BranchError, stale_files, stale_message
+from src.run.raw import read_raw
+from src.run.run import planned_attempts, recorded_attempts
 from ui.common import ApiError, merged_env
 from ui.gitdata import GIT_VARIABLES
 
@@ -99,13 +101,36 @@ def preview(root: Path, experiment_id: str, emit: Emit) -> dict:
     return {k: info[k] for k in ("branch", "base", "files", "diffstat")}
 
 
-def pr_body(config: dict, experiment_id: str) -> str:
+def unfinished(root: Path, config: dict, experiment_id: str) -> tuple[int, int] | None:
+    """(records, planned attempts) over all AI models when the experiment is unfinished, else None. Reads the release's
+    inputs and the raw files of results/<id>/ in the work tree."""
+    path = root / "releases" / config["release"] / "inputs.jsonl"
+    try:
+        inputs = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    except (OSError, ValueError) as error:
+        raise ApiError(409, f"cannot read {path.relative_to(root)}: {error}") from None
+    records = []
+    for path in sorted((root / "results" / experiment_id / "raw").glob("*.jsonl")):
+        records += read_raw(path)[0]
+    planned = planned_attempts(config, inputs)
+    done = recorded_attempts(config, inputs, records)
+    if all(count >= planned for count in done.values()):
+        return None
+    return sum(done.values()), planned * len(done)
+
+
+def pr_title(experiment_id: str, partial: tuple[int, int] | None) -> str:
+    return f"Results: experiment {experiment_id}" + (" (unfinished)" if partial else "")
+
+
+def pr_body(config: dict, experiment_id: str, partial: tuple[int, int] | None = None) -> str:
     puzzles = config.get("puzzles") or "every puzzle in the release"
     if isinstance(puzzles, list):
         puzzles = ", ".join(puzzles)
     models = ", ".join(m["name"] for m in config["models"])
+    note = f"Unfinished: {partial[0]} of {partial[1]} planned attempts have a record.\n" if partial else ""
     return (f"Results of experiment {experiment_id}.\n\nRelease: {config['release']}\nPuzzles: {puzzles}\n"
-            f"AI models: {models}\nAttempts per input and setup: {config['attempts']}\n"
+            f"AI models: {models}\nAttempts per input and setup: {config['attempts']}\n{note}"
             f"Report: results/{experiment_id}/{config['release']}.md\n")
 
 
@@ -119,19 +144,26 @@ def create_pr(root: Path, emit: Emit, *args: str) -> str:
     return made.stdout.strip().splitlines()[-1] if made.stdout.strip() else ""
 
 
-def open_pr_url(root: Path, branch: str, emit: Emit) -> str:
-    """The URL of the open pull request for the branch, or "". Closed and merged ones don't count."""
-    found = sh(root, [gh_binary(root), "pr", "view", branch, "--json", "url,state"], emit, check=False)
+def open_pr(root: Path, branch: str, emit: Emit) -> dict:
+    """The open pull request for the branch as {url, state, title, body}, or {}. Closed and merged ones don't count."""
+    found = sh(root, [gh_binary(root), "pr", "view", branch, "--json", "url,state,title,body"], emit, check=False)
     try:
         data = json.loads(found.stdout) if found.returncode == 0 else {}
     except ValueError:
         data = {}
-    return data.get("url", "") if data.get("state") == "OPEN" else ""
+    return data if data.get("state") == "OPEN" else {}
+
+
+def open_pr_url(root: Path, branch: str, emit: Emit) -> str:
+    """The URL of the open pull request for the branch, or ""."""
+    return open_pr(root, branch, emit).get("url", "")
 
 
 def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
     """Push first and move the local ref after, so a failed push or PR step can be run again."""
     info = prepare(root, experiment_id, emit)
+    config = load_config(root, experiment_id)
+    partial = unfinished(root, config, experiment_id)  # before the push: no push without a pull request to open
     branch, parent = info["branch"], info["base"]
     sha = parent
     if info["files"]:
@@ -141,11 +173,19 @@ def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
         sh(root, ["git", "update-ref", f"refs/heads/{branch}", sha], emit)
     elif info["ahead"]:  # the run's own commits are not on the remote yet
         sh(root, ["git", "push", "origin", f"{sha}:refs/heads/{branch}"], emit)
-    url = open_pr_url(root, branch, emit)
-    if url and not info["files"] and not info["ahead"]:
+    pr = open_pr(root, branch, emit)
+    title, body = pr_title(experiment_id, partial), pr_body(config, experiment_id, partial)
+    url = pr.get("url", "")
+    sent = bool(info["files"] or info["ahead"])  # this Commit pushed something
+    title_in_step = pr.get("title") == title
+    old_body = (pr.get("body") or "").replace("\r\n", "\n").strip()
+    # With nothing sent, a body that still holds the built text is in step, so a note added by hand survives;
+    # stale counts (a failed edit before) break the match and get edited.
+    body_in_step = old_body == body.strip() if sent else body.strip() in old_body
+    if url and not sent and title_in_step and body_in_step:
         raise ApiError(409, "nothing to commit")
     if not url:  # a retry after a failed PR step finds the branch already pushed
-        config = load_config(root, experiment_id)
-        url = create_pr(root, emit, "--head", branch, "--title", f"Results: experiment {experiment_id}",
-                        "--body", pr_body(config, experiment_id))
+        url = create_pr(root, emit, "--head", branch, "--title", title, "--body", body)
+    elif not (title_in_step and body_in_step):  # keep the open pull request in step with the counts
+        sh(root, [gh_binary(root), "pr", "edit", branch, "--title", title, "--body", body], emit)
     return {"branch": branch, "commit": sha, "pr_url": url}

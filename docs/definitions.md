@@ -53,6 +53,8 @@ Every term below means the same thing in code, configs, records, reports, and do
 5. **Experiment.** One `run` of every AI model in an experiment config over one release, and the reports computed from it.
 6. **Experiment id.** The name of an experiment config file, without the extension. Every raw record carries it.
 7. **Experiment report.** The Markdown file `results/<experiment id>/<release version>.md`. It starts with the release it was scored under, and it links to the release's inputs and prompts instead of copying them.
+8. **Unfinished experiment.** An experiment in which some AI model has fewer raw records than planned attempts, for example after a [budget stop](#prices). Its results cover only the attempts that ran, and `run` can continue it.
+9. **Planned attempts.** For one AI model, the inputs the experiment plays (after its puzzles and its [inputs per depth](#inputs)) times 3 setups times the attempts per input and setup. A pilot sample plays fewer inputs, so it is not unfinished by being a sample.
 
 ## Workflows
 

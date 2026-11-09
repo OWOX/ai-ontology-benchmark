@@ -168,6 +168,7 @@
       const contNote = h("p", { class: "muted small", text: "Continue needs this experiment's results in this checkout: check out its branch first." });
       let starting = false;
       const commit = h("button", { type: "button", text: "Commit" });
+      const commitHint = h("span", { class: "muted small", role: "status" });
 
       // The score card loads once, and again on the snapshot poll at most every 5 seconds while a run job of the
       // experiment is alive. It reads the job state the page already holds. When that state changes, and when the
@@ -205,14 +206,18 @@
         evaluate.disabled = mine(id, evalJob) || snapRunning(snap, evalJob);
         const running = mine(id, run) || snapRunning(snap, run);
         stop.disabled = !running;
-        // Shown only for an unfinished experiment: no run job alive, attempts left, and no report on the branch (a report
-        // means it was evaluated and committed). The server's 409s stay the authority.
+        // Shown only for an unfinished experiment: no run job alive and attempts left, report or not. The server's 409s
+        // stay the authority.
         const t = state.ctl ? state.ctl.totals() : { done: 0, planned: 0 };
-        contBox.hidden = running || !snap || !d || !!d.report || t.done >= t.planned;
+        contBox.hidden = Progress.continueHidden(running, snap, d, t);
         cont.disabled = starting || mine(id, evalJob) || snapRunning(snap, evalJob) || !(d && d.local_results);
         contNote.hidden = contBox.hidden || !d || d.local_results;
         // The server's 409s stay the authority; this only keeps the button honest.
-        commit.disabled = mine(id, any) || snapRunning(snap, any) || !(d && d.local_results && d.local_report);
+        const busy = mine(id, any) || snapRunning(snap, any);
+        commit.disabled = busy || !(d && d.local_results && d.local_report);
+        // Say why Commit is disabled: a report must exist first, and no job of the experiment may be running.
+        commitHint.textContent = Progress.commitHint(busy, commit.disabled, d);
+        commit.title = commitHint.textContent;
       }
 
       async function loadDetail() {
@@ -232,7 +237,7 @@
             backToIcon();
           });
           actions.replaceChildren(...(d.local_results ? [block("Evaluate and commit",
-            h("div", {}, h("div", { class: "actions by-field" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit), result), true)] : []));
+            h("div", {}, h("div", { class: "actions by-field" }, h("label", { class: "small" }, "Score under release ", evalRelease), evaluate, commit, commitHint), result), true)] : []));
           controls();
         } catch (e) {
           if (!root.isConnected) return;

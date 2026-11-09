@@ -8,7 +8,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 
 ## Inputs
 
-`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0, paired_rows=(), detection_rows=(), corruption_rows=(), reason_rows=())`. [evaluate](evaluate.md) calls it with what `compute()`, `paired_tests()`, `detection_rows()`, `corruption_rows()`, and `reason_rows()` returned and the count of torn raw lines it skipped.
+`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0, paired_rows=(), detection_rows=(), corruption_rows=(), reason_rows=())`. [evaluate](evaluate.md) calls it with what `compute()`, `paired_tests()`, `detection_rows()`, `corruption_rows()`, and `reason_rows()` returned and the count of torn raw lines it skipped. Besides those arguments it reads `release_dir/manifest.json` and `release_dir/inputs.jsonl`, the latter to count the planned attempts of an [unfinished experiment](../definitions.md#releases-and-experiments).
 
 ## Outputs
 
@@ -29,6 +29,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
    6. The line `Torn raw lines skipped: <n>.`
    7. When the config has `batch = true`, directly before the first-and-last line, the line `Batch mode: attempts of models with a batch API went through it, at the batch prices below.`. Then the token prices used, linked to `prices.toml` in the experiment folder. In a batch experiment the price table has two more columns, Batch input and Batch output: the [batch prices](../definitions.md#prices) of each batched AI model, and n/a for one that ran direct, such as a decision model. Without `batch`, the table keeps its three columns.
    8. The three budgets in force, and the cost spent per AI model and in total, at the prices used, each record at its own tier.
+   9. When the experiment is an [unfinished experiment](../definitions.md#releases-and-experiments), placed directly after the `Config` line, before the table of AI models: `This experiment is unfinished: N of M planned attempts have a record.`, with "unfinished" linked to the definition, then a numbered list `<AI model>: <n> of <m>`, one per AI model in config order. `m` is `planned_attempts(config, inputs)` of [run](run.md), with the inputs read from the release's `inputs.jsonl`, and `n` is the AI model's attempt rows that match a planned (input id, setup, attempt number), from `recorded_attempts` of run. Nothing is added when every AI model has all its planned attempts.
 4. **Summary.** First, for each AI model, one headline table from `detection_rows`, one row per puzzle and setup, with the columns Balanced precision, Coverage, Critical thinking, and Cost efficiency (USD to 4 places). Then two tables with setups as columns:
    1. Valid inputs: precision, coverage, hallucination rate, reason hallucination rate, false mismatch rate, malformed output rate, truncation rate, abstention rate, format error rate, and cost per attempt.
    2. Invalid inputs: precision, coverage, mismatch detection rate, diagnosis rate, hallucination rate, reason hallucination rate, malformed output rate, truncation rate, abstention rate, and format error rate.
@@ -60,6 +61,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 12. With `reason_rows`, the Mismatch reasons section appears right after Detection by corruption type, with the decoy column marked. Without them, it is absent, and a report under a release without mismatch reasons has no reason rows, columns, or baseline row.
 13. The pilot sentence appears only when the config sets `inputs_per_depth`, names its value, and links the Inputs definition.
 14. With `batch = true`, the Batch mode line appears and the price table has the Batch input and Batch output columns, n/a for a model that ran direct. Without it, neither does. A batched attempt's latency shows as n/a in the Attempts tables.
+15. The unfinished notice appears only when some AI model has fewer attempt rows than planned attempts, and the list names every AI model.
 
 ## Risk
 
