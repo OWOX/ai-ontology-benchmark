@@ -74,6 +74,11 @@ class RequestError(Exception):
     an account usage limit, a bad key, or an unknown model. Never retried. `run` stops on it."""
 
 
+class BatchTooLargeError(RequestError):
+    """A provider refused a whole batch because its queue is full (OpenAI `token_limit_exceeded`). Nothing
+    was wrong with any request: `run` sends the attempts again in smaller chunks."""
+
+
 def _request_error(provider: str, error: Exception, message: str | None = None) -> RequestError:
     """One line naming the provider, the HTTP status, and the message the API sent. `message` is
     the one the SDK already read from the body, when it keeps one."""
@@ -497,6 +502,12 @@ GOOGLE_BATCH_DONE = ("JOB_STATE_SUCCEEDED", "JOB_STATE_PARTIALLY_SUCCEEDED", "JO
 
 
 GOOGLE_REQUEST_CODES = (3, 5, 7, 9, 16)
+GOOGLE_FAILED = ("JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED")
+
+
+def _google_request_code(code) -> bool:
+    """True for an error code that means the request itself was rejected, so retrying can't help."""
+    return code in GOOGLE_REQUEST_CODES or (code is not None and 400 <= code < 500 and code not in (408, 429))
 
 
 def _check_batch_provider(model: dict) -> str:
@@ -644,10 +655,11 @@ def _openai_batch_results(client, batch_id: str) -> dict:
                 results[cid] = InfrastructureError(f"openai: an unreadable batch result: {' '.join(str(error).split())[:200]}")
     if not results and batch.status == "failed":  # the file was rejected as a whole
         errors = getattr(getattr(batch, "errors", None), "data", None) or []
-        if any(getattr(item, "code", None) == "token_limit_exceeded" for item in errors):
-            return results  # the queue was full, not the file at fault: the caller retries every request
         detail = "; ".join(" ".join(str(item.message).split()) for item in errors)
-        raise RequestError("openai: the batch failed" + (f": {detail}" if detail else ""))
+        message = "openai: the batch failed" + (f": {detail}" if detail else "")
+        if any(getattr(item, "code", None) == "token_limit_exceeded" for item in errors):
+            raise BatchTooLargeError(message)  # the queue was full, not the file at fault: send smaller chunks
+        raise RequestError(message)
     return results
 
 
@@ -655,6 +667,13 @@ def _google_batch_results(client, batch_id: str) -> dict:
     job = _batch_sdk_call("google", client.batches.get, name=batch_id)
     responses = (job.dest.inlined_responses if job.dest else None) or []
     results = {}
+    if not responses and getattr(getattr(job, "state", None), "value", getattr(job, "state", None)) in GOOGLE_FAILED:
+        error = getattr(job, "error", None)
+        code = getattr(error, "code", None)
+        code = code if isinstance(code, int) else None
+        if _google_request_code(code):  # a permanent failure of the whole job
+            raise RequestError(f"google: the batch failed: {code}: "
+                               + " ".join(str(getattr(error, "message", None) or "").split()))
     for item in responses:
         key = (item.metadata or {}).get("key")
         if not key:
@@ -671,7 +690,7 @@ def _google_batch_results(client, batch_id: str) -> dict:
         # The code is a gRPC canonical code: 3 INVALID_ARGUMENT, 5 NOT_FOUND, 7 PERMISSION_DENIED,
         # 9 FAILED_PRECONDITION, 16 UNAUTHENTICATED mean the request itself was rejected. A code of 100 or
         # more is read as an HTTP status, with 4xx other than 408 and 429 a rejection.
-        if code in GOOGLE_REQUEST_CODES or (code is not None and 400 <= code < 500 and code not in (408, 429)):
+        if _google_request_code(code):
             results[key] = RequestError(message)
         else:
             results[key] = InfrastructureError(message)
@@ -681,8 +700,9 @@ def _google_batch_results(client, batch_id: str) -> dict:
 def batch_results(model: dict, batch_id: str) -> dict:
     """The results of a finished batch, keyed by custom_id: a Reply, or an InfrastructureError or RequestError
     instance for a request that failed. A custom_id the provider left out is left out here too, and the
-    caller retries it. An OpenAI batch that failed validation raises RequestError instead of returning
-    instances, except when the failure is token_limit_exceeded, which returns no results."""
+    caller retries it. An OpenAI batch that failed validation, or a Google job that failed with a permanent
+    error code and no responses, raises RequestError instead of returning instances. An OpenAI batch refused
+    as token_limit_exceeded raises its subclass BatchTooLargeError."""
     provider = _check_batch_provider(model)
     if provider == "fake":
         return FAKE_BATCH_RESULTS.pop(0) if FAKE_BATCH_RESULTS else {}

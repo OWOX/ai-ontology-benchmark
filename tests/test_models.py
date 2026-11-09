@@ -940,11 +940,13 @@ def test_openai_failed_batch_is_a_request_error(monkeypatch):
         models.batch_results(batch_entry("openai"), "b")
 
 
-def test_openai_failed_batch_with_token_limit_is_retried(monkeypatch):
+def test_openai_failed_batch_with_token_limit_is_too_large(monkeypatch):
     client = batch_client(monkeypatch, "openai")
     client.batches.retrieve.return_value = NS(status="failed", output_file_id=None, error_file_id=None,
                                               errors=NS(data=[NS(code="token_limit_exceeded", message="full")]))
-    assert models.batch_results(batch_entry("openai"), "b") == {}
+    with pytest.raises(models.BatchTooLargeError, match="full"):
+        models.batch_results(batch_entry("openai"), "b")
+    assert issubclass(models.BatchTooLargeError, models.RequestError)
 
 
 def test_openai_failed_batch_error_codes_name_the_message(monkeypatch):
@@ -1004,6 +1006,22 @@ def test_google_job_without_responses_has_no_results(monkeypatch):
     client = batch_client(monkeypatch, "google")
     client.batches.get.return_value = NS(dest=None)
     assert models.batch_results(batch_entry("google"), "b") == {}
+
+
+@pytest.mark.parametrize("state", ["JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED"])
+def test_google_job_that_failed_with_a_permanent_code_is_a_request_error(monkeypatch, state):
+    for code in (3, 5, 7, 9, 16, 403):
+        client = batch_client(monkeypatch, "google")
+        client.batches.get.return_value = NS(state=state, dest=None, error=NS(code=code, message="no   access"))
+        with pytest.raises(models.RequestError, match=f"{code}: no access"):
+            models.batch_results(batch_entry("google"), "b")
+
+
+def test_google_job_that_failed_with_a_transient_or_no_error_has_no_results(monkeypatch):
+    for error in (NS(code=14, message="busy"), NS(code=503, message="down"), NS(code=429, message="rate"), None):
+        client = batch_client(monkeypatch, "google")
+        client.batches.get.return_value = NS(state="JOB_STATE_FAILED", dest=None, error=error)
+        assert models.batch_results(batch_entry("google"), "b") == {}
 
 
 def test_batch_submit_maps_sdk_errors(monkeypatch):
