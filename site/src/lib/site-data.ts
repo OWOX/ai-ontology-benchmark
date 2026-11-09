@@ -2,12 +2,14 @@
 // Reads site/.data/site.json, which `python -m src.site.export` writes.
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import type { ModelMetrics } from './benchmark'
 import type { BenchmarkExperiment } from './types'
 
 export interface SiteData {
   page: { title: string; description: string; intro: string }
   legalMoves: Record<string, string[]>
   definitions: { key: string; name: string; definition: string }[]
+  metrics: ModelMetrics[]
   experiments: BenchmarkExperiment[]
 }
 
