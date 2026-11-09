@@ -2254,3 +2254,51 @@ def test_stopping_with_an_open_batch_pushes_the_branch(bexp, monkeypatch, tmp_pa
     monkeypatch.setattr(batch_module, "batch_done", forbidden)
     assert go("--limit", "3") == 1
     assert True in from_stop  # stop_open pushed, not only the push at the end of the run
+
+
+def plan_inputs():
+    rows = [{"input_id": f"2x2-v{n}", "puzzle": "2x2", "scramble_depth": 5, "validity": "valid"} for n in range(4)]
+    rows.append({"input_id": "2x2-i0", "puzzle": "2x2", "scramble_depth": 5, "validity": "invalid"})
+    rows += [{"input_id": f"3x3-v{n}", "puzzle": "3x3", "scramble_depth": 5, "validity": "valid"} for n in range(2)]
+    return rows
+
+
+def plan_record(model, input_id, setup="no_model", number=1):
+    return {"model": model, "input_id": input_id, "setup": setup, "attempt_number": number}
+
+
+def plan_config(**extra):
+    return {"attempts": 2, "models": [{"name": "a"}, {"name": "b"}], **extra}
+
+
+def test_planned_attempts_follow_puzzles_and_inputs_per_depth():
+    rows = plan_inputs()
+    assert run_module.planned_attempts(plan_config(), rows) == 7 * 3 * 2
+    assert run_module.planned_attempts(plan_config(puzzles=["3x3"]), rows) == 2 * 3 * 2
+    # 2 valid of the 2x2 group and ceil(2 * 1 / 4) = 1 invalid; the 3x3 group has 2 valid, so it is played whole
+    assert run_module.planned_attempts(plan_config(inputs_per_depth=2), rows) == (3 + 2) * 3 * 2
+    assert run_module.planned_attempts(plan_config(puzzles=["2x2"], inputs_per_depth=2), rows) == 3 * 3 * 2
+
+
+def test_recorded_attempts_count_only_planned_records_once_each():
+    rows = plan_inputs()
+    config = plan_config(puzzles=["2x2"], inputs_per_depth=2)  # plays 2x2-v0, 2x2-v1, 2x2-i0
+    records = [
+        plan_record("a", "2x2-v0"), plan_record("a", "2x2-v0"),  # a duplicate counts once
+        plan_record("a", "2x2-v0", number=2),
+        plan_record("a", "2x2-v1", number=3),  # above attempts
+        plan_record("a", "2x2-v3"),  # not planned: past inputs_per_depth
+        plan_record("a", "3x3-v0"),  # not planned: not in puzzles
+        plan_record("zzz", "2x2-v0"),  # a model that is not in the config
+    ]
+    assert run_module.recorded_attempts(config, rows, records) == {"a": 2, "b": 0}
+
+
+def test_a_model_with_no_records_does_not_hide_behind_a_complete_one():
+    rows, config = plan_inputs(), plan_config(puzzles=["3x3"])
+    records = [plan_record("a", row["input_id"], setup, number)
+               for row in rows if row["puzzle"] == "3x3" for setup in run_module.SETUPS for number in (1, 2)]
+    done = run_module.recorded_attempts(config, rows, records)
+    planned = run_module.planned_attempts(config, rows)
+    assert done == {"a": planned, "b": 0}
+    assert not all(count >= planned for count in done.values())
