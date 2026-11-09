@@ -24,7 +24,7 @@ from src.puzzles.registry import get_engine
 from src.run.branch import BranchError
 from src.run.budget import (TOLERANCE, BudgetError, batch_state_path, held_by_model, is_batched, open_batches,
                             read_state, spent_by_model, worst_case_request_cost)
-from src.run.models import (BatchRejectedError, BatchTooLargeError, InfrastructureError, RequestError, batch_done, batch_results, build_request,
+from src.run.models import (BatchRejectedError, BatchTooLargeError, InfrastructureError, RequestError, UnreadableReply, batch_done, batch_results, build_request,
                             submit_batch)
 from src.run.raw import parse_raw_text
 from src.run.run import RunError, append_record, make_record, read_done, safe_commit
@@ -80,8 +80,11 @@ def play_batched(*, config, manifest, results, prices, versions, pending, outcom
     The models advance round-robin, so their batches run at the same time: a model with an open batch
     is checked each poll, a model without one submits the next chunk. A chunk is as large as the
     provider limits and the budgets allow. A failed request goes into a later chunk until the retry
-    cap, then gets an `infrastructure_failure` record. A RequestError stops the run after the batch
-    that showed it has been collected and committed. Interrupts leave open batches open."""
+    cap, then gets an `infrastructure_failure` record; a reply the provider billed but run can't read gets
+    that record at once, with its tokens, and is never resent. A rejection of a whole batch (BatchRejectedError)
+    closes the batch before the run stops; any other RequestError leaves it open and held. A RequestError
+    on a single request stops the run after its batch has been collected and committed. Interrupts leave
+    open batches open."""
     work: dict[str, ModelBatches] = {}
     for model in config["models"]:  # config order; a model with an open batch is collected even with nothing pending
         if is_batched(config, model) and only_model in (None, model["name"]):
@@ -207,14 +210,16 @@ def settle_exhausted(state: ModelBatches, context: dict, events: list[dict]) -> 
             write_record(state, context, row, setup, number, None)
 
 
-def write_record(state: ModelBatches, context: dict, row: dict, setup: str, number: int, reply) -> dict:
-    """Append one raw record (reply None: infrastructure failure), count it, and show it."""
+def write_record(state: ModelBatches, context: dict, row: dict, setup: str, number: int, reply,
+                 paid: tuple[int, int] = (0, 0)) -> dict:
+    """Append one raw record (reply None: infrastructure failure), count it, and show it. `paid` are the
+    tokens of a billed reply that couldn't be read, stored as retry tokens so that cost counts them."""
     config, model = context["config"], state.model
     if reply is not None:
         reply = dataclasses.replace(reply, latency_s=None)  # a batch has no latency of its own
     reasons = offered_reasons(get_engine(row["puzzle"])) if context["with_reasons"] else None
     record = make_record(config, context["manifest"], row, model, setup, number,
-                                    context["versions"], reply, 0, 0, None, reasons, batch=True)
+                                    context["versions"], reply, paid[0], paid[1], None, reasons, batch=True)
     append_record(context["results"] / "raw" / f"{state.name}.jsonl", record)
     context["outcomes"][record["outcome"]] += 1
     context["progress"].update(record)
@@ -384,6 +389,11 @@ def collect(state: ModelBatches, context: dict, batch: dict, events: list[dict])
         if isinstance(answer, RequestError):
             stop = stop or answer
             rejected.append(item["custom_id"])
+        elif isinstance(answer, UnreadableReply):  # billed, so never resent
+            log(f"batch {state.name} {item['custom_id']}: {answer.message}")
+            write_record(state, context, row, item["setup"], item["attempt_number"], None,
+                         (answer.input_tokens, answer.output_tokens))
+            failed += 1
         elif answer is None or isinstance(answer, InfrastructureError):
             if counts[key] >= config["retry_cap"] + 1:
                 write_record(state, context, row, item["setup"], item["attempt_number"], None)

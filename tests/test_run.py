@@ -2052,3 +2052,36 @@ def test_a_rejected_batch_is_closed(bexp, monkeypatch):
     monkeypatch.setattr(batch_module, "batch_results", rejected)
     assert go("--limit", "3") == 1
     assert [e["event"] for e in state_events(bexp)] == ["submitted", "collected"]
+
+
+def test_a_billed_unreadable_reply_gets_a_failure_record_with_its_tokens_and_is_not_resent(bexp):
+    first = "2x2-d3-001_no_model_a1_r0"
+    bexp_state.failing[first] = models.UnreadableReply("openai: an unreadable batch result: x", 40, 9)
+    assert go("--limit", "3") == 0
+    rows = {(r["input_id"], r["setup"], r["attempt_number"]): r for r in records(bexp, "A")}
+    bad = rows["2x2-d3-001", "no_model", 1]
+    assert bad["outcome"] == "infrastructure_failure" and bad["batch"] is True and bad["latency_s"] is None
+    assert (bad["retry_input_tokens"], bad["retry_output_tokens"], bad["input_tokens"]) == (40, 9, 0)
+    assert len(rows) == 3 and len(models.FAKE_BATCH_SUBMITS) == 1
+    assert len(submitted_ids()) == 3
+
+
+def test_stopping_with_an_open_batch_pushes_the_branch(bexp, monkeypatch, tmp_path_factory):
+    import inspect
+    from src.run import batch as batch_module
+    from src.run import branch as branch_module
+    with_remote(bexp, tmp_path_factory)
+    models.FAKE_BATCH_PENDING.add("fake-batch-1")
+    real_push, from_stop = branch_module.ResultsBranch.push, []
+
+    def watching(self):
+        from_stop.append(any(frame.function == "stop_open" for frame in inspect.stack()))
+        return real_push(self)
+
+    def forbidden(model, batch_id):
+        raise models.RequestError("openai: HTTP 403: forbidden")
+
+    monkeypatch.setattr(branch_module.ResultsBranch, "push", watching)
+    monkeypatch.setattr(batch_module, "batch_done", forbidden)
+    assert go("--limit", "3") == 1
+    assert True in from_stop  # stop_open pushed, not only the push at the end of the run
