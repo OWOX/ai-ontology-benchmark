@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cubeGeometry } from '../cube/core/geometry'
 import { resetAttempts } from './attempts'
 import { corruptionSentence, corruptionType, whyUnsolvable } from './unsolvable'
+import { MetricChart } from './MetricChart'
 import { Player, pickCase, resultText, sourceUrl, stateText, type ReplayAttempt } from './Player'
 
 const g = cubeGeometry(3)
@@ -33,6 +34,23 @@ beforeEach(() => (vi.useFakeTimers(), resetAttempts()))
 afterEach(() => (vi.useRealTimers(), vi.unstubAllGlobals()))
 
 describe('Player', () => {
+  it('closes its popover on a click in a chart\'s "(?)" elsewhere on the page, which is also a .pop-wrap', async () => {
+    stub({ '3x3': [attempt({ release: '3.0.0', prompt: '3.0.0/descriptive/i1' })] }, { '3.0.0/descriptive/i1': 'text' })
+    render(
+      <>
+        <MetricChart idPrefix="m" heading="h" intro="i" by="AI model" firstNumber={1} tabs={[{ id: 'precision', label: 'Precision', title: 'Balanced precision', higherIsBetter: true, explanation: 'e' }]}
+          metric="precision" onMetric={() => {}} definitions={[]} layoutKey="x" bars={[{ model: 'a', rate: { value: 0.5, n: 1 } }]} filterText="f"><div /></MetricChart>
+        <Player puzzle="3x3" models={['m1']} attemptsUrl="/a.json" legalMoves={LEGAL} />
+      </>,
+    )
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Prompt' }))
+    expect(screen.getByRole('dialog', { name: /received/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'About Chart 1' }))
+    expect(screen.queryByRole('dialog', { name: /received/ })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'About Chart 1' })).toBeInTheDocument()
+  })
+
   it('calls an unflagged unsolvable input "Mismatch not detected" and a flagged solvable one "Not solved"', () => {
     expect(resultText('unsolved', { validity: 'invalid' })).toBe('Mismatch not detected')
     expect(resultText('unsolved', { validity: 'valid' })).toBe('Not solved')
