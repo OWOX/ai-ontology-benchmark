@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cubeGeometry } from '../cube/core/geometry'
 import { resetAttempts } from './attempts'
+import { corruptionType, whyUnsolvable } from './unsolvable'
 import { Player, pickCase, promptUrl, resultText, sourceUrl, stateText, type ReplayAttempt } from './Player'
 
 const g = cubeGeometry(3)
@@ -133,6 +134,47 @@ describe('Player', () => {
   it('names an unsolvable state without a reason when the import did not record one', () => {
     expect(stateText({ puzzle: '2x2', validity: 'invalid', corruption: null })).toBe('2x2 cube, not solvable')
     expect(stateText({ puzzle: '2x2', validity: 'invalid' })).toBe('2x2 cube, not solvable')
+  })
+
+  it('reads the corruption type as the first two words and explains each type, with a generic line for an unknown one', () => {
+    expect(corruptionType('recoloured sticker L3 D to U')).toBe('recoloured sticker')
+    expect(corruptionType(null)).toBe('')
+    expect(whyUnsolvable('twisted corner UFL clockwise')).toMatch(/total twist of the corners/)
+    expect(whyUnsolvable('flipped edge UF')).toMatch(/flipped edges stays even/)
+    expect(whyUnsolvable('flipped wing Uf')).toMatch(/never swap places/)
+    expect(whyUnsolvable('swapped corners UFL UBR')).toMatch(/odd permutation/)
+    expect(whyUnsolvable('swapped edges UF UB')).toMatch(/odd permutation/)
+    expect(whyUnsolvable('recoloured sticker L3 D to U')).toMatch(/keeps its count/)
+    expect(whyUnsolvable('bent axle')).toMatch(/No sequence of legal moves/)
+    expect(whyUnsolvable(undefined)).toMatch(/No sequence of legal moves/)
+  })
+
+  it('opens the "not solvable" explanation on click, and closes it on a second click, Escape, or a click outside', async () => {
+    stub({ '3x3': [attempt({ validity: 'invalid', corruption: 'recoloured sticker L3 D to U', outcome: 'success', mismatch: true })] })
+    await mount()
+    const button = screen.getByRole('button', { name: 'not solvable' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('region', { name: /not solvable/ })).toBeNull()
+    fireEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('region', { name: /not solvable/ })).toHaveTextContent(/every colour keeps its count/)
+    expect(button.getAttribute('aria-controls')).toBe(screen.getByRole('region', { name: /not solvable/ }).id)
+    fireEvent.click(button)
+    expect(screen.queryByRole('region', { name: /not solvable/ })).toBeNull()
+    fireEvent.click(button)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('region', { name: /not solvable/ })).toBeNull()
+    expect(button).toHaveFocus()
+    fireEvent.click(button)
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('region', { name: /not solvable/ })).toBeNull()
+  })
+
+  it('has no "not solvable" button for a solvable state', async () => {
+    stub({ '3x3': [attempt({})] })
+    await mount()
+    expect(screen.queryByRole('button', { name: 'not solvable' })).toBeNull()
+    expect(fact('State:')).toBe('3x3 cube, solvable')
   })
 
   it('shows the case before Run: state, model, the Result line laid out but hidden, Run, no Source link yet', async () => {

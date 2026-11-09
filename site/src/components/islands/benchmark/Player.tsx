@@ -4,6 +4,7 @@ import { CubeView } from '../cube/svg/CubeView'
 import { ALL, SOURCE, playable, puzzleSize, resultSign, type ResultSign } from '../../../lib/benchmark'
 import type { BenchmarkAttempt } from '../../../lib/types'
 import { loadAttempts } from './attempts'
+import { whyUnsolvable } from './unsolvable'
 import { replayFrame, type ReplayFrame } from './replay'
 import { CheckCircleIcon, CrossCircleIcon, FlaskIcon, RefreshIcon } from './icons'
 
@@ -52,6 +53,8 @@ export function pickCase(pool: readonly ReplayAttempt[], current: ReplayAttempt 
   return ofModel[Math.floor(random() * ofModel.length)]
 }
 
+type Pop = 'why' | 'prompt'
+
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 interface Props {
@@ -72,6 +75,10 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
   const [attempt, setAttempt] = useState<ReplayAttempt | null>(null)
   const [run, setRun] = useState(0) // a new number restarts the replay of the same attempt; 0 = not run yet
   const [frame, setFrame] = useState<ReplayFrame | null>(null)
+  // The popover open under the facts (one at a time), and the root that scopes the outside-click and Escape handling.
+  const [open, setOpen] = useState<Pop | null>(null)
+  const root = useRef<HTMLElement>(null)
+  const popId = useId()
   useEffect(() => {
     alive.current = true
     return () => void (alive.current = false)
@@ -98,6 +105,24 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
     id = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(id)
   }, [run])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setOpen(null)
+      root.current?.querySelector<HTMLElement>(`[data-pop="${open}"]`)?.focus()
+    }
+    const onDown = (e: Event) => {
+      if (!(e.target as Element | null)?.closest?.('.pop-wrap')) setOpen(null)
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onDown)
+    }
+  }, [open])
 
   /** Loads the attempts of this puzzle and these models and shows a random one; `loud` reports a failure (a click), a quiet first load does not. */
   const load = async (loud: boolean): Promise<ReplayAttempt | null> => {
@@ -135,6 +160,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
     const next = pickCase(pool, attempt)
     if (!next) return
     setAttempt(next)
+    setOpen(null)
     setRun(0)
     setFrame(null)
   }
@@ -153,7 +179,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
   const verdict = attempt?.outcome === 'success' ? 'correct' : 'wrong'
 
   return (
-    <section className="player" aria-labelledby={titleId}>
+    <section className="player" aria-labelledby={titleId} ref={root}>
       {/* The case being replayed, as one more step in the filter's look (`.steps > .current > .title (.num + .label)`, then `.body`). */}
       <div className="steps experiment">
         <div className="current">
@@ -165,9 +191,25 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
             {attempt && (
               <dl className="facts">
                 <div>
-                  <dt>State:</dt> <dd>{stateText(attempt)}</dd>{' '}
+                  <dt>State:</dt>{' '}
+                  <dd>
+                    {attempt.validity === 'valid' ? stateText(attempt) : (
+                      <>
+                        {attempt.puzzle} cube,{' '}
+                        <span className="pop-wrap">
+                          <button type="button" className="pop-btn" data-pop="why" aria-expanded={open === 'why'} aria-controls={`${popId}-why`} onClick={() => setOpen(open === 'why' ? null : 'why')}>not solvable</button>
+                        </span>
+                        {attempt.corruption ? `: ${attempt.corruption}` : ''}
+                      </>
+                    )}
+                  </dd>{' '}
                   {pool.length > 1 && (
                     <button type="button" className="another square" onClick={another} disabled={playing} aria-label="Show another case" title="Show another case"><RefreshIcon /></button>
+                  )}
+                  {open === 'why' && attempt.validity === 'invalid' && (
+                    <div className="pop pop-wrap" id={`${popId}-why`} role="region" aria-label="Why this state is not solvable">
+                      <p>{whyUnsolvable(attempt.corruption)}</p>
+                    </div>
                   )}
                 </div>
                 <div>
