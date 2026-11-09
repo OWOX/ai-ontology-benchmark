@@ -14,7 +14,7 @@
   const NUMBERS = [["retry_cap", "Retry cap"], ["max_output_tokens", "Max output tokens"], ["per_request_usd", "Request budget (USD)"],
     ["per_model_usd", "Model budget (USD)"], ["per_experiment_usd", "Experiment budget (USD)"]];
   // The form survives a redraw of the page (a bundle reload after a job) and resets with the release.
-  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], vals: {}, limit: "", parallel: "4", perDepth: null, perDepthLoaded: null, estimate: null, pending: false, result: null };
+  const S = { release: null, id: "", touched: false, branch: "", puzzles: [], models: [], batch: false, vals: {}, limit: "", parallel: "4", perDepth: null, perDepthLoaded: null, estimate: null, pending: false, result: null };
   let cleanup = null;
   let idSeq = 0;
   const mine = UI.mine;
@@ -28,7 +28,7 @@
 
   function reset(bundle) {
     const d = bundle.defaults;
-    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], limit: "", parallel: "4", perDepth: null, perDepthLoaded: null, estimate: null, pending: false, result: null,
+    Object.assign(S, { release: bundle.release, id: "", touched: false, branch: "", puzzles: bundle.puzzles.map((p) => p.name), models: [], batch: false, limit: "", parallel: "4", perDepth: null, perDepthLoaded: null, estimate: null, pending: false, result: null,
       vals: { attempts: d.attempts, retry_cap: d.retry_cap, max_output_tokens: d.max_output_tokens, reasoning_effort: d.reasoning_effort, ...d.budget } });
   }
 
@@ -53,7 +53,7 @@
       id, release: bundle.release,
       puzzles: bundle.puzzles.map((p) => p.name).filter((n) => S.puzzles.includes(n)),
       models: bundle.providers.flatMap((p) => p.models).filter((m) => !m.disabled_reason).map((m) => m.name).filter((n) => S.models.includes(n)),
-      attempts: whole(v.attempts, "attempts"), inputs_per_depth: S.perDepth, retry_cap: whole(v.retry_cap, "retry_cap"),
+      batch: S.batch, attempts: whole(v.attempts, "attempts"), inputs_per_depth: S.perDepth, retry_cap: whole(v.retry_cap, "retry_cap"),
       max_output_tokens: whole(v.max_output_tokens, "max_output_tokens"),
       reasoning_effort: v.reasoning_effort || null,
       budget: { per_request_usd: amount(v.per_request_usd, "per_request_usd"), per_model_usd: amount(v.per_model_usd, "per_model_usd"),
@@ -133,10 +133,14 @@
   }
 
   // One column per provider. The header's checkbox selects or clears every enabled model of the provider.
+  // OpenRouter models are off while Batch is checked: it routes a batch to the cheapest upstream provider.
+  const BATCH_OFF = "no batch mode";
+  const noBatch = (p) => S.batch && p.name === "openrouter";
+
   function modelList(bundle, onChange) {
     const rel = bundle.release ? "?release=" + encodeURIComponent(bundle.release) : "";
     return h("div", { class: "model-cols" }, ...bundle.providers.filter((p) => p.models.length).map((p) => {
-      const enabled = p.models.filter((m) => !m.disabled_reason).map((m) => m.name);
+      const enabled = noBatch(p) ? [] : p.models.filter((m) => !m.disabled_reason).map((m) => m.name);
       const all = h("input", { type: "checkbox", "aria-label": `All ${p.name} models` });
       all.disabled = !enabled.length;
       const boxes = [];
@@ -160,7 +164,8 @@
       if (warn) UI.tipOn(warn.firstChild);
       const col = h("div", { class: "model-col" }, h("div", { class: "provider-row" }, head, warn));
       for (const m of p.models) {
-        const off = !!m.disabled_reason;
+        const batchOff = noBatch(p);
+        const off = !!m.disabled_reason || batchOff;
         const box = h("input", { type: "checkbox" });
         box.disabled = off;
         if (!off) boxes.push([m.name, box]);
@@ -169,7 +174,8 @@
           sync(); onChange();
         });
         const label = h("label", { class: "model" + (off ? " off" : "") }, box, h("span", { text: m.name }));
-        if (off && (!problem || m.disabled_reason !== problem)) label.append(h("span", { class: "reason", text: m.disabled_reason }));
+        if (batchOff) label.append(h("span", { class: "reason", text: BATCH_OFF }));
+        else if (off && (!problem || m.disabled_reason !== problem)) label.append(h("span", { class: "reason", text: m.disabled_reason }));
         col.append(label);
       }
       sync();
@@ -178,7 +184,7 @@
   }
 
   // Two columns: the three budgets, then the rest.
-  function numberFields(bundle, changed) {
+  function numberFields(bundle, changed, onBatch) {
     const field = ([key, label]) => {
       const input = h("input", { type: "text", inputmode: "decimal", "aria-label": label, value: String(S.vals[key]) });
       input.addEventListener("input", () => { S.vals[key] = input.value; changed(); });
@@ -192,6 +198,12 @@
       select.value = S.vals.reasoning_effort || "";
       select.addEventListener("change", () => { S.vals.reasoning_effort = select.value; changed(); });
       return h("label", {}, h("span", {}, "Reasoning effort", ...Defs.info(bundle.definitions, "Reasoning effort"), ": sent to every system-2 model"), select);
+    })();
+    const batch = (() => {
+      const box = h("input", { type: "checkbox", "aria-label": "Batch" });
+      box.checked = S.batch;
+      box.addEventListener("change", () => { S.batch = box.checked; onBatch(); });
+      return h("label", { class: "model" }, box, h("span", { text: "Batch: half price, results within 24 h" }));
     })();
     const limit = (() => {
       const input = h("input", { type: "text", inputmode: "numeric", "aria-label": "Limit per model", value: S.limit });
@@ -215,7 +227,7 @@
     })();
     const budgets = NUMBERS.filter(([k]) => k.endsWith("_usd")), rest = NUMBERS.filter(([k]) => !k.endsWith("_usd"));
     return h("div", { class: "params-cols" }, h("div", { class: "grid" }, ...budgets.map(field)),
-      h("div", { class: "grid" }, attempts, perDepth, ...rest.map(field), effort, limit, parallel));
+      h("div", { class: "grid" }, attempts, perDepth, ...rest.map(field), effort, batch, limit, parallel));
   }
 
   UI.registerPage("new", {
@@ -281,7 +293,7 @@
             return `${n} is disabled: ${m ? m.disabled_reason : "not in the catalogue"}; resuming needs it enabled`;
           });
           Object.assign(S, { id: value, touched: true, release: cfg.release, puzzles: cfg.puzzles, models: cfg.models.filter((n) => enabled.has(n)), perDepth: cfg.inputs_per_depth === undefined ? null : cfg.inputs_per_depth,
-            perDepthLoaded: cfg.inputs_per_depth === undefined ? null : cfg.inputs_per_depth,
+            perDepthLoaded: cfg.inputs_per_depth === undefined ? null : cfg.inputs_per_depth, batch: cfg.batch === true,
             vals: { attempts: cfg.attempts, retry_cap: cfg.retry_cap, max_output_tokens: cfg.max_output_tokens, reasoning_effort: cfg.reasoning_effort || "", ...cfg.budget } });
           if (cfg.release !== bundle.release) { UI.go("#/new?release=" + encodeURIComponent(cfg.release)); return; }
           paint();
@@ -351,10 +363,10 @@
         const modelOver = (m) => `Already spent (${typed(m.spent_usd)}) plus the worst case (${typed(m.worst_case_usd)}) passes the model budget (${typed(m.per_model_usd)}): the run stops when spending reaches it.`;
         const rows = d.models.map((m) => cells("td", [[m.name], [count(m.attempts)], [usd(m.worst_case_usd), ...over(m.over, m.max_request_usd > d.per_request_usd ? requestOver(m) : modelOver(m))],
           m.expected_cost_usd === null ? ["no cost history yet", "muted"] : [usd(m.expected_cost_usd)],
-          m.time_s === null ? ["no timing data yet", "muted"] : [UI.fmtTime(m.time_s)]]));
+          m.time_s === null ? [m.batched ? "n/a (up to 24 h)" : "no timing data yet", "muted"] : [UI.fmtTime(m.time_s)]]));
         const t = d.total;
         const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over, `Already spent (${typed(t.spent_usd)}) plus the worst case (${typed(t.worst_case_usd)}) passes the experiment budget (${typed(t.per_experiment_usd)}): the run stops when spending reaches it.`)], t.expected_cost_usd === null ? ["no cost history yet", "muted"] : [usd(t.expected_cost_usd) + (d.expected === "partial" ? " (partial)" : "")],
-          t.time_s === null ? ["no timing data yet", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
+          t.time_s === null ? [d.timing === "batch" ? "n/a (up to 24 h)" : "no timing data yet", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
         const table = [
           h("div", { class: "estimate" }, h("table", { class: "estimate-table", "data-table": "estimate" },
             head(true), h("tbody", {}, ...rows), h("tfoot", {}, total))),
@@ -476,6 +488,16 @@
           h("span", { class: "branch-input" }, h("span", { class: "prefix", text: "results/" }), ref.id)), list, ref.note);
       }
 
+      // Checking Batch drops the OpenRouter models from the selection and redraws the model list.
+      function onBatch() {
+        clearError(msg);
+        if (S.batch) {
+          const off = new Set(bundle.providers.filter(noBatch).flatMap((p) => p.models.map((m) => m.name)));
+          S.models = S.models.filter((n) => !off.has(n));
+        }
+        paint(); refreshId();
+      }
+
       function paint() {
         ref.result = null;
         dropStaleResult();
@@ -487,7 +509,7 @@
           h("section", {}, h("h2", { text: "New Experiment" }), branchField()),
           h("section", { class: "step" }, h("h3", {}, "Puzzles", ...Defs.info(bundle.definitions, "Puzzles")), puzzleCards(bundle, choose)),
           h("section", { class: "step" }, h("h3", {}, "AI models", ...Defs.info(bundle.definitions, "AI models")), modelList(bundle, choose)),
-          h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(bundle, edited)),
+          h("section", { class: "step" }, h("h3", { text: "Parameters" }), numberFields(bundle, edited, onBatch)),
           ref.section = h("section", { class: "step" }, h("h3", { text: "Estimation" }),
             ref.card = h("div", { class: "estimate-card" }, ref.formula = h("p", { class: "estimate-formula", "aria-live": "polite" }), ref.body = h("div")), h("div", { class: "actions" }, ref.dry, ref.run), msg));
         if (S.result) showResult(S.result.label, S.result.job, S.result.id, S.result.after);

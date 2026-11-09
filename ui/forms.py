@@ -72,6 +72,11 @@ def build_config(bundles: Bundles, form: dict, env: dict, keyless_ok: bool = Fal
         raise ApiError(400, f"field 'reasoning_effort' must be one of {', '.join(EFFORTS)}")
     if effort:
         config["reasoning_effort"] = effort
+    batch = form.get("batch", False)
+    if not isinstance(batch, bool):
+        raise ApiError(400, "field 'batch' must be true or false")
+    if batch:
+        config["batch"] = True
     if form.get("inputs_per_depth") is not None:
         config["inputs_per_depth"] = _number(form, "inputs_per_depth", int, 1)
     return {**config, "models": models, "budget": budget}
@@ -95,6 +100,8 @@ def _same(bundles: Bundles, existing: dict, new: dict, budget: bool) -> bool:
     unkinded = {m.get("name") for m in existing.get("models", []) if isinstance(m, dict) and "kind" not in m}
     def canon(config: dict) -> dict:
         out = {k: v for k, v in config.items() if k not in skip}
+        if out.get("batch") is False:  # `batch = false` is the default, the same as no field
+            del out["batch"]
         if isinstance(out.get("puzzles"), list):
             out["puzzles"] = sorted(out["puzzles"])
         if isinstance(out.get("models"), list):

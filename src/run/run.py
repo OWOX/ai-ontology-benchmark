@@ -26,7 +26,7 @@ from src.config import load_experiment_config, load_prices, max_moves, parse_exp
 from src.evaluate.metrics import attempt_cost
 from src.release.release import ReleaseError, latest_version, load_release
 from src.run.branch import BranchError, ResultsBranch, branch_copy
-from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
+from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend, held_by_model, is_batched,
                             print_estimate, spent_by_model, worst_case_request_cost, worst_request)
 from src.run.decision import DecisionResult, run_decision_attempt
 from src.run.models import DECISION_PROVIDERS, InfrastructureError, RequestError, call_model, log_infrastructure_error
@@ -155,7 +155,7 @@ def call_with_retries(model: dict, prompt: str, config: dict, can_afford, label:
 
 def make_record(config, manifest, row, model, setup, number, versions,
                 reply, retry_in: int, retry_out: int, decision: DecisionResult | None = None,
-                reasons: list[str] | None = None) -> dict:
+                reasons: list[str] | None = None, batch: bool = False) -> dict:
     """Build the raw record of one attempt from the reply (None after an infrastructure failure).
     A decision model passes its DecisionResult instead, and the raw response is the array of its calls.
     `reasons` are the offered mismatch reasons, or None for a release without them."""
@@ -184,7 +184,7 @@ def make_record(config, manifest, row, model, setup, number, versions,
         "input_tokens": tokens_in, "output_tokens": tokens_out,
         "retry_input_tokens": retry_in, "retry_output_tokens": retry_out,
         "latency_s": latency, "stop_reason": stop, "served_model": served,
-        "decision": decision is not None, "requested_model": model["api_model_id"],
+        "decision": decision is not None, "requested_model": model["api_model_id"], "batch": batch,
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
@@ -215,6 +215,9 @@ def make_progress(config: dict, prices: dict, raw_dir: Path, pending: list, only
 
 
 def run(args: argparse.Namespace) -> int:
+    if args.resolve_submit:
+        from src.run.batch import resolve_submit  # batch imports this module, so it loads here
+        return resolve_submit(args)
     if args.config == "-":
         source, config_path = "<stdin>", None
         text = sys.stdin.read()
@@ -287,7 +290,7 @@ def run(args: argparse.Namespace) -> int:
         with progress or nullcontext():
             play(args, config=config, manifest=manifest, results=results, prices=prices, versions=versions,
                  pending=pending, outcomes=outcomes, branch=branch, progress=progress, caps=caps,
-                 questions=questions, prompts=prompts, with_reasons=with_reasons)
+                 questions=questions, prompts=prompts, with_reasons=with_reasons, inputs=inputs, folder=folder)
     finally:
         if branch:
             finish(branch, config["experiment_id"])
@@ -324,6 +327,7 @@ class Flight:
         self.lock = threading.Lock()
         self.held: dict[int, tuple[str, float]] = {}  # sequence number -> (model name, cost)
         self.settled: dict[str, float] = {}  # model name -> cost of the records appended so far
+        self.batches = None  # callable: the worst-case cost of the open batches per model, when the run has any
 
     def reserve(self, seq: int, name: str, cost: float) -> None:
         with self.lock:
@@ -390,7 +394,8 @@ class Attempt:
             then = self.snapshot["settled"]
             spent = {n: cost + settled.get(n, 0.0) - then.get(n, 0.0) for n, cost in spent.items()}
         spent = {n: cost + reserved.get(n, 0.0) for n, cost in spent.items()}
-        check_spend(self.config, name, self.worst + paid, self.left, spent)
+        held = self.flight.batches() if self.flight.batches else None
+        check_spend(self.config, name, self.worst + paid, self.left, spent, held)
         self.flight.reserve(self.seq, name, self.worst + paid)  # what it has paid is not in any file yet
 
     def call(self) -> None:
@@ -419,11 +424,26 @@ def dry_run(pending, questions, prompts, with_reasons: bool = False) -> None:
 
 
 def play(args, *, config, manifest, results, prices, versions, pending, outcomes, branch, progress,
-         caps, questions, prompts, with_reasons=False) -> None:
+         caps, questions, prompts, with_reasons=False, inputs=(), folder=None) -> None:
     if args.dry_run:
         dry_run(pending, questions, prompts, with_reasons)
         return
+    batched = [item for item in pending if is_batched(config, item[1])]
     flight = Flight()
+    if batched or any(is_batched(config, m) for m in config["models"]):
+        from src.run.batch import play_batched  # batch imports this module, so it loads here
+        by_id = {row["input_id"]: row for row in inputs}
+
+        def prompt_for(input_id: str, setup: str) -> str:
+            if (input_id, setup) not in prompts:
+                prompts[input_id, setup] = build_prompt(folder / "prompts", by_id[input_id], setup)
+            return prompts[input_id, setup]
+
+        flight.batches = lambda: held_by_model(config, prices, results, prompt_for)
+        play_batched(config=config, manifest=manifest, results=results, prices=prices, versions=versions,
+                     pending=batched, outcomes=outcomes, branch=branch, progress=progress,
+                     with_reasons=with_reasons, rows=by_id, prompt_for=prompt_for, only_model=args.model)
+        pending = [item for item in pending if not is_batched(config, item[1])]
 
     def attempts():
         for seq, (left, (row, model, setup, number)) in enumerate(zip(range(len(pending), 0, -1), pending)):
@@ -517,11 +537,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--estimate", action="store_true", help="print attempts and worst-case cost")
     parser.add_argument("--no-commit", action="store_true", help="do not commit to results/<id> (for tests)")
     parser.add_argument("--releases", default="releases", type=Path)
+    parser.add_argument("--resolve-submit", metavar="SUBMIT_ID",
+                        help="resolve a batch submit with no result, then exit (needs --as)")
+    parser.add_argument("--as", dest="resolution", choices=["abandoned"],
+                        help="how to resolve it: abandoned says no batch exists, so its attempts are pending again")
     parser.add_argument("--config", choices=["-"], help="read the experiment config from stdin")
     parser.add_argument("--configs", default="config/experiments", type=Path)
     parser.add_argument("--prices", default="config/prices.toml", type=Path)
     parser.add_argument("--results", default="results", type=Path)
     args = parser.parse_args(argv)
+    if bool(args.resolve_submit) != bool(args.resolution):
+        parser.error("--resolve-submit and --as go together")
     if args.parallel < 1:
         print(f"error: --parallel must be at least 1, got {args.parallel}", file=sys.stderr)
         return 1

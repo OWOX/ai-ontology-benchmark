@@ -24,6 +24,7 @@ One spec per script. Each spec lists the script's inputs, its outputs, and how t
    python -m src.run.run --experiment <id> --estimate
    python -m src.run.run --experiment <id> --model <name>
    ```
+   In batch mode, a send that timed out may have made a batch that no state line names. `run` then stops for that AI model until you check the provider console, cancel any batch made at the time it names, and run `python -m src.run.run --experiment <id> --resolve-submit <submit id> --as abandoned`.
 4. Score it, then commit `results/<id>/`:
    ```
    python -m src.evaluate.evaluate --experiment <id>

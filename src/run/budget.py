@@ -8,11 +8,12 @@ import json
 import math
 from pathlib import Path
 
-from src.evaluate.metrics import attempt_cost
+from src.config import BATCH_PRICE_FIELDS, BATCH_PROVIDERS
+from src.evaluate.metrics import attempt_cost, tier_prices
 from src.puzzles.registry import get_engine
 from src.run.models import DECISION_PROVIDERS
 from src.run.prompts import decision_questions, decision_state
-from src.run.raw import read_raw
+from src.run.raw import parse_raw_text, read_raw
 from src.validator import offered_reasons
 
 TOLERANCE = 1e-9  # keeps float rounding from stopping a run that sits exactly on a limit
@@ -44,22 +45,78 @@ def worst_request(prompt: str, legal: list[str], cap: int, questions: dict,
                                                         sort_keys=True)
 
 
-def worst_case_request_cost(prompt: str, max_output_tokens: int, price: dict) -> float:
-    """The most one request can cost: ceil(characters / 4) input tokens, a full-length answer."""
-    input_tokens = math.ceil(len(prompt) / 4)
-    return (input_tokens * price["price_input_per_mtok"]
-            + max_output_tokens * price["price_output_per_mtok"]) / 1e6
+def worst_case_request_cost(prompt: str, max_output_tokens: int, price: dict, batch: bool = False) -> float:
+    """The most one request can cost: ceil(characters / 4) input tokens, a full-length answer,
+    at the batch prices when `batch` is true."""
+    price_in, price_out = tier_prices(price, batch)
+    return (math.ceil(len(prompt) / 4) * price_in + max_output_tokens * price_out) / 1e6
+
+
+def is_batched(config: dict, model: dict) -> bool:
+    """Whether the experiment sends this AI model's attempts through a batch API."""
+    return bool(config.get("batch", False)) and model["provider"] in BATCH_PROVIDERS
+
+
+def read_state(path: Path) -> list[dict]:
+    """The events of one batch state file, in order. A torn line is skipped, as in a raw file."""
+    if not path.is_file():
+        return []
+    return parse_raw_text(path.read_text(encoding="utf-8"))[0]
+
+
+def open_batches(events: list[dict]) -> list[dict]:
+    """The `submitted` events with no `collected` event, in submission order."""
+    collected = {e["batch_id"] for e in events if e.get("event") == "collected"}
+    return [e for e in events if e.get("event") == "submitted" and e["batch_id"] not in collected]
+
+
+def unresolved_submits(events: list[dict]) -> list[dict]:
+    """The `submitting` events with no `submitted` and no `abandoned` event of the same `submit_id`: sends that
+    may have made a batch at the provider that no state line names. They hold their `worst_usd`."""
+    settled = {e["submit_id"] for e in events if e.get("event") in ("submitted", "abandoned") and "submit_id" in e}
+    return [e for e in events if e.get("event") == "submitting" and e["submit_id"] not in settled]
+
+
+def batch_state_path(results: Path, name: str) -> Path:
+    return results / "batches" / f"{name}.jsonl"
+
+
+def held_by_model(config: dict, prices: dict, results: Path, prompt_for) -> dict[str, float]:
+    """The worst-case cost, at batch prices, of the open batches and unresolved submits of each AI model, read
+    fresh from the state files. An unresolved `submitting` event holds its `worst_usd` as an open batch does. A `submitted` event carries it as `worst_usd`; a state file written before that field is
+    recomputed from `prompt_for(input id, setup)`."""
+    held = {}
+    for model in config["models"]:
+        name, total = model["name"], 0.0
+        events = read_state(batch_state_path(results, name))
+        total += sum(e["worst_usd"] for e in unresolved_submits(events))
+        for event in open_batches(events):
+            if "worst_usd" in event:
+                total += event["worst_usd"]
+                continue
+            for item in event["requests"]:
+                total += worst_case_request_cost(prompt_for(item["input_id"], item["setup"]),
+                                                 config["max_output_tokens"], prices[name], True)
+        held[name] = total
+    return held
 
 
 def check_prices(config: dict, prices: dict, prices_path: Path) -> None:
-    """Every AI model in the experiment config needs a price, whether or not it has records."""
+    """Every AI model in the experiment config needs a price, whether or not it has records.
+    A batch experiment also needs batch prices for each model that goes through a batch API."""
     for model in config["models"]:
         if model["name"] not in prices:
             raise BudgetError(f"{prices_path}: no prices for model {model['name']!r}")
+        if is_batched(config, model):
+            missing = [f for f in BATCH_PRICE_FIELDS if f not in prices[model["name"]]]
+            if missing:
+                raise BudgetError(f"{prices_path}: model {model['name']!r} has no {' and '.join(missing)}, "
+                                  "which a batch experiment needs")
 
 
 def check_request_budget(config_path: Path, config: dict, model: dict, prompt: str, prices: dict) -> None:
-    cost = worst_case_request_cost(prompt, config["max_output_tokens"], prices[model["name"]])
+    cost = worst_case_request_cost(prompt, config["max_output_tokens"], prices[model["name"]],
+                                    is_batched(config, model))
     limit = config["budget"]["per_request_usd"]
     if cost > limit + TOLERANCE:
         raise BudgetError(f"{config_path}: worst-case request cost ${cost:.4f} for model "
@@ -76,15 +133,16 @@ def spent_by_model(config: dict, prices: dict, raw_dir: Path) -> dict[str, float
 
 
 def check_spend(config: dict, model_name: str, next_cost: float, attempts_left: int,
-                spent: dict[str, float]) -> None:
+                spent: dict[str, float], held: dict[str, float] | None = None) -> None:
     """Raise BudgetError if the next worst-case request could pass the model or experiment budget.
-    `spent` is a reading from spent_by_model."""
+    `spent` is a reading from spent_by_model. `held` is the worst-case cost of the open batches per AI
+    model; it counts toward the experiment budget."""
     budget = config["budget"]
     if spent[model_name] + next_cost > budget["per_model_usd"] + TOLERANCE:
         raise BudgetError(
             f"budget reached: per_model_usd {budget['per_model_usd']} for model {model_name} "
             f"(spent {spent[model_name]:.4f}, next request up to {next_cost:.4f})", attempts_left)
-    total = sum(spent.values())
+    total = sum(spent.values()) + sum((held or {}).values())
     if total + next_cost > budget["per_experiment_usd"] + TOLERANCE:
         raise BudgetError(
             f"budget reached: per_experiment_usd {budget['per_experiment_usd']} "
@@ -115,7 +173,9 @@ def estimate(config: dict, pending: list, prices: dict, questions: dict | None, 
                     reasons = offered_reasons(engine) if with_reasons else None
                     prompt = worst_request(prompt, engine.legal_moves(), cap, questions, reasons)
                 requests.append((cap, prompt))
-        unit = [worst_case_request_cost(p, config["max_output_tokens"], prices[name]) for _, p in requests]
+        batched = is_batched(config, model)
+        unit = [worst_case_request_cost(p, config["max_output_tokens"], prices[name], batched)
+                for _, p in requests]
         models.append({
             "name": name, "attempts": len(requests),
             "input_tokens": sum(c * math.ceil(len(p) / 4) for c, p in requests),

@@ -1,6 +1,7 @@
 # Spec: docs/specs/models.md
 """Sends one prompt to one AI model and returns a Reply, or one state and its questions to one
-decision model and returns a DecisionReply. Reads the provider's API key from its env var
+decision model and returns a DecisionReply. Also builds the request body of an attempt and, for batch mode,
+submits requests to a provider's Message Batches API, polls it, and reads its results. Reads the provider's API key from its env var
 (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, OPENROUTER_API_KEY, TYPESAFE_API_KEY, or
 CLOUDFLARE_API_TOKEN, plus CLOUDFLARE_ACCOUNT_ID). Writes nothing.
 This is the only file that talks to an AI model API.
@@ -43,7 +44,7 @@ class Reply:
     served_model: str
     input_tokens: int
     output_tokens: int
-    latency_s: float
+    latency_s: float | None  # None for a batched answer, which has no latency of its own
 
 
 class InfrastructureError(Exception):
@@ -71,6 +72,29 @@ class RefusedError(Exception):
 class RequestError(Exception):
     """The API rejected the request itself, with an HTTP error that is not an infrastructure failure:
     an account usage limit, a bad key, or an unknown model. Never retried. `run` stops on it."""
+
+
+class BatchRejectedError(RequestError):
+    """The provider's verdict on a whole batch means nothing was billed: it failed validation, or a Google job
+    failed with a permanent code. Only this error lets `run` close a batch; any other RequestError leaves it open."""
+
+
+class BatchTooLargeError(BatchRejectedError):
+    """A provider refused a whole batch because its queue is full (OpenAI `token_limit_exceeded`). Nothing
+    was wrong with any request: `run` sends the attempts again in smaller chunks."""
+
+
+@dataclass
+class UnreadableReply:
+    """A batch result the provider answered, and so billed, that `run` can't read. Not an error to retry:
+    resending it would pay twice. Carries best-effort token counts from the raw usage fields, else 0."""
+    message: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+def _count(value) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
 
 
 def _request_error(provider: str, error: Exception, message: str | None = None) -> RequestError:
@@ -116,22 +140,42 @@ def _stream_error_is_transient(error) -> bool:
     return error.status_code == 200 and detail.get("type") in ANTHROPIC_TRANSIENT_STREAM_ERRORS
 
 
+def _anthropic_client(key: str):
+    import anthropic
+    import httpx2
+
+    return anthropic.Anthropic(api_key=key, max_retries=0,
+                               timeout=httpx2.Timeout(REQUEST_TIMEOUT_S, connect=CONNECT_TIMEOUT_S))
+
+
+def _anthropic_request(model: dict, prompt: str, max_output_tokens: int, effort: str | None = None) -> dict:
+    """The body of one Messages request. The direct call and the batch line both carry it."""
+    return {
+        "model": model["api_model_id"],
+        "max_tokens": max_output_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+        **({"output_config": {"effort": effort}} if effort else {}),
+        **model.get("params", {}),
+    }
+
+
+def _anthropic_reply(response, latency: float | None) -> Reply:
+    stop_reason = {"max_tokens": "truncated", "refusal": "refused"}.get(response.stop_reason, "ok")
+    text = "".join(block.text for block in response.content if block.type == "text")
+    return Reply(text, stop_reason, response.model, response.usage.input_tokens,
+                 response.usage.output_tokens, latency)
+
+
 def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
     import anthropic
     import httpx2
 
-    client = anthropic.Anthropic(api_key=key, max_retries=0,
-                                 timeout=httpx2.Timeout(REQUEST_TIMEOUT_S, connect=CONNECT_TIMEOUT_S))
+    client = _anthropic_client(key)
+    body = _anthropic_request(model, prompt, max_output_tokens, effort)
     start = time.perf_counter()
     try:
         # Streamed, because the SDK refuses a non-streaming call with a large max_tokens.
-        with client.messages.stream(
-            model=model["api_model_id"],
-            max_tokens=max_output_tokens,
-            messages=[{"role": "user", "content": prompt}],
-            **({"output_config": {"effort": effort}} if effort else {}),
-            **model.get("params", {}),
-        ) as stream:
+        with client.messages.stream(**body) as stream:
             response = stream.get_final_message()
     except anthropic.APIConnectionError as error:
         raise InfrastructureError(f"anthropic: {error}") from error
@@ -141,11 +185,7 @@ def _anthropic(model: dict, prompt: str, max_output_tokens: int, key: str, effor
         if error.status_code == 429 or error.status_code >= 500 or _stream_error_is_transient(error):
             raise InfrastructureError(f"anthropic: {error}") from error
         raise _request_error("anthropic", error) from error
-    latency = time.perf_counter() - start
-    stop_reason = {"max_tokens": "truncated", "refusal": "refused"}.get(response.stop_reason, "ok")
-    text = "".join(block.text for block in response.content if block.type == "text")
-    return Reply(text, stop_reason, response.model, response.usage.input_tokens,
-                 response.usage.output_tokens, latency)
+    return _anthropic_reply(response, time.perf_counter() - start)
 
 
 def _openai_client(key: str, base_url: str | None = None):
@@ -162,6 +202,23 @@ def _moderation_flagged(body) -> bool:
     error = body.get("error", body) if isinstance(body, dict) else None
     metadata = error.get("metadata") if isinstance(error, dict) else None
     return isinstance(metadata, dict) and ("reasons" in metadata or "flagged_input" in metadata)
+
+
+def _chat_reply(provider: str, response, latency: float | None) -> Reply:
+    """Read one Chat Completions response, shared by openai and openrouter."""
+    if provider == "openrouter":
+        usage = getattr(response, "usage", None)
+        tokens = (usage.prompt_tokens or 0, usage.completion_tokens or 0) if usage else (0, 0)
+        if not getattr(response, "choices", None):
+            raise InfrastructureError("openrouter: the response has no choices", *tokens)
+        if response.choices[0].finish_reason == "error":  # the upstream provider failed mid-answer
+            raise InfrastructureError("openrouter: the upstream provider ended the answer with an error", *tokens)
+    else:
+        tokens = (response.usage.prompt_tokens, response.usage.completion_tokens)
+    choice = response.choices[0]
+    stop_reason = {"length": "truncated", "content_filter": "refused"}.get(choice.finish_reason, "ok")
+    served = (getattr(response, "model", None) or "") if provider == "openrouter" else response.model
+    return Reply(choice.message.content or "", stop_reason, served, *tokens, latency)
 
 
 def _chat(provider: str, client, request: dict) -> Reply:
@@ -183,67 +240,59 @@ def _chat(provider: str, client, request: dict) -> Reply:
         if provider == "openrouter" and error.status_code == 403 and _moderation_flagged(error.body):
             return Reply("", "refused", "", 0, 0, time.perf_counter() - start)
         raise _request_error(provider, error) from error
-    latency = time.perf_counter() - start
-    if provider == "openrouter":
-        usage = getattr(response, "usage", None)
-        tokens = (usage.prompt_tokens or 0, usage.completion_tokens or 0) if usage else (0, 0)
-        if not getattr(response, "choices", None):
-            raise InfrastructureError("openrouter: the response has no choices", *tokens)
-        if response.choices[0].finish_reason == "error":  # the upstream provider failed mid-answer
-            raise InfrastructureError("openrouter: the upstream provider ended the answer with an error", *tokens)
-    else:
-        tokens = (response.usage.prompt_tokens, response.usage.completion_tokens)
-    choice = response.choices[0]
-    stop_reason = {"length": "truncated", "content_filter": "refused"}.get(choice.finish_reason, "ok")
-    served = (getattr(response, "model", None) or "") if provider == "openrouter" else response.model
-    return Reply(choice.message.content or "", stop_reason, served, *tokens, latency)
+    return _chat_reply(provider, response, time.perf_counter() - start)
 
 
-def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
-    return _chat("openai", _openai_client(key), {
+def _openai_request(model: dict, prompt: str, max_output_tokens: int, effort: str | None = None) -> dict:
+    return {
         "model": model["api_model_id"],
         "max_completion_tokens": max_output_tokens,
         "messages": [{"role": "user", "content": prompt}],
         **({"reasoning_effort": effort} if effort else {}),
         **model.get("params", {}),
-    })
+    }
 
 
-def _openrouter(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+def _openai(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+    return _chat("openai", _openai_client(key), _openai_request(model, prompt, max_output_tokens, effort))
+
+
+def _openrouter_request(model: dict, prompt: str, max_output_tokens: int, effort: str | None = None) -> dict:
     # params go in the body unchanged, so OpenRouter's own fields, such as provider routing, pass through the SDK.
-    return _chat("openrouter", _openai_client(key, OPENROUTER_BASE_URL), {
+    return {
         "model": model["api_model_id"],
         "max_tokens": max_output_tokens,
         "messages": [{"role": "user", "content": prompt}],
         "extra_body": {**({"reasoning": {"effort": effort}} if effort else {}), **model.get("params", {})},
-    })
+    }
 
 
-def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
-    import httpx
+def _openrouter(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+    return _chat("openrouter", _openai_client(key, OPENROUTER_BASE_URL),
+                 _openrouter_request(model, prompt, max_output_tokens, effort))
+
+
+def _google_client(key: str):
     from google import genai
-    from google.genai import errors, types
+    from google.genai import types
 
     # attempts=1 means a single try, so the SDK never retries.
     options = types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1),
                                timeout=REQUEST_TIMEOUT_S * 1000)  # milliseconds
-    client = genai.Client(api_key=key, http_options=options)
-    start = time.perf_counter()
-    try:
-        response = client.models.generate_content(
-            model=model["api_model_id"],
-            contents=prompt,
-            config={"max_output_tokens": max_output_tokens,
-                    **({"thinking_config": {"thinking_level": effort.upper()}} if effort else {}),
-                    **model.get("params", {})},
-        )
-    except errors.APIError as error:
-        if error.code == 429 or error.code >= 500:
-            raise InfrastructureError(f"google: {error}") from error
-        raise _request_error("google", error) from error
-    except httpx.TransportError as error:  # connection errors and timeouts
-        raise InfrastructureError(f"google: {error}") from error
-    latency = time.perf_counter() - start
+    return genai.Client(api_key=key, http_options=options)
+
+
+def _google_request(model: dict, prompt: str, max_output_tokens: int, effort: str | None = None) -> dict:
+    return {
+        "model": model["api_model_id"],
+        "contents": prompt,
+        "config": {"max_output_tokens": max_output_tokens,
+                   **({"thinking_config": {"thinking_level": effort.upper()}} if effort else {}),
+                   **model.get("params", {})},
+    }
+
+
+def _google_reply(response, latency: float | None) -> Reply:
     usage = response.usage_metadata
     input_tokens = (usage.prompt_token_count or 0) if usage else 0
     # Gemini bills thoughts as output; the other providers' counts already include reasoning tokens.
@@ -264,6 +313,23 @@ def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: 
                        if part.text and not part.thought)
     return Reply(text, stop_reason, response.model_version or "",
                  input_tokens, output_tokens, latency)
+
+
+def _google(model: dict, prompt: str, max_output_tokens: int, key: str, effort: str | None = None) -> Reply:
+    import httpx
+    from google.genai import errors
+
+    client = _google_client(key)
+    start = time.perf_counter()
+    try:
+        response = client.models.generate_content(**_google_request(model, prompt, max_output_tokens, effort))
+    except errors.APIError as error:
+        if error.code == 429 or error.code >= 500:
+            raise InfrastructureError(f"google: {error}") from error
+        raise _request_error("google", error) from error
+    except httpx.TransportError as error:  # connection errors and timeouts
+        raise InfrastructureError(f"google: {error}") from error
+    return _google_reply(response, time.perf_counter() - start)
 
 
 def _fake() -> Reply:
@@ -394,6 +460,30 @@ def call_decision(model: dict, state: str, questions: dict) -> DecisionReply:
     return functions[provider](model, state, questions, key)
 
 
+_REQUEST_BUILDERS = {"anthropic": _anthropic_request, "openai": _openai_request, "google": _google_request,
+                     "openrouter": _openrouter_request}
+
+
+def build_request(model: dict, prompt: str, max_output_tokens: int, reasoning_effort: str | None = None) -> dict:
+    """The request body for one attempt, in the provider's own shape. The reasoning effort goes in only for
+    a system-2 model. A direct call and a batch line both send this body, so they send the same request."""
+    provider = model["provider"]
+    if provider in DECISION_PROVIDERS:
+        raise ValueError(f"provider {provider} is a decision-model provider: it has no request body")
+    effort = reasoning_effort if model.get("kind") == "system-2" else None
+    if provider == "fake":
+        return {"prompt": prompt, "max_output_tokens": max_output_tokens, "effort": effort}
+    return _REQUEST_BUILDERS[provider](model, prompt, max_output_tokens, effort)
+
+
+def _api_key(provider: str) -> str:
+    variable = KEY_VARIABLES[provider]
+    key = (os.environ.get(variable) or "").strip()
+    if not key:
+        raise ValueError(f"missing API key: set the env var {variable}")
+    return key
+
+
 def call_model(model: dict, prompt: str, max_output_tokens: int, reasoning_effort: str | None = None) -> Reply:
     """Send the prompt to the model's provider and return the reply in the common shape. The reasoning
     effort goes to the provider's own parameter, only for a system-2 model."""
@@ -402,10 +492,278 @@ def call_model(model: dict, prompt: str, max_output_tokens: int, reasoning_effor
         raise ValueError(f"provider {provider} is a decision-model provider: use call_decision")
     if provider == "fake":
         return _fake()
-    variable = KEY_VARIABLES[provider]
-    key = (os.environ.get(variable) or "").strip()
-    if not key:
-        raise ValueError(f"missing API key: set the env var {variable}")
+    key = _api_key(provider)
     functions = {"anthropic": _anthropic, "openai": _openai, "google": _google, "openrouter": _openrouter}
     effort = reasoning_effort if model.get("kind") == "system-2" else None
     return functions[provider](model, prompt, max_output_tokens, key, effort)
+
+
+# ---- batch mode: the providers' Message Batches APIs, at half price. The request bodies come from
+# build_request(), the same as a direct call, and the replies go through the same parsers. Only the
+# transport differs. Results are matched by custom_id and never by position.
+
+# Providers that have a batch API. OpenRouter has none, and the decision providers have none.
+BATCH_PROVIDERS = ("anthropic", "openai", "google", "fake")
+# Tests fill these. Each batch_results() call pops the first item of FAKE_BATCH_RESULTS, a dict that
+# maps a custom_id to a Reply or to an InfrastructureError or RequestError instance. FAKE_BATCH_SUBMITS
+# records (batch_id, requests) for each submit_batch(), and a batch id in FAKE_BATCH_PENDING isn't done.
+FAKE_BATCH_RESULTS: list = []
+FAKE_BATCH_SUBMITS: list = []
+FAKE_BATCH_PENDING: set = set()
+
+# Anthropic batch error types that mean the request itself was rejected, as an HTTP 4xx would be.
+ANTHROPIC_BATCH_REQUEST_ERRORS = ("invalid_request_error", "authentication_error", "billing_error",
+                                  "permission_error", "not_found_error")
+OPENAI_BATCH_DONE = ("completed", "failed", "expired", "cancelled")
+GOOGLE_BATCH_DONE = ("JOB_STATE_SUCCEEDED", "JOB_STATE_PARTIALLY_SUCCEEDED", "JOB_STATE_FAILED",
+                     "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED")
+
+
+GOOGLE_REQUEST_CODES = (3, 5, 7, 9, 16)
+GOOGLE_FAILED = ("JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED")
+
+
+def _google_request_code(code) -> bool:
+    """True for an error code that means the request itself was rejected, so retrying can't help."""
+    return code in GOOGLE_REQUEST_CODES or (code is not None and 400 <= code < 500 and code not in (408, 429))
+
+
+def _check_batch_provider(model: dict) -> str:
+    provider = model["provider"]
+    if provider not in BATCH_PROVIDERS:
+        raise ValueError(f"provider {provider} has no batch API")
+    return provider
+
+
+def _batch_sdk_call(provider: str, function, *args, **kwargs):
+    """Call one SDK method of a batch API and map its errors as a direct call maps them: a connection
+    error, HTTP 408, 409, 429, or 5xx is an InfrastructureError, any other HTTP error a RequestError."""
+    import httpx
+    import httpx2
+
+    if provider == "anthropic":
+        import anthropic
+        connection, status = (anthropic.APIConnectionError, httpx2.TransportError), anthropic.APIStatusError
+    elif provider == "openai":
+        import openai
+        connection, status = (openai.APIConnectionError,), openai.APIStatusError
+    else:
+        from google.genai import errors
+        connection, status = (httpx.TransportError,), errors.APIError
+    try:
+        return function(*args, **kwargs)
+    except connection as error:
+        raise InfrastructureError(f"{provider}: {error}") from error
+    except status as error:
+        code = getattr(error, "status_code", None)
+        if code is None:
+            code = getattr(error, "code", 0)
+        if code in (408, 409, 429) or code >= 500:
+            raise InfrastructureError(f"{provider}: {error}") from error
+        raise _request_error(provider, error) from error
+
+
+def _batch_client(provider: str, key: str):
+    return {"anthropic": _anthropic_client, "openai": _openai_client, "google": _google_client}[provider](key)
+
+
+def _jsonl(lines: list[dict]) -> bytes:
+    import json
+
+    return "".join(json.dumps(line) + "\n" for line in lines).encode()
+
+
+def check_batch_ready(model: dict) -> None:
+    """Raise ValueError when the model's provider has no batch API or its API key is missing. `run` calls it
+    before it writes a `submitting` line, so these errors leave nothing behind."""
+    provider = _check_batch_provider(model)
+    if provider != "fake":
+        _api_key(provider)
+
+
+def submit_batch(model: dict, requests: list[tuple[str, dict]]) -> str:
+    """Send the requests, (custom_id, build_request() body) pairs, as one batch and return its id. Any error
+    other than a RequestError or InfrastructureError (an SDK that can't parse the reply of a create that
+    succeeded, say) is raised as an InfrastructureError, because the batch may exist."""
+    check_batch_ready(model)
+    try:
+        return _send_batch(model, requests)
+    except (RequestError, InfrastructureError):
+        raise
+    except Exception as error:
+        raise InfrastructureError(f"{model['provider']}: the batch may exist, but the send failed with "
+                                  f"{type(error).__name__}: {' '.join(str(error).split())[:200]}") from error
+
+
+def _send_batch(model: dict, requests: list[tuple[str, dict]]) -> str:
+    provider = _check_batch_provider(model)
+    if provider == "fake":
+        batch_id = f"fake-batch-{len(FAKE_BATCH_SUBMITS) + 1}"
+        FAKE_BATCH_SUBMITS.append((batch_id, list(requests)))
+        return batch_id
+    client = _batch_client(provider, _api_key(provider))
+    if provider == "anthropic":
+        batch = _batch_sdk_call(provider, client.messages.batches.create,
+                                requests=[{"custom_id": custom_id, "params": body} for custom_id, body in requests])
+        return batch.id
+    if provider == "openai":
+        data = _jsonl([{"custom_id": custom_id, "method": "POST", "url": "/v1/chat/completions", "body": body}
+                       for custom_id, body in requests])
+        uploaded = _batch_sdk_call(provider, client.files.create, file=("batch.jsonl", data), purpose="batch")
+        batch = _batch_sdk_call(provider, client.batches.create, input_file_id=uploaded.id,
+                                endpoint="/v1/chat/completions", completion_window="24h")
+        return batch.id
+    inlined = [{"contents": body["contents"], "config": body["config"], "metadata": {"key": custom_id}}
+               for custom_id, body in requests]
+    job = _batch_sdk_call(provider, client.batches.create, model=model["api_model_id"], src=inlined)
+    return job.name
+
+
+def batch_done(model: dict, batch_id: str) -> bool:
+    """True when the provider has finished with the batch, whether or not every request succeeded."""
+    provider = _check_batch_provider(model)
+    if provider == "fake":
+        return batch_id not in FAKE_BATCH_PENDING
+    client = _batch_client(provider, _api_key(provider))
+    if provider == "anthropic":
+        return _batch_sdk_call(provider, client.messages.batches.retrieve, batch_id).processing_status == "ended"
+    if provider == "openai":
+        return _batch_sdk_call(provider, client.batches.retrieve, batch_id).status in OPENAI_BATCH_DONE
+    state = _batch_sdk_call(provider, client.batches.get, name=batch_id).state
+    return getattr(state, "value", state) in GOOGLE_BATCH_DONE
+
+
+def _anthropic_batch_results(client, batch_id: str) -> dict:
+    results = {}
+    for item in _batch_sdk_call("anthropic", lambda: list(client.messages.batches.results(batch_id))):
+        result = item.result
+        if result.type == "succeeded":
+            try:
+                results[item.custom_id] = _anthropic_reply(result.message, None)
+            except Exception as error:  # it was answered, so billed: never resent
+                usage = getattr(getattr(result, "message", None), "usage", None)
+                results[item.custom_id] = UnreadableReply(
+                    f"anthropic: an unreadable batch result: {' '.join(str(error).split())[:200]}",
+                    _count(getattr(usage, "input_tokens", None)), _count(getattr(usage, "output_tokens", None)))
+        elif result.type == "errored":
+            detail = result.error.error
+            message = f"anthropic: {detail.type}: {' '.join(str(detail.message).split())}"
+            results[item.custom_id] = (RequestError(message) if detail.type in ANTHROPIC_BATCH_REQUEST_ERRORS
+                                       else InfrastructureError(message))
+        else:  # expired or canceled
+            results[item.custom_id] = InfrastructureError(f"anthropic: the batch request {result.type}")
+    return results
+
+
+def _openai_batch_line(line: dict):
+    """The Reply or error for one line of an OpenAI batch output or error file."""
+    import openai.types.chat
+
+    response = line.get("response")
+    error = line.get("error")
+    status = response.get("status_code") if isinstance(response, dict) else None
+    body = response.get("body") if isinstance(response, dict) else None
+    if status == 200 and isinstance(body, dict):
+        return _chat_reply("openai", openai.types.chat.ChatCompletion.model_validate(body), None)
+    detail = body.get("error") if isinstance(body, dict) and isinstance(body.get("error"), dict) else error
+    detail = detail if isinstance(detail, dict) else {}
+    message = f"openai: {status or detail.get('code') or 'error'}: " + " ".join(str(detail.get("message")).split())
+    if detail.get("code") == "content_filter":
+        return Reply("", "refused", "", 0, 0, None)
+    if status is None or status in (408, 409, 429) or status >= 500:  # no status: the batch itself failed it
+        return InfrastructureError(message)
+    return RequestError(message)
+
+
+def _openai_batch_results(client, batch_id: str) -> dict:
+    import json
+
+    batch = _batch_sdk_call("openai", client.batches.retrieve, batch_id)
+    results = {}
+    for file_id in (batch.output_file_id, batch.error_file_id):
+        if not file_id:
+            continue
+        content = _batch_sdk_call("openai", client.files.content, file_id).text
+        for text in content.splitlines():
+            if not text.strip():
+                continue
+            try:
+                line = json.loads(text)
+                cid = line["custom_id"]
+            except (ValueError, KeyError, TypeError):
+                continue  # a line with no custom_id can't be matched: its request is retried as missing
+            if not isinstance(cid, str):
+                continue
+            try:
+                results[cid] = _openai_batch_line(line)
+            except Exception as error:  # one unreadable line must not stop the others
+                message = f"openai: an unreadable batch result: {' '.join(str(error).split())[:200]}"
+                response = line.get("response") if isinstance(line, dict) else None
+                if isinstance(response, dict) and response.get("status_code") == 200:  # answered, so billed
+                    body = response.get("body")
+                    usage = body.get("usage") if isinstance(body, dict) and isinstance(body.get("usage"), dict) else {}
+                    results[cid] = UnreadableReply(message, _count(usage.get("prompt_tokens")),
+                                                   _count(usage.get("completion_tokens")))
+                else:
+                    results[cid] = InfrastructureError(message)
+    if not results and batch.status == "failed":  # the file was rejected as a whole
+        errors = getattr(getattr(batch, "errors", None), "data", None) or []
+        detail = "; ".join(" ".join(str(item.message).split()) for item in errors)
+        message = "openai: the batch failed" + (f": {detail}" if detail else "")
+        if any(getattr(item, "code", None) == "token_limit_exceeded" for item in errors):
+            raise BatchTooLargeError(message)  # the queue was full, not the file at fault: send smaller chunks
+        raise BatchRejectedError(message)
+    return results
+
+
+def _google_batch_results(client, batch_id: str) -> dict:
+    job = _batch_sdk_call("google", client.batches.get, name=batch_id)
+    responses = (job.dest.inlined_responses if job.dest else None) or []
+    results = {}
+    if not responses and getattr(getattr(job, "state", None), "value", getattr(job, "state", None)) in GOOGLE_FAILED:
+        error = getattr(job, "error", None)
+        code = getattr(error, "code", None)
+        code = code if isinstance(code, int) else None
+        if _google_request_code(code):  # a permanent failure of the whole job
+            raise BatchRejectedError(f"google: the batch failed: {code}: "
+                               + " ".join(str(getattr(error, "message", None) or "").split()))
+    for item in responses:
+        key = (item.metadata or {}).get("key")
+        if not key:
+            continue  # it can't be matched: its request is retried as missing
+        if item.response is not None:
+            try:
+                results[key] = _google_reply(item.response, None)
+            except Exception as error:  # one unreadable item must not stop the others: it was answered, so billed
+                usage = getattr(item.response, "usage_metadata", None)
+                results[key] = UnreadableReply(
+                    f"google: an unreadable batch result: {' '.join(str(error).split())[:200]}",
+                    _count(getattr(usage, "prompt_token_count", None)),
+                    _count(getattr(usage, "candidates_token_count", None))
+                    + _count(getattr(usage, "thoughts_token_count", None)))
+            continue
+        error = item.error
+        code = error.code if error and isinstance(error.code, int) else None
+        message = f"google: {code or 'error'}: " + " ".join(str((error.message if error else None) or "").split())
+        # The code is a gRPC canonical code: 3 INVALID_ARGUMENT, 5 NOT_FOUND, 7 PERMISSION_DENIED,
+        # 9 FAILED_PRECONDITION, 16 UNAUTHENTICATED mean the request itself was rejected. A code of 100 or
+        # more is read as an HTTP status, with 4xx other than 408 and 429 a rejection.
+        if _google_request_code(code):
+            results[key] = RequestError(message)
+        else:
+            results[key] = InfrastructureError(message)
+    return results
+
+
+def batch_results(model: dict, batch_id: str) -> dict:
+    """The results of a finished batch, keyed by custom_id: a Reply, or an InfrastructureError or RequestError
+    instance for a request that failed, or an UnreadableReply for one the provider billed but run can't read. A custom_id the provider left out is left out here too, and the
+    caller retries it. An OpenAI batch that failed validation, or a Google job that failed with a permanent
+    error code and no responses, raises BatchRejectedError (a RequestError) instead of returning instances. An OpenAI batch refused
+    as token_limit_exceeded raises its subclass BatchTooLargeError."""
+    provider = _check_batch_provider(model)
+    if provider == "fake":
+        return FAKE_BATCH_RESULTS.pop(0) if FAKE_BATCH_RESULTS else {}
+    client = _batch_client(provider, _api_key(provider))
+    return {"anthropic": _anthropic_batch_results, "openai": _openai_batch_results,
+            "google": _google_batch_results}[provider](client, batch_id)

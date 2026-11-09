@@ -10,9 +10,12 @@ from pathlib import Path
 
 from src.puzzles.registry import ENGINES
 
+from src.run.models import BATCH_PROVIDERS  # the one definition: the providers with a Message Batches API
 PROVIDERS = ("anthropic", "openai", "google", "openrouter", "typesafe", "cloudflare", "fake", "fake_decision")
+BATCH_PRICE_FIELDS = ("batch_price_input_per_mtok", "batch_price_output_per_mtok")
 KINDS = ("system-1", "system-2")
 # Settings that `models` and the run script set themselves.
+SDK_ONLY_PARAMS = {"extra_body", "extra_headers", "extra_query", "timeout"}  # not in a request body
 FORBIDDEN_PARAMS = {
     "model", "model_id", "api_model_id", "prompt", "messages", "system", "input",
     "contents", "max_tokens", "max_output_tokens", "max_completion_tokens",
@@ -190,6 +193,8 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
             _fail(path, "reasoning_effort", f"must be one of {', '.join(EFFORTS)}")
     if "max_moves" in config:
         _check_min(path, "max_moves", _get(path, config, "max_moves", int), 1)
+    if "batch" in config:
+        _get(path, config, "batch", bool)
     if "puzzles" in config:
         _check_puzzles(path, config)
     if "inputs_per_depth" in config:
@@ -200,6 +205,13 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
     seen: set[str] = set()
     for index, model in enumerate(models):
         _check_model(path, model, index, seen)
+        if config.get("batch") is True and model["provider"] == "openrouter":
+            _fail(path, "batch", f"can't be true with openrouter model {model['name']}: OpenRouter routes "
+                  "a batch to the cheapest upstream provider, so its answers are not comparable with direct calls")
+        if config.get("batch") is True and model["provider"] in BATCH_PROVIDERS:
+            for key in SDK_ONLY_PARAMS & set(model.get("params", {})):
+                _fail(path, f"models.{model['name']}.params", f"must not set {key!r} when batch is true: it is a "
+                      "client setting, not part of the request body, so a batch line could not carry it")
     config["budget"] = _check_budget(path, config)
     config["experiment_id"] = experiment_id
     return config
@@ -231,6 +243,13 @@ def check_prices_table(prices: dict, path: object) -> dict:
         if not isinstance(entry, dict):
             _fail(path, model_name, "must be a table with the two price fields")
         for field in ("price_input_per_mtok", "price_output_per_mtok"):
+            value = _get(path, entry, field, float, f"{model_name}.")
+            if value < 0:
+                _fail(path, f"{model_name}.{field}", "must not be negative")
+        batch_fields = [f for f in BATCH_PRICE_FIELDS if f in entry]
+        if batch_fields and len(batch_fields) != 2:
+            _fail(path, model_name, "must have both batch price fields or neither")
+        for field in batch_fields:
             value = _get(path, entry, field, float, f"{model_name}.")
             if value < 0:
                 _fail(path, f"{model_name}.{field}", "must not be negative")

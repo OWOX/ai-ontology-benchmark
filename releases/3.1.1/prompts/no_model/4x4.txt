@@ -1,0 +1,6 @@
+Solve this 4x4 cube, written in WCA notation. The state is written as one block per face, headed by the face's letter. Each sticker is written as the letter of the face whose colour it has when the cube is solved. Rows are read top to bottom and stickers left to right, with each face seen from outside the cube: U with B at the top, D with F at the top, and R, F, L, and B with U at the top. Here is its current state:
+
+{state}
+
+If the state cannot be reached from the solved state by legal moves, reply with the single line MISMATCH, one space, and the reason, exactly as written in this list: {mismatch_reasons}. Use other when none of them fits. Write nothing else.
+Otherwise reply with the moves that solve it, in the order they are applied, one move per line, and nothing else.

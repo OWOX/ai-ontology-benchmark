@@ -76,11 +76,14 @@ class App:
             names = [f"run:{m}" for m in models]
             extra = ["--limit", str(limit)] if limit is not None else []
             extra += ["--parallel", str(parallel)] if parallel != 1 else []
-            items = [(n, [*base, "--model", m, *extra]) for n, m in zip(names, models)]
+            if form.get("batch") is True:  # one process runs every model: the batched ones through batches, then the rest
+                items = [(n, [*base, *extra]) for n in names]  # started once, for the first name
+            else:
+                items = [(n, [*base, "--model", m, *extra]) for n, m in zip(names, models)]
         else:
             names, items = [name], [(name, [*base, "--estimate" if name == "estimate" else "--dry-run"])]
         self.jobs.start(experiment_id, items, blocked_by=("evaluate",) if name == "run" else (), stdin=text,
-                        parallel=parallel)
+                        parallel=parallel, shared=name == "run" and form.get("batch") is True)
         if name == "run":
             self.watch_branch(experiment_id, names)
         return {"id": experiment_id, "status": status, "jobs": names}

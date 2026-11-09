@@ -7,6 +7,8 @@ import os
 import subprocess
 import time
 
+import pytest
+
 from src.config import parse_experiment_config
 from src.release.release import load_release
 from src.run.budget import estimate
@@ -355,3 +357,86 @@ def test_release_is_read_from_the_cached_tree(server):
     assert call(server, "POST", URL, LIVE)[0] == 200
     held = next(iter(est._releases.values()))
     assert held["tree"] and held["inputs"] and held["manifest"]["release_config"]
+
+
+BATCH_PRICES = ("[example-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n"
+                "batch_price_input_per_mtok = 0.5\nbatch_price_output_per_mtok = 1.0\n")
+
+
+def test_spent_and_expected_cost_price_each_record_at_its_tier(server):
+    root = server.root
+    (root / "config" / "prices.toml").write_text(BATCH_PRICES)
+    commit_all(root, "batch prices")
+    git(root, "push", "-q", "origin", "HEAD:refs/heads/main")
+    ids = [r["input_id"] for r in inputs_of(server)]
+    standard = record("example-model", ids[0], "no_model", tokens=1_000_000)
+    batched = {**record("example-model", ids[0], "descriptive", tokens=1_000_000), "batch": True}
+    put_branch(root, "t1", {"results/t1/experiment.toml": dumps_config(config_of(FORM, server)),
+                            **raw_files([standard, batched])}, where="remote")
+    body = call(server, "POST", URL, LIVE)[1]
+    assert abs(body["models"][0]["spent_usd"] - (3.0 + 1.5)) < 1e-9  # standard 1 + 2, batch 0.5 + 1
+    # History: a batched experiment prices every past token at the batch tier; a direct one at each record's own tier.
+    est, prices = server.app.live_estimate, {"example-model": {
+        "price_input_per_mtok": 1.0, "price_output_per_mtok": 2.0,
+        "batch_price_input_per_mtok": 0.5, "batch_price_output_per_mtok": 1.0}}
+    push_other(server, [standard, batched])
+    pushed = server.app.bundles.git.results_state()[2]
+    main_sha = server.app.bundles.git.results_state()[0]
+    assert abs(est.costs(pushed, main_sha, prices)["example-model"][0] - 2.25) < 1e-9
+    assert abs(est.costs(pushed, main_sha, prices, frozenset({"example-model"}))["example-model"][0] - 1.5) < 1e-9
+
+
+def with_batch_prices(server, text=BATCH_PRICES):
+    (server.root / "config" / "prices.toml").write_text(text)
+    commit_all(server.root, "prices")
+    git(server.root, "push", "-q", "origin", "HEAD:refs/heads/main")
+
+
+def test_a_batch_form_is_estimated_at_the_batch_prices(server):
+    with_batch_prices(server)  # batch prices are half the standard ones
+    standard = call(server, "POST", URL, LIVE)[1]
+    status, batch = call(server, "POST", URL, {"form": {**FORM, "batch": True}, "parallel": 1})
+    assert status == 200, batch
+    for key in ("worst_case_usd", "max_request_usd"):
+        assert batch["models"][0][key] == pytest.approx(standard["models"][0][key] / 2)
+    assert batch["total"]["worst_case_usd"] == pytest.approx(standard["total"]["worst_case_usd"] / 2)
+    # a batch has no time to estimate: it shows n/a, not attempts x latency
+    assert batch["models"][0]["batched"] is True and batch["models"][0]["time_s"] is None
+    assert batch["timing"] == "batch" and batch["total"]["time_s"] is None
+    assert standard["models"][0]["batched"] is False
+    # the form's config text carries `batch = true`, and only when the box is checked
+    assert "batch = true" in config_text_of({**FORM, "batch": True}, server)
+    assert "batch" not in config_text_of(FORM, server)
+
+
+def config_text_of(form, server):
+    from ui import forms
+    from ui.common import merged_env
+    return forms.config_text(server.app.bundles, form, merged_env(server.root), keyless_ok=True)
+
+
+def test_a_batch_form_needs_batch_prices(server):
+    status, body = call(server, "POST", URL, {"form": {**FORM, "batch": True}, "parallel": 1})
+    assert status == 400 and "example-model" in body["error"] and "batch_price_input_per_mtok" in body["error"]
+    assert call(server, "POST", URL, LIVE)[0] == 200  # a direct form is unaffected
+
+
+def test_a_batch_field_that_is_not_a_boolean_is_400(server):
+    status, body = call(server, "POST", URL, {"form": {**FORM, "batch": "yes"}, "parallel": 1})
+    assert status == 400 and "'batch'" in body["error"]
+
+
+def test_past_batch_records_of_a_model_without_batch_prices_are_left_out_of_the_history(server):
+    ids = [r["input_id"] for r in inputs_of(server)]
+    batched = {**record("example-model", ids[0], "descriptive", tokens=1_000_000), "batch": True}
+    push_other(server, [batched])
+    est = server.app.live_estimate
+    prices = {"example-model": {"price_input_per_mtok": 1.0, "price_output_per_mtok": 2.0}}
+    git_data = server.app.bundles.git
+    main_sha, _, pushed = git_data.results_state()
+    assert "example-model" not in est.costs(pushed, main_sha, prices)  # no KeyError
+    with_batch_prices(server, "[example-model]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n")
+    put_branch(server.root, "t1", {"results/t1/experiment.toml": dumps_config(config_of(FORM, server)),
+                                   **raw_files([batched])}, where="remote")
+    status, body = call(server, "POST", URL, LIVE)
+    assert status == 400 and "batch_price_input_per_mtok" in body["error"] and "t1" in body["error"]

@@ -469,7 +469,7 @@ def test_branches_and_config_route(server):
         {"id": "loc", "release": "1.0.0", "local": True, "remote": False},
         {"id": "rem", "release": "1.0.0", "local": False, "remote": True}]
     status, form = call(server, "GET", "/api/experiment/rem/config")
-    assert status == 200 and form == dict(FORM, id="rem", reasoning_effort=None, inputs_per_depth=None)
+    assert status == 200 and form == dict(FORM, id="rem", reasoning_effort=None, inputs_per_depth=None, batch=False)
     assert call(server, "GET", "/api/experiment/loc/config")[1]["id"] == "loc"
     # the local branch wins over the remote one
     put_branch(server.root, "both", {"results/both/experiment.toml": dumps_config(dict(CONFIG, attempts=5))}, where="local")
@@ -492,7 +492,7 @@ def test_inputs_route(server):
 def test_experiment_detail_route(server):
     put_branch(server.root, "t1", {"results/t1/experiment.toml": dumps_config(CONFIG)})
     status, data = call(server, "GET", "/api/experiments/t1")
-    assert status == 200 and data["id"] == "t1" and data["config"] == dict(FORM, reasoning_effort=None, inputs_per_depth=None) and data["pushed"] is True
+    assert status == 200 and data["id"] == "t1" and data["config"] == dict(FORM, reasoning_effort=None, inputs_per_depth=None, batch=False) and data["pushed"] is True
     assert call(server, "GET", "/api/experiments/nope")[0] == 404
 
 
@@ -1276,3 +1276,29 @@ def test_benchmarks_route(server):
     assert status == 200 and data["releases"] == ["1.0.0"] and data["rows"] == [] and data["models"] == []
     status, data = call(server, "GET", "/api/benchmarks?puzzles=7x7")
     assert status == 400 and "'puzzles'" in data["error"]
+
+
+def test_example_model_row_prices_need_no_batch_fields():
+    from src.evaluate.metrics import attempt_cost
+    from ui.expdata import NO_PRICE
+    batch_record = {"batch": True, "input_tokens": 5, "output_tokens": 5, "retry_input_tokens": 0, "retry_output_tokens": 0}
+    assert attempt_cost(batch_record, NO_PRICE) == 0.0  # a batch record of an unpriced model must not raise
+
+
+def test_a_batch_experiment_starts_one_run_process_without_model(server, spawned):
+    status, data = call(server, "POST", "/api/run", dict(FORM, batch=True))
+    assert status == 200 and data["jobs"] == ["run:example-model"]
+    (argv,) = spawned
+    assert "--model" not in argv and argv[-2:] == ["--config", "-"]
+    spawned.clear()
+    status, data = call(server, "POST", "/api/run", dict(FORM, id="t2"))  # a direct experiment: one per model
+    assert status == 200 and len(spawned) == 1 and spawned[0][-2:] == ["--model", "example-model"]
+
+
+def test_a_shared_job_runs_one_process_and_every_name_follows_its_state(spawned, tmp_path):
+    jobs = jobs_module.Jobs(tmp_path)
+    jobs.start("t1", [("run:a", ["m", "x"]), ("run:b", ["m", "x"])], shared=True)
+    assert len(spawned) == 1
+    assert jobs.states("t1") == {"run:a": "done", "run:b": "done"}
+    jobs.start("t2", [("run:a", ["m", "x"]), ("run:b", ["m", "x"])])
+    assert len(spawned) == 3  # without `shared`, one process per name

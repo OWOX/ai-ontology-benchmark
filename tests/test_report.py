@@ -124,6 +124,18 @@ def test_experiment_section_shows_budgets_and_spend(tree):
     assert f"| M | {spent:.4f} |" in text and f"| Total | {spent:.4f} |" in text
 
 
+def test_price_table_shows_batch_prices_only_for_a_batch_experiment(tree, monkeypatch):
+    text = build(tree)
+    assert "| AI model | Input | Output |\n" in text and "Batch" not in text
+    prices = {"M": PRICES["M"] | {"batch_price_input_per_mtok": 500.0, "batch_price_output_per_mtok": 1000.0}}
+    monkeypatch.setitem(globals(), "PRICES", prices)
+    monkeypatch.setitem(CONFIG, "batch", True)
+    text = build(tree)
+    assert "| AI model | Input | Output | Batch input | Batch output |" in text
+    assert "| M | 1000.0 | 2000.0 | 500.0 | 1000.0 |" in text
+    assert "Batch mode:" in text
+
+
 def test_puzzles_line_only_when_the_config_sets_it(tree, monkeypatch):
     assert "Puzzles:" not in build(tree)
     monkeypatch.setitem(CONFIG, "puzzles", ["2x2", "3x3"])
