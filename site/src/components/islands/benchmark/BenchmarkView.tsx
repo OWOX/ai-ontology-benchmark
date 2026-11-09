@@ -176,6 +176,10 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
   // Each setup's mean over the models the filter shows.
   const bars = useMemo(() => setupBars(setupMetrics, puzzle ?? ALL, names, setupCurrent.setupPick), [setupMetrics, puzzle, names.join('\u0000'), setupCurrent])
 
+  const modelBars = selected.map((m) => ({ model: m.model, rate: current.pick(m) }))
+  const setupRows = showModels ? bars.map((b) => ({ model: b.label, rate: b.rate, detail: `${b.models} ${b.models === 1 ? 'model' : 'models'}` })) : []
+  const filterText = `${puzzle === ALL || puzzle === null ? 'All puzzles' : `${puzzle} cube`}, ${names.length} AI ${names.length === 1 ? 'model' : 'models'}`
+
   return (
     <div className="benchmark cube-solver">
       <Filter puzzles={puzzles} puzzle={puzzle === ALL ? null : puzzle} onPuzzle={choosePuzzle} providers={providers} providerOn={ticked} onProvider={toggleProvider} models={models} modelOn={modelOn} onModel={toggleModel} showModels={showModels} />
@@ -194,9 +198,11 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
             onMetric={(id) => setMetric(id as MetricId)}
             definitions={definitions}
             layoutKey={String(puzzle)}
+            bars={modelBars}
+            filterText={filterText}
           >
             {showModels ? (
-              <BarChart title={current.label} higherIsBetter={current.higherIsBetter} rows={selected.map((m) => ({ model: m.model, rate: current.pick(m) }))} />
+              <BarChart title={current.label} higherIsBetter={current.higherIsBetter} rows={modelBars} />
             ) : (
               <p className="empty">Pick an AI provider to see results.</p>
             )}
@@ -213,9 +219,11 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
               onMetric={(id) => setSetupMetric(id as MetricId)}
               definitions={definitions}
               layoutKey={String(puzzle)}
+              bars={setupRows}
+              filterText={filterText}
             >
               {showModels ? (
-                <BarChart title={`${setupCurrent.label} by setup`} higherIsBetter={setupCurrent.higherIsBetter} rows={bars.map((b) => ({ model: b.label, rate: b.rate, detail: `${b.models} ${b.models === 1 ? 'model' : 'models'}` }))} />
+                <BarChart title={`${setupCurrent.label} by setup`} higherIsBetter={setupCurrent.higherIsBetter} rows={setupRows} />
               ) : (
                 <p className="empty">Pick an AI provider to see results.</p>
               )}

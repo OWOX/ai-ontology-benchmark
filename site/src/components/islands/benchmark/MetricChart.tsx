@@ -1,5 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { type BarRow } from './BarChart'
 import { Choice } from './Choice'
+import { copyChart } from './copyChart'
+import { CheckIcon, CopyIcon } from './icons'
 
 /** One metric tab of a chart: `title` names the metric in the chart title ("Chart 1. <title> by AI model"), `explanation` is the title's "(?)" text. */
 export interface ChartTab { id: string; label: string; title: string; higherIsBetter: boolean; explanation: string }
@@ -24,12 +27,16 @@ interface Props {
   definitions: readonly MetricDefinition[]
   /** Anything that moves the tabs (the puzzle), so the "?" buttons are measured again. */
   layoutKey: string
+  /** The bars of the selected metric, for the copy button; empty when the chart shows none. */
+  bars: readonly BarRow[]
+  /** The filter in words (puzzle and number of AI models), written under the copied image. */
+  filterText: string
   /** The chart of the selected metric. */
   children: ReactNode
 }
 
 /** A chart section: a subtitle, the metric tabs hanging off a framed panel, and in the panel a figure: the chart, then its numbered caption ending in a "(?)" popover. Each tab keeps its own "?" for the metric's definition. */
-export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, children }: Props) {
+export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, filterText, children }: Props) {
   const headingId = useId()
   const root = useRef<HTMLElement>(null)
   // The metric whose definition popover is open (one at a time).
@@ -181,6 +188,22 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
   const number = firstNumber + (at === -1 ? 0 : at)
   const title = `Chart ${number}. ${current.title} by ${by}`
 
+  // The copy button: a check for 1.5 s after a copy, and a live region that says "Copied" or "Copy failed".
+  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (statusTimer.current) clearTimeout(statusTimer.current) }, [])
+  const copy = async () => {
+    let next: 'copied' | 'failed' = 'copied'
+    try {
+      await copyChart({ caption: title, rows: bars, higherIsBetter: current.higherIsBetter, filter: filterText, url: location.href })
+    } catch {
+      next = 'failed'
+    }
+    if (statusTimer.current) clearTimeout(statusTimer.current)
+    setStatus(next)
+    statusTimer.current = setTimeout(() => setStatus('idle'), 1500)
+  }
+
   return (
     <section className="chart-section" aria-labelledby={headingId} ref={root}>
       <h2 className="subtitle" id={headingId}>{heading}</h2>
@@ -253,6 +276,12 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
               <span className="pop-wrap">
                 <button type="button" className="pop-btn" aria-label={`About Chart ${number}`} aria-expanded={titleOpen} aria-controls={popId} onClick={() => setTitleOpen(!titleOpen)}>(?)</button>
               </span>
+              {bars.length > 0 && (
+                <button type="button" className="copy-btn" aria-label={`Copy Chart ${number} to clipboard`} title="Copy chart" onClick={copy}>
+                  {status === 'copied' ? <CheckIcon /> : <CopyIcon />}
+                </button>
+              )}
+              <span className={`copy-status${status === 'failed' ? ' failed' : ''}`} role="status" aria-live="polite">{status === 'copied' ? 'Copied' : status === 'failed' ? 'Copy failed' : ''}</span>
               {/* Always in the DOM (hidden while closed), so the button's aria-controls points at an element that exists. */}
               <div className={`pop pop-wrap${up ? '' : ' below'}`} id={popId} role="dialog" aria-label={`About Chart ${number}`} hidden={!titleOpen}>
                 <p>{current.explanation}</p>
