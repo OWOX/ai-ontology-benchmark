@@ -588,15 +588,17 @@ describe('BenchmarkView', () => {
       const caption = figure.querySelector('figcaption')!
       expect(figure.lastElementChild).toBe(caption)
       expect(chart.compareDocumentPosition(caption) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      expect(caption).toHaveTextContent('Chart 1. Balanced precision by AI model (?)')
+      expect(caption).toHaveTextContent('Chart 1. Balanced precision by AI model ?')
       expect(within(figure).getByRole('img')).toHaveAccessibleName(/^Precision: claude-a/)
     })
 
-    it('gives each section a subtitle, the setup one naming the three setups', () => {
+    it('gives each section a subtitle and no text between it and the tabs', () => {
       both()
       expect(screen.getByRole('heading', { level: 2, name: 'Metrics by AI model' })).toBeInTheDocument()
       expect(screen.getByRole('heading', { level: 2, name: 'Metrics by setup' })).toBeInTheDocument()
-      expect(setupSection()).toHaveTextContent('no model, descriptive model, and prescriptive model')
+      expect(setupSection().querySelector('.lead')).toBeNull()
+      expect(screen.getByRole('heading', { level: 2, name: 'Metrics by AI model' }).nextElementSibling).toHaveClass('metrics')
+      expect(screen.getByRole('heading', { level: 2, name: 'Metrics by setup' }).nextElementSibling).toHaveClass('metrics')
     })
 
     it('numbers the chart titles 1 to 3 on the AI model tabs and 4 to 6 on the setup tabs', () => {
@@ -668,7 +670,7 @@ describe('BenchmarkView', () => {
 
       it('is a button named for its chart, closed at first, controlling a dialog that exists', () => {
         both()
-        expect(button(1)).toHaveTextContent('(?)')
+        expect(button(1)).toHaveTextContent('?')
         expect(button(1)).toHaveAttribute('aria-expanded', 'false')
         expect(dialog(1)).toHaveAttribute('role', 'dialog')
         expect(dialog(1)).toHaveAttribute('aria-label', 'About Chart 1')
@@ -705,7 +707,116 @@ describe('BenchmarkView', () => {
         for (const t of [five!, six!]) expect(t.match(/[.?](\s|$)/g)).toHaveLength(3)
       })
 
-      it('keeps the (?) and the copy button together in one no-wrap group after the caption', () => {
+      it('puts the caption under the frame, outside it, with the bars and the note inside', () => {
+        both()
+        const figure = button(1).closest('figure')!
+        const frame = figure.querySelector('.chart-frame')!
+        expect(frame.querySelector('[role="img"]')).not.toBeNull()
+        expect(frame.contains(button(1))).toBe(false)
+        expect(frame.nextElementSibling).toBe(figure.querySelector('figcaption'))
+        expect(figure).toHaveAttribute('aria-labelledby')
+      })
+
+      describe('hover', () => {
+        const mouse = (type: 'pointerEnter' | 'pointerLeave', el: Element, pointerType = 'mouse') => {
+          const Orig = window.PointerEvent
+          class P extends MouseEvent { pointerType: string; constructor(t: string, i: any = {}) { super(t, i); this.pointerType = i.pointerType ?? '' } }
+          ;(window as any).PointerEvent = P
+          fireEvent[type](el, { pointerType })
+          ;(window as any).PointerEvent = Orig
+        }
+        beforeEach(() => vi.useFakeTimers())
+        afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+
+        it('opens when a mouse enters the ? and closes 150ms after it leaves', () => {
+          both()
+          mouse('pointerEnter', button(1))
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          mouse('pointerLeave', button(1))
+          act(() => { vi.advanceTimersByTime(100) })
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          act(() => { vi.advanceTimersByTime(60) })
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('stays open when the pointer moves into the dialog in time, and when a click pinned it', () => {
+          both()
+          mouse('pointerEnter', button(1))
+          mouse('pointerLeave', button(1))
+          mouse('pointerEnter', dialog(1))
+          act(() => { vi.advanceTimersByTime(500) })
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          fireEvent.click(button(1))
+          mouse('pointerLeave', dialog(1))
+          act(() => { vi.advanceTimersByTime(500) })
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+        })
+
+        it('never opens on hover for touch', () => {
+          both()
+          mouse('pointerEnter', button(1), 'touch')
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('closes a hover-opened dialog 150ms after the pointer leaves it', () => {
+          both()
+          mouse('pointerEnter', button(1))
+          mouse('pointerLeave', button(1))
+          mouse('pointerEnter', dialog(1))
+          mouse('pointerLeave', dialog(1))
+          act(() => { vi.advanceTimersByTime(100) })
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          act(() => { vi.advanceTimersByTime(60) })
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('closes a hover-opened dialog on Escape', () => {
+          both()
+          mouse('pointerEnter', button(1))
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          fireEvent.keyDown(document, { key: 'Escape' })
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('describes the ? by the dialog while it is open', () => {
+          both()
+          expect(button(1)).not.toHaveAttribute('aria-describedby')
+          mouse('pointerEnter', button(1))
+          expect(button(1)).toHaveAttribute('aria-describedby', dialog(1).id)
+        })
+
+        it('opens on keyboard focus and closes on blur, unless focus moves within the caption', () => {
+          both()
+          const orig = HTMLElement.prototype.matches
+          vi.spyOn(HTMLElement.prototype, 'matches').mockImplementation(function (this: HTMLElement, q: string) { return q === ':focus-visible' ? true : orig.call(this, q) })
+          act(() => button(1).focus())
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          const copy = screen.getByRole('button', { name: 'Copy Chart 1 to clipboard' })
+          act(() => copy.focus())
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          act(() => copy.blur())
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('closes the other chart\'s pinned caption popover when a tab ? opens by hover', () => {
+          render(<BenchmarkView metrics={metrics} setupMetrics={setupMetrics} attemptsUrl="/a.json" definitions={[{ key: 'precision', name: 'Balanced precision', definition: 'The share of attempts that solved it.' }]} />)
+          fireEvent.click(button(1))
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          mouse('pointerEnter', within(setupSection()).getByRole('button', { name: /^What is Precision/ }))
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('closes the other chart\'s pinned popover when one opens by hover', () => {
+          both()
+          fireEvent.click(button(1))
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          mouse('pointerEnter', button(4))
+          expect(button(4)).toHaveAttribute('aria-expanded', 'true')
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+      })
+
+      it('keeps the ? and the copy button together in one no-wrap group after the caption', () => {
         both()
         const tools = button(1).closest('.chart-tools')!
         expect(tools.parentElement).toBe(button(1).closest('figcaption'))

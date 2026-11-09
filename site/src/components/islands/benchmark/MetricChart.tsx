@@ -4,7 +4,7 @@ import { Choice } from './Choice'
 import { copyChart } from './copyChart'
 import { CheckIcon, CopyIcon } from './icons'
 
-/** One metric tab of a chart: `title` names the metric in the chart title ("Chart 1. <title> by AI model"), `explanation` is the title's "(?)" text. */
+/** One metric tab of a chart: `title` names the metric in the chart title ("Chart 1. <title> by AI model"), `explanation` is the caption's "?" text. */
 export interface ChartTab { id: string; label: string; title: string; higherIsBetter: boolean; explanation: string }
 
 /** One metric's definition, as imported from the research repo's docs/definitions.md. */
@@ -13,9 +13,8 @@ export interface MetricDefinition { key: string; name: string; definition: strin
 interface Props {
   /** Prefix of the element ids (`<prefix>-<tab id>`, `<prefix>-panel`, `<prefix>-popover`), so two charts on a page never share one. */
   idPrefix: string
-  /** The section's subtitle and the plain sentence under it. */
+  /** The section's subtitle. */
   heading: string
-  intro: string
   /** What the bars compare, for the chart title: "AI model" or "setup". */
   by: string
   /** The number of the first tab's chart; the next tabs follow. */
@@ -37,8 +36,8 @@ interface Props {
   children: ReactNode
 }
 
-/** A chart section: a subtitle, the metric tabs hanging off a framed panel, and in the panel a figure: the chart, then its numbered caption ending in a "(?)" popover. Each tab keeps its own "?" for the metric's definition. */
-export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, note, filterText, children }: Props) {
+/** A chart section: a subtitle, the metric tabs hanging off a framed panel, and in the panel a figure: the framed chart, then under the frame its numbered caption ending in a "?" popover. Each tab keeps its own "?" for the metric's definition. */
+export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, note, filterText, children }: Props) {
   const headingId = useId()
   const root = useRef<HTMLElement>(null)
   // The metric whose definition popover is open (one at a time).
@@ -150,12 +149,36 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
   }, [openHelp])
 
 
-  // The title's "(?)" popover, the Player's pattern: a text button with aria-controls, a dialog always in the DOM (hidden while closed), closing on an outside click and on Escape.
+  // The caption's "?" popover, the Player's pattern: a round icon button with aria-controls, a dialog always in the DOM (hidden while closed), closing on an outside click and on Escape.
   const [titleOpen, setTitleOpen] = useState(false)
+  // As for the tab "?": a mouse hover opens it and closes it after the grace delay unless a click pinned it.
+  const titlePinned = useRef(false)
+  const titleByFocus = useRef(false)
+  const titleLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearTitleLeave = () => { if (titleLeaveTimer.current) clearTimeout(titleLeaveTimer.current); titleLeaveTimer.current = null }
+  useEffect(() => clearTitleLeave, [])
+  const titleHoverLeave = (e: { pointerType: string }) => {
+    if (e.pointerType !== 'mouse' || titlePinned.current) return
+    clearTitleLeave()
+    titleLeaveTimer.current = setTimeout(() => setTitleOpen(false), 150)
+  }
   // One popover at a time in a chart: opening the metric's definition closes the title's, and the other way round.
   useEffect(() => { if (openHelp) setTitleOpen(false) }, [openHelp])
   useEffect(() => { if (titleOpen) setHelpOpen(null) }, [titleOpen])
   const head = useRef<HTMLDivElement>(null)
+  // One popover at a time on the page: any open, by hover, focus, or click, tells the other charts to close theirs.
+  useEffect(() => {
+    if (openHelp || titleOpen) window.dispatchEvent(new CustomEvent('chart-popover', { detail: idPrefix }))
+  }, [openHelp, titleOpen])
+  useEffect(() => {
+    const onOther = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === idPrefix) return
+      setHelpOpen(null)
+      setTitleOpen(false)
+    }
+    window.addEventListener('chart-popover', onOther)
+    return () => window.removeEventListener('chart-popover', onOther)
+  }, [idPrefix])
   const popId = useId()
   const captionId = useId()
   // The popover opens upwards over the chart, the caption being under it, or below the caption when the viewport has no room above (under the sticky header).
@@ -184,7 +207,7 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       setTitleOpen(false)
-      // Focus goes back to the "(?)" only when it was inside the caption (never pulled away from a field elsewhere).
+      // Focus goes back to the "?" only when it was inside the caption (never pulled away from a field elsewhere).
       if (head.current?.contains(document.activeElement)) head.current.querySelector<HTMLElement>('button.pop-btn')?.focus()
     }
     // The click is not stopped, so the control under the pointer still does its job.
@@ -223,7 +246,6 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
   return (
     <section className="chart-section" aria-labelledby={headingId} ref={root}>
       <h2 className="subtitle" id={headingId}>{heading}</h2>
-      <p className="lead">{intro}</p>
       <div className="metrics">
         <div className="tabs-row" ref={row}>
           <Choice
@@ -286,14 +308,41 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
         </div>
         <div role="tabpanel" id={`${idPrefix}-panel`} aria-labelledby={`${idPrefix}-${metric}`} tabIndex={0}>
           <figure className="chart-figure" aria-labelledby={captionId}>
-            {children}
-            {note && <p className="chart-note">{note}</p>}
-            <figcaption className="chart-head" ref={head}>
+            <div className="chart-frame">
+              {children}
+              {note && <p className="chart-note">{note}</p>}
+            </div>
+            <figcaption className="chart-head" ref={head} onBlur={(e) => { if (titleByFocus.current && !e.currentTarget.contains(e.relatedTarget as Node | null)) setTitleOpen(false) }}>
               <span className="chart-title" id={captionId}>{title}</span>{' '}
-              {/* The "(?)", the copy button, and the status stay together on the caption's last line. */}
+              {/* The "?", the copy button, and the status stay together on the caption's last line. */}
               <span className="chart-tools">
                 <span className="pop-wrap">
-                  <button type="button" className="pop-btn" aria-label={`About Chart ${number}`} aria-expanded={titleOpen} aria-controls={popId} onClick={() => setTitleOpen(!titleOpen)}>(?)</button>
+                  <button
+                    type="button"
+                    className="pop-btn"
+                    aria-label={`About Chart ${number}`}
+                    aria-expanded={titleOpen}
+                    aria-controls={popId}
+                    aria-describedby={titleOpen ? popId : undefined}
+                    onClick={() => {
+                      clearTitleLeave()
+                      titleByFocus.current = false
+                      // Clicking the "?" the hover just opened keeps it open (pinned); otherwise a click toggles.
+                      if (titleOpen && !titlePinned.current) titlePinned.current = true
+                      else { titlePinned.current = !titleOpen; setTitleOpen(!titleOpen) }
+                    }}
+                    onPointerEnter={(e) => {
+                      if (e.pointerType !== 'mouse') return
+                      clearTitleLeave()
+                      if (!titleOpen) { titlePinned.current = false; titleByFocus.current = false; setTitleOpen(true) }
+                    }}
+                    onPointerLeave={titleHoverLeave}
+                    onFocus={(e) => {
+                      let visible = false
+                      try { visible = e.currentTarget.matches(':focus-visible') } catch { /* no :focus-visible */ }
+                      if (visible && !titleOpen) { titlePinned.current = true; titleByFocus.current = true; setTitleOpen(true) }
+                    }}
+                  >?</button>
                 </span>
                 {bars.length > 0 && (
                   <button type="button" className="copy-btn" aria-label={`Copy Chart ${number} to clipboard`} title="Copy chart" onClick={copy}>
@@ -303,7 +352,7 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
                 <span className={`copy-status${status === 'failed' ? ' failed' : ''}`} role="status" aria-live="polite">{status === 'copied' ? 'Copied' : status === 'failed' ? 'Copy failed' : ''}</span>
               </span>
               {/* Always in the DOM (hidden while closed), so the button's aria-controls points at an element that exists. */}
-              <div className={`pop pop-wrap${up ? '' : ' below'}`} id={popId} role="dialog" aria-label={`About Chart ${number}`} hidden={!titleOpen}>
+              <div className={`pop pop-wrap${up ? '' : ' below'}`} id={popId} role="dialog" aria-label={`About Chart ${number}`} hidden={!titleOpen} tabIndex={-1} onPointerEnter={(e) => { if (e.pointerType === 'mouse') clearTitleLeave() }} onPointerLeave={titleHoverLeave}>
                 <p>{current.explanation}</p>
               </div>
             </figcaption>
