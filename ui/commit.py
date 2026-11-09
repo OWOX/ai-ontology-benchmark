@@ -176,15 +176,16 @@ def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
     pr = open_pr(root, branch, emit)
     title, body = pr_title(experiment_id, partial), pr_body(config, experiment_id, partial)
     url = pr.get("url", "")
-    pushed = bool(info["files"] or info["ahead"])
+    sent = bool(info["files"] or info["ahead"])  # this Commit pushed something
     title_in_step = pr.get("title") == title
-    body_in_step = (pr.get("body") or "").replace("\r\n", "\n").strip() == body.strip()
-    if url and not pushed and title_in_step:
+    old_body = (pr.get("body") or "").replace("\r\n", "\n").strip()
+    # With nothing sent, a body that still holds the built text is in step, so a note added by hand survives;
+    # stale counts (a failed edit before) break the match and get edited.
+    body_in_step = old_body == body.strip() if sent else body.strip() in old_body
+    if url and not sent and title_in_step and body_in_step:
         raise ApiError(409, "nothing to commit")
     if not url:  # a retry after a failed PR step finds the branch already pushed
         url = create_pr(root, emit, "--head", branch, "--title", title, "--body", body)
-    elif not title_in_step or (pushed and not body_in_step):
-        # Keep the open pull request in step with the counts. With nothing pushed, only a stale title (a failed edit
-        # before) is fixed, so a note added to the body by hand survives a Commit that has nothing to push.
+    elif not (title_in_step and body_in_step):  # keep the open pull request in step with the counts
         sh(root, [gh_binary(root), "pr", "edit", branch, "--title", title, "--body", body], emit)
     return {"branch": branch, "commit": sha, "pr_url": url}
