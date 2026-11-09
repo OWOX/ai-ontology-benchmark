@@ -25,7 +25,9 @@ describe('Source', () => {
   it('formats tokens as millions with one decimal, thousands with k, or as they are', () => {
     expect(formatTokens(67_849_999)).toBe('67.8 million')
     expect(formatTokens(1_000_000)).toBe('1.0 million')
-    expect(formatTokens(999_999)).toBe('1,000k')
+    expect(formatTokens(999_499)).toBe('999k')
+    expect(formatTokens(999_500)).toBe('1.0 million')
+    expect(formatTokens(999_999)).toBe('1.0 million')
     expect(formatTokens(12_345)).toBe('12k')
     expect(formatTokens(999)).toBe('999')
     expect(usage(1, 1)).toBe('1 attempt and 1 token.')

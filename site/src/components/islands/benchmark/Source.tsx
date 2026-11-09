@@ -6,8 +6,10 @@ const count = new Intl.NumberFormat('en-GB')
 
 /** Tokens in millions with one decimal from a million up, in thousands ("k") below that, as is under a thousand. */
 export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} million`
-  if (n >= 1000) return `${count.format(Math.round(n / 1000))}k`
+  // Round first, then pick the unit, so 999,999 reads "1.0 million" and not "1,000k".
+  const thousands = Math.round(n / 1000)
+  if (thousands >= 1000) return `${(n / 1_000_000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} million`
+  if (n >= 1000) return `${count.format(thousands)}k`
   return count.format(n)
 }
 
