@@ -240,6 +240,16 @@ def test_computed_rows_equal_compute(ui_repo, samples):
     assert by["all"]["served_models"] == ["served-1"]
 
 
+def test_batch_records_without_batch_prices_show_no_cost_and_no_error(ui_repo, samples):
+    _, _, records = samples
+    exp, inputs = open_experiment(ui_repo, "e", files_for([{**r, "batch": True} for r in records]))
+    rows = expdata.experiment_rows(exp, inputs)
+    assert exp["error"] is None and len(rows) == 3
+    assert {r["cost_usd"] for r in rows} == {None}  # unpriced: n/a, not a KeyError that fails the experiment
+    assert not expdata.priced(exp, "example-model")
+    assert all(r["cost"] == 0.0 for r in expdata.attempt_rows(exp, inputs))
+
+
 def test_infrastructure_failures_change_no_rate(ui_repo, samples):
     valid, _, records = samples
     exp, inputs = open_experiment(ui_repo, "e", files_for(records))

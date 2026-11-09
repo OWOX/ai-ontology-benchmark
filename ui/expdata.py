@@ -20,6 +20,7 @@ from src.puzzles.registry import ENGINES
 from src.run.models import DECISION_PROVIDERS
 from src.run.raw import parse_raw_text
 from src.release.release import parse_version
+from ui.common import missing_price_field
 from ui.gitdata import GitData
 from ui.pooling import RATES, pooled_rates, pooled_summary, total
 
@@ -99,11 +100,21 @@ def model_names(exp: dict) -> list[str]:
     return [m["name"] for m in config["models"]] if config else sorted(exp["records"])
 
 
+def priced(exp: dict, model: str) -> bool:
+    """Whether the experiment's prices cover a model's records: an entry with every field they need, the batch
+    fields too when any record was made by a batch."""
+    batch = any(r.get("batch") is True for r in exp["records"].get(model, []))
+    return not missing_price_field(exp["prices"].get(model), batch)
+
+
 def attempt_rows(exp: dict, inputs: list[dict]) -> list[dict]:
     """Every record re-validated, offering the mismatch reasons when the release has them (`exp["reasons"]`). A record that cannot be scored sets `exp["error"]` and gives no rows."""
     if exp["error"]:
         return []
-    prices = {m: NO_PRICE for m in exp["records"]} | exp["prices"]
+    # A price entry that lacks only the batch fields its batch records need prices at zero, shown as n/a. Any other
+    # malformed entry still fails the experiment, as before.
+    no_batch = {m for m in exp["records"] if not priced(exp, m) and not missing_price_field(exp["prices"].get(m))}
+    prices = exp["prices"] | {m: NO_PRICE for m in no_batch} | {m: NO_PRICE for m in exp["records"] if m not in exp["prices"]}
     records = [r for found in exp["records"].values() for r in found]
     models = exp["config"]["models"] if exp["config"] else []
     decision_models = {m["name"] for m in models if m["provider"] in DECISION_PROVIDERS}
@@ -207,10 +218,9 @@ def numbers(exp: dict, model: str, puzzle: str, scope: str, part: list[dict]) ->
         stats = scope_rates(part, scope, f"ui|{model}|{puzzle}|{scope}")
     tokens = sum(r["input_tokens"] + r["output_tokens"] + r["retry_input_tokens"]
                  + r["retry_output_tokens"] for r in part)
-    priced = model in exp["prices"]
     return {"attempts": stats["attempts"], "infrastructure_failures": stats["infrastructure_failure_count"],
             **{r: cell(stats[r]) for r in RATES}, "total_tokens": tokens,
-            "cost_usd": sum(r["cost"] for r in part) if priced else None,
+            "cost_usd": sum(r["cost"] for r in part) if priced(exp, model) else None,
             "served_models": sorted({r["served_model"] for r in part if r["served_model"]})}
 
 

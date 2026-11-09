@@ -281,7 +281,7 @@ class Bundles(BranchReaders):
             for row in rows:
                 row["input_set_id"] = set_id
                 row["experiment"] = exp["id"]
-                row["priced"] = row["model"] in exp["prices"]
+                row["priced"] = expdata.priced(exp, row["model"])
             held["rows"] = rows
         return [] if exp["error"] else held["rows"] or []
 
