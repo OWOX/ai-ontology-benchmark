@@ -36,7 +36,7 @@ FIELDS = {
     "validity", "setup", "prompt_version", "model", "seed", "input_seed", "attempt_number",
     "raw_response", "parsed_moves", "outcome", "hallucination", "mismatch", "move_count",
     "input_tokens", "output_tokens", "retry_input_tokens", "retry_output_tokens", "latency_s",
-    "stop_reason", "served_model", "decision", "requested_model", "mismatch_reason", "created_at",
+    "stop_reason", "served_model", "decision", "requested_model", "mismatch_reason", "created_at", "batch",
 }
 
 
@@ -191,7 +191,7 @@ def test_record_fields(exp):
     go("--limit", "3")
     for row in records(exp, "A"):
         assert set(row) == FIELDS
-        assert row["decision"] is False and row["requested_model"] == "a-1"
+        assert row["decision"] is False and row["requested_model"] == "a-1" and row["batch"] is False
     assert row["release_version"] == "1.0.0" and row["seed"] == 7 and row["input_set_id"] == "1"
 
 
@@ -1414,3 +1414,32 @@ def test_decision_model_under_a_release_without_mismatch_reasons(repo, monkeypat
     assert "mismatch" in json.dumps(asked[0]) and "mismatch_1" not in json.dumps(asked[0])
     assert row["mismatch"] is True and len(json.loads(row["raw_response"])) == 2 and row["hallucination"] is None
     assert row["mismatch_reason"] is None and row["decision"] is True
+
+
+def test_check_prices_needs_batch_prices_for_batched_models():
+    config = {"batch": True, "models": [{"name": "a", "provider": "anthropic"},
+                                        {"name": "d", "provider": "typesafe"}]}
+    plain = {"price_input_per_mtok": 1.0, "price_output_per_mtok": 2.0}
+    with pytest.raises(budget_module.BudgetError, match="'a'.*batch_price_input_per_mtok"):
+        budget_module.check_prices(config, {"a": plain, "d": plain}, "p.toml")
+    both = dict(plain, batch_price_input_per_mtok=0.5, batch_price_output_per_mtok=1.0)
+    budget_module.check_prices(config, {"a": both, "d": plain}, "p.toml")  # decision models run direct
+    budget_module.check_prices(dict(config, batch=False), {"a": plain, "d": plain}, "p.toml")
+
+
+def test_worst_case_request_cost_uses_the_batch_tier():
+    price = {"price_input_per_mtok": 4.0, "price_output_per_mtok": 8.0,
+             "batch_price_input_per_mtok": 2.0, "batch_price_output_per_mtok": 4.0}
+    standard = budget_module.worst_case_request_cost("x" * 400, 1000, price)
+    assert budget_module.worst_case_request_cost("x" * 400, 1000, price, True) == pytest.approx(standard / 2)
+
+
+def test_make_record_writes_the_batch_flag(exp):
+    go("--limit", "1")
+    config = run_module.load_experiment_config(exp / "config/experiments/exp.toml")
+    manifest = json.loads((exp / "releases/1.0.0/manifest.json").read_text(encoding="utf-8"))
+    row = json.loads((exp / "releases/1.0.0/inputs.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    versions = manifest["prompt_versions"]
+    made = run_module.make_record(config, manifest, row, config["models"][0], "no_model", 1, versions,
+                                  Reply("MISMATCH", "ok", "s", 1, 1, None), 0, 0, batch=True)
+    assert made["batch"] is True and made["latency_s"] is None

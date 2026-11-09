@@ -155,7 +155,7 @@ def call_with_retries(model: dict, prompt: str, config: dict, can_afford, label:
 
 def make_record(config, manifest, row, model, setup, number, versions,
                 reply, retry_in: int, retry_out: int, decision: DecisionResult | None = None,
-                reasons: list[str] | None = None) -> dict:
+                reasons: list[str] | None = None, batch: bool = False) -> dict:
     """Build the raw record of one attempt from the reply (None after an infrastructure failure).
     A decision model passes its DecisionResult instead, and the raw response is the array of its calls.
     `reasons` are the offered mismatch reasons, or None for a release without them."""
@@ -184,7 +184,7 @@ def make_record(config, manifest, row, model, setup, number, versions,
         "input_tokens": tokens_in, "output_tokens": tokens_out,
         "retry_input_tokens": retry_in, "retry_output_tokens": retry_out,
         "latency_s": latency, "stop_reason": stop, "served_model": served,
-        "decision": decision is not None, "requested_model": model["api_model_id"],
+        "decision": decision is not None, "requested_model": model["api_model_id"], "batch": batch,
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
