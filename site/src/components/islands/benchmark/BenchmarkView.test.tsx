@@ -690,6 +690,21 @@ describe('BenchmarkView', () => {
         expect(text).toMatch(/average over the selected AI models that have a value under every setup, each counting equally/)
       })
 
+      it('says exactly what Charts 5 and 6 show, in three sentences each', () => {
+        both()
+        const every = 'Each bar is the average over the selected AI models that have a value under every setup, each counting equally'
+        const question = 'does giving an AI model the rules of a puzzle change'
+        fireEvent.click(within(setupSection()).getByRole('tab', { name: 'Hallucination rate' }))
+        fireEvent.click(button(5))
+        const five = screen.getByRole('dialog', { name: 'About Chart 5' }).textContent
+        expect(five).toBe(`Shows how often answers that give moves contain a move that doesn't exist for the puzzle, under each setup. It addresses the research question: ${question} how often it hallucinates? ${every}, so a decision model, which has no hallucination rate, is left out.`)
+        fireEvent.click(within(setupSection()).getByRole('tab', { name: 'Critical thinking' }))
+        fireEvent.click(button(6))
+        const six = screen.getByRole('dialog', { name: 'About Chart 6' }).textContent
+        expect(six).toBe(`Shows how well answers judge whether a puzzle can be solved at all under each setup. It addresses the research question: ${question} how well it judges whether a puzzle can be solved? ${every}.`)
+        for (const t of [five!, six!]) expect(t.match(/[.?](\s|$)/g)).toHaveLength(3)
+      })
+
       it('closes on Escape, returning focus to the button, and on an outside click', () => {
         both()
         button(1).focus()

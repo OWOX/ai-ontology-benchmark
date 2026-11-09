@@ -36,7 +36,7 @@ export const MODEL_TABS: readonly ChartTab[] = [
 /** The tabs of Charts 4 to 6, which compare setups. */
 export const SETUP_TABS: readonly ChartTab[] = [
   { ...METRICS[0], explanation: `Shows how often answers are right when the prompt gives no model, a descriptive model, or a prescriptive model of the puzzle's rules. It addresses the research question: ${SETUP_QUESTION} how often its answers are right? ${AVERAGE}.` },
-  { ...METRICS[1], explanation: `Shows how often answers contain a move that doesn't exist for the puzzle under each setup. It addresses the research question: ${SETUP_QUESTION} how often it hallucinates? ${AVERAGE} A model with no value, such as a decision model, is skipped.` },
+  { ...METRICS[1], explanation: `Shows how often answers that give moves contain a move that doesn't exist for the puzzle, under each setup. It addresses the research question: ${SETUP_QUESTION} how often it hallucinates? ${AVERAGE}, so a decision model, which has no hallucination rate, is left out.` },
   { ...METRICS[2], explanation: `Shows how well answers judge whether a puzzle can be solved at all under each setup. It addresses the research question: ${SETUP_QUESTION} how well it judges whether a puzzle can be solved? ${AVERAGE}.` },
 ]
 
