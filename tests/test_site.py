@@ -9,6 +9,7 @@ import pytest
 from src.puzzles.registry import get_engine
 from src.evaluate.metrics import answer_class
 from src.site.metrics import metric_rows
+from src.validator import offered_reasons
 from src.site import export as site
 from ui.gitdata import GitData
 
@@ -65,6 +66,12 @@ INPUTS = [
     {"corruption": None, "input_id": "v2", "puzzle": "2x2", "scramble": ["R2", "L2", "U2", "L", "U2"],
      "scramble_depth": 5, "state": "DBDFLRRRBUDBFUBULLLRDFFU", "validity": "valid"},
 ]
+
+
+TEMPLATES = {
+    "no_model": "Solve this 2x2 cube.\n\n{state}\n\nReasons: {mismatch_reasons}.\n",
+    "prescriptive": "Pick from {legal_moves}.\n\n{state}\n",
+}
 
 
 def solution(input_id: str) -> str:
@@ -124,6 +131,9 @@ def repo(tmp_path):
         folder.mkdir(parents=True)
         (folder / "inputs.jsonl").write_text("\n".join(json.dumps(r) for r in INPUTS) + "\n")
         (folder / "manifest.json").write_text(json.dumps({"mismatch_reasons": reasons}))
+        for setup, text in TEMPLATES.items():
+            (folder / "prompts" / setup).mkdir(parents=True, exist_ok=True)
+            (folder / "prompts" / setup / "2x2.txt").write_text(text)
     commit(tmp_path, "main")
     return tmp_path
 
@@ -367,3 +377,34 @@ def test_all_row_pools_every_puzzle():
     assert got["all"]["cost"]["n"] == 4
     assert got["all"]["cost"]["value"] == pytest.approx(0.0175 / 0.75)
     assert got["all"]["provider"] == "openai"
+
+
+def test_prompts_are_built_from_the_release_templates_once_per_release_setup_and_input(repo):
+    records = [raw("m1", "v1", 1, solution("v1")), raw("m1", "v1", 2, solution("v1")), raw("m2", "v1", 1, solution("v1")),
+               raw("m1", "v1", 1, solution("v1"), setup="prescriptive"), raw("m1", "i1", 1, "MISMATCH", setup="no_model")]
+    write_experiment(repo, "a-exp", records)
+    data, _, _ = exported(repo)
+    assert sorted(data["prompts"]) == ["1.0.0/no_model/i1", "1.0.0/no_model/v1", "1.0.0/prescriptive/v1"]
+    engine = get_engine("2x2")
+    state = INPUTS[0]["state"]
+    assert data["prompts"]["1.0.0/no_model/v1"] == (
+        f"Solve this 2x2 cube.\n\n{engine.render(state)}\n\nReasons: "
+        + ", ".join(f"`{r}`" for r in offered_reasons(engine)) + ".\n")
+    assert data["prompts"]["1.0.0/prescriptive/v1"] == f"Pick from {' '.join(engine.legal_moves())}.\n\n{engine.render(state)}\n"
+    assert engine.render(INPUTS[1]["state"]) in data["prompts"]["1.0.0/no_model/i1"]
+
+
+def test_prompts_of_two_experiments_on_one_release_are_shared(repo):
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
+    write_experiment(repo, "b-exp", [raw("m2", "v1", 1, solution("v1"))])
+    data, _, _ = exported(repo)
+    assert list(data["prompts"]) == ["1.0.0/no_model/v1"]
+
+
+def test_missing_template_leaves_its_prompts_out(repo, capsys):
+    (repo / "releases" / "1.0.0" / "prompts" / "no_model" / "2x2.txt").unlink()
+    commit(repo, "drop template")
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1")), raw("m1", "v1", 1, solution("v1"), setup="prescriptive")])
+    data, _, _ = exported(repo)
+    assert list(data["prompts"]) == ["1.0.0/prescriptive/v1"]
+    assert "no_model" in capsys.readouterr().err

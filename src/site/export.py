@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from src.evaluate.metrics import EvalError, make_attempt_rows
 from src.puzzles.registry import get_engine
 from src.release.release import parse_version
 from src.run.models import DECISION_PROVIDERS
+from src.run.prompts import build_prompt
 from src.run.raw import parse_raw_text
 from src.site.metrics import metric_rows
 from ui.gitdata import FETCH_TIMEOUT_S, GitData
@@ -138,6 +140,45 @@ def read_experiment(gd: GitData, ref: str, source: str, branch: str, experiment_
     }, rows, skipped
 
 
+def prompt_key(release: str, setup: str, input_id: str) -> str:
+    return f"{release}/{setup}/{input_id}"
+
+
+def build_prompts(gd: GitData, ref: str, experiments: list[dict], cache: dict) -> dict[str, str]:
+    """The exact prompt of every (release, setup, input id) the attempts cover, once each. The templates are read
+    from `releases/<release>/prompts/` at `ref` through git into a temporary directory, and `build_prompt` fills
+    them. A template that is missing or invalid leaves its prompts out, with one stderr line."""
+    wanted: dict[str, dict[str, set[tuple[str, str]]]] = {}
+    for e in experiments:
+        pairs = wanted.setdefault(e["release"], {})
+        for a in e["attempts"]:
+            pairs.setdefault(a["setup"], set()).add((a["puzzle"], a["inputId"]))
+    prompts: dict[str, str] = {}
+    for release in sorted(wanted):
+        by_id = {r["input_id"]: r for r in cache[release]}
+        with tempfile.TemporaryDirectory() as tmp:
+            for setup in sorted(wanted[release]):
+                for puzzle in sorted({p for p, _ in wanted[release][setup]}):
+                    path = f"releases/{release}/prompts/{setup}/{puzzle}.txt"
+                    text = gd.show(ref, path)
+                    if text is None:
+                        print(f"skipped prompts of {release} {setup} {puzzle}: no {path} at {ref}", file=sys.stderr)
+                        continue
+                    target = Path(tmp) / setup / f"{puzzle}.txt"
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(text, encoding="utf-8")
+                for puzzle, input_id in sorted(wanted[release][setup]):
+                    if not (Path(tmp) / setup / f"{puzzle}.txt").exists():
+                        continue
+                    try:
+                        prompt = build_prompt(Path(tmp), by_id[input_id], setup)
+                    except ValueError as error:
+                        print(f"skipped prompts of {release} {setup} {puzzle}: {error}", file=sys.stderr)
+                        continue
+                    prompts[prompt_key(release, setup, input_id)] = prompt
+    return prompts
+
+
 def plain_text(md: str) -> str:
     md = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", md)
     md = re.sub(r"\*\*([^*]+)\*\*", r"\1", md)
@@ -220,6 +261,7 @@ def export(gd: GitData, ref: str, remote: str = "origin") -> tuple[dict, int]:
             providers.setdefault(m["name"], m["provider"])
     return {"page": page, "legalMoves": legal_moves, "definitions": definitions,
             "metrics": metric_rows(all_rows, providers),
+            "prompts": build_prompts(gd, ref, experiments, cache),
             "experiments": experiments}, skipped
 
 

@@ -10,6 +10,8 @@ export interface SiteData {
   legalMoves: Record<string, string[]>
   definitions: { key: string; name: string; definition: string }[]
   metrics: ModelMetrics[]
+  /** Each exact prompt once, keyed `<release>/<setup>/<input id>`; only attempts.json carries it to the page. */
+  prompts?: Record<string, string>
   experiments: BenchmarkExperiment[]
 }
 

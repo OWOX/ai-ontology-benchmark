@@ -296,7 +296,7 @@ describe('BenchmarkView', () => {
   it('fetches attempts.json once across filter changes', async () => {
     resetAttempts()
     const data = { '3x3': [{ model: 'claude-a', puzzle: '3x3', validity: 'valid', setup: 'descriptive', attempt: 1, state: '', moves: [], outcome: 'hallucination', mismatch: false }] }
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => data })))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ attempts: data, prompts: {} }) })))
     view()
     fireEvent.click(screen.getByRole('button', { name: 'Run' }))
     await act(async () => {})

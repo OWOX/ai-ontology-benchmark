@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cubeGeometry } from '../cube/core/geometry'
 import { resetAttempts } from './attempts'
 import { corruptionType, whyUnsolvable } from './unsolvable'
-import { Player, pickCase, promptUrl, resultText, sourceUrl, stateText, type ReplayAttempt } from './Player'
+import { Player, pickCase, resultText, sourceUrl, stateText, type ReplayAttempt } from './Player'
 
 const g = cubeGeometry(3)
 const attempt = (o: Partial<ReplayAttempt>): ReplayAttempt => ({
@@ -12,7 +12,7 @@ const attempt = (o: Partial<ReplayAttempt>): ReplayAttempt => ({
 })
 
 const LEGAL = { '3x3': ['U', 'R', 'F', 'D', 'L', 'B'].flatMap((f) => [f, `${f}'`, `${f}2`]) }
-const stub = (data: Record<string, ReplayAttempt[]>) => vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => data })))
+const stub = (data: Record<string, ReplayAttempt[]>, prompts: Record<string, string> = {}) => vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ attempts: data, prompts }) })))
 const SOURCE = 'https://github.com/OWOX/ai-ontology-benchmark'
 /** Renders the player and lets its first load (on mount) settle. */
 const mount = async () => {
@@ -40,17 +40,46 @@ describe('Player', () => {
     expect(resultText('mismatch', { validity: 'valid' })).toBe('Not solved')
   })
 
-  it('links the prompt template of the case in the study repo, only when the release is known', () => {
-    expect(promptUrl({ release: '1.3.1', setup: 'descriptive', puzzle: '2x2' })).toBe(`${SOURCE}/blob/main/releases/1.3.1/prompts/descriptive/2x2.txt`)
-    expect(promptUrl({ release: '', setup: 'descriptive', puzzle: '2x2' })).toBeNull()
+  it('shows the exact prompt of the case in a popover opened by the Prompt button, and no button without one', async () => {
+    const text = 'Solve this 3x3 cube.\n\nU: WWW\n\nReply with moves.'
+    stub({ '3x3': [attempt({ release: '3.0.0', prompt: '3.0.0/descriptive/i1' })] }, { '3.0.0/descriptive/i1': text })
+    const first = await mount()
+    expect(fact('Model:')).toBe('m1. Prompt')
+    expect(screen.queryByRole('link', { name: /Prompt/ })).toBeNull()
+    const button = screen.getByRole('button', { name: 'Prompt' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('region', { name: /received/ })).toBeNull()
+    fireEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    const region = screen.getByRole('region', { name: /received/ })
+    expect(button.getAttribute('aria-controls')).toBe(region.id)
+    expect(region.querySelector('pre')!.textContent).toBe(text)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('region', { name: /received/ })).toBeNull()
+    expect(button).toHaveFocus()
+    fireEvent.click(button)
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('region', { name: /received/ })).toBeNull()
+    first.unmount()
+    resetAttempts()
+    stub({ '3x3': [attempt({ release: '3.0.0' })] })
+    await mount()
+    expect(fact('Model:')).toBe('m1')
+    expect(screen.queryByRole('button', { name: 'Prompt' })).toBeNull()
   })
 
-  it('shows the model with a link to its prompt, opening in a new window', async () => {
-    stub({ '3x3': [attempt({ release: '1.3.1' })] })
+  it('keeps one popover open at a time', async () => {
+    stub({ '3x3': [attempt({ validity: 'invalid', corruption: 'twisted corner UFL clockwise', outcome: 'success', mismatch: true, prompt: 'k' })] }, { k: 'the prompt' })
     await mount()
-    expect(fact('Model:')).toBe('m1. Prompt (opens in a new tab)')
-    expect(screen.getByRole('link', { name: /^Prompt ?\(opens in a new tab\)$/ })).toHaveAttribute('href', `${SOURCE}/blob/main/releases/1.3.1/prompts/descriptive/3x3.txt`)
-    expect(screen.getByRole('link', { name: /^Prompt ?\(opens in a new tab\)$/ })).toHaveAttribute('target', '_blank')
+    fireEvent.click(screen.getByRole('button', { name: 'not solvable' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prompt' }))
+    const pops = () => screen.getAllByRole('region', { name: /received|not solvable/ })
+    expect(pops()).toHaveLength(1)
+    expect(pops()[0]).toHaveTextContent('the prompt')
+    expect(screen.getByRole('button', { name: 'not solvable' })).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'not solvable' }))
+    expect(pops()).toHaveLength(1)
+    expect(pops()[0]).toHaveTextContent(/total twist/)
   })
 
   it('picks the model first, so a model with few attempts is as likely as one with many', () => {

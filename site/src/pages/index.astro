@@ -153,8 +153,8 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   :global(.benchmark .facts .after-result) { white-space: normal; }
   /* Room for ". Source" on its own line where it wraps, so the run never moves Run down. */
   @media (max-width: 48rem) { :global(.benchmark .facts .one-line) { min-height: 2lh; } }
-  /* The link to the prompt the model was sent, like a link in the page's prose (.prose a). */
-  :global(.benchmark .facts .prompt) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
+  /* The exact prompt the model received: monospace, wrapped, scrolling past 20rem. */
+  :global(.benchmark .facts .prompt-text) { margin: 0; max-height: min(20rem, 60vh); overflow: auto; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
   /* "not solvable" and "Prompt": buttons styled as text with a dashed underline, each opening a popover under the facts. The popover is out of flow (it sits at its static position, over the Run button), so opening it moves nothing. */
   :global(.benchmark .steps.experiment .body) { position: relative; }
   :global(.cube-solver.benchmark .facts button.pop-btn) {

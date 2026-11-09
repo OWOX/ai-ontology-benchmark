@@ -9,17 +9,12 @@ import { replayFrame, type ReplayFrame } from './replay'
 import { CheckCircleIcon, CrossCircleIcon, FlaskIcon, RefreshIcon } from './icons'
 
 /** An attempt as /ai-ontology-benchmark/attempts.json carries it: `inputId` and `depth` are dropped, its experiment's `release` and `experimentId` added. */
-export type ReplayAttempt = Omit<BenchmarkAttempt, 'inputId' | 'depth'> & { release?: string; experimentId?: string; branch?: string }
+export type ReplayAttempt = Omit<BenchmarkAttempt, 'inputId' | 'depth'> & { release?: string; experimentId?: string; branch?: string; prompt?: string }
 
 /** The raw results this attempt came from: `results/<experimentId>/raw/<model>.jsonl` on the study repo's branch `branch` (`main` when missing; each experiment keeps one file per model, named after it); the repo itself without an experiment id. */
 export function sourceUrl(a: Pick<ReplayAttempt, 'experimentId' | 'model' | 'branch'>): string {
   const branch = (a.branch || 'main').split('/').map(encodeURIComponent).join('/')
   return a.experimentId ? `${SOURCE}/blob/${branch}/results/${encodeURIComponent(a.experimentId)}/raw/${encodeURIComponent(a.model)}.jsonl` : SOURCE
-}
-
-/** The prompt template the model was sent, in the study repo: `releases/<release>/prompts/<setup>/<puzzle>.txt`; null without a release. */
-export function promptUrl(a: Pick<ReplayAttempt, 'release' | 'setup' | 'puzzle'>): string | null {
-  return a.release ? `${SOURCE}/blob/main/releases/${a.release}/prompts/${a.setup}/${a.puzzle}.txt` : null
 }
 
 const RESULT: Record<ResultSign, string> = {
@@ -72,6 +67,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
   const [pool, setPool] = useState<readonly ReplayAttempt[]>([])
+  const [prompts, setPrompts] = useState<Readonly<Record<string, string>>>({})
   const [attempt, setAttempt] = useState<ReplayAttempt | null>(null)
   const [run, setRun] = useState(0) // a new number restarts the replay of the same attempt; 0 = not run yet
   const [frame, setFrame] = useState<ReplayFrame | null>(null)
@@ -89,6 +85,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
   const g = useMemo(() => cubeGeometry(puzzleSize(shownPuzzle)), [shownPuzzle])
   const plan = useMemo(() => (attempt ? playable(attempt, legalMoves[attempt.puzzle] ?? []) : null), [attempt, legalMoves])
   const moves = plan?.moves ?? []
+  const promptText = attempt?.prompt ? prompts[attempt.prompt] : undefined
 
   useEffect(() => {
     if (!attempt || run === 0) return
@@ -129,13 +126,14 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
     // Only a click's load disables Run; the quiet first load leaves it clickable (a click then waits on the same fetch).
     if (loud) (setFailed(false), setLoading(true))
     try {
-      const all = await loadAttempts(attemptsUrl)
+      const { attempts: all, prompts: texts } = await loadAttempts(attemptsUrl)
       if (!alive.current) return null
       const wanted = new Set(models)
       const found = (puzzle === ALL ? Object.values(all).flat() : (all[puzzle] ?? [])).filter((a) => wanted.has(a.model))
       if (found.length === 0) throw new Error('no attempts')
       const a = pickCase(found, null)!
       setPool(found)
+      setPrompts(texts ?? {})
       setAttempt(a)
       return a
     } catch {
@@ -214,7 +212,19 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
                 </div>
                 <div>
                   <dt>Model:</dt>{' '}
-                  <dd>{attempt.model}{promptUrl(attempt) && <>. <a className="prompt" href={promptUrl(attempt)!} target="_blank" rel="noopener noreferrer">Prompt<span className="sr-only"> (opens in a new tab)</span></a></>}</dd>
+                  <dd>
+                    {attempt.model}
+                    {promptText && (
+                      <>
+                        . <span className="pop-wrap"><button type="button" className="pop-btn" data-pop="prompt" aria-expanded={open === 'prompt'} aria-controls={`${popId}-prompt`} onClick={() => setOpen(open === 'prompt' ? null : 'prompt')}>Prompt</button></span>
+                      </>
+                    )}
+                  </dd>
+                  {open === 'prompt' && promptText && (
+                    <div className="pop pop-wrap" id={`${popId}-prompt`} role="region" aria-label="Prompt the model received">
+                      <pre className="prompt-text" tabIndex={0}>{promptText}</pre>
+                    </div>
+                  )}
                 </div>
                 {/* Always laid out (two lines on a narrow screen, where ". Source" wraps), so Run never moves the button down; visibility: hidden (which also keeps it from screen readers) until Run. */}
                 <div className="one-line" data-verdict={result ? verdict : undefined} style={run > 0 ? undefined : { visibility: 'hidden' }}>
