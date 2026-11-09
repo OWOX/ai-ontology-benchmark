@@ -75,7 +75,7 @@ describe('copy chart', () => {
     const init = (list[0] as { init: Record<string, unknown> }).init
     expect(Object.keys(init).sort()).toEqual(['image/png', 'text/plain'])
     expect(await init['image/png']).toBe(blob)
-    expect(await (init['text/plain'] as Blob).text()).toBe('Chart 1. Balanced precision by AI model\nclaude-a: 50%\ngpt-a: 100%')
+    expect(await (init['text/plain'] as Blob).text()).toBe('Chart 1. Balanced precision by AI model\nclaude-a: 50%\ngpt-a: 100%\n3x3 cube, 2 AI models')
     expect(drawn).toContainEqual({ kind: '2d' })
     expect(drawn.some((d) => d.w === 1280 && typeof d.h === 'number')).toBe(true)
   })
@@ -84,11 +84,11 @@ describe('copy chart', () => {
     view()
     await click(copyBtn(4))
     const init = (write.mock.calls[0][0][0] as { init: Record<string, unknown> }).init
-    expect(await (init['text/plain'] as Blob).text()).toBe('Chart 4. Balanced precision by setup\nNo model: 20%\nDescriptive model: 40%\nPrescriptive model: 60%')
+    expect(await (init['text/plain'] as Blob).text()).toBe('Chart 4. Balanced precision by setup\nNo model: 20%\nDescriptive model: 40%\nPrescriptive model: 60%\n3x3 cube, 2 AI models\nAveraged over 1 AI model. 1 left out for lacking a value under some setup.')
   })
 
-  it('formats text as the caption then one label: value line per bar, n/a for no value', () => {
-    expect(chartText({ caption: 'Chart 9. X', rows: [{ model: 'a', rate: rate(0.333) }, { model: 'b', rate: rate(null, 0) }] })).toBe('Chart 9. X\na: 33%\nb: n/a')
+  it('formats text as the caption, one label: value line per bar (n/a for no value), then the filter and the note', () => {
+    expect(chartText({ caption: 'Chart 9. X', rows: [{ model: 'a', rate: rate(0.333) }, { model: 'b', rate: rate(null, 0) }], filter: 'All puzzles, 2 AI models', note: 'N' })).toBe('Chart 9. X\na: 33%\nb: n/a\nAll puzzles, 2 AI models\nN')
   })
 
   it('falls back to writeText without ClipboardItem', async () => {
@@ -96,7 +96,7 @@ describe('copy chart', () => {
     view()
     await click(copyBtn(1))
     expect(write).not.toHaveBeenCalled()
-    expect(writeText).toHaveBeenCalledWith('Chart 1. Balanced precision by AI model\nclaude-a: 50%\ngpt-a: 100%')
+    expect(writeText).toHaveBeenCalledWith('Chart 1. Balanced precision by AI model\nclaude-a: 50%\ngpt-a: 100%\n3x3 cube, 2 AI models')
     expect(screen.getAllByRole('status').some((s) => s.textContent === 'Copied')).toBe(true)
   })
 

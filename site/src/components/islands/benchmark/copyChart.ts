@@ -13,9 +13,9 @@ export interface ChartCopy {
   url: string
 }
 
-/** The caption, then one "label: value" line per bar. */
-export function chartText({ caption, rows }: Pick<ChartCopy, 'caption' | 'rows'>): string {
-  return [caption, ...rows.map((r) => `${r.model}: ${percent(r.rate.value)}`)].join('\n')
+/** The caption, one "label: value" line per bar, then the filter line and the note, as under the image. */
+export function chartText({ caption, rows, filter, note }: Pick<ChartCopy, 'caption' | 'rows' | 'filter' | 'note'>): string {
+  return [caption, ...rows.map((r) => `${r.model}: ${percent(r.rate.value)}`), filter, ...(note ? [note] : [])].join('\n')
 }
 
 // The light theme's colours (site/src/styles/global.css), on white, whatever theme the page is in.
