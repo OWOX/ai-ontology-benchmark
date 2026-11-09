@@ -10,8 +10,7 @@ from statistics import median
 
 from src.config import max_moves, parse_experiment_config
 from src.evaluate.metrics import tier_prices
-from src.run.budget import is_batched
-from src.run.budget import estimate
+from src.run.budget import estimate, is_batched
 from src.run.models import DECISION_PROVIDERS
 from src.run.prompts import SETUPS, fill_template, parse_questions
 from src.run.run import experiment_inputs
@@ -188,10 +187,11 @@ class LiveEstimate:
     def costs(self, pushed: dict[str, tuple[str, str]], main_sha: str | None, prices: dict,
               batched: frozenset = frozenset()) -> dict[str, tuple[float, int]]:
         """The mean cost per attempt and the record count of each AI model over every pushed experiment, at the
-        prices of `main`, infrastructure failures included. The tokens of every record are priced at the batch tier
-        for the AI models in `batched` (the ones the new experiment sends through a batch API), else at the standard tier. Cached by the shas of the refs read and of `main`. A branch
-        that does not load adds what it could read, and a record with a token field that is not a number is left out,
-        as in `medians`."""
+        prices of `main`, infrastructure failures included. Each record's tokens are priced at the tier it was made at,
+        except for the AI models in `batched` (the ones the new experiment sends through a batch API), whose tokens
+        are all priced at the batch tier. An AI model whose price lacks a field it needs is left out, as one with no
+        price. Cached by the shas of the refs read and of `main`. A branch that does not load adds what it could
+        read, and a record with a token field that is not a number is left out, as in `medians`."""
         key = (tuple(sorted(pushed.items())), main_sha, batched)
         with self._lock:
             if self._cost and self._cost[0] == key:
@@ -200,10 +200,11 @@ class LiveEstimate:
         for experiment_id, (ref, sha) in sorted(pushed.items()):
             held = self._experiment(experiment_id, ref, sha)
             for model in held["counts"]:
-                if model in prices:
+                tokens, batch_tokens = held["tokens"].get(model, (0, 0)), held["batch_tokens"].get(model, (0, 0))
+                needs_batch = model in batched or batch_tokens != (0, 0)
+                if model in prices and not missing_price_field(prices[model], needs_batch):
                     total = sums.setdefault(model, [0.0, 0])
-                    total[0] += self._tokens_cost(prices[model], model in batched, held["tokens"].get(model, (0, 0)),
-                                                  held["batch_tokens"].get(model, (0, 0)))
+                    total[0] += self._tokens_cost(prices[model], model in batched, tokens, batch_tokens)
                     total[1] += held["counts"][model]
         found = {m: (c / n, n) for m, (c, n) in sums.items() if n}
         with self._lock:
@@ -271,8 +272,12 @@ class LiveEstimate:
         done, spent = set(), {}
         for name in (m["name"] for m in config["models"]):
             done |= found["keys"].get(name, set())
-            spent[name] = self._tokens_cost(prices[name], False, found["tokens"].get(name, (0, 0)),
-                                            found["batch_tokens"].get(name, (0, 0)))
+            batch_tokens = found["batch_tokens"].get(name, (0, 0))
+            field = missing_price_field(prices[name], batch_tokens != (0, 0))
+            if field:
+                raise ApiError(400, f"config/prices.toml on main: model {name!r} has no number for {field}, "
+                                    f"which its records on {experiment_id} need")
+            spent[name] = self._tokens_cost(prices[name], False, found["tokens"].get(name, (0, 0)), batch_tokens)
         return done, spent
 
     def _finish(self, result: dict, config: dict, parallel: int, inputs: int, to_run: int, pushed: dict,
