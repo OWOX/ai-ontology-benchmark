@@ -14,6 +14,8 @@ from typing import Callable
 
 from src.config import parse_experiment_config
 from src.run.branch import BranchError, stale_files, stale_message
+from src.run.raw import read_raw
+from src.run.run import planned_attempts, recorded_attempts
 from ui.common import ApiError, merged_env
 from ui.gitdata import GIT_VARIABLES
 
@@ -99,13 +101,33 @@ def preview(root: Path, experiment_id: str, emit: Emit) -> dict:
     return {k: info[k] for k in ("branch", "base", "files", "diffstat")}
 
 
-def pr_body(config: dict, experiment_id: str) -> str:
+def unfinished(root: Path, config: dict, experiment_id: str) -> tuple[int, int] | None:
+    """(records, planned attempts) over all AI models when the experiment is unfinished, else None. Reads the release's
+    inputs and the raw files of results/<id>/ in the work tree."""
+    text = (root / "releases" / config["release"] / "inputs.jsonl").read_text(encoding="utf-8")
+    inputs = [json.loads(line) for line in text.splitlines()]
+    records = []
+    for path in sorted((root / "results" / experiment_id / "raw").glob("*.jsonl")):
+        records += read_raw(path)[0]
+    planned = planned_attempts(config, inputs)
+    done = recorded_attempts(config, inputs, records)
+    if all(count >= planned for count in done.values()):
+        return None
+    return sum(done.values()), planned * len(done)
+
+
+def pr_title(experiment_id: str, partial: tuple[int, int] | None) -> str:
+    return f"Results: experiment {experiment_id}" + (" (unfinished)" if partial else "")
+
+
+def pr_body(config: dict, experiment_id: str, partial: tuple[int, int] | None = None) -> str:
     puzzles = config.get("puzzles") or "every puzzle in the release"
     if isinstance(puzzles, list):
         puzzles = ", ".join(puzzles)
     models = ", ".join(m["name"] for m in config["models"])
+    note = f"Unfinished: {partial[0]} of {partial[1]} planned attempts have a record.\n" if partial else ""
     return (f"Results of experiment {experiment_id}.\n\nRelease: {config['release']}\nPuzzles: {puzzles}\n"
-            f"AI models: {models}\nAttempts per input and setup: {config['attempts']}\n"
+            f"AI models: {models}\nAttempts per input and setup: {config['attempts']}\n{note}"
             f"Report: results/{experiment_id}/{config['release']}.md\n")
 
 
@@ -146,6 +168,7 @@ def commit(root: Path, experiment_id: str, emit: Emit) -> dict:
         raise ApiError(409, "nothing to commit")
     if not url:  # a retry after a failed PR step finds the branch already pushed
         config = load_config(root, experiment_id)
-        url = create_pr(root, emit, "--head", branch, "--title", f"Results: experiment {experiment_id}",
-                        "--body", pr_body(config, experiment_id))
+        partial = unfinished(root, config, experiment_id)
+        url = create_pr(root, emit, "--head", branch, "--title", pr_title(experiment_id, partial),
+                        "--body", pr_body(config, experiment_id, partial))
     return {"branch": branch, "commit": sha, "pr_url": url}

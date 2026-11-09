@@ -867,6 +867,28 @@ def test_commit_to_remote(server, gh):
     assert status == 409 and "nothing to commit" in data["error"]
 
 
+def test_unfinished_experiment_commits_with_a_labelled_title_and_body(server, gh):
+    call(server, "POST", "/api/run", dict(FORM, limit=1))
+    wait_job(server, "run:example-model")
+    assert call(server, "POST", "/api/evaluate", {"id": "t1"})[0] == 200
+    wait_job(server, "evaluate")
+    status, result = call(server, "POST", "/api/commit", {"id": "t1"})
+    assert status == 200
+    create = (gh / "gh.log").read_text()
+    assert '--title Results: experiment t1 (unfinished)' in create
+    assert re.search(r"Unfinished: 1 of \d+ planned attempts have a record\.", create)
+    assert "This experiment is [unfinished]" in (server.root / "results" / "t1" / "1.0.0.md").read_text()
+
+
+def test_pr_body_and_title_are_plain_for_a_finished_experiment():
+    from ui import commit as commit_module
+    assert commit_module.pr_title("t1", None) == "Results: experiment t1"
+    assert "Unfinished" not in commit_module.pr_body(CONFIG | {"models": [{"name": "m"}]}, "t1")
+    body = commit_module.pr_body(CONFIG | {"models": [{"name": "m"}]}, "t1", (3, 12))
+    assert "\nUnfinished: 3 of 12 planned attempts have a record.\n" in body
+    assert commit_module.pr_title("t1", (3, 12)) == "Results: experiment t1 (unfinished)"
+
+
 @pytest.fixture
 def spawned(monkeypatch):
     """Record the argv of each spawned job instead of starting it."""
