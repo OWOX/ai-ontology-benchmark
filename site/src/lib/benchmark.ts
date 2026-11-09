@@ -1,9 +1,18 @@
-// Metrics and replay helpers for /ai-ontology-benchmark. Pure; definitions follow the study's
-// docs/definitions.md "Metrics".
-import type { BenchmarkAttempt, BenchmarkExperiment } from './types'
+// Replay helpers and the metric row type for /ai-ontology-benchmark. Pure. The metrics themselves are computed in
+// Python (src/site/metrics.py) and arrive in site.json.
+import type { BenchmarkAttempt } from './types'
 
+/** One metric cell of site.json's `metrics`: the value (null for n/a) and the number of attempts behind it. */
 export type Rate = { value: number | null; n: number }
-export type Rates = { success: Rate; hallucination: Rate; detection: Rate }
+export type ModelMetrics = {
+  puzzle: string
+  model: string
+  provider: string
+  precision: Rate
+  hallucination: Rate
+  critical: Rate
+  cost: Rate
+}
 export type ResultSign = 'solved' | 'mismatch' | 'hallucinated' | 'unsolved'
 
 export const PROVIDERS = [
@@ -14,55 +23,6 @@ export const PROVIDERS = [
 
 /** The study's repo: the Experiment block's Source link. */
 export const SOURCE = 'https://github.com/OWOX/ai-ontology-benchmark'
-
-const rate = (hits: number, n: number): Rate => ({ value: n === 0 ? null : hits / n, n })
-
-/** Success: all attempts. Hallucination: attempts with at least one parsed move. Detection: invalid inputs. */
-export function rates(attempts: readonly BenchmarkAttempt[]): Rates {
-  let success = 0
-  let withMoves = 0
-  let hallucinated = 0
-  let invalid = 0
-  let detected = 0
-  for (const a of attempts) {
-    if (a.outcome === 'success') success++
-    if (a.moves.length > 0) {
-      withMoves++
-      if (a.outcome === 'hallucination') hallucinated++
-    }
-    if (a.validity === 'invalid') {
-      invalid++
-      if (a.mismatch) detected++
-    }
-  }
-  return {
-    success: rate(success, attempts.length),
-    hallucination: rate(hallucinated, withMoves),
-    detection: rate(detected, invalid),
-  }
-}
-
-export type ModelMetrics = Rates & { puzzle: string; model: string; provider: string }
-
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-
-/** One row per (puzzle, model), pooling the attempts of every given experiment. */
-export function metricsByModel(experiments: readonly BenchmarkExperiment[]): ModelMetrics[] {
-  const groups = new Map<string, { puzzle: string; model: string; attempts: BenchmarkAttempt[] }>()
-  const provider = new Map<string, string>()
-  for (const e of experiments) {
-    for (const m of e.models ?? []) if (!provider.has(m.name) || provider.get(m.name) === 'unknown') provider.set(m.name, m.provider)
-    for (const a of e.attempts ?? []) {
-      const key = `${a.puzzle}\u0000${a.model}`
-      let g = groups.get(key)
-      if (!g) groups.set(key, (g = { puzzle: a.puzzle, model: a.model, attempts: [] }))
-      g.attempts.push(a)
-    }
-  }
-  return [...groups.values()]
-    .sort((a, b) => cmp(a.puzzle, b.puzzle) || cmp(a.model, b.model))
-    .map((g) => ({ puzzle: g.puzzle, model: g.model, provider: provider.get(g.model) ?? 'unknown', ...rates(g.attempts) }))
-}
 
 /** '3x3' -> 3 */
 export const puzzleSize = (puzzle: string): number => Number.parseInt(puzzle, 10)

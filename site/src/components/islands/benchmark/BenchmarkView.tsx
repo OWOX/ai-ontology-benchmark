@@ -17,9 +17,10 @@ function Preview({ puzzle }: { puzzle: string }) {
 }
 
 const METRICS = [
-  { id: 'success', label: 'Success rate', higherIsBetter: true, pick: (m: ModelMetrics) => m.success },
-  { id: 'hallucination', label: 'Hallucination rate', higherIsBetter: false, pick: (m: ModelMetrics) => m.hallucination },
-  { id: 'detection', label: 'Critical thinking', higherIsBetter: true, pick: (m: ModelMetrics) => m.detection },
+  { id: 'precision', label: 'Precision', higherIsBetter: true, format: 'percent', pick: (m: ModelMetrics) => m.precision },
+  { id: 'hallucination', label: 'Hallucination rate', higherIsBetter: false, format: 'percent', pick: (m: ModelMetrics) => m.hallucination },
+  { id: 'critical', label: 'Critical thinking', higherIsBetter: true, format: 'percent', pick: (m: ModelMetrics) => m.critical },
+  { id: 'cost', label: 'Cost efficiency', higherIsBetter: false, format: 'usd', pick: (m: ModelMetrics) => m.cost },
 ] as const
 
 interface Props {
@@ -53,7 +54,7 @@ const effectiveTicked = (providerOn: ReadonlySet<string>, here: readonly ModelMe
   return ticked.size > 0 || providerOn.size === 0 ? ticked : present
 }
 
-/** The filter as the URL hash describes it; a key that is missing, or holds nothing that exists, falls back to its default (first puzzle with data, every provider, every model, Success rate). */
+/** The filter as the URL hash describes it; a key that is missing, or holds nothing that exists, falls back to its default (first puzzle with data, every provider, every model, Precision). */
 function restore(hash: string, metrics: ModelMetrics[]): FilterState {
   const h = parseHash(hash)
   const withData = new Set(metrics.map((m) => m.puzzle))
@@ -70,7 +71,9 @@ function restore(hash: string, metrics: ModelMetrics[]): FilterState {
     const keep = h.models.filter((n) => ticked.some((m) => m.model === n))
     if (h.models.length === 0 || keep.length > 0) for (const m of ticked) if (!keep.includes(m.model)) modelOff.add(m.model)
   }
-  const metric = METRICS.find((m) => m.id === h.metric)?.id ?? 'success'
+  // `detection`, the old id of the critical thinking tab, keeps old shared links working.
+  const wanted = h.metric === 'detection' ? 'critical' : h.metric
+  const metric = METRICS.find((m) => m.id === wanted)?.id ?? 'precision'
   return { puzzle, providerOn, modelOff, metric }
 }
 
@@ -107,10 +110,13 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
       const next: Record<string, { x: number; y: number }> = {}
       let tabTop = 0
       let helpX = 0
+      const l = el.querySelector('[role="tablist"]')?.getBoundingClientRect()
       for (const m of METRICS) {
         const tab = document.getElementById(`metric-${m.id}`)
         if (!tab) continue
         const t = tab.getBoundingClientRect()
+        // A tab scrolled out of the tablist takes its "?" with it.
+        if (l && (t.right > l.right + 0.5 || t.right < l.left - 0.5)) continue
         next[m.id] = { x: t.right - r.left, y: t.bottom - r.top }
         if (m.id === openHelp) {
           tabTop = t.top
@@ -119,6 +125,8 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
         }
       }
       setSpots((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
+      // The open popover's tab scrolled out of the tablist: its "?" is gone, so the popover goes too.
+      if (openHelp && !next[openHelp]) setHelpOpen(null)
       const w = pop.current?.offsetWidth ?? 0
       const h = pop.current?.offsetHeight ?? 0
       const gap = 6.4
@@ -146,6 +154,16 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
       ro?.disconnect()
     }
   }, [metric, openHelp, spotKey, puzzle])
+  // Selecting a tab brings it fully into the tablist (only the tablist scrolls, never the page), so its "?" shows.
+  useEffect(() => {
+    const tab = document.getElementById(`metric-${metric}`)
+    const list = tab?.closest('[role="tablist"]') as HTMLElement | null | undefined
+    if (!tab || !list) return
+    const t = tab.getBoundingClientRect()
+    const l = list.getBoundingClientRect()
+    if (t.right > l.right) list.scrollLeft += t.right - l.right
+    else if (t.left < l.left) list.scrollLeft -= l.left - t.left
+  }, [metric])
   // After a mouse leaves the "?" or the box it closes once the grace delay passes, unless it was pinned by a click or the pointer came back.
   const hoverLeave = (e: { pointerType: string }) => {
     if (e.pointerType !== 'mouse' || pinned.current) return
@@ -190,7 +208,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
     puzzle: puzzle !== null && puzzle !== defaultPuzzle ? puzzle : undefined,
     providers: providersHere.size === 0 || ticked.size === providersHere.size ? undefined : PROVIDERS.filter((p) => ticked.has(p.id)).map((p) => p.id),
     models: showModels && selected.length < available.length ? names : undefined,
-    metric: metric !== 'success' ? metric : undefined,
+    metric: metric !== 'precision' ? metric : undefined,
   })
   useEffect(() => {
     const current = location.hash || (location.href.endsWith('#') ? '#' : '')
@@ -305,7 +323,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
             </div>
             <div role="tabpanel" id="metric-panel" aria-labelledby={`metric-${metric}`} tabIndex={0}>
               {showModels ? (
-                <BarChart title={current.label} higherIsBetter={current.higherIsBetter} rows={selected.map((m) => ({ model: m.model, rate: current.pick(m) }))} />
+                <BarChart title={current.label} higherIsBetter={current.higherIsBetter} format={current.format} rows={selected.map((m) => ({ model: m.model, rate: current.pick(m) }))} />
               ) : (
                 <p className="empty">Pick an AI provider to see results.</p>
               )}

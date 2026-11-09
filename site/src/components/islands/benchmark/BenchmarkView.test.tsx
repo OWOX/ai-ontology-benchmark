@@ -6,11 +6,11 @@ import BenchmarkView from './BenchmarkView'
 
 const rate = (value: number | null, n: number) => ({ value, n })
 const row = (puzzle: string, model: string, provider: string, o: Partial<ModelMetrics> = {}): ModelMetrics => ({
-  puzzle, model, provider, success: rate(0.5, 10), hallucination: rate(0.25, 8), detection: rate(null, 0), ...o,
+  puzzle, model, provider, precision: rate(0.5, 10), hallucination: rate(0.25, 8), critical: rate(null, 0), cost: rate(0.0123, 10), ...o,
 })
 const metrics = [
   row('3x3', 'claude-a', 'anthropic'),
-  row('3x3', 'gpt-a', 'openai', { success: rate(1, 4), hallucination: rate(0.5, 8) }),
+  row('3x3', 'gpt-a', 'openai', { precision: rate(1, 4), hallucination: rate(0.5, 8), cost: rate(0.05, 4) }),
   row('4x4', 'claude-a', 'anthropic'),
 ]
 const view = () => render(<BenchmarkView metrics={metrics} attemptsUrl="/a.json" />)
@@ -28,7 +28,7 @@ describe('BenchmarkView', () => {
     expect(on('OpenAI')).toBeInTheDocument()
     expect(within(screen.getByRole('group', { name: 'Model' })).getAllByRole('checkbox').map((b) => b.parentElement!.textContent)).toEqual(['claude-a', 'gpt-a'])
     expect(location.hash).toBe('')
-    expect(screen.getByRole('img', { name: /^Success rate/ })).toHaveAccessibleName('Success rate: claude-a 50% (worst), gpt-a 100% (best)')
+    expect(screen.getByRole('img', { name: /^Precision/ })).toHaveAccessibleName('Precision: claude-a 50% (worst), gpt-a 100% (best)')
   })
 
   it('shows the filter as three steps with an icon each, the Model step only while a provider is ticked, and a drawing on each puzzle option', () => {
@@ -67,8 +67,8 @@ describe('BenchmarkView', () => {
     const models = screen.getByRole('group', { name: 'Model' })
     expect(within(models).getAllByRole('checkbox').map((b) => b.parentElement!.textContent)).toEqual(['gpt-a'])
     expect(on('gpt-a')).toBeInTheDocument()
-    const success = screen.getByRole('img', { name: /^Success rate/ })
-    expect(success).toHaveAccessibleName('Success rate: gpt-a 100%')
+    const success = screen.getByRole('img', { name: /^Precision/ })
+    expect(success).toHaveAccessibleName('Precision: gpt-a 100%')
     fireEvent.click(on('gpt-a'))
     expect(screen.getByText('No model selected.')).toBeInTheDocument()
   })
@@ -78,12 +78,12 @@ describe('BenchmarkView', () => {
     fireEvent.click(on('OpenAI'))
     fireEvent.click(on('Anthropic'))
     expect(screen.queryByRole('group', { name: 'Model' })).toBeNull()
-    expect(screen.queryByRole('img', { name: /^Success rate/ })).toBeNull()
+    expect(screen.queryByRole('img', { name: /^Precision/ })).toBeNull()
     expect(screen.getByRole('tabpanel')).toHaveTextContent('Pick an AI provider to see results.')
     expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled()
     expect(location.hash).toBe('#providers=')
     fireEvent.click(off('OpenAI'))
-    expect(screen.getByRole('img', { name: /^Success rate/ })).toHaveAccessibleName('Success rate: gpt-a 100%')
+    expect(screen.getByRole('img', { name: /^Precision/ })).toHaveAccessibleName('Precision: gpt-a 100%')
     expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
   })
 
@@ -92,7 +92,7 @@ describe('BenchmarkView', () => {
     view()
     expect(on('Anthropic')).toBeInTheDocument()
     expect(on('claude-a')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: /^Success rate/ })).toHaveAccessibleName('Success rate: claude-a 50%')
+    expect(screen.getByRole('img', { name: /^Precision/ })).toHaveAccessibleName('Precision: claude-a 50%')
     expect(location.hash).toBe('#puzzle=4x4')
     cleanup()
     history.replaceState(null, '', '/')
@@ -139,16 +139,61 @@ describe('BenchmarkView', () => {
     expect(on('claude-a')).toBeInTheDocument()
   })
 
-  it('shows one chart at a time through the metric tabs, Success rate first', () => {
+  it('shows one chart at a time through the four metric tabs, Precision first', () => {
     const { container } = view()
-    expect(screen.getByRole('tab', { name: 'Success rate' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Success rate', 'Hallucination rate', 'Critical thinking'])
+    expect(screen.getByRole('tab', { name: 'Precision' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Precision', 'Hallucination rate', 'Critical thinking', 'Cost efficiency'])
     expect(container.querySelectorAll('figure.chart').length).toBe(1)
-    expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Success rate')
+    expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Precision')
     fireEvent.click(screen.getByRole('tab', { name: 'Hallucination rate' }))
     expect(screen.getByRole('img', { name: /^Hallucination rate/ })).toHaveAccessibleName('Hallucination rate: claude-a 25% (best), gpt-a 50% (worst)')
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Hallucination rate' }), { key: 'ArrowRight' })
     expect(screen.getByRole('tab', { name: 'Critical thinking' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('shows the cost tab in dollars with the cheaper model best, and bars scaled to the largest cost', () => {
+    const { container } = view()
+    fireEvent.click(screen.getByRole('tab', { name: 'Cost efficiency' }))
+    expect(screen.getByRole('img', { name: /^Cost efficiency/ })).toHaveAccessibleName('Cost efficiency: claude-a $0.0123 (best), gpt-a $0.0500 (worst)')
+    expect([...container.querySelectorAll<HTMLElement>('.chart .fill')].map((f) => f.style.width)).toEqual([`${(0.0123 / 0.05) * 100}%`, '100%'])
+    expect(location.hash).toBe('#metric=cost')
+  })
+
+  it('keeps the four tabs in one unwrapped tablist and moves a "?" with the tablist scroll', () => {
+    render(<BenchmarkView metrics={metrics} attemptsUrl="/a.json" definitions={[{ key: 'precision', name: 'Balanced precision', definition: 'd' }]} />)
+    const list = screen.getByRole('tablist')
+    expect(within(list).getAllByRole('tab')).toHaveLength(4)
+    const tab = screen.getByRole('tab', { name: 'Precision' })
+    const rect = (left: number, right: number) => ({ left, right, top: 0, bottom: 10, width: right - left, height: 10, x: left, y: 0, toJSON() {} }) as DOMRect
+    const at = { right: 100 }
+    vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(rect(0, 200))
+    vi.spyOn(tab, 'getBoundingClientRect').mockImplementation(() => rect(at.right - 100, at.right))
+    fireEvent.scroll(list)
+    expect(screen.getByRole('button', { name: 'What is Precision?' })).toBeInTheDocument()
+    at.right = 300 // scrolled so that the tab ends beyond the tablist
+    fireEvent.scroll(list)
+    expect(screen.queryByRole('button', { name: 'What is Precision?' })).toBeNull()
+    at.right = 150
+    fireEvent.scroll(list)
+    expect(screen.getByRole('button', { name: 'What is Precision?' })).toBeInTheDocument()
+    vi.restoreAllMocks()
+  })
+
+  it('closes the open popover when its tab scrolls out of the tablist', () => {
+    render(<BenchmarkView metrics={metrics} attemptsUrl="/a.json" definitions={[{ key: 'precision', name: 'Balanced precision', definition: 'd' }]} />)
+    const list = screen.getByRole('tablist')
+    const tab = screen.getByRole('tab', { name: 'Precision' })
+    const rect = (left: number, right: number) => ({ left, right, top: 0, bottom: 10, width: right - left, height: 10, x: left, y: 0, toJSON() {} }) as DOMRect
+    const at = { right: 100 }
+    vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(rect(0, 200))
+    vi.spyOn(tab, 'getBoundingClientRect').mockImplementation(() => rect(at.right - 100, at.right))
+    fireEvent.scroll(list)
+    fireEvent.click(screen.getByRole('button', { name: 'What is Precision?' }))
+    expect(document.getElementById('metric-popover')).not.toBeNull()
+    at.right = 300
+    fireEvent.scroll(list)
+    expect(document.getElementById('metric-popover')).toBeNull()
+    vi.restoreAllMocks()
   })
 
   it('marks the best and worst bars by the metric\'s direction', () => {
@@ -181,17 +226,21 @@ describe('BenchmarkView', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Hallucination rate' }))
     fireEvent.click(screen.getByRole('radio', { name: '4x4 cube' }))
     expect(location.hash).toBe('#puzzle=4x4&metric=hallucination')
-    fireEvent.click(screen.getByRole('tab', { name: 'Success rate' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Precision' }))
     fireEvent.click(screen.getByRole('radio', { name: '3x3 cube' }))
     expect(location.hash).toBe('')
     expect(history.length).toBe(before)
   })
 
   it('starts from the hash, ignoring values that do not exist', () => {
-    history.replaceState(null, '', '/#puzzle=4x4&providers=anthropic,nope&models=claude-a&metric=detection')
+    history.replaceState(null, '', '/#puzzle=4x4&providers=anthropic,nope&models=claude-a&metric=critical')
     view()
     expect(screen.getByRole('radio', { name: '4x4 cube' })).toBeChecked()
     expect(on('Anthropic')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Critical thinking' })).toHaveAttribute('aria-selected', 'true')
+    cleanup()
+    history.replaceState(null, '', '/#metric=detection')
+    view()
     expect(screen.getByRole('tab', { name: 'Critical thinking' })).toHaveAttribute('aria-selected', 'true')
     cleanup()
     history.replaceState(null, '', '/#puzzle=9x9&providers=nope&models=zzz&metric=bogus')
@@ -199,7 +248,7 @@ describe('BenchmarkView', () => {
     expect(screen.getByRole('radio', { name: '3x3 cube' })).toBeChecked()
     expect(on('OpenAI')).toBeInTheDocument()
     expect(on('gpt-a')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Success rate' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Precision' })).toHaveAttribute('aria-selected', 'true')
     expect(location.hash).toBe('')
   })
 
@@ -260,19 +309,19 @@ describe('BenchmarkView', () => {
 
   describe('metric definitions', () => {
     const defs = [
-      { key: 'success', name: 'Success rate', definition: 'The share of attempts that solved it.' },
+      { key: 'precision', name: 'Balanced precision', definition: 'The share of attempts that solved it.' },
       { key: 'hallucination', name: 'Hallucination rate', definition: 'The share of attempts with an impossible move.' },
     ]
     const withDefs = () => render(<BenchmarkView metrics={metrics} attemptsUrl="/a.json" definitions={defs} />)
 
     it('shows a "?" only on a tab whose metric has a definition, and it is no part of the tab button', () => {
       withDefs()
-      expect(screen.getByRole('button', { name: 'What is Success rate?' })).toHaveAttribute('aria-expanded', 'false')
+      expect(screen.getByRole('button', { name: 'What is Precision?' })).toHaveAttribute('aria-expanded', 'false')
       expect(screen.getByRole('button', { name: 'What is Hallucination rate?' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'What is Critical thinking?' })).toBeNull()
-      const help = screen.getByRole('button', { name: 'What is Success rate?' })
+      const help = screen.getByRole('button', { name: 'What is Precision?' })
       expect(help.closest('[role="tab"]')).toBeNull()
-      expect(screen.getAllByRole('tab')).toHaveLength(3)
+      expect(screen.getAllByRole('tab')).toHaveLength(4)
       // The tablist holds only tabs.
       const list = screen.getByRole('tablist')
       expect([...list.children].every((c) => c.getAttribute('role') === 'tab')).toBe(true)
@@ -286,17 +335,17 @@ describe('BenchmarkView', () => {
 
     it('opens on click with the name, the definition and the direction, one at a time, and closes on a second click', () => {
       withDefs()
-      const success = screen.getByRole('button', { name: 'What is Success rate?' })
+      const success = screen.getByRole('button', { name: 'What is Precision?' })
       fireEvent.click(success)
       expect(success).toHaveAttribute('aria-expanded', 'true')
       expect(success).toHaveAttribute('aria-controls', 'metric-popover')
       const pop = document.getElementById('metric-popover')!
-      expect(pop).toHaveTextContent('Success rate')
-      expect(pop.querySelector('strong')).toHaveTextContent('Success rate')
+      expect(pop).toHaveTextContent('Balanced precision')
+      expect(pop.querySelector('strong')).toHaveTextContent('Balanced precision')
       expect(pop).toHaveTextContent('The share of attempts that solved it.')
       expect(pop).toHaveTextContent('Higher is better.')
       expect(pop).toHaveAttribute('role', 'region')
-      expect(pop).toHaveAccessibleName('Success rate')
+      expect(pop).toHaveAccessibleName('Balanced precision')
       expect(success).toHaveAttribute('aria-describedby', 'metric-popover')
       fireEvent.click(screen.getByRole('button', { name: 'What is Hallucination rate?' }))
       expect(success).toHaveAttribute('aria-expanded', 'false')
@@ -308,7 +357,7 @@ describe('BenchmarkView', () => {
 
     it('closes on Escape and on a click outside, but not on a click inside', () => {
       withDefs()
-      const success = screen.getByRole('button', { name: 'What is Success rate?' })
+      const success = screen.getByRole('button', { name: 'What is Precision?' })
       fireEvent.click(success)
       success.focus()
       fireEvent.pointerDown(document.getElementById('metric-popover')!)
@@ -323,7 +372,7 @@ describe('BenchmarkView', () => {
 
     it('closes on Escape from anywhere but only takes focus back when it was on the popover or the "?"', () => {
       withDefs()
-      const success = screen.getByRole('button', { name: 'What is Success rate?' })
+      const success = screen.getByRole('button', { name: 'What is Precision?' })
       fireEvent.click(success)
       const other = screen.getByRole('radio', { name: '3x3 cube' })
       other.focus()
@@ -346,7 +395,7 @@ describe('BenchmarkView', () => {
 
       it('opens when a mouse enters the "?" and closes 150ms after it leaves', () => {
         withDefs()
-        const help = screen.getByRole('button', { name: 'What is Success rate?' })
+        const help = screen.getByRole('button', { name: 'What is Precision?' })
         mouse('pointerEnter', help)
         expect(document.getElementById('metric-popover')).not.toBeNull()
         mouse('pointerLeave', help)
@@ -358,7 +407,7 @@ describe('BenchmarkView', () => {
 
       it('stays open when the pointer moves into the box in time, and closes after it leaves the box', () => {
         withDefs()
-        const help = screen.getByRole('button', { name: 'What is Success rate?' })
+        const help = screen.getByRole('button', { name: 'What is Precision?' })
         mouse('pointerEnter', help)
         mouse('pointerLeave', help)
         act(() => { vi.advanceTimersByTime(100) })
@@ -372,13 +421,13 @@ describe('BenchmarkView', () => {
 
       it('never opens on hover for touch or pen', () => {
         withDefs()
-        mouse('pointerEnter', screen.getByRole('button', { name: 'What is Success rate?' }), 'touch')
+        mouse('pointerEnter', screen.getByRole('button', { name: 'What is Precision?' }), 'touch')
         expect(document.getElementById('metric-popover')).toBeNull()
       })
 
       it('a click on a hover-opened "?" pins it open; the next click closes it', () => {
         withDefs()
-        const help = screen.getByRole('button', { name: 'What is Success rate?' })
+        const help = screen.getByRole('button', { name: 'What is Precision?' })
         mouse('pointerEnter', help)
         fireEvent.click(help)
         mouse('pointerLeave', help)
@@ -391,11 +440,11 @@ describe('BenchmarkView', () => {
 
     it('keeps the arrow keys moving between the tabs only', () => {
       withDefs()
-      screen.getByRole('tab', { name: 'Success rate' }).focus()
-      fireEvent.keyDown(screen.getByRole('tab', { name: 'Success rate' }), { key: 'ArrowRight' })
+      screen.getByRole('tab', { name: 'Precision' }).focus()
+      fireEvent.keyDown(screen.getByRole('tab', { name: 'Precision' }), { key: 'ArrowRight' })
       expect(screen.getByRole('tab', { name: 'Hallucination rate' })).toHaveAttribute('aria-selected', 'true')
       expect(screen.getByRole('tab', { name: 'Hallucination rate' })).toHaveFocus()
-      fireEvent.keyDown(screen.getByRole('button', { name: 'What is Success rate?' }), { key: 'ArrowRight' })
+      fireEvent.keyDown(screen.getByRole('button', { name: 'What is Precision?' }), { key: 'ArrowRight' })
       expect(screen.getByRole('tab', { name: 'Hallucination rate' })).toHaveAttribute('aria-selected', 'true')
     })
   })
