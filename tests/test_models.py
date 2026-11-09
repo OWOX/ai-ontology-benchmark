@@ -1,6 +1,8 @@
 # Spec: docs/specs/models.md
 """Tests for the AI model calls. Every client is faked, so no test uses the network."""
 
+import json
+import random
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock
 
@@ -746,3 +748,276 @@ def test_openrouter_reply_without_a_model_has_no_served_model(monkeypatch):
     response.model = None
     install(monkeypatch, "openrouter", response)
     assert call_model(entry("openrouter"), "prompt", 50).served_model == ""
+
+
+# ---- batch mode
+
+BATCH_MODEL = {"name": "m", "api_model_id": "alias-1", "params": dict(PARAMS), "kind": "system-2"}
+SERVED = {"anthropic": "claude-served", "openai": "gpt-served", "google": "gemini-served"}
+
+
+def batch_entry(provider):
+    return {**BATCH_MODEL, "provider": provider}
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True)
+
+
+def batch_client(monkeypatch, provider):
+    """Replace the SDK client class with one MagicMock client, and return that client."""
+    client = MagicMock()
+    target = {"anthropic": (anthropic, "Anthropic"), "openai": (openai, "OpenAI"), "google": (genai, "Client")}[provider]
+    monkeypatch.setattr(target[0], target[1], MagicMock(return_value=client))
+    return client
+
+
+def test_batch_providers():
+    assert models.BATCH_PROVIDERS == ("anthropic", "openai", "google", "fake")
+
+
+def test_build_request_sends_effort_only_for_a_system_2_model():
+    system_1 = {**batch_entry("openai"), "kind": "system-1"}
+    assert "reasoning_effort" not in models.build_request(system_1, "p", 5, "high")
+    assert models.build_request(batch_entry("openai"), "p", 5, "high")["reasoning_effort"] == "high"
+    assert "reasoning_effort" not in models.build_request(batch_entry("openai"), "p", 5, None)
+
+
+def test_build_request_refuses_a_decision_provider():
+    with pytest.raises(ValueError):
+        models.build_request({"provider": "typesafe"}, "p", 5)
+
+
+def test_batch_refuses_a_provider_without_a_batch_api():
+    for function, args in ((models.submit_batch, ([],)), (models.batch_done, ("id",)),
+                           (models.batch_results, ("id",))):
+        with pytest.raises(ValueError):
+            function({"provider": "openrouter"}, *args)
+
+
+def test_anthropic_batch_line_carries_the_direct_body(monkeypatch):
+    install(monkeypatch, "anthropic", anthropic_response())
+    call_model(batch_entry("anthropic"), "prompt", 50, "high")
+    direct = anthropic.Anthropic.return_value.messages.stream.call_args.kwargs
+    client = batch_client(monkeypatch, "anthropic")
+    client.messages.batches.create.return_value = NS(id="msgbatch_1")
+    body = models.build_request(batch_entry("anthropic"), "prompt", 50, "high")
+    assert models.submit_batch(batch_entry("anthropic"), [("a_1", body)]) == "msgbatch_1"
+    line = client.messages.batches.create.call_args.kwargs["requests"][0]
+    assert line["custom_id"] == "a_1"
+    assert canonical(line["params"]) == canonical(direct)
+    assert direct["output_config"] == {"effort": "high"}
+
+
+def test_openai_batch_line_carries_the_direct_body(monkeypatch):
+    create = install(monkeypatch, "openai", openai_response())
+    call_model(batch_entry("openai"), "prompt", 50, "low")
+    direct = create.call_args.kwargs
+    client = batch_client(monkeypatch, "openai")
+    client.files.create.return_value = NS(id="file-1")
+    client.batches.create.return_value = NS(id="batch_1")
+    body = models.build_request(batch_entry("openai"), "prompt", 50, "low")
+    assert models.submit_batch(batch_entry("openai"), [("a_1", body), ("a_2", body)]) == "batch_1"
+    name, data = client.files.create.call_args.kwargs["file"]
+    assert client.files.create.call_args.kwargs["purpose"] == "batch"
+    lines = [json.loads(text) for text in data.decode().splitlines()]
+    assert [line["custom_id"] for line in lines] == ["a_1", "a_2"]
+    assert all(line["method"] == "POST" and line["url"] == "/v1/chat/completions" for line in lines)
+    assert canonical(lines[0]["body"]) == canonical(direct)
+    assert client.batches.create.call_args.kwargs == {
+        "input_file_id": "file-1", "endpoint": "/v1/chat/completions", "completion_window": "24h"}
+
+
+def test_google_batch_line_carries_the_direct_body(monkeypatch):
+    create = install(monkeypatch, "google", google_response())
+    call_model(batch_entry("google"), "prompt", 50, "high")
+    direct = create.call_args.kwargs
+    client = batch_client(monkeypatch, "google")
+    client.batches.create.return_value = NS(name="batches/1")
+    body = models.build_request(batch_entry("google"), "prompt", 50, "high")
+    assert models.submit_batch(batch_entry("google"), [("a_1", body)]) == "batches/1"
+    kwargs = client.batches.create.call_args.kwargs
+    assert kwargs["model"] == "alias-1"
+    (line,) = kwargs["src"]
+    assert line["metadata"] == {"key": "a_1"}
+    assert canonical({"model": "alias-1", "contents": line["contents"], "config": line["config"]}) == canonical(direct)
+
+
+def test_batch_done_per_provider(monkeypatch):
+    client = batch_client(monkeypatch, "anthropic")
+    for status, expected in (("in_progress", False), ("canceling", False), ("ended", True)):
+        client.messages.batches.retrieve.return_value = NS(processing_status=status)
+        assert models.batch_done(batch_entry("anthropic"), "b") is expected
+    client = batch_client(monkeypatch, "openai")
+    for status, expected in (("validating", False), ("in_progress", False), ("finalizing", False),
+                             ("cancelling", False), ("completed", True), ("failed", True),
+                             ("expired", True), ("cancelled", True)):
+        client.batches.retrieve.return_value = NS(status=status)
+        assert models.batch_done(batch_entry("openai"), "b") is expected
+    client = batch_client(monkeypatch, "google")
+    for state, expected in (("JOB_STATE_PENDING", False), ("JOB_STATE_RUNNING", False),
+                            ("JOB_STATE_SUCCEEDED", True), ("JOB_STATE_FAILED", True),
+                            ("JOB_STATE_CANCELLED", True), ("JOB_STATE_EXPIRED", True)):
+        client.batches.get.return_value = NS(state=types.JobState(state))
+        assert models.batch_done(batch_entry("google"), "b") is expected
+
+
+def shuffled(items):
+    items = list(items)
+    random.Random(7).shuffle(items)
+    return items
+
+
+def test_anthropic_batch_results_by_custom_id(monkeypatch):
+    def error(kind):
+        return NS(type="errored", error=NS(error=NS(type=kind, message="bad  thing")))
+
+    items = [NS(custom_id="ok", result=NS(type="succeeded", message=anthropic_response())),
+             NS(custom_id="cut", result=NS(type="succeeded", message=anthropic_response("max_tokens"))),
+             NS(custom_id="refused", result=NS(type="succeeded", message=anthropic_response("refusal"))),
+             NS(custom_id="bad", result=error("invalid_request_error")),
+             NS(custom_id="busy", result=error("overloaded_error")),
+             NS(custom_id="gone", result=NS(type="expired")),
+             NS(custom_id="stopped", result=NS(type="canceled"))]
+    client = batch_client(monkeypatch, "anthropic")
+    client.messages.batches.results.return_value = iter(shuffled(items))
+    got = models.batch_results(batch_entry("anthropic"), "b")
+    assert set(got) == {"ok", "cut", "refused", "bad", "busy", "gone", "stopped"}
+    assert got["ok"] == Reply("hi", "ok", "claude-served", 11, 7, None)
+    assert got["cut"].stop_reason == "truncated"
+    assert got["refused"].stop_reason == "refused"
+    assert isinstance(got["bad"], models.RequestError) and "bad thing" in str(got["bad"])
+    for custom_id in ("busy", "gone", "stopped"):
+        assert isinstance(got[custom_id], InfrastructureError)
+
+
+def chat_body(finish="stop"):
+    return {"id": "x", "object": "chat.completion", "created": 1, "model": "gpt-served",
+            "choices": [{"index": 0, "finish_reason": finish, "message": {"role": "assistant", "content": "hi"}}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}}
+
+
+def openai_line(custom_id, status=200, body=None, error=None):
+    return json.dumps({"id": "r", "custom_id": custom_id, "error": error,
+                       "response": None if status is None else {"status_code": status, "request_id": "q",
+                                                                "body": body}})
+
+
+def test_openai_batch_results_by_custom_id(monkeypatch):
+    out = [openai_line("ok", body=chat_body()), openai_line("cut", body=chat_body("length")),
+           openai_line("refused", body=chat_body("content_filter"))]
+    err = [openai_line("bad", 400, {"error": {"code": "invalid_value", "message": "no"}}),
+           openai_line("filtered", 400, {"error": {"code": "content_filter", "message": "no"}}),
+           openai_line("slow", 429, {"error": {"code": "rate_limit", "message": "slow"}}),
+           openai_line("down", 503, {"error": {"code": "x", "message": "down"}}),
+           openai_line("late", None, error={"code": "batch_expired", "message": "too late"})]
+    client = batch_client(monkeypatch, "openai")
+    client.batches.retrieve.return_value = NS(status="completed", output_file_id="out", error_file_id="err")
+    files = {"out": "\n".join(shuffled(out)) + "\n", "err": "\n".join(shuffled(err)) + "\n"}
+    client.files.content.side_effect = lambda file_id: NS(text=files[file_id])
+    got = models.batch_results(batch_entry("openai"), "b")
+    assert set(got) == {"ok", "cut", "refused", "bad", "filtered", "slow", "down", "late"}
+    assert got["ok"] == Reply("hi", "ok", "gpt-served", 11, 7, None)
+    assert got["cut"].stop_reason == "truncated"
+    assert got["refused"].stop_reason == "refused"
+    assert got["filtered"] == Reply("", "refused", "", 0, 0, None)
+    assert isinstance(got["bad"], models.RequestError)
+    for custom_id in ("slow", "down", "late"):
+        assert isinstance(got[custom_id], InfrastructureError)
+
+
+def test_openai_expired_batch_without_files_has_no_results(monkeypatch):
+    client = batch_client(monkeypatch, "openai")
+    client.batches.retrieve.return_value = NS(status="expired", output_file_id=None, error_file_id=None)
+    assert models.batch_results(batch_entry("openai"), "b") == {}
+
+
+def test_openai_failed_batch_is_a_request_error(monkeypatch):
+    client = batch_client(monkeypatch, "openai")
+    client.batches.retrieve.return_value = NS(status="failed", output_file_id=None, error_file_id=None,
+                                              errors=NS(data=[NS(message="bad file")]))
+    with pytest.raises(models.RequestError, match="bad file"):
+        models.batch_results(batch_entry("openai"), "b")
+
+
+def inlined(key, response=None, error=None):
+    return NS(metadata={"key": key} if key else None, response=response, error=error)
+
+
+def test_google_batch_results_by_key(monkeypatch):
+    items = [inlined("ok", google_response()), inlined("cut", google_response("MAX_TOKENS")),
+             inlined("refused", google_response("SAFETY")),
+             inlined("bad", error=NS(code=400, message="bad")), inlined("slow", error=NS(code=429, message="slow")),
+             inlined("down", error=NS(code=503, message="down")), inlined("odd", error=NS(code=None, message="?"))]
+    client = batch_client(monkeypatch, "google")
+    client.batches.get.return_value = NS(dest=NS(inlined_responses=shuffled(items)))
+    got = models.batch_results(batch_entry("google"), "b")
+    assert set(got) == {"ok", "cut", "refused", "bad", "slow", "down", "odd"}
+    assert got["ok"] == Reply("hi", "ok", "gemini-served", 11, 7, None)
+    assert got["cut"].stop_reason == "truncated"
+    assert got["refused"].stop_reason == "refused"
+    assert isinstance(got["bad"], models.RequestError)
+    for custom_id in ("slow", "down", "odd"):
+        assert isinstance(got[custom_id], InfrastructureError)
+
+
+def test_google_result_without_a_key_fails_the_whole_read(monkeypatch):
+    client = batch_client(monkeypatch, "google")
+    client.batches.get.return_value = NS(dest=NS(inlined_responses=[inlined("a", google_response()),
+                                                                     inlined(None, google_response())]))
+    with pytest.raises(InfrastructureError):
+        models.batch_results(batch_entry("google"), "b")
+
+
+def test_google_job_without_responses_has_no_results(monkeypatch):
+    client = batch_client(monkeypatch, "google")
+    client.batches.get.return_value = NS(dest=None)
+    assert models.batch_results(batch_entry("google"), "b") == {}
+
+
+def test_batch_submit_maps_sdk_errors(monkeypatch):
+    client = batch_client(monkeypatch, "anthropic")
+    client.messages.batches.create.side_effect = status_error(anthropic.RateLimitError, 429)
+    with pytest.raises(InfrastructureError):
+        models.submit_batch(batch_entry("anthropic"), [("a", {})])
+    client.messages.batches.create.side_effect = status_error(anthropic.BadRequestError, 400)
+    with pytest.raises(models.RequestError):
+        models.submit_batch(batch_entry("anthropic"), [("a", {})])
+
+
+def test_batch_needs_the_api_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY")
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        models.submit_batch(batch_entry("openai"), [])
+
+
+@pytest.fixture
+def fake_batches():
+    models.FAKE_BATCH_RESULTS.clear()
+    models.FAKE_BATCH_SUBMITS.clear()
+    models.FAKE_BATCH_PENDING.clear()
+    yield
+    models.FAKE_BATCH_RESULTS.clear()
+    models.FAKE_BATCH_SUBMITS.clear()
+    models.FAKE_BATCH_PENDING.clear()
+
+
+def test_fake_batch_records_submits_and_pops_results(fake_batches):
+    fake = {"provider": "fake"}
+    first = models.submit_batch(fake, [("a", {"x": 1})])
+    second = models.submit_batch(fake, [("b", {"x": 2})])
+    assert first != second
+    assert models.FAKE_BATCH_SUBMITS == [(first, [("a", {"x": 1})]), (second, [("b", {"x": 2})])]
+    reply = Reply("a", "ok", "fake", 1, 2, None)
+    models.FAKE_BATCH_RESULTS.append({"a": reply, "b": InfrastructureError("down")})
+    got = models.batch_results(fake, first)
+    assert got["a"] == reply and isinstance(got["b"], InfrastructureError)
+    assert models.batch_results(fake, second) == {}
+
+
+def test_fake_batch_pending(fake_batches):
+    fake = {"provider": "fake"}
+    batch_id = models.submit_batch(fake, [])
+    assert models.batch_done(fake, batch_id) is True
+    models.FAKE_BATCH_PENDING.add(batch_id)
+    assert models.batch_done(fake, batch_id) is False

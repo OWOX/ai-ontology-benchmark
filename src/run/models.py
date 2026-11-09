@@ -1,6 +1,7 @@
 # Spec: docs/specs/models.md
 """Sends one prompt to one AI model and returns a Reply, or one state and its questions to one
-decision model and returns a DecisionReply. Reads the provider's API key from its env var
+decision model and returns a DecisionReply. Also builds the request body of an attempt and, for batch mode,
+submits requests to a provider's Message Batches API, polls it, and reads its results. Reads the provider's API key from its env var
 (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, OPENROUTER_API_KEY, TYPESAFE_API_KEY, or
 CLOUDFLARE_API_TOKEN, plus CLOUDFLARE_ACCOUNT_ID). Writes nothing.
 This is the only file that talks to an AI model API.
@@ -436,6 +437,30 @@ def call_decision(model: dict, state: str, questions: dict) -> DecisionReply:
     return functions[provider](model, state, questions, key)
 
 
+_REQUEST_BUILDERS = {"anthropic": _anthropic_request, "openai": _openai_request, "google": _google_request,
+                     "openrouter": _openrouter_request}
+
+
+def build_request(model: dict, prompt: str, max_output_tokens: int, reasoning_effort: str | None = None) -> dict:
+    """The request body for one attempt, in the provider's own shape. The reasoning effort goes in only for
+    a system-2 model. A direct call and a batch line both send this body, so they send the same request."""
+    provider = model["provider"]
+    if provider in DECISION_PROVIDERS:
+        raise ValueError(f"provider {provider} is a decision-model provider: it has no request body")
+    effort = reasoning_effort if model.get("kind") == "system-2" else None
+    if provider == "fake":
+        return {"prompt": prompt, "max_output_tokens": max_output_tokens, "effort": effort}
+    return _REQUEST_BUILDERS[provider](model, prompt, max_output_tokens, effort)
+
+
+def _api_key(provider: str) -> str:
+    variable = KEY_VARIABLES[provider]
+    key = (os.environ.get(variable) or "").strip()
+    if not key:
+        raise ValueError(f"missing API key: set the env var {variable}")
+    return key
+
+
 def call_model(model: dict, prompt: str, max_output_tokens: int, reasoning_effort: str | None = None) -> Reply:
     """Send the prompt to the model's provider and return the reply in the common shape. The reasoning
     effort goes to the provider's own parameter, only for a system-2 model."""
@@ -444,10 +469,201 @@ def call_model(model: dict, prompt: str, max_output_tokens: int, reasoning_effor
         raise ValueError(f"provider {provider} is a decision-model provider: use call_decision")
     if provider == "fake":
         return _fake()
-    variable = KEY_VARIABLES[provider]
-    key = (os.environ.get(variable) or "").strip()
-    if not key:
-        raise ValueError(f"missing API key: set the env var {variable}")
+    key = _api_key(provider)
     functions = {"anthropic": _anthropic, "openai": _openai, "google": _google, "openrouter": _openrouter}
     effort = reasoning_effort if model.get("kind") == "system-2" else None
     return functions[provider](model, prompt, max_output_tokens, key, effort)
+
+
+# ---- batch mode: the providers' Message Batches APIs, at half price. The request bodies come from
+# build_request(), the same as a direct call, and the replies go through the same parsers. Only the
+# transport differs. Results are matched by custom_id and never by position.
+
+# Providers that have a batch API. OpenRouter has none, and the decision providers have none.
+BATCH_PROVIDERS = ("anthropic", "openai", "google", "fake")
+# Tests fill these. Each batch_results() call pops the first item of FAKE_BATCH_RESULTS, a dict that
+# maps a custom_id to a Reply or to an InfrastructureError or RequestError instance. FAKE_BATCH_SUBMITS
+# records (batch_id, requests) for each submit_batch(), and a batch id in FAKE_BATCH_PENDING isn't done.
+FAKE_BATCH_RESULTS: list = []
+FAKE_BATCH_SUBMITS: list = []
+FAKE_BATCH_PENDING: set = set()
+
+# Anthropic batch error types that mean the request itself was rejected, as an HTTP 4xx would be.
+ANTHROPIC_BATCH_REQUEST_ERRORS = ("invalid_request_error", "authentication_error", "billing_error",
+                                  "permission_error", "not_found_error")
+OPENAI_BATCH_DONE = ("completed", "failed", "expired", "cancelled")
+GOOGLE_BATCH_DONE = ("JOB_STATE_SUCCEEDED", "JOB_STATE_PARTIALLY_SUCCEEDED", "JOB_STATE_FAILED",
+                     "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED")
+
+
+def _check_batch_provider(model: dict) -> str:
+    provider = model["provider"]
+    if provider not in BATCH_PROVIDERS:
+        raise ValueError(f"provider {provider} has no batch API")
+    return provider
+
+
+def _batch_sdk_call(provider: str, function, *args, **kwargs):
+    """Call one SDK method of a batch API and map its errors as a direct call maps them: a connection
+    error, HTTP 408, 409, 429, or 5xx is an InfrastructureError, any other HTTP error a RequestError."""
+    import httpx
+    import httpx2
+
+    if provider == "anthropic":
+        import anthropic
+        connection, status = (anthropic.APIConnectionError, httpx2.TransportError), anthropic.APIStatusError
+    elif provider == "openai":
+        import openai
+        connection, status = (openai.APIConnectionError,), openai.APIStatusError
+    else:
+        from google.genai import errors
+        connection, status = (httpx.TransportError,), errors.APIError
+    try:
+        return function(*args, **kwargs)
+    except connection as error:
+        raise InfrastructureError(f"{provider}: {error}") from error
+    except status as error:
+        code = getattr(error, "status_code", None)
+        if code is None:
+            code = getattr(error, "code", 0)
+        if code in (408, 409, 429) or code >= 500:
+            raise InfrastructureError(f"{provider}: {error}") from error
+        raise _request_error(provider, error) from error
+
+
+def _batch_client(provider: str, key: str):
+    return {"anthropic": _anthropic_client, "openai": _openai_client, "google": _google_client}[provider](key)
+
+
+def _jsonl(lines: list[dict]) -> bytes:
+    import json
+
+    return "".join(json.dumps(line) + "\n" for line in lines).encode()
+
+
+def submit_batch(model: dict, requests: list[tuple[str, dict]]) -> str:
+    """Send the requests, (custom_id, build_request() body) pairs, as one batch and return its id."""
+    provider = _check_batch_provider(model)
+    if provider == "fake":
+        batch_id = f"fake-batch-{len(FAKE_BATCH_SUBMITS) + 1}"
+        FAKE_BATCH_SUBMITS.append((batch_id, list(requests)))
+        return batch_id
+    client = _batch_client(provider, _api_key(provider))
+    if provider == "anthropic":
+        batch = _batch_sdk_call(provider, client.messages.batches.create,
+                                requests=[{"custom_id": custom_id, "params": body} for custom_id, body in requests])
+        return batch.id
+    if provider == "openai":
+        data = _jsonl([{"custom_id": custom_id, "method": "POST", "url": "/v1/chat/completions", "body": body}
+                       for custom_id, body in requests])
+        uploaded = _batch_sdk_call(provider, client.files.create, file=("batch.jsonl", data), purpose="batch")
+        batch = _batch_sdk_call(provider, client.batches.create, input_file_id=uploaded.id,
+                                endpoint="/v1/chat/completions", completion_window="24h")
+        return batch.id
+    inlined = [{"contents": body["contents"], "config": body["config"], "metadata": {"key": custom_id}}
+               for custom_id, body in requests]
+    job = _batch_sdk_call(provider, client.batches.create, model=model["api_model_id"], src=inlined)
+    return job.name
+
+
+def batch_done(model: dict, batch_id: str) -> bool:
+    """True when the provider has finished with the batch, whether or not every request succeeded."""
+    provider = _check_batch_provider(model)
+    if provider == "fake":
+        return batch_id not in FAKE_BATCH_PENDING
+    client = _batch_client(provider, _api_key(provider))
+    if provider == "anthropic":
+        return _batch_sdk_call(provider, client.messages.batches.retrieve, batch_id).processing_status == "ended"
+    if provider == "openai":
+        return _batch_sdk_call(provider, client.batches.retrieve, batch_id).status in OPENAI_BATCH_DONE
+    state = _batch_sdk_call(provider, client.batches.get, name=batch_id).state
+    return getattr(state, "value", state) in GOOGLE_BATCH_DONE
+
+
+def _anthropic_batch_results(client, batch_id: str) -> dict:
+    results = {}
+    for item in _batch_sdk_call("anthropic", lambda: list(client.messages.batches.results(batch_id))):
+        result = item.result
+        if result.type == "succeeded":
+            results[item.custom_id] = _anthropic_reply(result.message, None)
+        elif result.type == "errored":
+            detail = result.error.error
+            message = f"anthropic: {detail.type}: {' '.join(str(detail.message).split())}"
+            results[item.custom_id] = (RequestError(message) if detail.type in ANTHROPIC_BATCH_REQUEST_ERRORS
+                                       else InfrastructureError(message))
+        else:  # expired or canceled
+            results[item.custom_id] = InfrastructureError(f"anthropic: the batch request {result.type}")
+    return results
+
+
+def _openai_batch_line(line: dict):
+    """The Reply or error for one line of an OpenAI batch output or error file."""
+    import openai.types.chat
+
+    response = line.get("response")
+    error = line.get("error")
+    status = response.get("status_code") if isinstance(response, dict) else None
+    body = response.get("body") if isinstance(response, dict) else None
+    if status == 200 and isinstance(body, dict):
+        return _chat_reply("openai", openai.types.chat.ChatCompletion.model_validate(body), None)
+    detail = body.get("error") if isinstance(body, dict) and isinstance(body.get("error"), dict) else error
+    detail = detail if isinstance(detail, dict) else {}
+    message = f"openai: {status or detail.get('code') or 'error'}: " + " ".join(str(detail.get("message")).split())
+    if detail.get("code") == "content_filter":
+        return Reply("", "refused", "", 0, 0, None)
+    if status is None or status in (408, 409, 429) or status >= 500:  # no status: the batch itself failed it
+        return InfrastructureError(message)
+    return RequestError(message)
+
+
+def _openai_batch_results(client, batch_id: str) -> dict:
+    import json
+
+    batch = _batch_sdk_call("openai", client.batches.retrieve, batch_id)
+    results = {}
+    for file_id in (batch.output_file_id, batch.error_file_id):
+        if not file_id:
+            continue
+        content = _batch_sdk_call("openai", client.files.content, file_id).text
+        for text in content.splitlines():
+            if text.strip():
+                line = json.loads(text)
+                results[line["custom_id"]] = _openai_batch_line(line)
+    if not results and batch.status == "failed":  # the file was rejected as a whole
+        errors = getattr(getattr(batch, "errors", None), "data", None) or []
+        raise RequestError("openai: the batch failed: " + "; ".join(
+            " ".join(str(item.message).split()) for item in errors) if errors else "openai: the batch failed")
+    return results
+
+
+def _google_batch_results(client, batch_id: str) -> dict:
+    job = _batch_sdk_call("google", client.batches.get, name=batch_id)
+    responses = (job.dest.inlined_responses if job.dest else None) or []
+    results = {}
+    for item in responses:
+        key = (item.metadata or {}).get("key")
+        if not key:
+            raise InfrastructureError("google: a batch result has no key, so it can't be matched to its request")
+        if item.response is not None:
+            results[key] = _google_reply(item.response, None)
+            continue
+        error = item.error
+        code = error.code if error and isinstance(error.code, int) else None
+        message = f"google: {code or 'error'}: " + " ".join(str((error.message if error else None) or "").split())
+        if code is not None and 400 <= code < 500 and code not in (408, 429):
+            results[key] = RequestError(message)
+        else:
+            results[key] = InfrastructureError(message)
+    return results
+
+
+def batch_results(model: dict, batch_id: str) -> dict:
+    """The results of a finished batch, keyed by custom_id: a Reply, or an InfrastructureError or RequestError
+    instance for a request that failed. A custom_id the provider left out is left out here too, and the
+    caller retries it."""
+    provider = _check_batch_provider(model)
+    if provider == "fake":
+        return FAKE_BATCH_RESULTS.pop(0) if FAKE_BATCH_RESULTS else {}
+    client = _batch_client(provider, _api_key(provider))
+    return {"anthropic": _anthropic_batch_results, "openai": _openai_batch_results,
+            "google": _google_batch_results}[provider](client, batch_id)
