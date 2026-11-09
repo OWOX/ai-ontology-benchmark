@@ -1920,3 +1920,102 @@ def test_a_signal_during_a_failing_submit_still_prints_the_console_message(bexp,
     with pytest.raises(SystemExit):
         go("--limit", "3")
     assert "check its console before running again" in capsys.readouterr().err
+
+
+# Whole-batch failures, the state read under the lock, the outstanding push, and a batch that can't be checked.
+
+def test_a_batch_refused_as_too_large_is_closed_without_a_retry_and_resent_in_halves(bexp, monkeypatch, capsys):
+    from src.run import batch as batch_module
+    monkeypatch.setitem(batch_module.LIMITS, "fake", (4, 15_000_000))
+    refused = []
+
+    def results(model, batch_id):
+        (requests,) = [r for b, r in models.FAKE_BATCH_SUBMITS if b == batch_id]
+        if len(requests) > 1:  # this provider takes one request at a time
+            refused.append(len(requests))
+            raise models.BatchTooLargeError("openai: the batch failed: full")
+        return answer(batch_id)
+
+    monkeypatch.setattr(batch_module, "batch_results", results)
+    assert go("--limit", "4") == 0
+    assert refused == [4, 2]
+    assert [len(r) for _, r in models.FAKE_BATCH_SUBMITS] == [4, 2, 1, 1, 1, 1]
+    rows = records(bexp, "A")
+    assert len(rows) == 4 and all(r["outcome"] != "infrastructure_failure" for r in rows)
+    assert {cid.rsplit("_", 1)[1] for cid in submitted_ids()} == {"r0"}  # no retry index was used
+    err = capsys.readouterr().err
+    assert "sending chunks of up to 2 requests" in err and "sending chunks of up to 1 requests" in err
+
+
+def test_a_batch_of_one_request_that_is_still_too_large_stops_the_run(bexp, monkeypatch, capsys):
+    from src.run import batch as batch_module
+
+    def full(model, batch_id):
+        raise models.BatchTooLargeError("openai: the batch failed: queue full")
+
+    monkeypatch.setattr(batch_module, "batch_results", full)
+    assert go("--limit", "1") == 1
+    assert "queue full" in capsys.readouterr().err.splitlines()[-1]
+    assert not (bexp / "results/exp/raw/A.jsonl").exists()  # no infrastructure_failure record
+    assert [e["event"] for e in state_events(bexp)] == ["submitted", "collected"]
+    assert len(models.FAKE_BATCH_SUBMITS) == 1
+
+
+def test_two_processes_on_one_model_never_submit_the_same_attempts(bexp, monkeypatch):
+    from src.run import batch as batch_module
+    real_lock, nested = batch_module.experiment_lock, []
+
+    def interleaved(context):
+        if not nested:  # the other process gets to the lock first and submits
+            nested.append(True)
+            (state,) = [s for s in context["work"].values() if s.name == "A"]
+            other = batch_module.ModelBatches(state.model, list(state.attempts), state.path)
+            batch_module.step(other, context)
+        return real_lock(context)
+
+    monkeypatch.setattr(batch_module, "experiment_lock", interleaved)
+    assert go("--limit", "3") == 0
+    assert len(models.FAKE_BATCH_SUBMITS) == 1
+    assert len(submitted_ids()) == len(set(submitted_ids())) == 3
+    assert len(records(bexp, "A")) == 3
+
+
+def test_a_failed_push_after_submit_is_tried_again_at_every_poll(bexp, monkeypatch, tmp_path_factory, capsys):
+    from src.run import batch as batch_module
+    from src.run import branch as branch_module
+    with_remote(bexp, tmp_path_factory)
+    models.FAKE_BATCH_PENDING.add("fake-batch-1")
+    real_push, calls, polls = branch_module.ResultsBranch.push, [], []
+
+    def flaky(self):
+        calls.append(1)
+        return "network down" if len(calls) < 3 else real_push(self)
+
+    def poll(seconds):
+        polls.append(len(calls))
+        if len(polls) == 3:
+            models.FAKE_BATCH_PENDING.clear()
+
+    monkeypatch.setattr(branch_module.ResultsBranch, "push", flaky)
+    monkeypatch.setattr(batch_module.time, "sleep", poll)
+    assert go("--limit", "3") == 0
+    assert polls == [2, 3, 3]  # one push at submit, one per poll until it worked, none after
+    assert capsys.readouterr().err.count("warning: push of results/exp failed: network down") == 2
+    assert len(calls) == 3 + 1  # three tries during the batch, then the push at the end of the run
+
+
+def test_a_batch_that_cannot_be_checked_is_closed_and_the_run_stops(bexp, monkeypatch, capsys):
+    from src.run import batch as batch_module
+    models.FAKE_BATCH_PENDING.add("fake-batch-1")
+
+    def gone(model, batch_id):
+        raise models.RequestError("openai: HTTP 404: no such batch")
+
+    monkeypatch.setattr(batch_module, "batch_done", gone)
+    assert go("--limit", "3") == 1
+    err = capsys.readouterr().err.splitlines()[-1]
+    assert "can't be checked" in err and "check the provider console before running again" in err
+    events = state_events(bexp)
+    assert [e["event"] for e in events] == ["submitted", "collected"]
+    assert set(events[1]["request_errors"]) == set(submitted_ids())
+    assert "batch fake-batch-1 collected" in git(bexp, "log", "--format=%s", BRANCH)
