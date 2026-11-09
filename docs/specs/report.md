@@ -8,7 +8,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 
 ## Inputs
 
-`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0, paired_rows=(), detection_rows=(), corruption_rows=(), reason_rows=())`. [evaluate](evaluate.md) calls it with what `compute()`, `paired_tests()`, `detection_rows()`, `corruption_rows()`, and `reason_rows()` returned and the count of torn raw lines it skipped.
+`write_report(path, experiment_id, experiment_config, release_dir, prices, attempt_rows, metric_rows, summary_rows, torn_lines=0, paired_rows=(), detection_rows=(), corruption_rows=(), reason_rows=())`. [evaluate](evaluate.md) calls it with what `compute()`, `paired_tests()`, `detection_rows()`, `corruption_rows()`, and `reason_rows()` returned and the count of torn raw lines it skipped. Besides those arguments it reads `release_dir/manifest.json` and `release_dir/inputs.jsonl`, the latter to count the planned attempts of an [unfinished experiment](../definitions.md#releases-and-experiments).
 
 ## Outputs
 

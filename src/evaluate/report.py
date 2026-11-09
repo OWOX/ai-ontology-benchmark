@@ -1,6 +1,6 @@
 # Spec: docs/specs/report.md
 """Writes the experiment report as one Markdown file. Reads the release manifest (for the
-assessment hash) and takes everything else from the caller. Writes the file at `path`. It
+assessment hash) and the release's inputs.jsonl (for the unfinished-experiment counts), and takes everything else from the caller. Writes the file at `path`. It
 is not part of the assessment, so changing its layout never needs a release.
 """
 
