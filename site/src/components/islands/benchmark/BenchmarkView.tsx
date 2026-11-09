@@ -193,7 +193,6 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
           <MetricChart
             idPrefix="metric"
             heading="Metrics by AI model"
-            intro="Compares the selected AI models on each metric, over the puzzle and models chosen above."
             by="AI model"
             firstNumber={1}
             tabs={MODEL_TABS}
@@ -214,7 +213,6 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
             <MetricChart
               idPrefix="setup-metric"
               heading="Metrics by setup"
-              intro="Compares no model, descriptive model, and prescriptive model: how much of the puzzle's rules the prompt carries. Each bar averages the selected AI models that have a value under every setup."
               by="setup"
               firstNumber={4}
               tabs={SETUP_TABS}

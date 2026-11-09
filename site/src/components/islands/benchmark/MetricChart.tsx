@@ -13,9 +13,8 @@ export interface MetricDefinition { key: string; name: string; definition: strin
 interface Props {
   /** Prefix of the element ids (`<prefix>-<tab id>`, `<prefix>-panel`, `<prefix>-popover`), so two charts on a page never share one. */
   idPrefix: string
-  /** The section's subtitle and the plain sentence under it. */
+  /** The section's subtitle. */
   heading: string
-  intro: string
   /** What the bars compare, for the chart title: "AI model" or "setup". */
   by: string
   /** The number of the first tab's chart; the next tabs follow. */
@@ -38,7 +37,7 @@ interface Props {
 }
 
 /** A chart section: a subtitle, the metric tabs hanging off a framed panel, and in the panel a figure: the chart, then its numbered caption ending in a "(?)" popover. Each tab keeps its own "?" for the metric's definition. */
-export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, note, filterText, children }: Props) {
+export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, note, filterText, children }: Props) {
   const headingId = useId()
   const root = useRef<HTMLElement>(null)
   // The metric whose definition popover is open (one at a time).
@@ -223,7 +222,6 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
   return (
     <section className="chart-section" aria-labelledby={headingId} ref={root}>
       <h2 className="subtitle" id={headingId}>{heading}</h2>
-      <p className="lead">{intro}</p>
       <div className="metrics">
         <div className="tabs-row" ref={row}>
           <Choice

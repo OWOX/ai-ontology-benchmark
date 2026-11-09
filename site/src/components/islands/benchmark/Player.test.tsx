@@ -38,7 +38,7 @@ describe('Player', () => {
     stub({ '3x3': [attempt({ release: '3.0.0', prompt: '3.0.0/descriptive/i1' })] }, { '3.0.0/descriptive/i1': 'text' })
     render(
       <>
-        <MetricChart idPrefix="m" heading="h" intro="i" by="AI model" firstNumber={1} tabs={[{ id: 'precision', label: 'Precision', title: 'Balanced precision', higherIsBetter: true, explanation: 'e' }]}
+        <MetricChart idPrefix="m" heading="h" by="AI model" firstNumber={1} tabs={[{ id: 'precision', label: 'Precision', title: 'Balanced precision', higherIsBetter: true, explanation: 'e' }]}
           metric="precision" onMetric={() => {}} definitions={[]} layoutKey="x" bars={[{ model: 'a', rate: { value: 0.5, n: 1 } }]} filterText="f"><div /></MetricChart>
         <Player puzzle="3x3" models={['m1']} attemptsUrl="/a.json" legalMoves={LEGAL} />
       </>,
