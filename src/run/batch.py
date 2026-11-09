@@ -8,16 +8,22 @@ carries build_request(), the body a direct call sends, and results are matched b
 
 import contextlib
 import dataclasses
+import fcntl
+import hashlib
 import json
+import os
 import re
 import signal
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from src.puzzles.registry import get_engine
-from src.run.budget import TOLERANCE, BudgetError, is_batched, spent_by_model, worst_case_request_cost
+from src.run.branch import BranchError
+from src.run.budget import (TOLERANCE, BudgetError, batch_state_path, held_by_model, is_batched, open_batches,
+                            read_state, spent_by_model, worst_case_request_cost)
 from src.run.models import InfrastructureError, RequestError, batch_done, batch_results, build_request, submit_batch
 from src.run.raw import parse_raw_text
 from src.run.run import RunError, append_record, make_record, read_done, safe_commit
@@ -37,19 +43,6 @@ def custom_id(input_id: str, setup: str, number: int, retry: int) -> str:
     if not CUSTOM_ID.match(value):
         raise ValueError(f"custom id {value!r} has characters or a length a batch API refuses")
     return value
-
-
-def read_state(path: Path) -> list[dict]:
-    """The events of one state file, in order. A torn line is skipped, as in a raw file."""
-    if not path.is_file():
-        return []
-    return parse_raw_text(path.read_text(encoding="utf-8"))[0]
-
-
-def open_batches(events: list[dict]) -> list[dict]:
-    """The `submitted` events with no `collected` event, in submission order."""
-    collected = {e["batch_id"] for e in events if e.get("event") == "collected"}
-    return [e for e in events if e.get("event") == "submitted" and e["batch_id"] not in collected]
 
 
 def submission_counts(events: list[dict]) -> dict[tuple, int]:
@@ -75,10 +68,6 @@ class ModelBatches:
         self.name = model["name"]
         self.failures = 0  # consecutive transient errors talking to the provider
         self.blocked: BudgetError | None = None
-
-
-def batch_state_path(results: Path, name: str) -> Path:
-    return results / "batches" / f"{name}.jsonl"
 
 
 def play_batched(*, config, manifest, results, prices, versions, pending, outcomes, branch, progress,
@@ -124,20 +113,6 @@ def worst(config: dict, price: dict, prompt: str) -> float:
     return worst_case_request_cost(prompt, config["max_output_tokens"], price, True)
 
 
-def open_worst(context: dict) -> dict[str, float]:
-    """The worst-case cost of the open batches of every model of the experiment, per model."""
-    config = context["config"]
-    held = {}
-    for model in config["models"]:
-        total = 0.0
-        for event in open_batches(read_state(batch_state_path(context["results"], model["name"]))):
-            for item in event["requests"]:
-                total += worst(config, context["prices"][model["name"]],
-                               context["prompt_for"](item["input_id"], item["setup"]))
-        held[model["name"]] = total
-    return held
-
-
 def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
@@ -168,22 +143,37 @@ def step(state: ModelBatches, context: dict) -> tuple[bool, bool]:
         remaining = remaining_attempts(state, context, events)
         if not remaining:
             return True, False
-        chunk = size_chunk(state, context, remaining, events)
-        if not chunk:
-            others = [m["name"] for m in config["models"] if m["name"] not in context["work"]
-                      and open_batches(read_state(batch_state_path(context["results"], m["name"])))]
-            if any(open_batches(read_state(batch_state_path(context["results"], n)))
-                   for n in context["work"] if n != state.name):
-                return False, False  # a batch this process collects is open: wait, then look again
-            state.blocked = budget_stop(state, context, remaining, others)
-            return False, True
-        if not submit(state, context, chunk):
-            return False, False
+        with experiment_lock(context):  # from the budget reads until the `submitted` line is appended
+            chunk = size_chunk(state, context, remaining, events)
+            if not chunk:
+                others = [m["name"] for m in config["models"] if m["name"] not in context["work"]
+                          and open_batches(read_state(batch_state_path(context["results"], m["name"])))]
+                if any(open_batches(read_state(batch_state_path(context["results"], n)))
+                       for n in context["work"] if n != state.name):
+                    return False, False  # a batch this process collects is open: wait, then look again
+                state.blocked = budget_stop(state, context, remaining, others)
+                return False, True
+            submit(state, context, chunk)
         state.failures = 0
         return False, True
     except InfrastructureError as error:
         transient(state, config, error, "batch call")
         return False, False
+
+
+@contextlib.contextmanager
+def experiment_lock(context: dict):
+    """An exclusive lock on the whole experiment, shared by every process that runs it. It sits in the git
+    common dir with the branch lock; a run without a branch keeps it in the system temporary folder."""
+    branch = context["branch"]
+    if branch:
+        path = branch.batch_lock_path
+    else:
+        key = hashlib.sha256(str(Path(context["results"]).resolve()).encode()).hexdigest()[:16]
+        path = Path(tempfile.gettempdir()) / f"results-{context['config']['experiment_id']}-{key}.batch.lock"
+    with open(path, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
 
 
 def done_keys(context: dict, state: ModelBatches) -> set:
@@ -232,7 +222,7 @@ def size_chunk(state: ModelBatches, context: dict, remaining: list[tuple], event
     config, name = context["config"], state.name
     max_requests, max_bytes = LIMITS[state.model["provider"]]
     spent = spent_by_model(config, context["prices"], context["results"] / "raw")
-    held = open_worst(context)
+    held = held_by_model(config, context["prices"], context["results"], context["prompt_for"])
     budget = config["budget"]
     model_total = spent[name] + held[name]
     experiment_total = sum(spent.values()) + sum(held.values())
@@ -299,30 +289,42 @@ def deferred_signals():
             signal.raise_signal(caught[0])
 
 
-def submit(state: ModelBatches, context: dict, chunk: list[tuple]) -> bool:
+def submit(state: ModelBatches, context: dict, chunk: list[tuple]) -> None:
     """Send the chunk as one batch, then write and commit the state file before anything waits, and push.
     A signal that arrives from the send to the commit waits until the commit is done, so the batch is never
-    paid for without a record of it. A failed send stops the run: the provider may have made the batch."""
+    paid for without a record of it. A failed send stops the run: the provider may have made the batch. So does
+    a failed commit, because a push without the state file lets another machine submit the same requests."""
     lines = [(custom_id(row["input_id"], setup, number, retry), body) for row, setup, number, retry, body in chunk]
     experiment = context["config"]["experiment_id"]
     with deferred_signals():
         try:
             batch_id = submit_batch(state.model, lines)
         except InfrastructureError as error:
-            raise RequestError(
-                f"{state.name}: the batch submit failed after sending ({' '.join(str(error).split())[:200]}); "
-                "the provider may have created the batch, so check its console before running again; "
-                f"a new run resubmits these {len(chunk)} requests") from error
+            message = (f"{state.name}: the batch submit failed after sending ({' '.join(str(error).split())[:200]}); "
+                       "the provider may have created the batch, so check its console before running again; "
+                       f"a new run resubmits these {len(chunk)} requests")
+            log(message)  # a signal held until the block ends would otherwise hide it
+            raise RequestError(message) from error
         state.path.parent.mkdir(parents=True, exist_ok=True)
+        worst_usd = sum(worst(context["config"], context["prices"][state.name], context["prompt_for"](row["input_id"], setup))
+                        for row, setup, _, _, _ in chunk)
         append_record(state.path, {
             "event": "submitted", "batch_id": batch_id, "provider": state.model["provider"], "created_at": now(),
+            "worst_usd": worst_usd,
             "requests": [{"custom_id": cid, "input_id": row["input_id"], "setup": setup,
                           "attempt_number": number, "retry": retry}
                          for cid, (row, setup, number, retry, _) in zip((c for c, _ in lines), chunk)]})
         log(f"batch {state.name} {batch_id}: submitted {len(chunk)} requests")
-        safe_commit(context["branch"], f"Results: experiment {experiment}, {state.name} batch {batch_id} submitted")
+        if context["branch"]:
+            try:
+                context["branch"].commit(f"Results: experiment {experiment}, {state.name} batch {batch_id} submitted")
+            except (BranchError, OSError) as error:
+                message = (f"{state.name}: batch {batch_id} is open at the provider, but committing its state file "
+                           f"failed: {error}; stopping, because another machine could submit the same requests; "
+                           f"fix the branch, then run again to collect it")
+                log(message)
+                raise RunError(message) from error
     push_branch(context["branch"], experiment)  # a fresh clone sees the open batch even if this machine dies
-    return True
 
 
 def push_branch(branch, experiment: str) -> None:
