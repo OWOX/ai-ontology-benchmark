@@ -936,7 +936,7 @@ def test_openai_failed_batch_is_a_request_error(monkeypatch):
     client = batch_client(monkeypatch, "openai")
     client.batches.retrieve.return_value = NS(status="failed", output_file_id=None, error_file_id=None,
                                               errors=NS(data=[NS(message="bad file")]))
-    with pytest.raises(models.RequestError, match="bad file"):
+    with pytest.raises(models.BatchRejectedError, match="bad file"):
         models.batch_results(batch_entry("openai"), "b")
 
 
@@ -946,7 +946,7 @@ def test_openai_failed_batch_with_token_limit_is_too_large(monkeypatch):
                                               errors=NS(data=[NS(code="token_limit_exceeded", message="full")]))
     with pytest.raises(models.BatchTooLargeError, match="full"):
         models.batch_results(batch_entry("openai"), "b")
-    assert issubclass(models.BatchTooLargeError, models.RequestError)
+    assert issubclass(models.BatchTooLargeError, models.BatchRejectedError)
 
 
 def test_openai_failed_batch_error_codes_name_the_message(monkeypatch):
@@ -1013,7 +1013,7 @@ def test_google_job_that_failed_with_a_permanent_code_is_a_request_error(monkeyp
     for code in (3, 5, 7, 9, 16, 403):
         client = batch_client(monkeypatch, "google")
         client.batches.get.return_value = NS(state=state, dest=None, error=NS(code=code, message="no   access"))
-        with pytest.raises(models.RequestError, match=f"{code}: no access"):
+        with pytest.raises(models.BatchRejectedError, match=f"{code}: no access"):
             models.batch_results(batch_entry("google"), "b")
 
 
