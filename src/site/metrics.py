@@ -1,0 +1,60 @@
+# Spec: docs/specs/site.md
+"""The four headline metrics of the public results page, one row per puzzle and AI model, pooled over
+every setup, depth, and experiment. Built on the assessment helpers in src/evaluate/metrics.py."""
+
+from collections import defaultdict
+
+from src.evaluate.metrics import NA, answer_class, is_diagnosis, mean, mean_of_two, share
+
+
+def value(x: object, n: int) -> dict:
+    return {"value": None if x == NA or x is None else x, "n": n}
+
+
+def is_precise(row: dict) -> bool:
+    return row["answer_class"] in ("tp", "tn")
+
+
+def precision(rows: list[dict]) -> tuple[object, int]:
+    """Balanced precision over classified rows, and how many there were."""
+    classified = [r for r in rows if answer_class(r) is not None]
+    both = (share([r for r in classified if r["validity"] == label], is_precise) for label in ("valid", "invalid"))
+    return mean_of_two(*both), len(classified)
+
+
+def hallucination(rows: list[dict]) -> dict:
+    gave = [r for r in rows if r["parsed_moves"]]
+    if not gave or all(r["decision"] for r in rows):
+        return value(None, 0)
+    return value(share(gave, lambda r: r["impossible_move"]), len(gave))
+
+
+def critical(rows: list[dict]) -> dict:
+    reasoned = [r for r in rows if r["reasons"]]
+    valid = [r for r in reasoned if r["validity"] == "valid"]
+    invalid = [r for r in reasoned if r["validity"] == "invalid"]
+    diagnosis, false_mismatch = share(invalid, is_diagnosis), share(valid, lambda r: r["mismatch"])
+    return value(mean_of_two(diagnosis, false_mismatch, True), len(reasoned))
+
+
+def cost(everything: list[dict], rows: list[dict], balanced: object) -> dict:
+    coverage = share(rows, lambda r: answer_class(r) is not None)
+    if NA in (balanced, coverage) or balanced * coverage == 0:
+        return value(None, len(everything))
+    return value(mean([r["cost"] for r in everything]) / (balanced * coverage), len(everything))
+
+
+def metric_rows(attempt_rows: list[dict], providers: dict[str, str]) -> list[dict]:
+    """One row per puzzle and AI model from re-validated attempt rows (`make_attempt_rows`)."""
+    groups = defaultdict(list)
+    for r in attempt_rows:
+        groups[(r["puzzle"], r["model"])].append(r)
+    result = []
+    for (puzzle, model) in sorted(groups):
+        everything = groups[(puzzle, model)]
+        rows = [r for r in everything if r["outcome"] != "infrastructure_failure"]
+        balanced, classified = precision(rows)
+        result.append({"puzzle": puzzle, "model": model, "provider": providers.get(model, "unknown"),
+                       "precision": value(balanced, classified), "hallucination": hallucination(rows),
+                       "critical": critical(rows), "cost": cost(everything, rows, balanced)})
+    return result
