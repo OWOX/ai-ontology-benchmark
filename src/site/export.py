@@ -19,7 +19,7 @@ from src.release.release import parse_version
 from src.run.models import DECISION_PROVIDERS
 from src.run.prompts import SETUPS, build_prompt, prompt_versions
 from src.run.raw import parse_raw_text
-from src.site.metrics import metric_rows
+from src.site.metrics import metric_rows, setup_metric_rows
 from ui.gitdata import FETCH_TIMEOUT_S, GitData
 
 METRIC_NAMES = {
@@ -264,6 +264,7 @@ def export(gd: GitData, ref: str, remote: str = "origin") -> tuple[dict, int]:
             providers.setdefault(m["name"], m["provider"])
     return {"page": page, "legalMoves": legal_moves, "definitions": definitions,
             "metrics": metric_rows(all_rows, providers),
+            "setupMetrics": setup_metric_rows(all_rows),
             "prompts": build_prompts(gd, ref, experiments, cache),
             "experiments": experiments}, skipped
 

@@ -8,7 +8,7 @@ import pytest
 
 from src.puzzles.registry import get_engine
 from src.evaluate.metrics import answer_class
-from src.site.metrics import metric_rows
+from src.site.metrics import metric_rows, setup_metric_rows
 from src.run.prompts import prompt_versions
 from src.validator import offered_reasons
 from src.site import export as site
@@ -283,6 +283,57 @@ def test_decision_model_hallucination_is_null(repo):
     _, _, metrics = exported(repo)
     assert metrics[("2x2", "m2")]["hallucination"] == {"value": None, "n": 0}
     assert metrics[("2x2", "m1")]["hallucination"] == {"value": 0.0, "n": 1}
+
+
+def test_setup_metrics_group_by_puzzle_model_and_setup_in_prompt_order(repo):
+    write_experiment(repo, "a-exp", [
+        raw("m1", "v1", 1, solution("v1"), setup="prescriptive"),   # tp
+        raw("m1", "v1", 1, "R", setup="no_model"),                  # fp: legal move, unsolved
+        raw("m1", "i1", 1, "MISMATCH", setup="no_model"),           # tn
+        raw("m1", "v1", 1, solution("v1"), setup="descriptive"),    # tp
+        raw("m2", "v1", 1, solution("v1"), setup="descriptive"),
+    ])
+    data, _, _ = exported(repo)
+    rows = data["setupMetrics"]
+    assert [(r["puzzle"], r["model"], r["setup"]) for r in rows] == [
+        ("2x2", "m1", "no_model"), ("2x2", "m1", "descriptive"), ("2x2", "m1", "prescriptive"),
+        ("2x2", "m2", "descriptive"),
+        ("all", "m1", "no_model"), ("all", "m1", "descriptive"), ("all", "m1", "prescriptive"),
+        ("all", "m2", "descriptive")]
+    by = {(r["puzzle"], r["model"], r["setup"]): r for r in rows}
+    # valid classified: fp -> 0; invalid classified: tn -> 1
+    assert by[("2x2", "m1", "no_model")]["precision"] == {"value": 0.5, "n": 2}
+    assert by[("2x2", "m1", "descriptive")]["precision"] == {"value": None, "n": 1}  # no invalid input answered
+    assert by[("2x2", "m1", "prescriptive")]["hallucination"] == {"value": 0.0, "n": 1}
+    # the existing rows keep their shape
+    assert set(data["metrics"][0]) == {"puzzle", "model", "provider", "attempts", "tokens", "precision",
+                                      "hallucination", "critical"}
+
+
+def test_setup_metrics_all_row_pools_puzzles_and_keeps_na():
+    def row(puzzle, setup, validity, outcome, decision=False, moves=("R",), mismatch=False):
+        return {"puzzle": puzzle, "model": "m", "setup": setup, "validity": validity, "outcome": outcome,
+                "mismatch": mismatch, "parsed_moves": list(moves), "reasons": False,
+                "corruption": "twisted corner" if validity == "invalid" else None, "decision": decision, "impossible_move": False, "input_tokens": 1, "output_tokens": 1,
+                "retry_input_tokens": 0, "retry_output_tokens": 0}
+    rows = [
+        row("2x2", "no_model", "valid", "success"),
+        row("3x3", "no_model", "valid", "failure"),
+        row("3x3", "no_model", "invalid", "success", moves=(), mismatch=True),
+        row("2x2", "descriptive", "valid", "success", decision=True),
+        row("2x2", "descriptive", "valid", "infrastructure_failure", decision=True, moves=()),
+    ]
+    for r in rows:
+        r["answer_class"] = answer_class(r)
+    got = {(r["puzzle"], r["setup"]): r for r in setup_metric_rows(rows)}
+    assert list(got) == [("2x2", "no_model"), ("2x2", "descriptive"), ("3x3", "no_model"),
+                         ("all", "no_model"), ("all", "descriptive")]
+    # pooled: valid 1 of 2, invalid 1 of 1
+    assert got[("all", "no_model")]["precision"] == {"value": 0.75, "n": 3}
+    # a decision-model group has no hallucination rate; the infrastructure failure is left out of every n
+    assert got[("all", "descriptive")]["hallucination"] == {"value": None, "n": 0}
+    assert got[("all", "descriptive")]["precision"] == {"value": None, "n": 1}
+    assert got[("all", "descriptive")]["critical"] == {"value": None, "n": 0}
 
 
 def test_model_without_prices_is_checked_error(repo):
