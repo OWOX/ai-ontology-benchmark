@@ -17,6 +17,7 @@ def config_form(config: dict, release_puzzles: list[str]) -> dict:
             "retry_cap": config["retry_cap"], "max_output_tokens": config["max_output_tokens"],
             "reasoning_effort": config.get("reasoning_effort"),
             "inputs_per_depth": config.get("inputs_per_depth"),
+            "batch": config.get("batch", False),
             "budget": dict(config["budget"])}
 
 

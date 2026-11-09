@@ -469,7 +469,7 @@ def test_branches_and_config_route(server):
         {"id": "loc", "release": "1.0.0", "local": True, "remote": False},
         {"id": "rem", "release": "1.0.0", "local": False, "remote": True}]
     status, form = call(server, "GET", "/api/experiment/rem/config")
-    assert status == 200 and form == dict(FORM, id="rem", reasoning_effort=None, inputs_per_depth=None)
+    assert status == 200 and form == dict(FORM, id="rem", reasoning_effort=None, inputs_per_depth=None, batch=False)
     assert call(server, "GET", "/api/experiment/loc/config")[1]["id"] == "loc"
     # the local branch wins over the remote one
     put_branch(server.root, "both", {"results/both/experiment.toml": dumps_config(dict(CONFIG, attempts=5))}, where="local")
@@ -492,7 +492,7 @@ def test_inputs_route(server):
 def test_experiment_detail_route(server):
     put_branch(server.root, "t1", {"results/t1/experiment.toml": dumps_config(CONFIG)})
     status, data = call(server, "GET", "/api/experiments/t1")
-    assert status == 200 and data["id"] == "t1" and data["config"] == dict(FORM, reasoning_effort=None, inputs_per_depth=None) and data["pushed"] is True
+    assert status == 200 and data["id"] == "t1" and data["config"] == dict(FORM, reasoning_effort=None, inputs_per_depth=None, batch=False) and data["pushed"] is True
     assert call(server, "GET", "/api/experiments/nope")[0] == 404
 
 
