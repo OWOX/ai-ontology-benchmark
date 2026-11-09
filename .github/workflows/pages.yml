@@ -1,5 +1,5 @@
 # Spec: docs/specs/site.md
-# Manual only until the repo goes public. Do not add push or schedule triggers before then.
+# Manual only: dispatch it from the Actions tab to publish.
 name: Pages
 
 on:
