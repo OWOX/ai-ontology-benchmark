@@ -1776,6 +1776,32 @@ def test_a_request_error_before_the_send_abandons_the_submit_itself(bexp, monkey
     assert go("--limit", "3") == 0  # no manual step needed
 
 
+@pytest.mark.parametrize("error", [ValueError("bad json"), json.JSONDecodeError("bad", "x", 0)])
+def test_an_sdk_parse_error_after_a_create_leaves_the_submit_unresolved(bexp, monkeypatch, error):
+    monkeypatch.setattr(models, "_send_batch", lambda model, requests: (_ for _ in ()).throw(error))
+    assert go("--limit", "3") == 1
+    (submitting,) = all_state_events(bexp)
+    assert submitting["event"] == "submitting" and held_now(bexp) == submitting["worst_usd"] > 0
+
+
+def test_submit_batch_raises_a_non_request_error_as_an_infrastructure_error(monkeypatch):
+    monkeypatch.setattr(models, "_send_batch", lambda model, requests: (_ for _ in ()).throw(ValueError("bad json")))
+    with pytest.raises(InfrastructureError, match="the batch may exist"):
+        models.submit_batch({"name": "A", "provider": "fake"}, [])
+    monkeypatch.setattr(models, "_send_batch", lambda model, requests: (_ for _ in ()).throw(models.RequestError("no")))
+    with pytest.raises(models.RequestError):
+        models.submit_batch({"name": "A", "provider": "fake"}, [])
+
+
+def test_a_missing_api_key_stops_the_run_before_any_submitting_line(bexp, monkeypatch, capsys):
+    from src.run import batch as batch_module
+    monkeypatch.setattr(batch_module, "check_batch_ready",
+                        lambda model: (_ for _ in ()).throw(ValueError("missing API key: set the env var K")))
+    assert go("--limit", "3") == 1
+    assert "missing API key" in capsys.readouterr().err
+    assert not (bexp / "results/exp/batches/A.jsonl").exists()
+
+
 def test_an_unresolved_submit_keeps_its_attempts_out_of_any_chunk():
     from src.run.batch import in_flight_keys
     events = [{"event": "submitting", "submit_id": "s1", "requests": [

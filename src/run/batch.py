@@ -25,7 +25,7 @@ from src.puzzles.registry import get_engine
 from src.run.branch import BranchError
 from src.run.budget import (TOLERANCE, BudgetError, batch_state_path, held_by_model, is_batched, open_batches,
                             read_state, spent_by_model, unresolved_submits, worst_case_request_cost)
-from src.run.models import (BatchRejectedError, BatchTooLargeError, InfrastructureError, RequestError, UnreadableReply, batch_done, batch_results, build_request,
+from src.run.models import (BatchRejectedError, check_batch_ready, BatchTooLargeError, InfrastructureError, RequestError, UnreadableReply, batch_done, batch_results, build_request,
                             submit_batch)
 from src.run.raw import parse_raw_text
 from src.run.run import RunError, append_record, make_record, read_done, safe_commit
@@ -365,8 +365,8 @@ def submit(state: ModelBatches, context: dict, chunk: list[tuple]) -> None:
     """Write and commit a `submitting` line, send the chunk as one batch, then write and commit a `submitted`
     line before anything waits, and push. A send that fails, or is interrupted, with no `submitted` line leaves
     the `submitting` line unresolved, and its worst-case cost stays held, because the provider may have made
-    the batch: `run` stops for the model until `--resolve-submit` abandons it. Only an error before the
-    provider could have made a batch (a RequestError or ValueError) abandons it here. A signal that arrives
+    the batch: `run` stops for the model until `--resolve-submit` abandons it. Only a RequestError, the
+    provider's rejection, abandons it here. A signal that arrives
     from the send to the commit waits until the commit is done, so the batch is never paid for without a
     record of it. A failed commit stops the run: before the send it abandons the submit, and after it a push
     without the state file would let another machine submit the same requests."""
@@ -376,6 +376,7 @@ def submit(state: ModelBatches, context: dict, chunk: list[tuple]) -> None:
                     for row, setup, _, _, _ in chunk)
     requests = [{"custom_id": cid, "input_id": row["input_id"], "setup": setup, "attempt_number": number,
                  "retry": retry} for cid, (row, setup, number, retry, _) in zip((c for c, _ in lines), chunk)]
+    check_batch_ready(state.model)  # a missing key or provider stops the run before any line is written
     submit_id, started = uuid.uuid4().hex, now()
     state.path.parent.mkdir(parents=True, exist_ok=True)
     with deferred_signals():
@@ -393,7 +394,7 @@ def submit(state: ModelBatches, context: dict, chunk: list[tuple]) -> None:
         retry_push(context)
         try:
             batch_id = submit_batch(state.model, lines)
-        except (RequestError, ValueError):  # refused before any batch could exist
+        except RequestError:  # the provider rejected it: no batch exists
             abandon(state.path, submit_id)
             raise
         except InfrastructureError as error:

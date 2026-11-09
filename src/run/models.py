@@ -573,8 +573,29 @@ def _jsonl(lines: list[dict]) -> bytes:
     return "".join(json.dumps(line) + "\n" for line in lines).encode()
 
 
+def check_batch_ready(model: dict) -> None:
+    """Raise ValueError when the model's provider has no batch API or its API key is missing. `run` calls it
+    before it writes a `submitting` line, so these errors leave nothing behind."""
+    provider = _check_batch_provider(model)
+    if provider != "fake":
+        _api_key(provider)
+
+
 def submit_batch(model: dict, requests: list[tuple[str, dict]]) -> str:
-    """Send the requests, (custom_id, build_request() body) pairs, as one batch and return its id."""
+    """Send the requests, (custom_id, build_request() body) pairs, as one batch and return its id. Any error
+    other than a RequestError or InfrastructureError (an SDK that can't parse the reply of a create that
+    succeeded, say) is raised as an InfrastructureError, because the batch may exist."""
+    check_batch_ready(model)
+    try:
+        return _send_batch(model, requests)
+    except (RequestError, InfrastructureError):
+        raise
+    except Exception as error:
+        raise InfrastructureError(f"{model['provider']}: the batch may exist, but the send failed with "
+                                  f"{type(error).__name__}: {' '.join(str(error).split())[:200]}") from error
+
+
+def _send_batch(model: dict, requests: list[tuple[str, dict]]) -> str:
     provider = _check_batch_provider(model)
     if provider == "fake":
         batch_id = f"fake-batch-{len(FAKE_BATCH_SUBMITS) + 1}"
