@@ -15,6 +15,15 @@ export type ModelMetrics = {
   hallucination: Rate
   critical: Rate
 }
+/** One metric row of site.json's `setupMetrics`: a model's three metrics under one setup, on one puzzle or pooled (`all`). */
+export type SetupMetrics = {
+  puzzle: string
+  model: string
+  setup: string
+  precision: Rate
+  hallucination: Rate
+  critical: Rate
+}
 export type ResultSign = 'solved' | 'mismatch' | 'hallucinated' | 'unsolved'
 
 export const PROVIDERS = [
@@ -22,6 +31,30 @@ export const PROVIDERS = [
   { id: 'openai', label: 'OpenAI' },
   { id: 'google', label: 'Google' },
 ] as const
+
+/** The setups in the order the study defines them (docs/definitions.md, Setups; the ids are the raw records' `setup`). */
+export const SETUPS = [
+  { id: 'no_model', label: 'No model' },
+  { id: 'descriptive', label: 'Descriptive model' },
+  { id: 'prescriptive', label: 'Prescriptive model' },
+] as const
+
+/** One bar of the setup chart: the setup's mean over the ticked models that have a value, and how many they are. */
+export type SetupBar = { setup: string; label: string; rate: Rate; models: number }
+
+/** The unweighted mean of each setup's value for the given puzzle over the given models, in setup order. A model with no row for the setup, or an n/a value (hallucination of a decision model), is skipped, so each model that has a value counts once whatever its attempt count; the Rate's `n` is the number of models behind the mean, and its value null when none has one. */
+export function setupBars(rows: readonly SetupMetrics[], puzzle: string, models: readonly string[], pick: (r: SetupMetrics) => Rate): SetupBar[] {
+  const chosen = new Set(models)
+  const here = rows.filter((r) => r.puzzle === puzzle && chosen.has(r.model))
+  const known = new Set<string>(SETUPS.map((s) => s.id))
+  const extra = [...new Set(here.map((r) => r.setup))].filter((id) => !known.has(id)).sort()
+  const all = [...SETUPS.map((s) => ({ id: s.id as string, label: s.label as string })), ...extra.map((id) => ({ id, label: id }))]
+  return all.map(({ id, label }) => {
+    const values = here.filter((r) => r.setup === id).map((r) => pick(r).value).filter((v): v is number => v !== null)
+    const value = values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length
+    return { setup: id, label, rate: { value, n: values.length }, models: values.length }
+  })
+}
 
 /** The study's repo: the Experiment block's Source link. */
 export const SOURCE = 'https://github.com/OWOX/ai-ontology-benchmark'

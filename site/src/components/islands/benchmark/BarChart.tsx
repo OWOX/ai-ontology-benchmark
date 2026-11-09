@@ -1,6 +1,6 @@
 import type { Rate } from '../../../lib/benchmark'
 
-export interface BarRow { model: string; rate: Rate }
+export interface BarRow { model: string; rate: Rate; /** Muted text after the label, e.g. how many models a bar averages. */ detail?: string }
 export type BarRank = 'best' | 'worst' | null
 
 /** The label of a value: `42%`; null is `n/a`. */
@@ -33,11 +33,11 @@ export function BarChart({ title, rows, higherIsBetter = true }: { title: string
       {rows.length === 0 ? (
         <p className="empty">No model selected.</p>
       ) : (
-        <div role="img" aria-label={`${title}: ${rows.map((r, i) => `${r.model} ${label(r.rate.value)}${ranks[i] ? ` (${ranks[i]})` : ''}`).join(', ')}`}>
+        <div role="img" aria-label={`${title}: ${rows.map((r, i) => `${r.model} ${label(r.rate.value)}${r.detail ? ` (${r.detail})` : ''}${ranks[i] ? ` (${ranks[i]})` : ''}`).join(', ')}`}>
           {rows.map((r, i) => (
             <div key={r.model} className="row" data-rank={ranks[i] ?? undefined}>
               <div className="label">
-                <span className="model">{r.model}</span>
+                <span className="model">{r.model}{r.detail && <span className="detail"> ({r.detail})</span>}</span>
                 <span className="value">{label(r.rate.value)}</span>
               </div>
               <div className="track">
