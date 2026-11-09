@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src.puzzles.cube import CUBE_CORRUPTION_TYPES
 from src.puzzles.registry import ENGINES
+from src.run.budget import is_batched
 from src.run.prompts import SETUPS
 from src.validator import offered_reasons
 
@@ -155,16 +156,21 @@ def experiment_section(link, folder: Path, config: dict, prices: dict, rows: lis
         f"Retry cap: {config['retry_cap']}. "
         f"Maximum output tokens: {config['max_output_tokens']}. "
         f"Reasoning effort: {config.get('reasoning_effort') or 'provider default'}.", "",
+        *(["Batch mode: attempts of models with a batch API went through it, at the batch prices below.", ""]
+          if config.get("batch") is True else []),
         f"First and last attempt: {first} to {last}.", "",
         f"Torn raw lines skipped: {torn}.", "",
         f"Token prices per million tokens, from [prices.toml]({link(folder / 'prices.toml')}):", "",
     ]
+    batch = config.get("batch") is True
     price_rows = []
     for m in config["models"]:
         price = prices[m["name"]]
-        price_rows.append(
-            [m["name"], price["price_input_per_mtok"], price["price_output_per_mtok"]])
-    out += table(["AI model", "Input", "Output"], price_rows)
+        row = [m["name"], price["price_input_per_mtok"], price["price_output_per_mtok"]]
+        if batch:  # a model with no batch API runs direct, at the standard prices only
+            row += [price["batch_price_input_per_mtok"], price["batch_price_output_per_mtok"]] if is_batched(config, m) else [NA, NA]
+        price_rows.append(row)
+    out += table(["AI model", "Input", "Output"] + (["Batch input", "Batch output"] if batch else []), price_rows)
     return out + budget_lines(config, rows)
 
 
