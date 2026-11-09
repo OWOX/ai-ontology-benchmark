@@ -1492,9 +1492,14 @@ def submitted_ids():
     return [cid for _, requests in models.FAKE_BATCH_SUBMITS for cid, _ in requests]
 
 
-def state_events(repo):
+def all_state_events(repo):
     path = repo / "results/exp/batches/A.jsonl"
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def state_events(repo):
+    """The batch lines of the state file: every event except `submitting`, which comes before each `submitted`."""
+    return [e for e in all_state_events(repo) if e["event"] != "submitting"]
 
 
 def test_batch_requests_equal_direct_requests_and_results_map_by_custom_id(bexp):
@@ -1677,7 +1682,7 @@ def test_decision_models_of_a_batch_experiment_run_direct(bexp, monkeypatch):
     assert all(r["batch"] is False and r["decision"] is True for r in records(bexp, "D"))
 
 
-def test_a_submit_that_fails_after_sending_stops_the_run_and_writes_no_state(bexp, monkeypatch, capsys):
+def test_a_submit_that_fails_after_sending_stops_the_run_and_leaves_the_submit_unresolved(bexp, monkeypatch, capsys):
     from src.run import batch as batch_module
 
     def fail(model, requests):
@@ -1687,8 +1692,113 @@ def test_a_submit_that_fails_after_sending_stops_the_run_and_writes_no_state(bex
     assert go("--limit", "3") == 1
     err = capsys.readouterr().err
     assert "A: the batch submit failed after sending (connection reset); the provider may have created the batch, " \
-           "so check its console before running again; a new run resubmits these 3 requests" in err
-    assert not (bexp / "results/exp/batches/A.jsonl").exists()
+           "so check its console before running again for a batch created at " in err
+    assert "stays unresolved and held until you run --experiment exp --resolve-submit " in err
+    assert [e["event"] for e in all_state_events(bexp)] == ["submitting"]
+
+
+def failing_submit(monkeypatch, error):
+    from src.run import batch as batch_module
+
+    def fail(model, requests):
+        raise error
+
+    monkeypatch.setattr(batch_module, "submit_batch", fail)
+    return batch_module
+
+
+def held_now(repo):
+    from src.run.budget import held_by_model
+    config = run_module.load_experiment_config(repo / "config/experiments/exp.toml")
+    prices = run_module.load_prices(repo / "config/prices.toml")
+    return held_by_model(config, prices, repo / "results/exp", lambda input_id, setup: "x")["A"]
+
+
+def test_the_normal_path_writes_submitting_then_submitted_with_one_submit_id(bexp):
+    assert go("--limit", "3") == 0
+    submitting, submitted, collected = all_state_events(bexp)
+    assert [submitting["event"], submitted["event"], collected["event"]] == ["submitting", "submitted", "collected"]
+    assert len(submitting["submit_id"]) == 32 and submitting["submit_id"] == submitted["submit_id"]
+    assert submitting["requests"] == submitted["requests"] and submitting["worst_usd"] == submitted["worst_usd"] > 0
+    assert submitting["provider"] == "fake" and submitting["created_at"]
+    assert "A submit " + submitting["submit_id"] + " started" in git(bexp, "log", "--format=%s", BRANCH)
+
+
+def test_a_submit_that_raises_after_submitting_holds_the_amount_and_the_next_run_stops(bexp, monkeypatch, capsys):
+    batch_module = failing_submit(monkeypatch, InfrastructureError("gateway timeout"))
+    assert go("--limit", "3") == 1
+    (submitting,) = all_state_events(bexp)
+    assert submitting["event"] == "submitting"
+    assert held_now(bexp) == submitting["worst_usd"] > 0  # held like an open batch
+    assert '"event": "submitting"' in git(bexp, "show", f"{BRANCH}:results/exp/batches/A.jsonl")  # committed
+    capsys.readouterr()
+    monkeypatch.setattr(batch_module, "submit_batch", models.submit_batch)  # a working provider must still not be used
+    assert go("--limit", "3") == 1
+    err = capsys.readouterr().err
+    assert (f"A: submit {submitting['submit_id']} of 3 requests, started at {submitting['created_at']}, "
+            "has no result") in err
+    assert "check the provider console for a batch created at that time" in err
+    assert f"--resolve-submit {submitting['submit_id']} --as abandoned" in err
+    assert models.FAKE_BATCH_SUBMITS == [] and not records_exist(bexp)
+    assert len(all_state_events(bexp)) == 1
+
+
+def test_resolving_a_submit_as_abandoned_releases_the_amount_and_makes_the_attempts_pending(bexp, monkeypatch):
+    batch_module = failing_submit(monkeypatch, InfrastructureError("gateway timeout"))
+    assert go("--limit", "3") == 1
+    (submitting,) = all_state_events(bexp)
+    assert go("--resolve-submit", submitting["submit_id"], "--as", "abandoned") == 0
+    abandoned = all_state_events(bexp)[-1]
+    assert abandoned["event"] == "abandoned" and abandoned["submit_id"] == submitting["submit_id"]
+    assert abandoned["created_at"]
+    assert held_now(bexp) == 0.0
+    assert '"event": "abandoned"' in git(bexp, "show", f"{BRANCH}:results/exp/batches/A.jsonl")
+    assert go("--resolve-submit", submitting["submit_id"], "--as", "abandoned") == 1  # nothing left to resolve
+    monkeypatch.setattr(batch_module, "submit_batch", models.submit_batch)
+    assert go("--limit", "3") == 0
+    assert len(models.FAKE_BATCH_SUBMITS) == 1 and len(records(bexp, "A")) == 3
+    assert {cid.rsplit("_", 1)[1] for cid in submitted_ids()} == {"r0"}  # the ghost used no retry
+
+
+def test_resolve_submit_needs_as_and_a_known_submit_id(bexp, capsys):
+    with pytest.raises(SystemExit):
+        go("--resolve-submit", "abc")
+    assert go("--resolve-submit", "abc", "--as", "abandoned") == 1
+    assert "no unresolved submit 'abc'" in capsys.readouterr().err
+
+
+def test_a_request_error_before_the_send_abandons_the_submit_itself(bexp, monkeypatch):
+    batch_module = failing_submit(monkeypatch, models.RequestError("anthropic: HTTP 400: bad"))
+    assert go("--limit", "3") == 1
+    assert [e["event"] for e in all_state_events(bexp)] == ["submitting", "abandoned"]
+    assert held_now(bexp) == 0.0
+    monkeypatch.setattr(batch_module, "submit_batch", models.submit_batch)
+    assert go("--limit", "3") == 0  # no manual step needed
+
+
+def test_an_unresolved_submit_keeps_its_attempts_out_of_any_chunk():
+    from src.run.batch import in_flight_keys
+    events = [{"event": "submitting", "submit_id": "s1", "requests": [
+                  {"custom_id": "c", "input_id": "i1", "setup": "x", "attempt_number": 1, "retry": 2}]},
+              {"event": "submitting", "submit_id": "s2", "requests": [
+                  {"custom_id": "d", "input_id": "i2", "setup": "x", "attempt_number": 1, "retry": 0}]},
+              {"event": "abandoned", "submit_id": "s2"}]
+    assert in_flight_keys(events) == {("i1", "x", 1)}
+
+
+def test_a_state_file_from_before_submit_ids_still_loads(bexp, monkeypatch):
+    from src.run import batch as batch_module
+    models.FAKE_BATCH_PENDING.add("fake-batch-1")
+    monkeypatch.setattr(batch_module.time, "sleep", lambda seconds: (_ for _ in ()).throw(KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt):
+        go("--limit", "3")
+    path = bexp / "results/exp/batches/A.jsonl"
+    old = [{k: v for k, v in e.items() if k != "submit_id"} for e in all_state_events(bexp) if e["event"] == "submitted"]
+    path.write_text("".join(json.dumps(e) + "\n" for e in old), encoding="utf-8")
+    assert held_now(bexp) == old[0]["worst_usd"]
+    models.FAKE_BATCH_PENDING.clear()
+    assert go("--limit", "3", "--no-commit") == 0  # the rewritten file no longer matches the branch
+    assert len(models.FAKE_BATCH_SUBMITS) == 1 and len(records(bexp, "A")) == 3
 
 
 def test_a_sigterm_during_submit_waits_for_the_state_file_and_its_commit(bexp, monkeypatch):
@@ -1700,7 +1810,7 @@ def test_a_sigterm_during_submit_waits_for_the_state_file_and_its_commit(bexp, m
     def send_then_signal(model, requests):
         batch_id = models.submit_batch(model, requests)
         os.kill(os.getpid(), signal.SIGTERM)
-        assert not (bexp / "results/exp/batches/A.jsonl").exists()  # deferred: the handler did not run yet
+        assert [e["event"] for e in all_state_events(bexp)] == ["submitting"]  # deferred: the handler did not run yet
         return batch_id
 
     monkeypatch.setattr(batch_module, "submit_batch", send_then_signal)
@@ -2002,7 +2112,7 @@ def test_a_failed_push_after_submit_is_tried_again_at_every_poll(bexp, monkeypat
     monkeypatch.setattr(branch_module.ResultsBranch, "push", flaky)
     monkeypatch.setattr(batch_module.time, "sleep", poll)
     assert go("--limit", "3") == 0
-    assert polls == [2, 3, 3]  # one push at submit, one per poll until it worked, none after
+    assert polls == [3, 3, 3]  # one push before the send, one after it, one at the first poll, none after
     assert capsys.readouterr().err.count("warning: push of results/exp failed: network down") == 2
     assert len(calls) == 3 + 1  # three tries during the batch, then the push at the end of the run
 

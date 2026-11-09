@@ -17,13 +17,14 @@ import signal
 import sys
 import tempfile
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from src.puzzles.registry import get_engine
 from src.run.branch import BranchError
 from src.run.budget import (TOLERANCE, BudgetError, batch_state_path, held_by_model, is_batched, open_batches,
-                            read_state, spent_by_model, worst_case_request_cost)
+                            read_state, spent_by_model, unresolved_submits, worst_case_request_cost)
 from src.run.models import (BatchRejectedError, BatchTooLargeError, InfrastructureError, RequestError, UnreadableReply, batch_done, batch_results, build_request,
                             submit_batch)
 from src.run.raw import parse_raw_text
@@ -59,6 +60,13 @@ def submission_counts(events: list[dict]) -> dict[tuple, int]:
                 key = (item["input_id"], item["setup"], item["attempt_number"])
                 counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def in_flight_keys(events: list[dict]) -> set[tuple]:
+    """The attempts (input id, setup, attempt number) of the unresolved submits: they may be in a batch at the
+    provider, so none goes into a new chunk, whatever its retry index."""
+    return {(item["input_id"], item["setup"], item["attempt_number"])
+            for event in unresolved_submits(events) for item in event["requests"]}
 
 
 class ModelBatches:
@@ -153,6 +161,9 @@ def step(state: ModelBatches, context: dict) -> tuple[bool, bool]:
             events = read_state(state.path)  # read again under the lock: another process may have submitted
             if open_batches(events):
                 return False, False
+            unresolved = unresolved_submits(events)
+            if unresolved:  # under the lock, so a send in progress in another process is not mistaken for one
+                raise unresolved_error(state, context, unresolved)
             settle_exhausted(state, context, events)
             remaining = remaining_attempts(state, context, events)
             if not remaining:
@@ -197,9 +208,11 @@ def remaining_attempts(state: ModelBatches, context: dict, events: list[dict]) -
     """(row, setup, number, retry index) for each pending attempt of the model with no record yet."""
     done = done_keys(context, state)
     counts = submission_counts(events)
+    flying = in_flight_keys(events)
     return [(row, setup, number, counts.get((row["input_id"], setup, number), 0))
             for row, setup, number in state.attempts
-            if (row["input_id"], setup, state.name, number) not in done]
+            if (row["input_id"], setup, state.name, number) not in done
+            and (row["input_id"], setup, number) not in flying]
 
 
 def settle_exhausted(state: ModelBatches, context: dict, events: list[dict]) -> None:
@@ -305,31 +318,94 @@ def deferred_signals():
             signal.raise_signal(caught[0])
 
 
+def unresolved_error(state: ModelBatches, context: dict, unresolved: list[dict]) -> RequestError:
+    """The RequestError that stops a model with a send that may have made a batch no state line names."""
+    event = unresolved[0]
+    experiment = context["config"]["experiment_id"]
+    return RequestError(
+        f"{state.name}: submit {event['submit_id']} of {len(event['requests'])} requests, started at "
+        f"{event['created_at']}, has no result: the provider may have created a batch that no state line names, "
+        f"and its cost is held; check the provider console for a batch created at that time, cancel it if it "
+        f"exists or wait for it, then run --experiment {experiment} --resolve-submit {event['submit_id']} "
+        "--as abandoned")
+
+
+def abandon(state_path: Path, submit_id: str) -> None:
+    """Append `abandoned` for a submit: it holds nothing, and its attempts are pending again."""
+    append_record(state_path, {"event": "abandoned", "submit_id": submit_id, "created_at": now()})
+
+
+def resolve_submit(args) -> int:
+    """`run --resolve-submit <submit id> --as abandoned`: append `abandoned` for the unresolved submit, commit,
+    and push. It reads no config and calls no provider."""
+    from src.run.branch import ResultsBranch
+
+    results = args.results / args.experiment
+    config_path = args.configs / f"{args.experiment}.toml"
+    branch = None if args.no_commit else ResultsBranch(config_path if config_path.is_file() else None, results,
+                                                       args.experiment)
+    context = {"branch": branch, "results": results, "config": {"experiment_id": args.experiment}}
+    with experiment_lock(context):
+        for path in sorted((results / "batches").glob("*.jsonl")):
+            if any(e["submit_id"] == args.resolve_submit for e in unresolved_submits(read_state(path))):
+                break
+        else:
+            raise RunError(f"{results / 'batches'}: no unresolved submit {args.resolve_submit!r}")
+        abandon(path, args.resolve_submit)
+    print(f"{path.stem}: submit {args.resolve_submit} abandoned; its attempts are pending again", file=sys.stderr)
+    if branch:
+        safe_commit(branch, f"Results: experiment {args.experiment}, {path.stem} submit {args.resolve_submit} abandoned")
+        problem = branch.push()
+        if problem and problem != "no remote origin":
+            print(f"warning: push of results/{args.experiment} failed: {problem}", file=sys.stderr)
+    return 0
+
+
 def submit(state: ModelBatches, context: dict, chunk: list[tuple]) -> None:
-    """Send the chunk as one batch, then write and commit the state file before anything waits, and push.
-    A signal that arrives from the send to the commit waits until the commit is done, so the batch is never
-    paid for without a record of it. A failed send stops the run: the provider may have made the batch. So does
-    a failed commit, because a push without the state file lets another machine submit the same requests."""
+    """Write and commit a `submitting` line, send the chunk as one batch, then write and commit a `submitted`
+    line before anything waits, and push. A send that fails, or is interrupted, with no `submitted` line leaves
+    the `submitting` line unresolved, and its worst-case cost stays held, because the provider may have made
+    the batch: `run` stops for the model until `--resolve-submit` abandons it. Only an error before the
+    provider could have made a batch (a RequestError or ValueError) abandons it here. A signal that arrives
+    from the send to the commit waits until the commit is done, so the batch is never paid for without a
+    record of it. A failed commit stops the run: before the send it abandons the submit, and after it a push
+    without the state file would let another machine submit the same requests."""
     lines = [(custom_id(row["input_id"], setup, number, retry), body) for row, setup, number, retry, body in chunk]
     experiment = context["config"]["experiment_id"]
+    worst_usd = sum(worst(context["config"], context["prices"][state.name], context["prompt_for"](row["input_id"], setup))
+                    for row, setup, _, _, _ in chunk)
+    requests = [{"custom_id": cid, "input_id": row["input_id"], "setup": setup, "attempt_number": number,
+                 "retry": retry} for cid, (row, setup, number, retry, _) in zip((c for c, _ in lines), chunk)]
+    submit_id, started = uuid.uuid4().hex, now()
+    state.path.parent.mkdir(parents=True, exist_ok=True)
     with deferred_signals():
+        append_record(state.path, {"event": "submitting", "submit_id": submit_id, "provider": state.model["provider"],
+                                   "created_at": started, "worst_usd": worst_usd, "requests": requests})
+        if context["branch"]:
+            try:
+                context["branch"].commit(f"Results: experiment {experiment}, {state.name} submit {submit_id} started")
+            except (BranchError, OSError) as error:
+                abandon(state.path, submit_id)  # nothing was sent
+                message = f"{state.name}: committing the state file before a batch submit failed: {error}; nothing was sent"
+                log(message)
+                raise RunError(message) from error
+        context["push_outstanding"] = True  # best effort: another machine sees the held amount before the send
+        retry_push(context)
         try:
             batch_id = submit_batch(state.model, lines)
+        except (RequestError, ValueError):  # refused before any batch could exist
+            abandon(state.path, submit_id)
+            raise
         except InfrastructureError as error:
             message = (f"{state.name}: the batch submit failed after sending ({' '.join(str(error).split())[:200]}); "
-                       "the provider may have created the batch, so check its console before running again; "
-                       f"a new run resubmits these {len(chunk)} requests")
+                       f"the provider may have created the batch, so check its console before running again for a "
+                       f"batch created at {started}; submit {submit_id} of {len(chunk)} requests stays unresolved "
+                       f"and held until you run --experiment {experiment} --resolve-submit {submit_id} --as abandoned")
             log(message)  # a signal held until the block ends would otherwise hide it
             raise RequestError(message) from error
-        state.path.parent.mkdir(parents=True, exist_ok=True)
-        worst_usd = sum(worst(context["config"], context["prices"][state.name], context["prompt_for"](row["input_id"], setup))
-                        for row, setup, _, _, _ in chunk)
         append_record(state.path, {
-            "event": "submitted", "batch_id": batch_id, "provider": state.model["provider"], "created_at": now(),
-            "worst_usd": worst_usd,
-            "requests": [{"custom_id": cid, "input_id": row["input_id"], "setup": setup,
-                          "attempt_number": number, "retry": retry}
-                         for cid, (row, setup, number, retry, _) in zip((c for c, _ in lines), chunk)]})
+            "event": "submitted", "batch_id": batch_id, "submit_id": submit_id, "provider": state.model["provider"],
+            "created_at": now(), "worst_usd": worst_usd, "requests": requests})
         log(f"batch {state.name} {batch_id}: submitted {len(chunk)} requests")
         if context["branch"]:
             try:

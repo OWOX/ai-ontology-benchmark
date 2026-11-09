@@ -70,18 +70,27 @@ def open_batches(events: list[dict]) -> list[dict]:
     return [e for e in events if e.get("event") == "submitted" and e["batch_id"] not in collected]
 
 
+def unresolved_submits(events: list[dict]) -> list[dict]:
+    """The `submitting` events with no `submitted` and no `abandoned` event of the same `submit_id`: sends that
+    may have made a batch at the provider that no state line names. They hold their `worst_usd`."""
+    settled = {e["submit_id"] for e in events if e.get("event") in ("submitted", "abandoned") and "submit_id" in e}
+    return [e for e in events if e.get("event") == "submitting" and e["submit_id"] not in settled]
+
+
 def batch_state_path(results: Path, name: str) -> Path:
     return results / "batches" / f"{name}.jsonl"
 
 
 def held_by_model(config: dict, prices: dict, results: Path, prompt_for) -> dict[str, float]:
-    """The worst-case cost, at batch prices, of the open batches of each AI model, read fresh from the state
-    files. A `submitted` event carries it as `worst_usd`; a state file written before that field is
+    """The worst-case cost, at batch prices, of the open batches and unresolved submits of each AI model, read
+    fresh from the state files. An unresolved `submitting` event holds its `worst_usd` as an open batch does. A `submitted` event carries it as `worst_usd`; a state file written before that field is
     recomputed from `prompt_for(input id, setup)`."""
     held = {}
     for model in config["models"]:
         name, total = model["name"], 0.0
-        for event in open_batches(read_state(batch_state_path(results, name))):
+        events = read_state(batch_state_path(results, name))
+        total += sum(e["worst_usd"] for e in unresolved_submits(events))
+        for event in open_batches(events):
             if "worst_usd" in event:
                 total += event["worst_usd"]
                 continue

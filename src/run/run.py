@@ -215,6 +215,9 @@ def make_progress(config: dict, prices: dict, raw_dir: Path, pending: list, only
 
 
 def run(args: argparse.Namespace) -> int:
+    if args.resolve_submit:
+        from src.run.batch import resolve_submit  # batch imports this module, so it loads here
+        return resolve_submit(args)
     if args.config == "-":
         source, config_path = "<stdin>", None
         text = sys.stdin.read()
@@ -534,11 +537,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--estimate", action="store_true", help="print attempts and worst-case cost")
     parser.add_argument("--no-commit", action="store_true", help="do not commit to results/<id> (for tests)")
     parser.add_argument("--releases", default="releases", type=Path)
+    parser.add_argument("--resolve-submit", metavar="SUBMIT_ID",
+                        help="resolve a batch submit with no result, then exit (needs --as)")
+    parser.add_argument("--as", dest="resolution", choices=["abandoned"],
+                        help="how to resolve it: abandoned says no batch exists, so its attempts are pending again")
     parser.add_argument("--config", choices=["-"], help="read the experiment config from stdin")
     parser.add_argument("--configs", default="config/experiments", type=Path)
     parser.add_argument("--prices", default="config/prices.toml", type=Path)
     parser.add_argument("--results", default="results", type=Path)
     args = parser.parse_args(argv)
+    if bool(args.resolve_submit) != bool(args.resolution):
+        parser.error("--resolve-submit and --as go together")
     if args.parallel < 1:
         print(f"error: --parallel must be at least 1, got {args.parallel}", file=sys.stderr)
         return 1
