@@ -1,0 +1,24 @@
+release = "3.0.0"
+puzzles = ["3x3", "4x4", "5x5"]
+attempts = 3
+retry_cap = 3
+max_output_tokens = 32000
+reasoning_effort = "medium"
+inputs_per_depth = 1
+
+[[models]]
+name = "gemini-4-argon"
+provider = "google"
+api_model_id = "gemini-4-argon"
+kind = "system-2"
+
+[[models]]
+name = "gemini-3.8-flash"
+provider = "google"
+api_model_id = "gemini-3.8-flash"
+kind = "system-2"
+
+[budget]
+per_request_usd = 2.0
+per_model_usd = 25.0
+per_experiment_usd = 40.0
