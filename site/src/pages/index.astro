@@ -22,11 +22,10 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
      The island root also wears .cube-solver, so the cube drawing and the text buttons come from src/styles/cube-stage.css, the same source as /cube. */
   /* Status colours (--ok, --danger) live in global.css with the theme tokens. */
   :global(.benchmark) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; max-width: 40rem; }
-  /* The filter is /cube's numbered steps (rules in src/styles/cube-stage.css); here only the body row: the options side by side, scrolling sideways when they do not fit. */
-  :global(.benchmark .steps.filter .body) { overflow-x: auto; scrollbar-width: none; }
-  :global(.benchmark .steps.filter .body::-webkit-scrollbar) { display: none; }
-  /* Steps 1 and 2 side by side, step 3 below at full width; stacked on a narrow screen. */
-  :global(.cube-solver.benchmark .steps.filter) { grid-template-columns: max-content minmax(0, 1fr); gap: 1rem 1.5rem; }
+  /* The filter is /cube's numbered steps (rules in src/styles/cube-stage.css); here only the body row: the options side by side, wrapping onto more lines when they do not fit their half. */
+  :global(.benchmark .steps.filter .options) { flex-wrap: wrap; }
+  /* Steps 1 and 2 (Puzzle and AI provider) in two equal halves, step 3 below at full width; stacked on a narrow screen, where a half is too narrow to read. */
+  :global(.cube-solver.benchmark .steps.filter) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem 1.5rem; }
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(3)) { grid-column: 1 / -1; margin-top: 1.5rem; }
   /* The options sit close under their title and start where the title text starts. */
   :global(.cube-solver.benchmark .steps.filter .body) { margin-top: 0.35rem; padding-left: 0; }
