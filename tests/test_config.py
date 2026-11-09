@@ -351,3 +351,32 @@ def test_experiment_configs_in_the_work_tree_still_parse():
     assert configs  # never vacuous: the committed configs are always there
     for path in configs + sorted(Path("results").glob("*/experiment.toml")):
         load_experiment_config(path)
+
+
+def test_batch_flag_must_be_a_bool_and_defaults_to_absent(tmp_path):
+    assert load_experiment_config(write(tmp_path, "batch = true\n" + EXPERIMENT, "e.toml"))["batch"] is True
+    with pytest.raises(ValueError, match="batch"):
+        load_experiment_config(write(tmp_path, 'batch = "yes"\n' + EXPERIMENT, "e.toml"))
+
+
+def test_batch_refused_with_an_openrouter_model(tmp_path):
+    text = "batch = true\n" + bad(EXPERIMENT, '"fake"', '"openrouter"')
+    with pytest.raises(ValueError, match="can't be true with openrouter model m: OpenRouter routes a batch"):
+        load_experiment_config(write(tmp_path, text, "e.toml"))
+    load_experiment_config(write(tmp_path, "batch = false\n" + bad(EXPERIMENT, '"fake"', '"openrouter"'), "e.toml"))
+
+
+def test_batch_prices_come_in_pairs_and_are_not_negative(tmp_path):
+    ok = PRICES + "batch_price_input_per_mtok = 1.5\nbatch_price_output_per_mtok = 7.75\n"
+    assert load_prices(write(tmp_path, ok))["m"]["batch_price_output_per_mtok"] == 7.75
+    with pytest.raises(ValueError, match="both batch price fields or neither"):
+        load_prices(write(tmp_path, PRICES + "batch_price_input_per_mtok = 1.5\n"))
+    with pytest.raises(ValueError, match="must not be negative"):
+        load_prices(write(tmp_path, ok.replace("1.5", "-1.5")))
+
+
+def test_catalogue_batch_prices_are_half_of_standard():
+    for name, entry in load_prices("config/prices.toml").items():
+        if "batch_price_input_per_mtok" in entry:
+            assert entry["batch_price_input_per_mtok"] == pytest.approx(entry["price_input_per_mtok"] / 2), name
+            assert entry["batch_price_output_per_mtok"] == pytest.approx(entry["price_output_per_mtok"] / 2), name

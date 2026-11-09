@@ -10,6 +10,9 @@ from pathlib import Path
 
 from src.puzzles.registry import ENGINES
 
+# Providers with a Message Batches API at half price, plus `fake` for tests. The decision providers
+# and openrouter have none.
+BATCH_PROVIDERS = ("anthropic", "openai", "google", "fake")
 PROVIDERS = ("anthropic", "openai", "google", "openrouter", "typesafe", "cloudflare", "fake", "fake_decision")
 KINDS = ("system-1", "system-2")
 # Settings that `models` and the run script set themselves.
@@ -27,6 +30,9 @@ EXPERIMENT_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 DEFAULT_PER_REQUEST_USD = 2.00
 DEFAULT_PER_MODEL_USD = 25.00
 DEFAULT_PER_EXPERIMENT_USD = 50.00
+
+
+BATCH_PRICE_FIELDS = ("batch_price_input_per_mtok", "batch_price_output_per_mtok")
 
 
 def _fail(path: object, field: str, problem: str) -> None:
@@ -190,6 +196,8 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
             _fail(path, "reasoning_effort", f"must be one of {', '.join(EFFORTS)}")
     if "max_moves" in config:
         _check_min(path, "max_moves", _get(path, config, "max_moves", int), 1)
+    if "batch" in config:
+        _get(path, config, "batch", bool)
     if "puzzles" in config:
         _check_puzzles(path, config)
     if "inputs_per_depth" in config:
@@ -200,6 +208,9 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
     seen: set[str] = set()
     for index, model in enumerate(models):
         _check_model(path, model, index, seen)
+        if config.get("batch") is True and model["provider"] == "openrouter":
+            _fail(path, "batch", f"can't be true with openrouter model {model['name']}: OpenRouter routes "
+                  "a batch to the cheapest upstream provider, so its answers are not comparable with direct calls")
     config["budget"] = _check_budget(path, config)
     config["experiment_id"] = experiment_id
     return config
@@ -227,6 +238,13 @@ def load_prices(path: Path) -> dict:
         if not isinstance(entry, dict):
             _fail(path, model_name, "must be a table with the two price fields")
         for field in ("price_input_per_mtok", "price_output_per_mtok"):
+            value = _get(path, entry, field, float, f"{model_name}.")
+            if value < 0:
+                _fail(path, f"{model_name}.{field}", "must not be negative")
+        batch_fields = [f for f in BATCH_PRICE_FIELDS if f in entry]
+        if batch_fields and len(batch_fields) != 2:
+            _fail(path, model_name, "must have both batch price fields or neither")
+        for field in batch_fields:
             value = _get(path, entry, field, float, f"{model_name}.")
             if value < 0:
                 _fail(path, f"{model_name}.{field}", "must not be negative")
