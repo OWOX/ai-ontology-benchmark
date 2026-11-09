@@ -236,7 +236,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
                   <dt>Result:</dt>{' '}
                   <dd className="result">
                     {result ? <span className="value">{verdict === 'correct' ? <CheckCircleIcon /> : <CrossCircleIcon />}{resultText(result, attempt!)}</span> : run > 0 ? <span className="muted">running… {donePct}%</span> : '\u00a0'}
-                    {result && <span className="after-result">{' '}<a className="source" href={sourceUrl(attempt!)} target="_blank" rel="noopener noreferrer" aria-label="Source (opens in a new tab)" title="Source"><ExternalLinkIcon /></a></span>}
+                    {result && <>{' '}<a className="source" href={sourceUrl(attempt!)} target="_blank" rel="noopener noreferrer" aria-label="Source (opens in a new tab)" title="Source"><ExternalLinkIcon /></a></>}
                   </dd>
                 </div>
               </dl>

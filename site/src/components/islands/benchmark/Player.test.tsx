@@ -143,7 +143,8 @@ describe('Player', () => {
     expect(link.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
     expect(link).toHaveAttribute('href', `${SOURCE}/blob/results/exp-1/results/exp-1/raw/m1.jsonl`)
     expect(link).toHaveAttribute('target', '_blank')
-    expect(row().textContent).toMatch(/Solved /)
+    expect(row().textContent).toBe('Result: Solved ')
+    expect(result().querySelector('a.source')).toBe(link)
   })
 
   it('announces the result once the run ends, not while it runs', async () => {

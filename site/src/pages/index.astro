@@ -86,6 +86,8 @@ const jsonLd = {
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(2)) { justify-self: end; }
   /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only. Unselected: a transparent border of the same width, 50% transparent. */
   :global(.benchmark .options button.square) { width: 3.9rem; height: 3.9rem; padding: 0.26rem; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
+  /* With none pressed (all puzzles) the options are not faded: they are not disabled, only unselected. */
+  :global(.benchmark .options:not(:has(button.square[aria-pressed='true'])) button.square) { opacity: 1; }
   :global(.benchmark .options button.square:hover) { opacity: 1; }
   :global(.benchmark .options button.square[aria-pressed='true']) { border-color: var(--text); opacity: 1; }
   /* Keyboard focus: a dashed outline drawn inside the button, so it is never clipped by the scrolling row. */
@@ -192,8 +194,8 @@ const jsonLd = {
     20%, 40%, 60%, 80% { transform: translateX(6px); }
   }
   :global(.benchmark .player .actions) { display: flex; align-items: center; gap: 1rem; }
-  /* ". Source" after the result: the study repo, a plain content link. */
-  :global(.benchmark .player .source) { color: var(--link); text-decoration: none; }
+  /* The Source icon after the result: a link to the case's raw results, at least 24px square (the padding grows the hit area, and the negative margin keeps the line where it was). */
+  :global(.benchmark .player .source) { color: var(--link); text-decoration: none; display: inline-block; padding: 0.3rem; margin: -0.3rem; }
   :global(.benchmark .player .source .external-icon) { vertical-align: -0.15em; }
   /* The result and its tick or cross: green when the attempt's outcome is success, red otherwise. */
   :global(.benchmark .facts [data-verdict='correct'] .result .value) { color: var(--ok); }
