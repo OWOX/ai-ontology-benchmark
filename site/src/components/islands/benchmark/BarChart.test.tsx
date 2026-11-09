@@ -49,12 +49,3 @@ describe('percent format', () => {
     expect([...container.querySelectorAll('.value')].map((e) => e.textContent)).toEqual(['20%', '40%', 'n/a'])
   })
 })
-
-describe('BarChart detail', () => {
-  it('shows a row\'s detail after its label and in the accessible name', () => {
-    const { container } = render(<BarChart title="Precision" rows={[{ ...r('No model', 0.4), detail: '2 models' }, r('Other', 0.8)]} />)
-    expect(container.querySelector('.row .detail')).toHaveTextContent('(2 models)')
-    expect(container.querySelectorAll('.detail')).toHaveLength(1)
-    expect(container.querySelector('[role="img"]')).toHaveAccessibleName('Precision: No model 40% (2 models) (worst), Other 80% (best)')
-  })
-})

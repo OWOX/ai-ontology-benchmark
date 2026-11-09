@@ -54,10 +54,6 @@ export function drawChart(c: ChartCopy): Promise<Blob> {
     ctx.textAlign = 'left'
     ctx.fillStyle = INK
     ctx.fillText(r.model, PAD, y + 16)
-    if (r.detail) {
-      ctx.fillStyle = MUTED
-      ctx.fillText(` (${r.detail})`, PAD + ctx.measureText(r.model).width, y + 16)
-    }
     ctx.font = `15px ${MONO}`
     ctx.textAlign = 'right'
     ctx.fillStyle = colour ?? MUTED
