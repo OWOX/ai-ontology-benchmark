@@ -8,11 +8,12 @@ import { replayFrame, type ReplayFrame } from './replay'
 import { CheckCircleIcon, CrossCircleIcon, FlaskIcon, RefreshIcon } from './icons'
 
 /** An attempt as /ai-ontology-benchmark/attempts.json carries it: `inputId` and `depth` are dropped, its experiment's `release` and `experimentId` added. */
-export type ReplayAttempt = Omit<BenchmarkAttempt, 'inputId' | 'depth'> & { release?: string; experimentId?: string }
+export type ReplayAttempt = Omit<BenchmarkAttempt, 'inputId' | 'depth'> & { release?: string; experimentId?: string; branch?: string }
 
-/** The raw results this attempt came from: `results/<experimentId>/raw/<model>.jsonl` on the study repo's `results/<experimentId>` branch (each experiment keeps one file per model, named after it); the repo itself without an experiment id. */
-export function sourceUrl(a: Pick<ReplayAttempt, 'experimentId' | 'model'>): string {
-  return a.experimentId ? `${SOURCE}/blob/results/${encodeURIComponent(a.experimentId)}/results/${encodeURIComponent(a.experimentId)}/raw/${encodeURIComponent(a.model)}.jsonl` : SOURCE
+/** The raw results this attempt came from: `results/<experimentId>/raw/<model>.jsonl` on the study repo's branch `branch` (`main` when missing; each experiment keeps one file per model, named after it); the repo itself without an experiment id. */
+export function sourceUrl(a: Pick<ReplayAttempt, 'experimentId' | 'model' | 'branch'>): string {
+  const branch = (a.branch || 'main').split('/').map(encodeURIComponent).join('/')
+  return a.experimentId ? `${SOURCE}/blob/${branch}/results/${encodeURIComponent(a.experimentId)}/raw/${encodeURIComponent(a.model)}.jsonl` : SOURCE
 }
 
 /** The prompt template the model was sent, in the study repo: `releases/<release>/prompts/<setup>/<puzzle>.txt`; null without a release. */

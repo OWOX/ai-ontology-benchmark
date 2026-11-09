@@ -25,6 +25,7 @@ export interface BenchmarkModel {
 export interface BenchmarkExperiment {
   experimentId: string
   release?: string | null
+  branch?: string | null
   puzzles?: string[] | null
   models?: BenchmarkModel[] | null
   setups?: string[] | null
