@@ -187,12 +187,12 @@ const jsonLd = {
   :global(.benchmark .empty) { margin: 0; }
   :global(.benchmark .chart .row) { margin-bottom: 0.75rem; }
   :global(.benchmark .chart .label) { display: flex; justify-content: space-between; gap: 1rem; }
-  /* A round "?" after a bar label, sized to the label's text (1em circle); its popover is out of flow, under the row (or over it when there is no room below), so opening it moves nothing. */
+  /* A round "?" after a bar label, sized to the label's text (a circle about 0.9 of the label); its popover is out of flow, under the row (or over it when there is no room below), so opening it moves nothing. */
   :global(.benchmark .chart .row) { position: relative; }
   :global(.cube-solver.benchmark .chart button.label-help-btn:not(.redo):not(.switch):not(.square)) {
-    position: relative; vertical-align: middle; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 1em; height: 1em; min-height: 0; margin: 0 0 0 0.35em; padding: 0;
+    position: relative; vertical-align: middle; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 1.2em; height: 1.2em; min-height: 0; margin: 0 0 0 0.35em; padding: 0;
     border: 1px solid var(--muted); border-radius: 50%; background: transparent; box-shadow: none; color: var(--muted);
-    font-size: 0.7em; font-weight: var(--weight-medium); line-height: 1; letter-spacing: normal; cursor: pointer;
+    font-size: 0.75em; font-weight: var(--weight-medium); line-height: 1; letter-spacing: normal; cursor: pointer;
   }
   :global(.cube-solver.benchmark .chart button.label-help-btn:hover:not(.redo):not(.switch):not(.square)) { color: var(--text); border-color: var(--text); }
   :global(.cube-solver.benchmark .chart button.label-help-btn[aria-expanded='true']:not(.redo):not(.switch):not(.square)) { background: var(--text); border-color: var(--text); color: var(--text-inv); }
