@@ -93,10 +93,13 @@ const jsonLd = {
   /* Step 2 is a block of its own pushed to the right edge of the content column (its natural width); inside it everything stays left-aligned. */
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(2)) { justify-self: end; }
   /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only. Unselected: a transparent border of the same width, 50% transparent. */
+  :global(.benchmark .options:has(button.square)) { gap: 0.25rem; justify-content: flex-start; }
   :global(.benchmark .options button.square) { width: 3.9rem; height: 3.9rem; padding: 0.26rem; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
   /* With none pressed (all puzzles) the options are not faded: they are not disabled, only unselected. */
   :global(.benchmark .options:not(:has(button.square[aria-pressed='true'])) button.square) { opacity: 1; }
   :global(.benchmark .options button.square:hover) { opacity: 1; }
+  /* An unselected thumbnail shows a 1px border on hover, drawn inside the 2px transparent one, so nothing moves. The selected one keeps its 2px border. */
+  :global(.benchmark .options button.square:hover:not([aria-pressed='true'])) { box-shadow: inset 0 0 0 1px var(--text); }
   :global(.benchmark .options button.square[aria-pressed='true']) { border-color: var(--text); opacity: 1; }
   /* Keyboard focus: a dashed outline drawn inside the button, so it is never clipped by the scrolling row. */
   :global(.benchmark .options button.square:focus-visible) { outline: 2px dashed var(--text); outline-offset: -4px; opacity: 1; }
