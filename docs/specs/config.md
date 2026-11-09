@@ -58,7 +58,7 @@ Hold every study parameter in three kinds of file, plus example configs to copy,
 
    [Budgets](../definitions.md#prices) limit what the experiment can spend. `[budget]` and each of its fields are optional. A missing field takes the default shown. It is the only part of an experiment config that may change after the experiment starts, so a stopped run can resume with a higher budget.
 
-   `batch` turns on [batch mode](../definitions.md#batches). It is part of the experiment, so it can't change once the experiment starts: only `[budget]` may. The UI sends it as the checkbox "Batch" ([ui](ui.md)).
+   `batch` turns on [batch mode](../definitions.md#batches). It is part of the experiment, so it can't change once the experiment starts: only `[budget]` may. The UI sends it as the checkbox "Batch: half price, results within 24 h" ([ui](ui.md)).
 
    `kind` says whether the AI model is a [system-1 or system-2 model](../definitions.md#setups). It is optional in an experiment config, because experiments committed before the field existed have none and must still evaluate.
 

@@ -24,7 +24,7 @@ The [setup](definitions.md#setups) is the experimental variable, alongside the A
 
 Setups are compared with the [paired setup test](definitions.md#metrics) on the same inputs.
 
-An experiment can run in [batch mode](definitions.md#batches). Each batched attempt sends a request byte-identical to the direct call, built by the same code, through the provider's batch API, which bills half the price and answers within 24 hours. The inputs, prompts, validator, and metrics are the same, so batch and direct attempts compare. Two things differ. OpenRouter is excluded, because it routes a batch to the cheapest upstream provider, so its answers would depend on a provider the experiment doesn't choose, and decision models run direct, because they have no batch API. A batch has no latency of its own, so latency is n/a for batched attempts, and cost uses the [batch prices](definitions.md#prices).
+An experiment can run in [batch mode](definitions.md#batches). Each batched attempt sends the same request body as the direct call, built by the same code, through the provider's batch API, which bills about half the price and aims to answer within 24 hours. The prompts are byte-identical; only the transport differs. Outputs are stochastic either way, and providers don't promise a batch the same serving as a direct call, so the served model is recorded as for any attempt. OpenRouter is excluded, because it routes a batch to the cheapest upstream provider, so its answers would depend on a provider the experiment doesn't choose, and decision models run direct, because they have no batch API. A batch has no latency of its own, so latency is n/a for batched attempts, and cost uses the [batch prices](definitions.md#prices).
 
 ## Scoring an answer
 
