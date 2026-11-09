@@ -353,10 +353,10 @@
         const modelOver = (m) => `Already spent (${typed(m.spent_usd)}) plus the worst case (${typed(m.worst_case_usd)}) passes the model budget (${typed(m.per_model_usd)}): the run stops when spending reaches it.`;
         const rows = d.models.map((m) => cells("td", [[m.name], [count(m.attempts)], [usd(m.worst_case_usd), ...over(m.over, m.max_request_usd > d.per_request_usd ? requestOver(m) : modelOver(m))],
           m.expected_cost_usd === null ? ["no cost history yet", "muted"] : [usd(m.expected_cost_usd)],
-          m.time_s === null ? ["no timing data yet", "muted"] : [UI.fmtTime(m.time_s)]]));
+          m.time_s === null ? [m.batched ? "n/a (up to 24 h)" : "no timing data yet", "muted"] : [UI.fmtTime(m.time_s)]]));
         const t = d.total;
         const total = cells("th", [["Total"], [count(t.attempts)], [usd(t.worst_case_usd), ...over(t.over, `Already spent (${typed(t.spent_usd)}) plus the worst case (${typed(t.worst_case_usd)}) passes the experiment budget (${typed(t.per_experiment_usd)}): the run stops when spending reaches it.`)], t.expected_cost_usd === null ? ["no cost history yet", "muted"] : [usd(t.expected_cost_usd) + (d.expected === "partial" ? " (partial)" : "")],
-          t.time_s === null ? ["no timing data yet", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
+          t.time_s === null ? [d.timing === "batch" ? "n/a (up to 24 h)" : "no timing data yet", "muted"] : [UI.fmtTime(t.time_s) + (d.timing === "partial" ? " (partial)" : "")]]);
         const table = [
           h("div", { class: "estimate" }, h("table", { class: "estimate-table", "data-table": "estimate" },
             head(true), h("tbody", {}, ...rows), h("tfoot", {}, total))),

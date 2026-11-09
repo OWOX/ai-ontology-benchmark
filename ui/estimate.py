@@ -287,28 +287,32 @@ class LiveEstimate:
                               frozenset(m["name"] for m in config["models"] if is_batched(config, m)))
         budget = config["budget"]
         times, expected = [], []
+        by_name = {model["name"]: model for model in config["models"]}
         for m in result["models"]:
             found = medians.get(m["name"])
             m["median_latency_s"], m["latency_n"] = (found[0], found[1]) if found else (None, 0)
+            m["batched"] = is_batched(config, by_name[m["name"]])
             m["time_s"] = 0.0 if m["attempts"] == 0 else (
-                m["attempts"] * found[0] / parallel if found else None)
+                None if m["batched"] else m["attempts"] * found[0] / parallel if found else None)
             seen = history.get(m["name"])
             m["cost_per_attempt_usd"], m["cost_n"] = (seen[0], seen[1]) if seen else (None, 0)
             m["expected_cost_usd"] = 0.0 if m["attempts"] == 0 else (m["attempts"] * seen[0] if seen else None)
             expected.append(m["expected_cost_usd"])
             m["over"] = (m["worst_case_usd"] + m["spent_usd"] > budget["per_model_usd"] + 1e-9
                          or m["max_request_usd"] > budget["per_request_usd"] + 1e-9)
-            times.append(m["time_s"])
+            if not m["batched"] or m["attempts"] == 0:  # a batch has no time to estimate: up to 24 h
+                times.append(m["time_s"])
         total = result["total"]
         known = [t for t in times if t is not None]
         partial = len(known) < len(times)
-        total["time_s"] = max(known, default=0.0) if known or not partial else None
+        waiting = any(m["batched"] and m["attempts"] for m in result["models"])
+        total["time_s"] = None if waiting and not known else max(known, default=0.0) if known or not partial else None
         total["over"] = total["worst_case_usd"] + total["spent_usd"] > budget["per_experiment_usd"] + 1e-9
         have = [v for v in expected if v is not None]
         missing = len(have) < len(expected)
         total["expected_cost_usd"] = sum(have) if have or not missing else None
         result["expected"] = "partial" if missing else "full"
-        result["timing"] = "partial" if partial else "full"
+        result["timing"] = "partial" if partial else "batch" if waiting and not known else "full"
         planned = inputs * len(config["models"]) * len(SETUPS) * config["attempts"]
         result["counts"] = {"inputs": inputs, "models": len(config["models"]), "setups": len(SETUPS),
                             "attempts": config["attempts"], "planned": planned, "done": planned - to_run,

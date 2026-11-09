@@ -400,6 +400,10 @@ def test_a_batch_form_is_estimated_at_the_batch_prices(server):
     for key in ("worst_case_usd", "max_request_usd"):
         assert batch["models"][0][key] == pytest.approx(standard["models"][0][key] / 2)
     assert batch["total"]["worst_case_usd"] == pytest.approx(standard["total"]["worst_case_usd"] / 2)
+    # a batch has no time to estimate: it shows n/a, not attempts x latency
+    assert batch["models"][0]["batched"] is True and batch["models"][0]["time_s"] is None
+    assert batch["timing"] == "batch" and batch["total"]["time_s"] is None
+    assert standard["models"][0]["batched"] is False
     # the form's config text carries `batch = true`, and only when the box is checked
     assert "batch = true" in config_text_of({**FORM, "batch": True}, server)
     assert "batch" not in config_text_of(FORM, server)

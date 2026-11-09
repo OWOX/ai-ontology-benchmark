@@ -25,6 +25,7 @@ class Job:
         self.proc: subprocess.Popen | None = None
         self.stopped = self.budget = False
         self.parallel = 1  # `run --parallel N`, 1 for a job not started with it
+        self.followers: list["Job"] = []  # jobs that share this job's process and end with it
 
 
 class Jobs:
@@ -103,12 +104,19 @@ class Jobs:
         return made
 
     def start(self, experiment_id: str, items: list[tuple[str, list[str]]], blocked_by: tuple = (),
-              exclusive: bool = False, stdin: str | None = None, parallel: int = 1) -> None:
+              exclusive: bool = False, stdin: str | None = None, parallel: int = 1, shared: bool = False) -> None:
         """Start one subprocess job per (name, `python -m` arguments). All register together.
         `stdin` is written to each process and closed, so a config can go in without a file.
-        `parallel` is remembered on each job, so the page can tell how many attempts are in flight."""
-        for job, (_, module_args) in zip(self.register(experiment_id, [n for n, _ in items], blocked_by, exclusive=exclusive), items):
+        `parallel` is remembered on each job, so the page can tell how many attempts are in flight.
+        `shared` starts one process, with the arguments of the first item, for all the names: the first job
+        owns it, and the others show its state, so each AI model still has a job of its own on the page."""
+        jobs = self.register(experiment_id, [n for n, _ in items], blocked_by, exclusive=exclusive)
+        for job in jobs:
             job.parallel = parallel
+        if shared:
+            jobs[0].followers = jobs[1:]
+            jobs, items = jobs[:1], items[:1]
+        for job, (_, module_args) in zip(jobs, items):
             self._spawn(job, [sys.executable, "-u", "-m", *module_args], stdin)
 
     def _spawn(self, job: Job, argv: list[str], stdin: str | None = None) -> None:
@@ -152,9 +160,10 @@ class Jobs:
 
     def finish(self, job: Job, code: int) -> None:
         with self.lock:
-            job.code = code if code in (0, 1) else None
-            job.state = ("stopped" if job.stopped else "done" if code == 0
-                         else "budget" if (code == 1 and job.budget) else "failed")
+            for each in (job, *job.followers):
+                each.code = code if code in (0, 1) else None
+                each.state = ("stopped" if each.stopped else "done" if code == 0
+                              else "budget" if (code == 1 and job.budget) else "failed")
 
     # --- stop
     def stop(self, experiment_id: str) -> list[str]:
