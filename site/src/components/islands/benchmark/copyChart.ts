@@ -8,6 +8,8 @@ export interface ChartCopy {
   higherIsBetter: boolean
   /** The filter in words, e.g. "All puzzles, 4 AI models". */
   filter: string
+  /** An extra line of small text, e.g. how many AI models the bars average. */
+  note?: string
   url: string
 }
 
@@ -32,7 +34,8 @@ const ROW = 44
 
 /** The chart as a PNG at 2x: the bars with their labels and values, then the caption, then the filter and the page URL in small text. */
 export function drawChart(c: ChartCopy): Promise<Blob> {
-  const height = PAD + c.rows.length * ROW + 34 + 2 * 18 + PAD - 6
+  const lines = c.note ? 3 : 2
+  const height = PAD + c.rows.length * ROW + 34 + lines * 18 + PAD - 6
   const canvas = document.createElement('canvas')
   canvas.width = WIDTH * SCALE
   canvas.height = height * SCALE
@@ -74,7 +77,8 @@ export function drawChart(c: ChartCopy): Promise<Blob> {
   ctx.fillStyle = MUTED
   ctx.font = `12px ${SANS}`
   ctx.fillText(c.filter, PAD, base + 24)
-  ctx.fillText(c.url, PAD, base + 42)
+  if (c.note) ctx.fillText(c.note, PAD, base + 42)
+  ctx.fillText(c.url, PAD, base + (c.note ? 60 : 42))
   return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('no image'))), 'image/png'))
 }
 

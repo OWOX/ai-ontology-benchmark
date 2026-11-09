@@ -24,7 +24,7 @@ const METRICS = [
 ] as const
 
 const SETUP_QUESTION = 'does giving an AI model the rules of a puzzle change'
-const AVERAGE = 'Each bar is the average over the selected AI models that have a value, each counting equally.'
+const AVERAGE = 'Each bar is the average over the selected AI models that have a value under every setup, each counting equally'
 
 /** The tabs of Charts 1 to 3, which compare AI models. The "(?)" text says what the chart shows and which question it answers (docs/methodology.md, "The question"). */
 export const MODEL_TABS: readonly ChartTab[] = [
@@ -35,9 +35,9 @@ export const MODEL_TABS: readonly ChartTab[] = [
 
 /** The tabs of Charts 4 to 6, which compare setups. */
 export const SETUP_TABS: readonly ChartTab[] = [
-  { ...METRICS[0], explanation: `Shows how often answers are right when the prompt gives no model, a descriptive model, or a prescriptive model of the puzzle's rules. It addresses the research question: ${SETUP_QUESTION} how often its answers are right? ${AVERAGE}` },
+  { ...METRICS[0], explanation: `Shows how often answers are right when the prompt gives no model, a descriptive model, or a prescriptive model of the puzzle's rules. It addresses the research question: ${SETUP_QUESTION} how often its answers are right? ${AVERAGE}.` },
   { ...METRICS[1], explanation: `Shows how often answers contain a move that doesn't exist for the puzzle under each setup. It addresses the research question: ${SETUP_QUESTION} how often it hallucinates? ${AVERAGE} A model with no value, such as a decision model, is skipped.` },
-  { ...METRICS[2], explanation: `Shows how well answers judge whether a puzzle can be solved at all under each setup. It addresses the research question: ${SETUP_QUESTION} how well it judges whether a puzzle can be solved? ${AVERAGE}` },
+  { ...METRICS[2], explanation: `Shows how well answers judge whether a puzzle can be solved at all under each setup. It addresses the research question: ${SETUP_QUESTION} how well it judges whether a puzzle can be solved? ${AVERAGE}.` },
 ]
 
 interface Props {
@@ -174,10 +174,13 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
   const current = METRICS.find((m) => m.id === metric)!
   const setupCurrent = METRICS.find((m) => m.id === setupMetric)!
   // Each setup's mean over the models the filter shows.
-  const bars = useMemo(() => setupBars(setupMetrics, puzzle ?? ALL, names, setupCurrent.setupPick), [setupMetrics, puzzle, names.join('\u0000'), setupCurrent])
+  const setupResult = useMemo(() => setupBars(setupMetrics, puzzle ?? ALL, names, setupCurrent.setupPick), [setupMetrics, puzzle, names.join('\u0000'), setupCurrent])
 
   const modelBars = selected.map((m) => ({ model: m.model, rate: current.pick(m) }))
-  const setupRows = showModels ? bars.map((b) => ({ model: b.label, rate: b.rate, detail: `${b.models} ${b.models === 1 ? 'model' : 'models'}` })) : []
+  const { bars, used, left } = setupResult
+  const setupRows = names.length > 0 ? bars.map((b) => ({ model: b.label, rate: b.rate })) : []
+  const aiModels = (n: number) => `${n} AI ${n === 1 ? 'model' : 'models'}`
+  const setupNote = `Averaged over ${aiModels(used)}.${left > 0 ? ` ${left} left out: no value under every setup.` : ''}`
   const filterText = `${puzzle === ALL || puzzle === null ? 'All puzzles' : `${puzzle} cube`}, ${names.length} AI ${names.length === 1 ? 'model' : 'models'}`
 
   return (
@@ -211,7 +214,7 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
             <MetricChart
               idPrefix="setup-metric"
               heading="Metrics by setup"
-              intro="Compares no model, descriptive model, and prescriptive model: how much of the puzzle's rules the prompt carries. Each bar averages the selected AI models."
+              intro="Compares no model, descriptive model, and prescriptive model: how much of the puzzle's rules the prompt carries. Each bar averages the selected AI models that have a value under every setup."
               by="setup"
               firstNumber={4}
               tabs={SETUP_TABS}
@@ -220,6 +223,7 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
               definitions={definitions}
               layoutKey={String(puzzle)}
               bars={setupRows}
+              note={setupRows.length > 0 ? setupNote : undefined}
               filterText={filterText}
             >
               {showModels ? (

@@ -29,6 +29,8 @@ interface Props {
   layoutKey: string
   /** The bars of the selected metric, for the copy button; empty when the chart shows none. */
   bars: readonly BarRow[]
+  /** One line under the bars, e.g. how many AI models they average; also written under the copied image. */
+  note?: string
   /** The filter in words (puzzle and number of AI models), written under the copied image. */
   filterText: string
   /** The chart of the selected metric. */
@@ -36,7 +38,7 @@ interface Props {
 }
 
 /** A chart section: a subtitle, the metric tabs hanging off a framed panel, and in the panel a figure: the chart, then its numbered caption ending in a "(?)" popover. Each tab keeps its own "?" for the metric's definition. */
-export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, filterText, children }: Props) {
+export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, bars, note, filterText, children }: Props) {
   const headingId = useId()
   const root = useRef<HTMLElement>(null)
   // The metric whose definition popover is open (one at a time).
@@ -150,6 +152,9 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
 
   // The title's "(?)" popover, the Player's pattern: a text button with aria-controls, a dialog always in the DOM (hidden while closed), closing on an outside click and on Escape.
   const [titleOpen, setTitleOpen] = useState(false)
+  // One popover at a time in a chart: opening the metric's definition closes the title's, and the other way round.
+  useEffect(() => { if (openHelp) setTitleOpen(false) }, [openHelp])
+  useEffect(() => { if (titleOpen) setHelpOpen(null) }, [titleOpen])
   const head = useRef<HTMLDivElement>(null)
   const popId = useId()
   const captionId = useId()
@@ -169,7 +174,8 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       setTitleOpen(false)
-      head.current?.querySelector<HTMLElement>('button.pop-btn')?.focus()
+      // Focus goes back to the "(?)" only when it was inside the caption (never pulled away from a field elsewhere).
+      if (head.current?.contains(document.activeElement)) head.current.querySelector<HTMLElement>('button.pop-btn')?.focus()
     }
     // The click is not stopped, so the control under the pointer still does its job.
     const onClick = (e: Event) => {
@@ -195,7 +201,7 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
   const copy = async () => {
     let next: 'copied' | 'failed' = 'copied'
     try {
-      await copyChart({ caption: title, rows: bars, higherIsBetter: current.higherIsBetter, filter: filterText, url: location.href })
+      await copyChart({ caption: title, rows: bars, higherIsBetter: current.higherIsBetter, filter: filterText, note, url: location.href })
     } catch {
       next = 'failed'
     }
@@ -227,7 +233,7 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
               className={`help${m.id === metric ? ' current' : ''}`}
               id={`${idPrefix}-help-${m.id}`}
               style={{ left: spots[m.id].x, top: spots[m.id].y }}
-              aria-label={`What is ${m.label}?`}
+              aria-label={`What is ${m.label}?${by === 'AI model' ? '' : ` (by ${by})`}`}
               aria-expanded={openHelp === m.id}
               aria-controls={`${idPrefix}-popover`}
               aria-describedby={openHelp === m.id ? `${idPrefix}-popover` : undefined}
@@ -271,6 +277,7 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
         <div role="tabpanel" id={`${idPrefix}-panel`} aria-labelledby={`${idPrefix}-${metric}`} tabIndex={0}>
           <figure className="chart-figure" aria-labelledby={captionId}>
             {children}
+            {note && <p className="chart-note">{note}</p>}
             <figcaption className="chart-head" ref={head}>
               <span className="chart-title" id={captionId}>{title}</span>{' '}
               <span className="pop-wrap">

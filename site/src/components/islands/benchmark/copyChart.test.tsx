@@ -12,7 +12,7 @@ const metrics = [row('3x3', 'claude-a', 'anthropic'), row('3x3', 'gpt-a', 'opena
 const srow = (model: string, setup: string, precision: number): SetupMetrics => ({
   puzzle: '3x3', model, setup, precision: rate(precision), hallucination: rate(0.1), critical: rate(null, 0),
 })
-const setupMetrics = [srow('claude-a', 'no_model', 0.2), srow('gpt-a', 'no_model', 0.6), srow('claude-a', 'descriptive', 0.4), srow('claude-a', 'prescriptive', 0.6)]
+const setupMetrics = [srow('claude-a', 'no_model', 0.2), srow('claude-a', 'descriptive', 0.4), srow('claude-a', 'prescriptive', 0.6)]
 
 const view = () => render(<BenchmarkView metrics={metrics} setupMetrics={setupMetrics} attemptsUrl="/a.json" />)
 
@@ -80,11 +80,11 @@ describe('copy chart', () => {
     expect(drawn.some((d) => d.w === 1280 && typeof d.h === 'number')).toBe(true)
   })
 
-  it('copies the setup chart as it is shown, with the model count out of the text', async () => {
+  it('copies the setup chart as it is shown, and the text without the AI model count', async () => {
     view()
     await click(copyBtn(4))
     const init = (write.mock.calls[0][0][0] as { init: Record<string, unknown> }).init
-    expect(await (init['text/plain'] as Blob).text()).toBe('Chart 4. Balanced precision by setup\nNo model: 40%\nDescriptive model: 40%\nPrescriptive model: 60%')
+    expect(await (init['text/plain'] as Blob).text()).toBe('Chart 4. Balanced precision by setup\nNo model: 20%\nDescriptive model: 40%\nPrescriptive model: 60%')
   })
 
   it('formats text as the caption then one label: value line per bar, n/a for no value', () => {
