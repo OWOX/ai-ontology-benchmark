@@ -338,7 +338,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
           <Player key={`${puzzle}|${names.join('\u0000')}`} puzzle={puzzle} models={names} attemptsUrl={attemptsUrl} legalMoves={legalMoves} />
         </>
       )}
-      <Source />
+      <Source shown={selected.length > 0 ? { attempts: selected.reduce((a, m) => a + m.attempts, 0), tokens: selected.reduce((a, m) => a + m.tokens, 0) } : undefined} />
     </div>
   )
 }

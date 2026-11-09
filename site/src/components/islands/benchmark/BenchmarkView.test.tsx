@@ -6,7 +6,7 @@ import BenchmarkView from './BenchmarkView'
 
 const rate = (value: number | null, n: number) => ({ value, n })
 const row = (puzzle: string, model: string, provider: string, o: Partial<ModelMetrics> = {}): ModelMetrics => ({
-  puzzle, model, provider, precision: rate(0.5, 10), hallucination: rate(0.25, 8), critical: rate(null, 0), ...o,
+  puzzle, model, provider, attempts: 10, tokens: 1000, precision: rate(0.5, 10), hallucination: rate(0.25, 8), critical: rate(null, 0), ...o,
 })
 const metrics = [
   row('3x3', 'claude-a', 'anthropic'),
@@ -230,6 +230,16 @@ describe('BenchmarkView', () => {
     fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
     expect(location.hash).toBe('')
     expect(history.length).toBe(before)
+  })
+
+  it('leads the Source note with the attempts and tokens of the models shown, following the filter', () => {
+    const { container } = view()
+    const note = () => container.querySelector('.steps.source .body')!.textContent
+    expect(note()).toMatch(/^github\.com\/OWOX\/ai-ontology-benchmark \(opens in a new tab\)20 attempts and 2k tokens\. The repository/)
+    fireEvent.click(on('OpenAI'))
+    expect(note()).toMatch(/10 attempts and 1k tokens\./)
+    fireEvent.click(screen.getByRole('button', { name: '4x4 cube' }))
+    expect(note()).toMatch(/10 attempts and 1k tokens\./)
   })
 
   it('starts from the hash, ignoring values that do not exist', () => {
