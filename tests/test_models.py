@@ -978,12 +978,26 @@ def test_google_batch_results_by_key(monkeypatch):
         assert isinstance(got[custom_id], InfrastructureError)
 
 
-def test_google_result_without_a_key_fails_the_whole_read(monkeypatch):
+def test_google_result_without_a_key_is_skipped_and_an_unreadable_one_fails_alone(monkeypatch):
     client = batch_client(monkeypatch, "google")
-    client.batches.get.return_value = NS(dest=NS(inlined_responses=[inlined("a", google_response()),
-                                                                     inlined(None, google_response())]))
-    with pytest.raises(InfrastructureError):
-        models.batch_results(batch_entry("google"), "b")
+    client.batches.get.return_value = NS(dest=NS(inlined_responses=[
+        inlined("a", google_response()), inlined(None, google_response()), inlined("broken", NS())]))
+    got = models.batch_results(batch_entry("google"), "b")
+    assert set(got) == {"a", "broken"}
+    assert got["a"].text == "hi"
+    assert isinstance(got["broken"], InfrastructureError)
+
+
+def test_openai_unreadable_lines_fail_alone_or_are_skipped(monkeypatch):
+    out = [openai_line("ok", body=chat_body()), openai_line("broken", body={"choices": "x"}),
+           "{not json", json.dumps({"id": "r", "response": None}), "[1, 2]"]
+    client = batch_client(monkeypatch, "openai")
+    client.batches.retrieve.return_value = NS(status="completed", output_file_id="out", error_file_id=None)
+    client.files.content.return_value = NS(text="\n".join(out) + "\n")
+    got = models.batch_results(batch_entry("openai"), "b")
+    assert set(got) == {"ok", "broken"}
+    assert got["ok"].text == "hi"
+    assert isinstance(got["broken"], InfrastructureError)
 
 
 def test_google_job_without_responses_has_no_results(monkeypatch):

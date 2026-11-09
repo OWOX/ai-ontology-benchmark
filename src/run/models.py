@@ -629,9 +629,19 @@ def _openai_batch_results(client, batch_id: str) -> dict:
             continue
         content = _batch_sdk_call("openai", client.files.content, file_id).text
         for text in content.splitlines():
-            if text.strip():
+            if not text.strip():
+                continue
+            try:
                 line = json.loads(text)
-                results[line["custom_id"]] = _openai_batch_line(line)
+                cid = line["custom_id"]
+            except (ValueError, KeyError, TypeError):
+                continue  # a line with no custom_id can't be matched: its request is retried as missing
+            if not isinstance(cid, str):
+                continue
+            try:
+                results[cid] = _openai_batch_line(line)
+            except Exception as error:  # one unreadable line must not stop the others
+                results[cid] = InfrastructureError(f"openai: an unreadable batch result: {' '.join(str(error).split())[:200]}")
     if not results and batch.status == "failed":  # the file was rejected as a whole
         errors = getattr(getattr(batch, "errors", None), "data", None) or []
         if any(getattr(item, "code", None) == "token_limit_exceeded" for item in errors):
@@ -648,9 +658,12 @@ def _google_batch_results(client, batch_id: str) -> dict:
     for item in responses:
         key = (item.metadata or {}).get("key")
         if not key:
-            raise InfrastructureError("google: a batch result has no key, so it can't be matched to its request")
+            continue  # it can't be matched: its request is retried as missing
         if item.response is not None:
-            results[key] = _google_reply(item.response, None)
+            try:
+                results[key] = _google_reply(item.response, None)
+            except Exception as error:  # one unreadable item must not stop the others
+                results[key] = InfrastructureError(f"google: an unreadable batch result: {' '.join(str(error).split())[:200]}")
             continue
         error = item.error
         code = error.code if error and isinstance(error.code, int) else None
