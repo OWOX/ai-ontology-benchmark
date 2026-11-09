@@ -286,6 +286,12 @@ describe('BenchmarkView', () => {
     expect(container.textContent).not.toMatch(/Based on/)
   })
 
+  it('shows the Source section after the Experiment Example', () => {
+    const { container } = view()
+    const source = screen.getByRole('region', { name: 'Source' })
+    expect(container.querySelector('.player')!.compareDocumentPosition(source) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('wears the /cube solver classes so the shared stage and button styles apply', () => {
     const { container } = view()
     expect(container.querySelector('.benchmark.cube-solver')).not.toBeNull()

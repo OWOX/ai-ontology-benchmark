@@ -125,13 +125,11 @@ footer {
   font-family: var(--font-body);
   font-weight: var(--weight-light);
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: 0.5rem 1rem;
   flex-wrap: wrap;
 }
-footer p { margin: 0; }
-footer a { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
 
 /* Tablet/mobile: single content column */
 @media (max-width: 60rem) {

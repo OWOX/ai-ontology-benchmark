@@ -8,6 +8,7 @@ import { Filter, type Option } from './Filter'
 import { parseHash, serializeHash } from './hash'
 import { OneCube } from './OneCube'
 import { Player } from './Player'
+import { Source } from './Source'
 
 export const PUZZLES = ['2x2', '3x3', '4x4', '5x5']
 
@@ -335,6 +336,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
           <Player key={`${puzzle}|${names.join('\u0000')}`} puzzle={puzzle} models={names} attemptsUrl={attemptsUrl} legalMoves={legalMoves} />
         </>
       )}
+      <Source />
     </div>
   )
 }

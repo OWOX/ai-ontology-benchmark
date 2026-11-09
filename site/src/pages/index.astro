@@ -137,7 +137,11 @@ const attemptsUrl = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/attempts.js
   /* 1rem + the island's 1.5rem gap = 2.5rem under the chart panel, the same as above its tabs. */
   :global(.benchmark .player) { margin-top: 1rem; display: grid; grid-template-columns: minmax(min-content, 1fr) minmax(0, 14.4rem); gap: 1.5rem; align-items: start; }
   /* The Experiment block wears the filter's step look (title with an icon disc), its body under the title text. */
-  :global(.cube-solver.benchmark .steps.experiment .body) { margin-top: 0.35rem; padding-left: 0; justify-items: start; }
+  :global(.cube-solver.benchmark .steps.experiment .body), :global(.cube-solver.benchmark .steps.source .body) { margin-top: 0.35rem; padding-left: 0; justify-items: start; }
+  /* The Source section: its body is plain text under the title, a link first. */
+  :global(.benchmark .steps.source .body p) { margin: 0; }
+  :global(.benchmark .steps.source .body p + p) { margin-top: 0.5rem; max-width: 36rem; }
+  :global(.benchmark .steps.source .repo) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
   /* The replay cube fills its 14.4rem column (about 20% smaller than /cube's), against the right edge of the content. */
   :global(.benchmark .player .views) { justify-items: end; }
   :global(.benchmark .player .cube-view) { width: min(100%, 14.4rem); }
