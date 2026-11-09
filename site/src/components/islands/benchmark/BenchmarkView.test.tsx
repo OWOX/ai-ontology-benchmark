@@ -242,6 +242,23 @@ describe('BenchmarkView', () => {
     expect(note()).toMatch(/10 attempts and 1k tokens\./)
   })
 
+  it('updates the Source note when a single model is unticked', () => {
+    const { container } = view()
+    fireEvent.click(on('gpt-a'))
+    expect(container.querySelector('.steps.source .body')!.textContent).toMatch(/10 attempts and 1k tokens\./)
+  })
+
+  it('without pooled rows, clicking the pressed puzzle changes nothing: still pressed, models stay unticked, no hash', () => {
+    view()
+    fireEvent.click(on('gpt-a'))
+    const hash = location.hash
+    expect(hash).toBe('#models=claude-a')
+    fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
+    expect(screen.getByRole('button', { name: '3x3 cube' })).toHaveAttribute('aria-pressed', 'true')
+    expect(off('gpt-a')).toBeInTheDocument()
+    expect(location.hash).toBe(hash)
+  })
+
   it('starts from the hash, ignoring values that do not exist', () => {
     history.replaceState(null, '', '/#puzzle=4x4&providers=anthropic,nope&models=claude-a&metric=critical')
     view()
@@ -504,6 +521,27 @@ describe('BenchmarkView', () => {
       expect(screen.getByRole('img', { name: /^Precision/ })).toHaveAccessibleName('Precision: claude-a 40% (worst), gpt-a 90% (best), gem-a 60%')
       expect(within(screen.getByRole('group', { name: 'Model' })).getAllByRole('checkbox')).toHaveLength(3)
       expect(screen.getByRole('checkbox', { name: 'Google' })).toBeChecked()
+    })
+
+    it('describes the group: none selected shows all puzzles', () => {
+      all()
+      const group = screen.getByRole('group', { name: 'Puzzle' })
+      expect(group).toHaveAccessibleDescription('None selected shows all puzzles.')
+    })
+
+    it('resets the experiment example when the selected puzzle is unselected', async () => {
+      resetAttempts()
+      const a = (model: string) => ({ model, puzzle: '3x3', validity: 'valid', setup: 'descriptive', attempt: 1, state: '', moves: [], outcome: 'failure', mismatch: false })
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ attempts: { '3x3': [a('claude-a'), a('gpt-a')] }, prompts: {} }) })))
+      all()
+      fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+      await act(async () => {})
+      expect(screen.getByRole('button', { name: 'Re-run' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
+      expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Re-run' })).toBeNull()
+      vi.unstubAllGlobals()
     })
 
     it('reads a hash without a puzzle, puzzle=all, and an unknown puzzle as none selected', () => {

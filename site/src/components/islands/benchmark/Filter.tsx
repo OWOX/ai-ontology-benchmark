@@ -69,7 +69,8 @@ export function Filter({ puzzles, puzzle, onPuzzle, providers, providerOn, onPro
   return (
     <ol className="steps filter" role="list" aria-label="Filter">
       <Step icon={<CubeIcon />} title="Puzzle" id="filter-puzzle">
-        <Choice role="toggle" label="Puzzle" labelledBy="filter-puzzle" options={puzzles} value={puzzle} onChange={onPuzzle} />
+        <Choice role="toggle" label="Puzzle" labelledBy="filter-puzzle" describedBy="filter-puzzle-hint" options={puzzles} value={puzzle} onChange={onPuzzle} />
+        <span className="sr-only" id="filter-puzzle-hint">None selected shows all puzzles.</span>
       </Step>
       <Step icon={<SparkleIcon />} title="AI provider" id="filter-provider">
         <Toggles labelledBy="filter-provider" options={providers} on={providerOn} onToggle={onProvider} />

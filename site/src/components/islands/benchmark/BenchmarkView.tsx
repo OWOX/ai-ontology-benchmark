@@ -233,6 +233,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
   // Clicking the selected puzzle again switches it off, back to all puzzles (when the data has pooled rows to show); clicking another replaces it.
   const choosePuzzle = (id: string) => {
     const next = id === puzzle ? (withData.has(ALL) ? ALL : puzzle) : id
+    if (next === puzzle) return
     setPuzzle(next)
     setModelOff(new Set())
   }

@@ -18,10 +18,12 @@ interface Props {
   panelId?: string
   /** An option for which a "?" button is laid over the tab's right end: the tab reserves room for it (`.has-help`). The button itself lives outside the tablist, so the tablist holds only tabs. */
   reserve?: (o: Option) => boolean
+  /** The id of an element that describes the group (`aria-describedby`). */
+  describedBy?: string
 }
 
 /** A row of toggle buttons where one is on (or, for `toggle`, none). They wear the /cube solver's text-button look (`.cube-solver button`, src/styles/cube-stage.css), and the on one `.primary`. */
-export function Choice({ role, label, labelledBy, options, value, onChange, idPrefix, panelId, reserve }: Props) {
+export function Choice({ role, label, labelledBy, options, value, onChange, idPrefix, panelId, reserve, describedBy }: Props) {
   const key = (e: KeyboardEvent<HTMLDivElement>) => {
     if (options.length === 0) return
     if (role === 'toggle') return
@@ -40,7 +42,7 @@ export function Choice({ role, label, labelledBy, options, value, onChange, idPr
     buttons[options.indexOf(next)]?.focus()
   }
   return (
-    <div className="options" role={role === 'tab' ? 'tablist' : 'group'} aria-label={labelledBy ? undefined : label} aria-labelledby={labelledBy} onKeyDown={key}>
+    <div className="options" role={role === 'tab' ? 'tablist' : 'group'} aria-label={labelledBy ? undefined : label} aria-labelledby={labelledBy} aria-describedby={describedBy} onKeyDown={key}>
       {options.map((o) => {
         const on = value === o.id
         return (
