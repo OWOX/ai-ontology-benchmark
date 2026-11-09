@@ -15,6 +15,7 @@ PROVIDERS = ("anthropic", "openai", "google", "openrouter", "typesafe", "cloudfl
 BATCH_PRICE_FIELDS = ("batch_price_input_per_mtok", "batch_price_output_per_mtok")
 KINDS = ("system-1", "system-2")
 # Settings that `models` and the run script set themselves.
+SDK_ONLY_PARAMS = {"extra_body", "extra_headers", "extra_query", "timeout"}  # not in a request body
 FORBIDDEN_PARAMS = {
     "model", "model_id", "api_model_id", "prompt", "messages", "system", "input",
     "contents", "max_tokens", "max_output_tokens", "max_completion_tokens",
@@ -207,6 +208,10 @@ def parse_experiment_config(text: str, experiment_id: str, source: str) -> dict:
         if config.get("batch") is True and model["provider"] == "openrouter":
             _fail(path, "batch", f"can't be true with openrouter model {model['name']}: OpenRouter routes "
                   "a batch to the cheapest upstream provider, so its answers are not comparable with direct calls")
+        if config.get("batch") is True and model["provider"] in BATCH_PROVIDERS:
+            for key in SDK_ONLY_PARAMS & set(model.get("params", {})):
+                _fail(path, f"models.{model['name']}.params", f"must not set {key!r} when batch is true: it is a "
+                      "client setting, not part of the request body, so a batch line could not carry it")
     config["budget"] = _check_budget(path, config)
     config["experiment_id"] = experiment_id
     return config

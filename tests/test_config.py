@@ -380,3 +380,12 @@ def test_catalogue_batch_prices_are_half_of_standard():
         if "batch_price_input_per_mtok" in entry:
             assert entry["batch_price_input_per_mtok"] == pytest.approx(entry["price_input_per_mtok"] / 2), name
             assert entry["batch_price_output_per_mtok"] == pytest.approx(entry["price_output_per_mtok"] / 2), name
+
+
+@pytest.mark.parametrize("key", ["extra_body", "extra_headers", "extra_query", "timeout"])
+def test_batch_refuses_sdk_only_params(tmp_path, key):
+    text = "batch = true\n" + EXPERIMENT + f"params = {{{key} = 5}}\n"
+    with pytest.raises(ValueError, match=f"{key}.*batch is true"):
+        load_experiment_config(write(tmp_path, text, "e.toml"))
+    load_experiment_config(write(tmp_path, "batch = false\n" + EXPERIMENT + f"params = {{{key} = 5}}\n", "e.toml"))
+    load_experiment_config(write(tmp_path, EXPERIMENT + f"params = {{{key} = 5}}\n", "e.toml"))
