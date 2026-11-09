@@ -177,10 +177,8 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
   const setupResult = useMemo(() => setupBars(setupMetrics, puzzle ?? ALL, names, setupCurrent.setupPick), [setupMetrics, puzzle, names.join('\u0000'), setupCurrent])
 
   const modelBars = selected.map((m) => ({ model: m.model, rate: current.pick(m) }))
-  const { bars, used, left } = setupResult
+  const { bars } = setupResult
   const setupRows = names.length > 0 ? bars.map((b) => ({ model: b.label, rate: b.rate })) : []
-  const aiModels = (n: number) => `${n} AI ${n === 1 ? 'model' : 'models'}`
-  const setupNote = `Averaged over ${aiModels(used)}.${left > 0 ? ` ${left} left out for lacking a value under some setup.` : ''}`
   const filterText = `${puzzle === ALL || puzzle === null ? 'All puzzles' : `${puzzle} cube`}, ${names.length} AI ${names.length === 1 ? 'model' : 'models'}`
 
   return (
@@ -221,7 +219,6 @@ export default function BenchmarkView({ metrics, setupMetrics = [], attemptsUrl,
               definitions={definitions}
               layoutKey={String(puzzle)}
               bars={setupRows}
-              note={setupRows.length > 0 ? setupNote : undefined}
               filterText={filterText}
             >
               {showModels ? (
