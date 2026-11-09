@@ -312,7 +312,7 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
               {children}
               {note && <p className="chart-note">{note}</p>}
             </div>
-            <figcaption className="chart-head" ref={head}>
+            <figcaption className="chart-head" ref={head} onBlur={(e) => { if (titleByFocus.current && !e.currentTarget.contains(e.relatedTarget as Node | null)) setTitleOpen(false) }}>
               <span className="chart-title" id={captionId}>{title}</span>{' '}
               {/* The "?", the copy button, and the status stay together on the caption's last line. */}
               <span className="chart-tools">
@@ -342,9 +342,6 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
                       try { visible = e.currentTarget.matches(':focus-visible') } catch { /* no :focus-visible */ }
                       if (visible && !titleOpen) { titlePinned.current = true; titleByFocus.current = true; setTitleOpen(true) }
                     }}
-                    onBlur={(e) => {
-                      if (titleByFocus.current && !head.current?.contains(e.relatedTarget as Node | null)) setTitleOpen(false)
-                    }}
                   >?</button>
                 </span>
                 {bars.length > 0 && (
@@ -355,7 +352,7 @@ export function MetricChart({ idPrefix, heading, by, firstNumber, tabs, metric, 
                 <span className={`copy-status${status === 'failed' ? ' failed' : ''}`} role="status" aria-live="polite">{status === 'copied' ? 'Copied' : status === 'failed' ? 'Copy failed' : ''}</span>
               </span>
               {/* Always in the DOM (hidden while closed), so the button's aria-controls points at an element that exists. */}
-              <div className={`pop pop-wrap${up ? '' : ' below'}`} id={popId} role="dialog" aria-label={`About Chart ${number}`} hidden={!titleOpen} onPointerEnter={(e) => { if (e.pointerType === 'mouse') clearTitleLeave() }} onPointerLeave={titleHoverLeave}>
+              <div className={`pop pop-wrap${up ? '' : ' below'}`} id={popId} role="dialog" aria-label={`About Chart ${number}`} hidden={!titleOpen} tabIndex={-1} onPointerEnter={(e) => { if (e.pointerType === 'mouse') clearTitleLeave() }} onPointerLeave={titleHoverLeave}>
                 <p>{current.explanation}</p>
               </div>
             </figcaption>

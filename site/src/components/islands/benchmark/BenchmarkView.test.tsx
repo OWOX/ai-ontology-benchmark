@@ -726,7 +726,7 @@ describe('BenchmarkView', () => {
           ;(window as any).PointerEvent = Orig
         }
         beforeEach(() => vi.useFakeTimers())
-        afterEach(() => vi.useRealTimers())
+        afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
 
         it('opens when a mouse enters the ? and closes 150ms after it leaves', () => {
           both()
@@ -794,8 +794,15 @@ describe('BenchmarkView', () => {
           const copy = screen.getByRole('button', { name: 'Copy Chart 1 to clipboard' })
           act(() => copy.focus())
           expect(button(1)).toHaveAttribute('aria-expanded', 'true')
-          act(() => button(1).focus())
-          act(() => button(1).blur())
+          act(() => copy.blur())
+          expect(button(1)).toHaveAttribute('aria-expanded', 'false')
+        })
+
+        it('closes the other chart\'s pinned caption popover when a tab ? opens by hover', () => {
+          render(<BenchmarkView metrics={metrics} setupMetrics={setupMetrics} attemptsUrl="/a.json" definitions={[{ key: 'precision', name: 'Balanced precision', definition: 'The share of attempts that solved it.' }]} />)
+          fireEvent.click(button(1))
+          expect(button(1)).toHaveAttribute('aria-expanded', 'true')
+          mouse('pointerEnter', within(setupSection()).getByRole('button', { name: /^What is Precision/ }))
           expect(button(1)).toHaveAttribute('aria-expanded', 'false')
         })
 
