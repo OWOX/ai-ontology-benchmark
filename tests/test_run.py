@@ -1767,3 +1767,156 @@ def test_a_request_error_does_not_count_toward_the_retry_cap(bexp, capsys):
     bexp_state.failing.clear()
     assert go("--limit", "3") == 0
     assert all(r["outcome"] != "infrastructure_failure" for r in records(bexp, "A"))
+
+
+# Final review fixes: the state files are compared like raw files, one experiment lock covers the budget
+# reads and the submit, and open batches count in the direct path's budget.
+
+def pending_batch_pushed(bexp, monkeypatch, tmp_path_factory):
+    """Submit one batch that never finishes, push it to a remote, and stop the run while it waits."""
+    from src.run import batch as batch_module
+    with_remote(bexp, tmp_path_factory)
+    models.FAKE_BATCH_PENDING.add("fake-batch-1")
+
+    def stop(seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(batch_module.time, "sleep", stop)
+    with pytest.raises(KeyboardInterrupt):
+        go("--limit", "3")
+    models.FAKE_BATCH_PENDING.clear()
+    monkeypatch.setattr(batch_module.time, "sleep", lambda seconds: None)
+    assert len(models.FAKE_BATCH_SUBMITS) == 1
+
+
+def test_a_missing_batch_state_file_is_refused_before_any_call(bexp, monkeypatch, tmp_path_factory, capsys):
+    pending_batch_pushed(bexp, monkeypatch, tmp_path_factory)
+    (bexp / "results/exp/batches/A.jsonl").unlink()
+    assert go("--limit", "3") == 1
+    assert "results/exp/batches/A.jsonl on results/exp holds records this checkout lacks" in capsys.readouterr().err
+    assert len(models.FAKE_BATCH_SUBMITS) == 1  # nothing was submitted again
+
+
+def test_a_shorter_batch_state_file_is_refused_before_any_call(bexp, monkeypatch, tmp_path_factory, capsys):
+    pending_batch_pushed(bexp, monkeypatch, tmp_path_factory)
+    path = bexp / "results/exp/batches/A.jsonl"
+    path.write_bytes(path.read_bytes()[:20])
+    assert go("--limit", "3") == 1
+    err = capsys.readouterr().err
+    assert "results/exp/batches/A.jsonl on results/exp holds records this checkout lacks" in err
+    assert "git restore --source=results/exp --worktree -- results/exp" in err
+    assert len(models.FAKE_BATCH_SUBMITS) == 1
+
+
+def test_an_equal_batch_state_file_collects_without_resubmitting(bexp, monkeypatch, tmp_path_factory):
+    pending_batch_pushed(bexp, monkeypatch, tmp_path_factory)
+    assert go("--limit", "3") == 0
+    assert len(models.FAKE_BATCH_SUBMITS) == 1 and len(records(bexp, "A")) == 3
+
+
+def test_two_processes_cannot_together_pass_the_experiment_budget(bexp, monkeypatch):
+    import threading
+    import time
+    from src.run import batch as batch_module
+    real_sleep = time.sleep
+    two = (toml_with_batch(BATCH_EXPERIMENT) + '[[models]]\nname = "B"\nprovider = "fake"\napi_model_id = "b-1"\n'
+           '[budget]\nper_experiment_usd = 0.0004\n')  # room for four requests at 0.0001 each
+    (bexp / "config" / "experiments" / "exp.toml").write_text(two, encoding="utf-8")
+    cheap = ("price_input_per_mtok = 0.0\nprice_output_per_mtok = 2.0\n"
+             "batch_price_input_per_mtok = 0.0\nbatch_price_output_per_mtok = 1.0\n")
+    (bexp / "config" / "prices.toml").write_text(f"[A]\n{cheap}[B]\n{cheap}", encoding="utf-8")
+    real = models.submit_batch
+
+    def slow(model, requests):
+        real_sleep(0.3)  # without the lock, the other process reads its budget meanwhile
+        return real(model, requests)
+
+    monkeypatch.setattr(batch_module, "submit_batch", slow)
+    codes = {}
+    threads = [threading.Thread(target=lambda n=n: codes.__setitem__(n, go("--model", n, "--limit", "20")))
+               for n in "AB"]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    total = len(records(bexp, "A")) + len(records(bexp, "B"))
+    assert total == 4 and sorted(codes.values()) == [1, 1]
+    assert len(submitted_ids()) == 4
+
+
+def test_a_submitted_event_stores_the_worst_case_cost_and_open_batches_are_read_from_it(bexp, monkeypatch):
+    from src.run import batch as batch_module
+    from src.run.budget import held_by_model
+    models.FAKE_BATCH_PENDING.add("fake-batch-1")
+    monkeypatch.setattr(batch_module.time, "sleep", lambda seconds: (_ for _ in ()).throw(KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt):
+        go("--limit", "3")
+    (event,) = state_events(bexp)
+    assert event["worst_usd"] > 0
+    config = run_module.load_experiment_config(bexp / "config/experiments/exp.toml")
+    prices = run_module.load_prices(bexp / "config/prices.toml")
+    never = lambda input_id, setup: (_ for _ in ()).throw(AssertionError("recomputed"))
+    assert held_by_model(config, prices, bexp / "results/exp", never) == {"A": event["worst_usd"]}
+    path = bexp / "results/exp/batches/A.jsonl"  # a state file from before the field: recomputed per request
+    path.write_text(json.dumps({k: v for k, v in event.items() if k != "worst_usd"}) + "\n", encoding="utf-8")
+    again = held_by_model(config, prices, bexp / "results/exp", lambda input_id, setup: "x" * 40)
+    assert again["A"] == pytest.approx(3 * (10 * 1.0 + 100 * 2.0) / 1e6)
+
+
+def test_the_direct_path_counts_open_batches_in_the_experiment_budget(bexp, monkeypatch, capsys):
+    from src.run import batch as batch_module
+    config = ('release = "1.0.0"\nattempts = 1\nretry_cap = 3\nmax_output_tokens = 100\nbatch = true\n'
+              '[[models]]\nname = "A"\nprovider = "fake"\napi_model_id = "a-1"\n'
+              '[[models]]\nname = "D"\nprovider = "fake_decision"\napi_model_id = "d-1"\n')
+    path = bexp / "config" / "experiments" / "exp.toml"
+    path.write_text(config, encoding="utf-8")
+    (bexp / "config" / "prices.toml").write_text(
+        BATCH_PRICES + "[D]\nprice_input_per_mtok = 1.0\nprice_output_per_mtok = 2.0\n", encoding="utf-8")
+    monkeypatch.setattr(models, "FAKE_DECISION_REPLIES", [d_reply("done") for _ in range(10)])
+    models.FAKE_BATCH_PENDING.add("fake-batch-1")
+    monkeypatch.setattr(batch_module.time, "sleep", lambda seconds: (_ for _ in ()).throw(KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt):
+        go("--model", "A", "--limit", "3")
+    held = state_events(bexp)[0]["worst_usd"]
+    assert go("--model", "D", "--estimate", "--limit", "1") == 0
+    worst_d = float(capsys.readouterr().out.split("worst case $")[1].split(";")[0])
+    path.write_text(config + f"[budget]\nper_experiment_usd = {worst_d + held / 2}\n", encoding="utf-8")
+    assert go("--model", "D", "--limit", "1") == 1
+    assert "budget reached: per_experiment_usd" in capsys.readouterr().err
+    assert not (bexp / "results/exp/raw/D.jsonl").exists()
+
+
+def test_a_failed_state_commit_after_a_submit_stops_the_run(bexp, monkeypatch, capsys):
+    from src.run.branch import BranchError, ResultsBranch
+    real = ResultsBranch.commit
+
+    def commit(self, message):
+        if "submitted" in message:
+            raise BranchError("boom")
+        real(self, message)
+
+    monkeypatch.setattr(ResultsBranch, "commit", commit)
+    assert go("--limit", "3") == 1
+    err = capsys.readouterr().err
+    assert "A: batch fake-batch-1 is open at the provider, but committing its state file failed: boom; stopping" in err
+    assert len(models.FAKE_BATCH_SUBMITS) == 1 and not records_exist(bexp)
+
+
+def records_exist(repo):
+    path = repo / "results/exp/raw/A.jsonl"
+    return path.is_file() and path.read_text(encoding="utf-8") != ""
+
+
+def test_a_signal_during_a_failing_submit_still_prints_the_console_message(bexp, monkeypatch, capsys):
+    import os
+    import signal
+    from src.run import batch as batch_module
+
+    def fail_after_signal(model, requests):
+        os.kill(os.getpid(), signal.SIGTERM)
+        raise InfrastructureError("connection reset")
+
+    monkeypatch.setattr(batch_module, "submit_batch", fail_after_signal)
+    with pytest.raises(SystemExit):
+        go("--limit", "3")
+    assert "check its console before running again" in capsys.readouterr().err
