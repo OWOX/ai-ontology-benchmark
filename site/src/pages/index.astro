@@ -94,7 +94,8 @@ const jsonLd = {
   /* Step 2 is a block of its own pushed to the right edge of the content column (its natural width); inside it everything stays left-aligned. */
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(2)) { justify-self: end; }
   /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only. Unselected: a transparent border of the same width, 50% transparent. */
-  :global(.benchmark .options:has(button.square)) { gap: 1rem; justify-content: flex-start; }
+  :global(.benchmark .options:has(button.square)) { gap: 1rem; justify-content: flex-start; margin-left: -0.25rem; }
+  /* The -0.25rem pulls the row left by the border and the cube drawing's inner margin, so the first visible cube lines up with the checkboxes of the filters below. */
   :global(.benchmark .options button.square) { width: 2.75rem; height: 2.75rem; padding: 0; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
   /* With none pressed (all puzzles) the options are not faded: they are not disabled, only unselected. */
   :global(.benchmark .options:not(:has(button.square[aria-pressed='true'])) button.square) { opacity: 1; }
