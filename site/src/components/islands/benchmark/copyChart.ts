@@ -32,6 +32,14 @@ const PAD = 24
 const SCALE = 2
 const ROW = 44
 
+/** The text cut with an ellipsis so it is at most `max` wide in the context's current font. */
+export function ellipsize(ctx: Pick<CanvasRenderingContext2D, 'measureText'>, text: string, max: number): string {
+  if (ctx.measureText(text).width <= max) return text
+  let end = text.length
+  while (end > 0 && ctx.measureText(`${text.slice(0, end).trimEnd()}…`).width > max) end--
+  return `${text.slice(0, end).trimEnd()}…`
+}
+
 /** The chart as a PNG at 2x: the bars with their labels and values, then the caption, then the filter and the page URL in small text. */
 export function drawChart(c: ChartCopy): Promise<Blob> {
   const lines = c.note ? 3 : 2
@@ -50,14 +58,17 @@ export function drawChart(c: ChartCopy): Promise<Blob> {
   c.rows.forEach((r, i) => {
     const y = PAD + i * ROW
     const colour = ranks[i] === 'best' ? OK : ranks[i] === 'worst' ? DANGER : null
+    // The value first (it sits at the right), then the label in what is left of the row, a 12px gap short of it.
+    const value = percent(r.rate.value)
+    ctx.font = `15px ${MONO}`
+    const valueWidth = ctx.measureText(value).width
+    ctx.textAlign = 'right'
+    ctx.fillStyle = colour ?? MUTED
+    ctx.fillText(value, WIDTH - PAD, y + 16)
     ctx.font = `16px ${SANS}`
     ctx.textAlign = 'left'
     ctx.fillStyle = INK
-    ctx.fillText(r.model, PAD, y + 16)
-    ctx.font = `15px ${MONO}`
-    ctx.textAlign = 'right'
-    ctx.fillStyle = colour ?? MUTED
-    ctx.fillText(percent(r.rate.value), WIDTH - PAD, y + 16)
+    ctx.fillText(ellipsize(ctx, r.model, inner - valueWidth - 12), PAD, y + 16)
     ctx.fillStyle = RULE
     ctx.fillRect(PAD, y + 24, inner, 6)
     if (r.rate.value !== null) {
@@ -69,12 +80,12 @@ export function drawChart(c: ChartCopy): Promise<Blob> {
   ctx.textAlign = 'left'
   ctx.fillStyle = INK
   ctx.font = `italic 500 16px ${SANS}`
-  ctx.fillText(c.caption, PAD, base)
+  ctx.fillText(ellipsize(ctx, c.caption, inner), PAD, base)
   ctx.fillStyle = MUTED
   ctx.font = `12px ${SANS}`
-  ctx.fillText(c.filter, PAD, base + 24)
-  if (c.note) ctx.fillText(c.note, PAD, base + 42)
-  ctx.fillText(c.url, PAD, base + (c.note ? 60 : 42))
+  ctx.fillText(ellipsize(ctx, c.filter, inner), PAD, base + 24)
+  if (c.note) ctx.fillText(ellipsize(ctx, c.note, inner), PAD, base + 42)
+  ctx.fillText(ellipsize(ctx, c.url, inner), PAD, base + (c.note ? 60 : 42))
   return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('no image'))), 'image/png'))
 }
 

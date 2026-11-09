@@ -201,7 +201,7 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
   const copy = async () => {
     let next: 'copied' | 'failed' = 'copied'
     try {
-      await copyChart({ caption: title, rows: bars, higherIsBetter: current.higherIsBetter, filter: filterText, note, url: location.href })
+      await copyChart({ caption: title, rows: bars, higherIsBetter: current.higherIsBetter, filter: filterText, note, url: location.origin + location.pathname })
     } catch {
       next = 'failed'
     }

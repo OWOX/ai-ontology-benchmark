@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelMetrics, SetupMetrics } from '../../../lib/benchmark'
 import BenchmarkView from './BenchmarkView'
-import { chartText } from './copyChart'
+import { chartText, drawChart, ellipsize } from './copyChart'
 
 const rate = (value: number | null, n = 5) => ({ value, n })
 const row = (puzzle: string, model: string, provider: string, o: Partial<ModelMetrics> = {}): ModelMetrics => ({
@@ -133,5 +133,35 @@ describe('copy chart', () => {
     await click(copyBtn(1))
     await waitFor(() => expect(copyBtn(1).closest('figcaption')!.querySelector('[role="status"]')).toHaveTextContent('Copy failed'))
     expect(copyBtn(1).closest('figcaption')!.querySelector('.copy-status')).toHaveClass('failed')
+  })
+
+  it('ellipsizes text to a width, and leaves what fits alone', () => {
+    const ctx = { measureText: (t: string) => ({ width: t.length * 10 }) }
+    expect(ellipsize(ctx, 'short', 100)).toBe('short')
+    expect(ellipsize(ctx, 'a very long label indeed', 100)).toBe('a very lo…')
+    expect(ellipsize(ctx, 'abc', 5)).toBe('…')
+  })
+
+  it('draws every text inside the image: long labels leave 12px before the value, and the URL drops the hash', async () => {
+    const texts: { text: string; x: number; align: string }[] = []
+    const state = { textAlign: 'left', font: '' }
+    const ctx = {
+      measureText: (t: string) => ({ width: t.length * 8 }),
+      fillText: (text: string, x: number) => texts.push({ text, x, align: state.textAlign }),
+      scale() {}, fillRect() {},
+      set textAlign(v: string) { state.textAlign = v }, get textAlign() { return state.textAlign },
+      set font(v: string) { state.font = v }, get font() { return state.font },
+    }
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never)
+    history.replaceState(null, '', '/page/#puzzle=4x4')
+    const long = 'x'.repeat(200)
+    await drawChart({ caption: long, filter: long, note: long, url: location.origin + location.pathname, higherIsBetter: true, rows: [{ model: long, rate: rate(0.5) }] })
+    const widths = texts.filter((t) => t.align === 'left').map((t) => t.text.length * 8)
+    expect(widths.every((w) => w <= 592)).toBe(true)
+    const label = texts.find((t) => t.text.startsWith('xxx') && t.text.endsWith('…'))!
+    // 592 wide row, a value "50%" of 24: the label stops 12px short of it.
+    expect(label.text.length * 8).toBeLessThanOrEqual(592 - 24 - 12)
+    expect(texts.some((t) => t.text === `${location.origin}/page/`)).toBe(true)
+    expect(texts.some((t) => t.text.includes('#'))).toBe(false)
   })
 })
