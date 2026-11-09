@@ -61,7 +61,7 @@ Write the [experiment report](../definitions.md#releases-and-experiments): one M
 12. With `reason_rows`, the Mismatch reasons section appears right after Detection by corruption type, with the decoy column marked. Without them, it is absent, and a report under a release without mismatch reasons has no reason rows, columns, or baseline row.
 13. The pilot sentence appears only when the config sets `inputs_per_depth`, names its value, and links the Inputs definition.
 14. With `batch = true`, the Batch mode line appears and the price table has the Batch input and Batch output columns, n/a for a model that ran direct. Without it, neither does. A batched attempt's latency shows as n/a in the Attempts tables.
-13. The unfinished notice appears only when some AI model has fewer attempt rows than planned attempts, and the list names every AI model.
+15. The unfinished notice appears only when some AI model has fewer attempt rows than planned attempts, and the list names every AI model.
 
 ## Risk
 
