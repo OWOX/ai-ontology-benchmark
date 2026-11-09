@@ -448,4 +448,49 @@ describe('BenchmarkView', () => {
       expect(screen.getByRole('tab', { name: 'Hallucination rate' })).toHaveAttribute('aria-selected', 'true')
     })
   })
+
+  describe('All puzzles', () => {
+    const pooled = [
+      row('all', 'claude-a', 'anthropic', { precision: rate(0.4, 20), cost: rate(0.02, 20) }),
+      row('all', 'gpt-a', 'openai', { precision: rate(0.9, 8), cost: rate(0.07, 8) }),
+      row('all', 'gem-a', 'google', { precision: rate(0.6, 6), cost: rate(0.03, 6) }),
+      ...metrics,
+      row('2x2', 'gem-a', 'google'),
+    ]
+    const all = () => render(<BenchmarkView metrics={pooled} attemptsUrl="/a.json" />)
+
+    it('is the first option and the default, named "All puzzles", drawn as a one-sticker-per-face cube', () => {
+      all()
+      const radios = screen.getAllByRole('radio')
+      expect(radios[0]).toHaveAccessibleName('All puzzles')
+      expect(radios[0]).toBeChecked()
+      expect(radios.map((r) => r.getAttribute('aria-label'))).toEqual(['All puzzles', '2x2 cube', '3x3 cube', '4x4 cube'])
+      const svg = radios[0].querySelector('svg.cube-view')!
+      expect(svg.querySelectorAll('polygon.sticker')).toHaveLength(3)
+      expect(location.hash).toBe('')
+    })
+
+    it('charts the pooled rows and lists every model and provider', () => {
+      all()
+      expect(screen.getByRole('img', { name: /^Precision/ })).toHaveAccessibleName('Precision: claude-a 40% (worst), gpt-a 90% (best), gem-a 60%')
+      expect(within(screen.getByRole('group', { name: 'Model' })).getAllByRole('checkbox')).toHaveLength(3)
+      expect(screen.getByRole('checkbox', { name: 'Google' })).toBeChecked()
+    })
+
+    it('keeps the hash: a puzzle writes puzzle=, All writes none, puzzle=all and an unknown value read as All', () => {
+      all()
+      fireEvent.click(screen.getByRole('radio', { name: '4x4 cube' }))
+      expect(location.hash).toBe('#puzzle=4x4')
+      fireEvent.click(screen.getByRole('radio', { name: 'All puzzles' }))
+      expect(location.hash).toBe('')
+      cleanup()
+      history.replaceState(null, '', '/#puzzle=all')
+      all()
+      expect(screen.getByRole('radio', { name: 'All puzzles' })).toBeChecked()
+      cleanup()
+      history.replaceState(null, '', '/#puzzle=9x9')
+      all()
+      expect(screen.getByRole('radio', { name: 'All puzzles' })).toBeChecked()
+    })
+  })
 })

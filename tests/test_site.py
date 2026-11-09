@@ -7,6 +7,8 @@ import sys
 import pytest
 
 from src.puzzles.registry import get_engine
+from src.evaluate.metrics import answer_class
+from src.site.metrics import metric_rows
 from src.site import export as site
 from ui.gitdata import GitData
 
@@ -24,7 +26,8 @@ DEFINITIONS = """# Definitions
 ## Prices
 """
 
-SITE_TOML = '''title = "T"
+SITE_TOML = '''min_release = "1.0.0"
+title = "T"
 description = "D"
 intro = "I"
 '''
@@ -84,7 +87,10 @@ def commit(root, message):
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message], cwd=root, check=True)
 
 
-def write_experiment(root, experiment_id, records, release="1.0.0", m2="anthropic", prices=None):
+def write_experiment(root, experiment_id, records, release="1.0.0", m2="anthropic", prices=None, branch=False):
+    """Commit the experiment on main, or with `branch` on a remote-tracking branch origin/results/<id> only."""
+    if branch:
+        subprocess.run(["git", "checkout", "-q", "-b", "tmp"], cwd=root, check=True)
     folder = root / "results" / experiment_id
     (folder / "raw").mkdir(parents=True)
     (folder / "experiment.toml").write_text(EXPERIMENT_TOML.format(release=release, m2=m2))
@@ -93,6 +99,11 @@ def write_experiment(root, experiment_id, records, release="1.0.0", m2="anthropi
     if prices is not None:
         (folder / "prices.toml").write_text(prices)
     commit(root, experiment_id)
+    if branch:
+        subprocess.run(["git", "update-ref", f"refs/remotes/origin/results/{experiment_id}", "HEAD"], cwd=root,
+                       check=True)
+        subprocess.run(["git", "checkout", "-q", "main"], cwd=root, check=True)
+        subprocess.run(["git", "branch", "-q", "-D", "tmp"], cwd=root, check=True)
 
 
 def exported(root):
@@ -196,7 +207,7 @@ def test_metrics_values_and_sort(repo):
         raw("m1", "v1", 3, "", outcome="infrastructure_failure", stop="infrastructure_failure"),
     ])
     _, _, metrics = exported(repo)
-    assert list(metrics) == [("2x2", "m1"), ("2x2", "m2")]
+    assert list(metrics) == [("2x2", "m1"), ("2x2", "m2"), ("all", "m1"), ("all", "m2")]
     m1, m2 = metrics[("2x2", "m1")], metrics[("2x2", "m2")]
     assert m1["provider"] == "openai" and m2["provider"] == "anthropic"
     # valid classified: tp, fp -> 0.5; invalid classified: fp, tn -> 0.5
@@ -206,10 +217,11 @@ def test_metrics_values_and_sort(repo):
     assert m1["hallucination"]["n"] == 3 and m1["hallucination"]["value"] == pytest.approx(1 / 3)
     assert m2["hallucination"] == {"value": 0.0, "n": 1}
     assert m1["critical"] == {"value": None, "n": 0}  # release 1.0.0 has no mismatch reasons
-    # cost: mean over 6 rows (the infrastructure failure included) / (precision * coverage); a row costs 0.002,
-    # and 4 of the 5 rows that are not infrastructure failures are classified
+    # cost: mean over 6 rows (the infrastructure failure included) / precision; a row costs 0.002
     assert m1["cost"]["n"] == 6
-    assert m1["cost"]["value"] == pytest.approx(0.002 / (0.5 * 4 / 5))
+    assert m1["cost"]["value"] == pytest.approx(0.002 / 0.5)
+    # one puzzle only: the pooled row equals the puzzle's row
+    assert {k: v for k, v in metrics[("all", "m1")].items() if k != "puzzle"} == {k: v for k, v in m1.items() if k != "puzzle"}
     assert m2["cost"]["value"] == pytest.approx(0.002)
 
 
@@ -280,3 +292,78 @@ def test_definitions_parsing_and_missing_name():
     assert missing == ["Cost efficiency"]
     assert [d["key"] for d in found] == ["precision", "hallucination", "critical"]
     assert found[1]["definition"] == "The share of attempts with at least one impossible move."
+
+
+def test_branch_only_experiment_is_exported_with_releases_from_main(repo):
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
+    write_experiment(repo, "b-branch", [raw("m1", "v2", 1, solution("v2"))], release="2.0.0", branch=True)
+    assert not (repo / "results" / "b-branch").exists()
+    data, _, _ = exported(repo)
+    assert [(e["experimentId"], e["branch"], e["release"]) for e in data["experiments"]] == [
+        ("a-exp", "main", "1.0.0"), ("b-branch", "results/b-branch", "2.0.0")]
+    assert data["experiments"][1]["attempts"][0]["outcome"] == "success"
+
+
+def test_branch_overrides_a_folder_of_the_same_id(repo):
+    write_experiment(repo, "a-exp", [raw("m1", "v1", 1, solution("v1"))])
+    write_experiment(repo, "a-exp2", [raw("m1", "v1", 1, solution("v1"))])
+    subprocess.run(["git", "checkout", "-q", "-b", "tmp"], cwd=repo, check=True)
+    path = repo / "results" / "a-exp" / "raw" / "m.jsonl"
+    path.write_text("\n".join(json.dumps(raw("m1", "v1", n, solution("v1"))) for n in (1, 2, 3)) + "\n")
+    commit(repo, "more")
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/results/a-exp", "HEAD"], cwd=repo, check=True)
+    subprocess.run(["git", "checkout", "-q", "main"], cwd=repo, check=True)
+    data, _, _ = exported(repo)
+    by_id = {e["experimentId"]: e for e in data["experiments"]}
+    assert by_id["a-exp"]["branch"] == "results/a-exp" and by_id["a-exp"]["attemptCount"] == 3
+    assert by_id["a-exp2"]["branch"] == "main" and by_id["a-exp2"]["attemptCount"] == 1
+
+
+def test_remote_option_picks_the_branches_of_that_remote(repo):
+    write_experiment(repo, "b-branch", [raw("m1", "v1", 1, solution("v1"))], branch=True)
+    subprocess.run(["git", "update-ref", "refs/remotes/other/results/b-branch",
+                    "refs/remotes/origin/results/b-branch"], cwd=repo, check=True)
+    subprocess.run(["git", "update-ref", "-d", "refs/remotes/origin/results/b-branch"], cwd=repo, check=True)
+    assert site.export(GitData(repo), "main")[0]["experiments"] == []
+    assert len(site.export(GitData(repo), "main", "other")[0]["experiments"]) == 1
+
+
+def test_experiment_below_min_release_is_skipped(repo, capsys):
+    (repo / "config" / "site.toml").write_text(SITE_TOML.replace('"1.0.0"', '"2.0.0"'))
+    commit(repo, "min release")
+    write_experiment(repo, "a-old", [raw("m1", "v1", 1, solution("v1"))])
+    write_experiment(repo, "b-new", [raw("m2", "v1", 1, solution("v1"))], release="2.0.0")
+    data, _, metrics = exported(repo)
+    assert [e["experimentId"] for e in data["experiments"]] == ["b-new"]
+    assert list(metrics) == [("2x2", "m2"), ("all", "m2")]
+    err = capsys.readouterr().err
+    assert "a-old" in err and "1.0.0" in err
+
+
+def test_missing_min_release_is_checked_error(repo):
+    (repo / "config" / "site.toml").write_text(SITE_TOML.replace('min_release = "1.0.0"\n', ""))
+    commit(repo, "no min release")
+    with pytest.raises(site.ExportError, match="min_release"):
+        site.export(GitData(repo), "main")
+
+
+def test_all_row_pools_every_puzzle():
+    def row(puzzle, validity, outcome, cost=0.01, moves=("R",), mismatch=False, corruption=None):
+        return {"puzzle": puzzle, "model": "m", "validity": validity, "outcome": outcome, "mismatch": mismatch,
+                "parsed_moves": list(moves), "reasons": False, "corruption": corruption, "cost": cost,
+                "decision": False, "impossible_move": False}
+    rows = [
+        row("2x2", "valid", "success"),                                                         # tp
+        row("3x3", "valid", "failure"),                                                         # fp
+        row("3x3", "invalid", "success", moves=(), mismatch=True, corruption="twisted corner"),  # tn
+        row("2x2", "invalid", "infrastructure_failure", cost=0.04, moves=()),
+    ]
+    for r in rows:
+        r["answer_class"] = answer_class(r)
+    got = {r["puzzle"]: r for r in metric_rows(rows, {"m": "openai"})}
+    assert list(got) == ["2x2", "3x3", "all"]
+    # valid precision 1 of 2, invalid 1 of 1; the failure is left out of precision but counts in cost
+    assert got["all"]["precision"] == {"value": 0.75, "n": 3}
+    assert got["all"]["cost"]["n"] == 4
+    assert got["all"]["cost"]["value"] == pytest.approx(0.0175 / 0.75)
+    assert got["all"]["provider"] == "openai"

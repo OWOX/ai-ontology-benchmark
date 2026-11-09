@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { PROVIDERS, puzzleSize, type ModelMetrics } from '../../../lib/benchmark'
+import { ALL, PROVIDERS, puzzleSize, type ModelMetrics } from '../../../lib/benchmark'
 import { cubeGeometry } from '../cube/core/geometry'
 import { CubeView } from '../cube/svg/CubeView'
 import { BarChart } from './BarChart'
 import { Choice } from './Choice'
 import { Filter, type Option } from './Filter'
 import { parseHash, serializeHash } from './hash'
+import { OneCube } from './OneCube'
 import { Player } from './Player'
 
 export const PUZZLES = ['2x2', '3x3', '4x4', '5x5']
@@ -54,12 +55,13 @@ const effectiveTicked = (providerOn: ReadonlySet<string>, here: readonly ModelMe
   return ticked.size > 0 || providerOn.size === 0 ? ticked : present
 }
 
-/** The filter as the URL hash describes it; a key that is missing, or holds nothing that exists, falls back to its default (first puzzle with data, every provider, every model, Precision). */
+/** The filter as the URL hash describes it; a key that is missing, or holds nothing that exists, falls back to its default (All puzzles, every provider, every model, Precision). */
 function restore(hash: string, metrics: ModelMetrics[]): FilterState {
   const h = parseHash(hash)
   const withData = new Set(metrics.map((m) => m.puzzle))
-  const first = PUZZLES.find((p) => withData.has(p)) ?? null
-  const puzzle = h.puzzle && PUZZLES.includes(h.puzzle) && withData.has(h.puzzle) ? h.puzzle : first
+  // "All" is the default; without pooled rows (older data) the first puzzle with data stands in.
+  const first = withData.has(ALL) ? ALL : PUZZLES.find((p) => withData.has(p)) ?? null
+  const puzzle = h.puzzle && (h.puzzle === ALL || PUZZLES.includes(h.puzzle)) && withData.has(h.puzzle) ? h.puzzle : first
   const known = new Set(metrics.map((m) => m.provider))
   const valid = h.providers?.filter((id) => known.has(id))
   const providerOn = new Set(h.providers && (h.providers.length === 0 || valid!.length > 0) ? valid : known)
@@ -248,7 +250,9 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
       return next
     })
 
-  const puzzles: Option[] = PUZZLES.filter((p) => withData.has(p)).map((p) => ({ id: p, label: p, name: `${p} cube`, icon: <Preview puzzle={p} /> }))
+  const puzzles: Option[] = [ALL, ...PUZZLES]
+    .filter((p) => withData.has(p))
+    .map((p) => (p === ALL ? { id: ALL, label: 'All', name: 'All puzzles', icon: <OneCube /> } : { id: p, label: p, name: `${p} cube`, icon: <Preview puzzle={p} /> }))
   const providers: Option[] = PROVIDERS.filter((p) => providersHere.has(p.id)).map((p) => ({ id: p.id, label: p.label }))
   const models = available.map((m) => ({ id: m.model, label: m.model, provider: m.provider }))
   const modelOn = new Set(names)

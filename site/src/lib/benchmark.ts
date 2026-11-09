@@ -24,6 +24,9 @@ export const PROVIDERS = [
 /** The study's repo: the Experiment block's Source link. */
 export const SOURCE = 'https://github.com/OWOX/ai-ontology-benchmark'
 
+/** The puzzle value of the `metrics` rows pooled over every puzzle, and of the filter's "All" option. */
+export const ALL = 'all'
+
 /** '3x3' -> 3 */
 export const puzzleSize = (puzzle: string): number => Number.parseInt(puzzle, 10)
 

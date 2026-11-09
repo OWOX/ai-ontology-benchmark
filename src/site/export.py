@@ -1,6 +1,6 @@
 # Spec: docs/specs/site.md
-"""Reads config/site.toml, docs/definitions.md, the releases, and every results/<id>/ folder with raw records,
-all at one git ref. Scores every raw record again with the current assessment and writes one JSON file for the static results page.
+"""Reads config/site.toml, docs/definitions.md, and the releases at one git ref, and every experiment with raw
+records: a results/<id>/ folder at that ref or a <remote>/results/<id> branch (the branch wins). Scores every raw record again with the current assessment and writes one JSON file for the static results page.
 """
 
 import argparse
@@ -14,6 +14,7 @@ from pathlib import Path
 from src.config import check_prices_table
 from src.evaluate.metrics import EvalError, make_attempt_rows
 from src.puzzles.registry import get_engine
+from src.release.release import parse_version
 from src.run.models import DECISION_PROVIDERS
 from src.run.raw import parse_raw_text
 from src.site.metrics import metric_rows
@@ -41,38 +42,54 @@ def read_inputs(gd: GitData, ref: str, release: str, cache: dict) -> list[dict]:
     return cache[release]
 
 
-def read_prices(gd: GitData, ref: str, experiment_id: str) -> dict:
-    for path in (f"results/{experiment_id}/prices.toml", "config/prices.toml"):
-        text = gd.show(ref, path)
+def read_prices(gd: GitData, ref: str, source: str, experiment_id: str) -> dict:
+    """The experiment's own prices.toml at `source`, else config/prices.toml at `ref`."""
+    for where, path in ((source, f"results/{experiment_id}/prices.toml"), (ref, "config/prices.toml")):
+        text = gd.show(where, path)
         if text is not None:
             try:
-                return check_prices_table(tomllib.loads(text), f"{ref}:{path}")
+                return check_prices_table(tomllib.loads(text), f"{where}:{path}")
             except (ValueError, tomllib.TOMLDecodeError) as error:
                 raise ExportError(str(error)) from None
     raise ExportError(f"{ref}: no prices.toml for experiment {experiment_id} and no config/prices.toml")
 
 
-def discover(gd: GitData, ref: str) -> list[str]:
-    """The experiment folders at the ref that hold at least one raw file. Any other folder is named on stderr."""
+def discover(gd: GitData, ref: str, remote: str) -> list[tuple[str, str, str]]:
+    """`(id, source ref, branch)` for every experiment with at least one raw file: the `results/<id>/` folders at
+    the ref (branch `main`) and the `<remote>/results/<id>` branches (branch `results/<id>`), a branch winning over
+    a folder of the same id. Any other folder or branch is named on stderr."""
+    prefix = f"refs/remotes/{remote}/results/"
+    sources = {i: (ref, "main") for i in gd.ls(ref, "results")}
+    sources.update({i: (prefix + i, f"results/{i}") for i in gd._ids(prefix)})
     found = []
-    for experiment_id in sorted(gd.ls(ref, "results")):
-        if any(n.endswith(".jsonl") for n in gd.ls(ref, f"results/{experiment_id}/raw")):
-            found.append(experiment_id)
+    for experiment_id in sorted(sources):
+        source, branch = sources[experiment_id]
+        if any(n.endswith(".jsonl") for n in gd.ls(source, f"results/{experiment_id}/raw")):
+            found.append((experiment_id, source, branch))
         else:
             print(f"skipped results/{experiment_id}: no raw records", file=sys.stderr)
     return found
 
 
-def read_experiment(gd: GitData, ref: str, experiment_id: str, cache: dict) -> tuple[dict, list[dict], int]:
-    """Return (experiment, re-validated attempt rows, skipped count) for one experiment."""
+def read_experiment(gd: GitData, ref: str, source: str, branch: str, experiment_id: str, cache: dict,
+                    min_release: tuple[int, int, int]) -> tuple[dict, list[dict], int]:
+    """Return (experiment, re-validated attempt rows, skipped count) for one experiment. Its own files are read at
+    `source`, the releases and the fallback prices at `ref`."""
     folder = f"results/{experiment_id}"
-    toml_text = gd.show(ref, f"{folder}/experiment.toml")
+    toml_text = gd.show(source, f"{folder}/experiment.toml")
     if toml_text is None:
-        raise ExportError(f"no {folder}/experiment.toml at {ref}")
+        raise ExportError(f"no {folder}/experiment.toml at {source}")
     toml = tomllib.loads(toml_text)
     release = toml.get("release")
     if not isinstance(release, str):
-        raise ExportError(f"{ref}:{folder}/experiment.toml: field release is missing")
+        raise ExportError(f"{source}:{folder}/experiment.toml: field release is missing")
+    try:
+        too_old = parse_version(release) < min_release
+    except ValueError:
+        raise ExportError(f"{source}:{folder}/experiment.toml: release {release!r} is not a version") from None
+    if too_old:
+        print(f"skipped {folder}: release {release} is below min_release", file=sys.stderr)
+        return {}, [], 0
     inputs = read_inputs(gd, ref, release, cache)
     by_id = {r["input_id"]: r for r in inputs}
     manifest = gd.show(ref, f"releases/{release}/manifest.json")
@@ -83,8 +100,8 @@ def read_experiment(gd: GitData, ref: str, experiment_id: str, cache: dict) -> t
                           "kind": m.get("kind", "unknown")} for m in toml.get("models", [])}
     decision_models = {n for n, m in models.items() if m["provider"] in DECISION_PROVIDERS}
     records, skipped = [], 0
-    for name in sorted(n for n in gd.ls(ref, f"{folder}/raw") if n.endswith(".jsonl")):
-        found, torn = parse_raw_text(gd.show(ref, f"{folder}/raw/{name}") or "")
+    for name in sorted(n for n in gd.ls(source, f"{folder}/raw") if n.endswith(".jsonl")):
+        found, torn = parse_raw_text(gd.show(source, f"{folder}/raw/{name}") or "")
         skipped += torn
         for r in found:
             if r.get("input_id") in by_id:
@@ -92,9 +109,9 @@ def read_experiment(gd: GitData, ref: str, experiment_id: str, cache: dict) -> t
             else:
                 skipped += 1
     try:
-        rows = make_attempt_rows(records, inputs, read_prices(gd, ref, experiment_id), decision_models, reasons)
+        rows = make_attempt_rows(records, inputs, read_prices(gd, ref, source, experiment_id), decision_models, reasons)
     except (KeyError, EvalError) as error:
-        raise ExportError(f"{ref}:{folder}: {error}") from None
+        raise ExportError(f"{source}:{folder}: {error}") from None
     kept = [(r["created_at"], {
         "model": r["model"], "puzzle": r["puzzle"], "inputId": r["input_id"], "validity": r["validity"],
         "setup": r["setup"], "attempt": r["attempt_number"], "depth": r["scramble_depth"],
@@ -111,6 +128,7 @@ def read_experiment(gd: GitData, ref: str, experiment_id: str, cache: dict) -> t
     return {
         "experimentId": experiment_id,
         "release": release,
+        "branch": branch,
         "puzzles": sorted({a["puzzle"] for _, a in kept}),
         "models": sorted(models.values(), key=lambda m: m["name"]),
         "setups": sorted({a["setup"] for _, a in kept}),
@@ -157,27 +175,32 @@ def read_definitions(markdown: str) -> tuple[list[dict], list[str]]:
 
 
 def fetch(gd: GitData, remote: str) -> None:
-    refspec = f"+refs/heads/main:refs/remotes/{remote}/main"
+    refspecs = [f"+refs/heads/main:refs/remotes/{remote}/main",
+                f"+refs/heads/results/*:refs/remotes/{remote}/results/*"]
     try:
-        done = gd._git("fetch", "--prune", "--quiet", remote, refspec, timeout=FETCH_TIMEOUT_S)
+        done = gd._git("fetch", "--prune", "--quiet", remote, *refspecs, timeout=FETCH_TIMEOUT_S)
     except (OSError, subprocess.SubprocessError) as error:
         raise ExportError(f"git fetch {remote}: {error}") from None
     if done.returncode != 0:
         raise ExportError(f"git fetch {remote}: {done.stderr.strip()}")
 
 
-def export(gd: GitData, ref: str) -> tuple[dict, int]:
+def export(gd: GitData, ref: str, remote: str = "origin") -> tuple[dict, int]:
     text = gd.show(ref, "config/site.toml")
     if text is None:
         raise ExportError(f"config/site.toml: not found at {ref}")
     config = tomllib.loads(text)
-    for field in ("title", "description", "intro"):
+    for field in ("title", "description", "intro", "min_release"):
         if field not in config:
             raise ExportError(f"config/site.toml: missing field {field}")
+    try:
+        min_release = parse_version(str(config["min_release"]))
+    except ValueError:
+        raise ExportError(f"config/site.toml: min_release {config['min_release']!r} is not a version") from None
     cache: dict = {}
     experiments, all_rows, skipped = [], [], 0
-    for experiment_id in discover(gd, ref):
-        experiment, rows, n = read_experiment(gd, ref, experiment_id, cache)
+    for experiment_id, source, branch in discover(gd, ref, remote):
+        experiment, rows, n = read_experiment(gd, ref, source, branch, experiment_id, cache, min_release)
         skipped += n
         all_rows += rows
         if experiment:
@@ -212,7 +235,7 @@ def main() -> int:
     try:
         if not args.no_fetch:
             fetch(gd, args.remote)
-        data, skipped = export(gd, args.ref)
+        data, skipped = export(gd, args.ref, args.remote)
     except (ExportError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

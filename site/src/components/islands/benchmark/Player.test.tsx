@@ -65,12 +65,14 @@ describe('Player', () => {
   })
 
   it('links Source to the raw results of the case, or to the repo without an experiment id', () => {
-    expect(sourceUrl({ experimentId: 'exp-1', model: 'gpt-6.1-sol' })).toBe(`${SOURCE}/blob/results/exp-1/results/exp-1/raw/gpt-6.1-sol.jsonl`)
+    expect(sourceUrl({ experimentId: 'exp-1', model: 'gpt-6.1-sol', branch: 'results/exp-1' })).toBe(`${SOURCE}/blob/results/exp-1/results/exp-1/raw/gpt-6.1-sol.jsonl`)
+    expect(sourceUrl({ experimentId: 'exp-1', model: 'm1', branch: 'main' })).toBe(`${SOURCE}/blob/main/results/exp-1/raw/m1.jsonl`)
+    expect(sourceUrl({ experimentId: 'exp-1', model: 'm1' })).toBe(`${SOURCE}/blob/main/results/exp-1/raw/m1.jsonl`)
     expect(sourceUrl({ model: 'm1' })).toBe(SOURCE)
   })
 
   it('shows ". Source" after the result, linking to its raw results in a new tab', async () => {
-    stub({ '3x3': [attempt({ experimentId: 'exp-1' })] })
+    stub({ '3x3': [attempt({ experimentId: 'exp-1', branch: 'results/exp-1' })] })
     await mount()
     await run()
     expect(screen.queryByRole('link', { name: /^Source/ })).toBeNull()
@@ -260,5 +262,14 @@ describe('Player', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
     expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('under "all" picks an attempt from any puzzle and draws its own puzzle', async () => {
+    const g2 = cubeGeometry(2)
+    stub({ '2x2': [attempt({ puzzle: '2x2', state: g2.SOLVED, moves: [] })], '3x3': [] })
+    render(<Player puzzle="all" models={['m1']} attemptsUrl="/a.json" legalMoves={LEGAL} />)
+    await act(async () => {})
+    expect(fact('State:')).toMatch(/^2x2 cube/)
+    expect(screen.getByRole('img', { name: '2x2 cube replay' })).toBeInTheDocument()
   })
 })
