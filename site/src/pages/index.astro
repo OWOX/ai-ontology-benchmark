@@ -147,9 +147,9 @@ const jsonLd = {
   :global(.benchmark .chart-section .subtitle) { margin: 0; font-size: 1.15rem; line-height: 1.3; }
   :global(.benchmark .chart-section .lead) { margin: 0.35rem 0 0; color: var(--muted); }
   :global(.benchmark .chart-section .metrics) { margin-top: 0.75rem; }
-  /* The numbered chart title in the panel, ending in a "(?)" text button; its popover is the Player's, out of flow under the title so opening it moves nothing. */
-  :global(.benchmark .chart-head) { position: relative; margin-bottom: 0.9rem; }
-  :global(.benchmark .chart-title) { margin: 0; font-size: 1rem; font-weight: var(--weight-medium); line-height: 1.35; }
+  /* The figure's numbered caption sits under the bars and ends in a "(?)" text button; its popover is the Player's, out of flow, opening upwards over the bars (`.below` flips it under the caption when there is no room above), so opening it moves nothing. */
+  :global(.benchmark .chart-figure) { margin: 0; }
+  :global(.benchmark .chart-head) { position: relative; margin: 0.25rem 0 0.5rem; font-size: 1rem; font-weight: var(--weight-medium); line-height: 1.35; }
   :global(.cube-solver.benchmark .chart-head button.pop-btn:not(.redo):not(.switch):not(.square)) {
     display: inline; min-height: 0; width: auto; padding: 0; margin: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: inherit;
     font: inherit; letter-spacing: inherit; line-height: inherit; text-align: inherit; cursor: pointer;
@@ -157,9 +157,10 @@ const jsonLd = {
   }
   :global(.cube-solver.benchmark .chart-head button.pop-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 2px; }
   :global(.benchmark .chart-head .pop) {
-    position: absolute; z-index: 10; left: 0; box-sizing: border-box; width: min(32rem, 100%); margin-top: 0.35rem; padding: 0.6rem 0.8rem;
+    position: absolute; z-index: 10; left: 0; bottom: 100%; box-sizing: border-box; width: min(32rem, 100%); margin-bottom: 0.35rem; padding: 0.6rem 0.8rem;
     background: var(--panel); border: 1px solid var(--code-rule); box-shadow: var(--pop-shadow); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
   }
+  :global(.benchmark .chart-head .pop.below) { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 0.35rem; }
   :global(.benchmark .chart-head .pop[hidden]) { display: none; }
   :global(.benchmark .chart-head .pop p) { margin: 0; }
   :global(.benchmark .chart .model .detail) { color: var(--muted); }

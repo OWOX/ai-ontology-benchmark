@@ -143,7 +143,7 @@ describe('BenchmarkView', () => {
     const { container } = view()
     expect(screen.getByRole('tab', { name: 'Precision' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Precision', 'Hallucination rate', 'Critical thinking'])
-    expect(container.querySelectorAll('figure.chart').length).toBe(1)
+    expect(container.querySelectorAll('figure.chart-figure').length).toBe(1)
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Precision')
     fireEvent.click(screen.getByRole('tab', { name: 'Hallucination rate' }))
     expect(screen.getByRole('img', { name: /^Hallucination rate/ })).toHaveAccessibleName('Hallucination rate: claude-a 25% (best), gpt-a 50% (worst)')
@@ -210,7 +210,7 @@ describe('BenchmarkView', () => {
     const { container } = view()
     const metrics = container.querySelector('.metrics')!
     expect(metrics.querySelector('[role="tablist"]')).not.toBeNull()
-    expect(metrics.querySelector('[role="tabpanel"] figure.chart')).not.toBeNull()
+    expect(metrics.querySelector('[role="tabpanel"] figure .chart')).not.toBeNull()
   })
 
   it('writes the filter into the hash without adding history, a key only when not at its default', () => {
@@ -573,12 +573,23 @@ describe('BenchmarkView', () => {
     const modelChart = () => screen.getByRole('img', { name: /^(Precision|Hallucination rate|Critical thinking):/ })
     const modelSection = () => screen.getByRole('region', { name: 'Metrics by AI model' })
     const setupSection = () => screen.getByRole('region', { name: 'Metrics by setup' })
-    const heading = (section: HTMLElement) => within(section).getByRole('heading', { level: 3 }).textContent!.replace(/\s*\(\?\)$/, '')
+    const heading = (section: HTMLElement) => section.querySelector('figcaption .chart-title')!.textContent!
 
     it('has no setup section without setup rows', () => {
       view()
       expect(screen.queryByRole('heading', { name: 'Metrics by setup' })).toBeNull()
       expect(screen.getAllByRole('tablist')).toHaveLength(1)
+    })
+
+    it('puts the caption after the chart in a figure named by it, and the chart keeps its own name', () => {
+      both()
+      const figure = within(modelSection()).getByRole('figure', { name: 'Chart 1. Balanced precision by AI model' })
+      const chart = figure.querySelector('.chart')!
+      const caption = figure.querySelector('figcaption')!
+      expect(figure.lastElementChild).toBe(caption)
+      expect(chart.compareDocumentPosition(caption) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(caption).toHaveTextContent('Chart 1. Balanced precision by AI model (?)')
+      expect(within(figure).getByRole('img')).toHaveAccessibleName(/^Precision: claude-a/)
     })
 
     it('gives each section a subtitle, the setup one naming the three setups', () => {

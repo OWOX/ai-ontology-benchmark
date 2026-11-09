@@ -28,7 +28,7 @@ interface Props {
   children: ReactNode
 }
 
-/** A chart section: a subtitle, the metric tabs hanging off a framed panel, and in the panel a numbered chart title ending in a "(?)" popover. Each tab keeps its own "?" for the metric's definition. */
+/** A chart section: a subtitle, the metric tabs hanging off a framed panel, and in the panel a figure: the chart, then its numbered caption ending in a "(?)" popover. Each tab keeps its own "?" for the metric's definition. */
 export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, metric, onMetric, definitions, layoutKey, children }: Props) {
   const headingId = useId()
   const root = useRef<HTMLElement>(null)
@@ -145,6 +145,17 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
   const [titleOpen, setTitleOpen] = useState(false)
   const head = useRef<HTMLDivElement>(null)
   const popId = useId()
+  const captionId = useId()
+  // The popover opens upwards over the chart, the caption being under it, or below the caption when the viewport has no room above (under the sticky header).
+  const [up, setUp] = useState(true)
+  useLayoutEffect(() => {
+    if (!titleOpen) return
+    const h = head.current?.getBoundingClientRect()
+    const popH = head.current?.querySelector<HTMLElement>('.pop')?.offsetHeight ?? 0
+    if (!h) return
+    const headerBottom = document.querySelector('.site-header')?.getBoundingClientRect().bottom ?? 0
+    setUp(h.top - Math.max(0, headerBottom) - 8 >= popH)
+  }, [titleOpen, metric])
   useEffect(() => setTitleOpen(false), [metric])
   useEffect(() => {
     if (!titleOpen) return
@@ -235,19 +246,19 @@ export function MetricChart({ idPrefix, heading, intro, by, firstNumber, tabs, m
           )}
         </div>
         <div role="tabpanel" id={`${idPrefix}-panel`} aria-labelledby={`${idPrefix}-${metric}`} tabIndex={0}>
-          <div className="chart-head" ref={head}>
-            <h3 className="chart-title">
-              {title}{' '}
+          <figure className="chart-figure" aria-labelledby={captionId}>
+            {children}
+            <figcaption className="chart-head" ref={head}>
+              <span className="chart-title" id={captionId}>{title}</span>{' '}
               <span className="pop-wrap">
                 <button type="button" className="pop-btn" aria-label={`About Chart ${number}`} aria-expanded={titleOpen} aria-controls={popId} onClick={() => setTitleOpen(!titleOpen)}>(?)</button>
               </span>
-            </h3>
-            {/* Always in the DOM (hidden while closed), so the button's aria-controls points at an element that exists. */}
-            <div className="pop pop-wrap" id={popId} role="dialog" aria-label={`About Chart ${number}`} hidden={!titleOpen}>
-              <p>{current.explanation}</p>
-            </div>
-          </div>
-          {children}
+              {/* Always in the DOM (hidden while closed), so the button's aria-controls points at an element that exists. */}
+              <div className={`pop pop-wrap${up ? '' : ' below'}`} id={popId} role="dialog" aria-label={`About Chart ${number}`} hidden={!titleOpen}>
+                <p>{current.explanation}</p>
+              </div>
+            </figcaption>
+          </figure>
         </div>
       </div>
     </section>
