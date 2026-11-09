@@ -24,7 +24,7 @@ from src.puzzles.registry import get_engine
 from src.run.branch import BranchError
 from src.run.budget import (TOLERANCE, BudgetError, batch_state_path, held_by_model, is_batched, open_batches,
                             read_state, spent_by_model, worst_case_request_cost)
-from src.run.models import (BatchTooLargeError, InfrastructureError, RequestError, batch_done, batch_results, build_request,
+from src.run.models import (BatchRejectedError, BatchTooLargeError, InfrastructureError, RequestError, batch_done, batch_results, build_request,
                             submit_batch)
 from src.run.raw import parse_raw_text
 from src.run.run import RunError, append_record, make_record, read_done, safe_commit
@@ -138,12 +138,8 @@ def step(state: ModelBatches, context: dict) -> tuple[bool, bool]:
             batch = is_open[0]
             try:
                 finished = batch_done(state.model, batch["batch_id"])
-            except RequestError as error:  # 404 or 403: the batch can't be checked, and would stay open forever
-                context["push_outstanding"] = True  # the run stops next: push the closed batch now
-                close_batch(state, context, batch, [item["custom_id"] for item in batch["requests"]])
-                raise RequestError(f"{state.name}: batch {batch['batch_id']} can't be checked ({' '.join(str(error).split())[:200]}); "
-                                   "it may still exist and be billed, so check the provider console before running again; "
-                                   "a new run resubmits its requests") from error
+            except RequestError as error:  # 401, 403 or 404 may only mean a wrong or rotated key: the batch stays open
+                raise stop_open(state, context, batch, error, "can't be checked") from error
             if not finished:
                 state.failures = 0
                 return False, False
@@ -370,9 +366,11 @@ def collect(state: ModelBatches, context: dict, batch: dict, events: list[dict])
         state.max_requests = max(1, min(state.max_requests, len(every)) // 2)
         log(f"batch {state.name} {batch_id}: refused as too large, sending chunks of up to {state.max_requests} requests")
         return
-    except RequestError:
-        close_batch(state, context, batch, every)  # a restart must not read it again
+    except BatchRejectedError:  # the provider's verdict: nothing was billed, so a restart must not read it again
+        close_batch(state, context, batch, every)
         raise
+    except RequestError as error:  # the batch may be live and billed: leave it open, held, and stop
+        raise stop_open(state, context, batch, error, "can't be read") from error
     done = done_keys(context, state)
     counts = submission_counts(events)
     succeeded = retrying = failed = 0
@@ -399,6 +397,16 @@ def collect(state: ModelBatches, context: dict, batch: dict, events: list[dict])
     log(f"batch {state.name} {batch_id}: collected {succeeded} succeeded, {retrying} to retry, {failed} failed")
     if stop:
         raise stop
+
+
+def stop_open(state: ModelBatches, context: dict, batch: dict, error: Exception, what: str) -> RequestError:
+    """Push the branch and return the RequestError that stops the run with the batch left open, so its
+    worst_usd stays held and nothing is sent again."""
+    context["push_outstanding"] = True
+    retry_push(context)
+    return RequestError(f"{state.name}: batch {batch['batch_id']} {what} ({' '.join(str(error).split())[:200]}); "
+                        "it stays open and may still be billed, so check the provider console before running again; "
+                        "the next run checks it again")
 
 
 def close_batch(state: ModelBatches, context: dict, batch: dict, rejected: list[str]) -> None:

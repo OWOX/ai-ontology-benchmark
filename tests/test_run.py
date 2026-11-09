@@ -1591,7 +1591,7 @@ def test_a_batch_that_fails_as_a_whole_is_closed_before_the_run_stops(bexp, monk
     from src.run import batch as batch_module
 
     def fail(model, batch_id):
-        raise models.RequestError("openai: the batch failed")
+        raise models.BatchRejectedError("openai: the batch failed")
 
     monkeypatch.setattr(batch_module, "batch_results", fail)
     assert go("--limit", "3") == 1
@@ -1839,7 +1839,10 @@ def test_two_processes_cannot_together_pass_the_experiment_budget(bexp, monkeypa
         thread.start()
     for thread in threads:
         thread.join()
-    total = len(records(bexp, "A")) + len(records(bexp, "B"))
+    def count(name):  # a model that got no request has no raw file
+        return len(records(bexp, name)) if (bexp / "results/exp/raw" / f"{name}.jsonl").exists() else 0
+
+    total = count("A") + count("B")
     assert total == 4 and sorted(codes.values()) == [1, 1]
     assert len(submitted_ids()) == 4
 
@@ -2004,18 +2007,48 @@ def test_a_failed_push_after_submit_is_tried_again_at_every_poll(bexp, monkeypat
     assert len(calls) == 3 + 1  # three tries during the batch, then the push at the end of the run
 
 
-def test_a_batch_that_cannot_be_checked_is_closed_and_the_run_stops(bexp, monkeypatch, capsys):
+def test_a_batch_that_cannot_be_checked_stays_open_and_a_later_run_collects_it(bexp, monkeypatch, capsys):
     from src.run import batch as batch_module
+    from src.run.budget import held_by_model
     models.FAKE_BATCH_PENDING.add("fake-batch-1")
+    real_done = batch_module.batch_done
 
     def gone(model, batch_id):
-        raise models.RequestError("openai: HTTP 404: no such batch")
+        raise models.RequestError("openai: HTTP 401: bad key")
 
     monkeypatch.setattr(batch_module, "batch_done", gone)
     assert go("--limit", "3") == 1
     err = capsys.readouterr().err.splitlines()[-1]
-    assert "can't be checked" in err and "check the provider console before running again" in err
-    events = state_events(bexp)
-    assert [e["event"] for e in events] == ["submitted", "collected"]
-    assert set(events[1]["request_errors"]) == set(submitted_ids())
-    assert "batch fake-batch-1 collected" in git(bexp, "log", "--format=%s", BRANCH)
+    assert "stays open" in err and "check the provider console before running again" in err
+    assert [e["event"] for e in state_events(bexp)] == ["submitted"]
+    config = run_module.load_experiment_config(bexp / "config/experiments/exp.toml")
+    held = held_by_model(config, run_module.load_prices(bexp / "config/prices.toml"), bexp / "results/exp", None)
+    assert held["A"] > 0
+    monkeypatch.setattr(batch_module, "batch_done", real_done)
+    models.FAKE_BATCH_PENDING.clear()
+    assert go("--limit", "3") == 0
+    assert len(models.FAKE_BATCH_SUBMITS) == 1 and len(records(bexp, "A")) == 3
+
+
+def test_a_request_error_that_is_not_a_rejection_leaves_the_batch_open(bexp, monkeypatch, capsys):
+    from src.run import batch as batch_module
+
+    def odd(model, batch_id):
+        raise models.RequestError("openai: HTTP 403: forbidden")
+
+    monkeypatch.setattr(batch_module, "batch_results", odd)
+    assert go("--limit", "3") == 1
+    assert "stays open" in capsys.readouterr().err.splitlines()[-1]
+    assert [e["event"] for e in state_events(bexp)] == ["submitted"]
+    assert len(models.FAKE_BATCH_SUBMITS) == 1
+
+
+def test_a_rejected_batch_is_closed(bexp, monkeypatch):
+    from src.run import batch as batch_module
+
+    def rejected(model, batch_id):
+        raise models.BatchRejectedError("openai: the batch failed: bad file")
+
+    monkeypatch.setattr(batch_module, "batch_results", rejected)
+    assert go("--limit", "3") == 1
+    assert [e["event"] for e in state_events(bexp)] == ["submitted", "collected"]
