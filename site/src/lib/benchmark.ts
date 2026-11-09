@@ -8,6 +8,9 @@ export type ModelMetrics = {
   puzzle: string
   model: string
   provider: string
+  /** Every scored attempt of the group, infrastructure failures included, and its input, output, retry input, and retry output tokens. */
+  attempts: number
+  tokens: number
   precision: Rate
   hallucination: Rate
   critical: Rate

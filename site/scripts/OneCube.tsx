@@ -1,9 +1,9 @@
-// The "All" puzzle option's face: a 1x1x1 cube, one sticker per face, drawn the way CubeView draws a cube
-// (same view, sticker colours, outline, and rounded corners) so it sits among the puzzle thumbnails.
+// The share card's face: a 1x1x1 cube, one sticker per face, drawn the way CubeView draws a cube
+// (same view, sticker colours, outline, and rounded corners). Used only by og-card.tsx.
 import { useMemo } from 'react'
-import { COLOR_OF, DOWN, FACES, NORMAL, RIGHT, type Vec } from '../cube/core/geometry'
-import { roundCorners } from '../cube/svg/rounded'
-import { projectWith, targetOf } from '../cube/svg/CubeView'
+import { COLOR_OF, DOWN, FACES, NORMAL, RIGHT, type Vec } from '../src/components/islands/cube/core/geometry'
+import { roundCorners } from '../src/components/islands/cube/svg/rounded'
+import { projectWith, targetOf } from '../src/components/islands/cube/svg/CubeView'
 
 const view = targetOf({ face: 'F', turn: 0 })
 // The cube is 3 units wide; a sticker is 0.9 of its pitch, as in CubeView, so the outline matches a 3x3's strip.

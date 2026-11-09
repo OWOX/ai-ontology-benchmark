@@ -6,7 +6,7 @@ import BenchmarkView from './BenchmarkView'
 
 const rate = (value: number | null, n: number) => ({ value, n })
 const row = (puzzle: string, model: string, provider: string, o: Partial<ModelMetrics> = {}): ModelMetrics => ({
-  puzzle, model, provider, precision: rate(0.5, 10), hallucination: rate(0.25, 8), critical: rate(null, 0), ...o,
+  puzzle, model, provider, attempts: 10, tokens: 1000, precision: rate(0.5, 10), hallucination: rate(0.25, 8), critical: rate(null, 0), ...o,
 })
 const metrics = [
   row('3x3', 'claude-a', 'anthropic'),
@@ -23,7 +23,7 @@ beforeEach(() => history.replaceState(null, '', '/'))
 describe('BenchmarkView', () => {
   it('opens on the first puzzle with data, every provider ticked as a checkbox, every model on, and no hash', () => {
     view()
-    expect(screen.getByRole('radio', { name: '3x3 cube' })).toBeChecked()
+    expect(screen.getByRole('button', { name: '3x3 cube' })).toHaveAttribute('aria-pressed', 'true')
     expect(on('Anthropic')).toBeInTheDocument()
     expect(on('OpenAI')).toBeInTheDocument()
     expect(within(screen.getByRole('group', { name: 'Model' })).getAllByRole('checkbox').map((b) => b.parentElement!.textContent)).toEqual(['claude-a', 'gpt-a'])
@@ -44,8 +44,8 @@ describe('BenchmarkView', () => {
       expect(svg.querySelector('circle')!.getAttribute('mask')).toMatch(/^url\(#icon-/)
       expect(svg.querySelector('mask g')).toHaveAttribute('stroke', '#000')
     }
-    expect(container.querySelector('ol.steps > li > .body [role="radiogroup"]')).not.toBeNull()
-    for (const r of screen.getAllByRole('radio')) expect(r.querySelector('svg.cube-view')).not.toBeNull()
+    expect(container.querySelector('ol.steps > li > .body [role="group"] button[aria-pressed]')).not.toBeNull()
+    for (const r of container.querySelectorAll('button[aria-pressed]')) expect(r.querySelector('svg.cube-view')).not.toBeNull()
     fireEvent.click(on('OpenAI'))
     fireEvent.click(on('Anthropic'))
     expect(titles()).toEqual(['Puzzle', 'AI provider'])
@@ -53,10 +53,10 @@ describe('BenchmarkView', () => {
 
   it('lists only puzzles with data and only providers with a model for the puzzle', () => {
     view()
-    expect(screen.queryByRole('radio', { name: /2x2/ })).toBeNull()
-    expect(screen.queryByRole('radio', { name: /5x5/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /2x2/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /5x5/ })).toBeNull()
     expect(screen.queryByText(/no data yet/)).toBeNull()
-    fireEvent.click(screen.getByRole('radio', { name: '4x4 cube' }))
+    fireEvent.click(screen.getByRole('button', { name: '4x4 cube' }))
     expect(screen.queryByRole('checkbox', { name: 'OpenAI' })).toBeNull()
   })
 
@@ -98,7 +98,7 @@ describe('BenchmarkView', () => {
     history.replaceState(null, '', '/')
     view()
     fireEvent.click(on('Anthropic')) // only OpenAI ticked, which 4x4 lacks
-    fireEvent.click(screen.getByRole('radio', { name: '4x4 cube' }))
+    fireEvent.click(screen.getByRole('button', { name: '4x4 cube' }))
     expect(on('Anthropic')).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Model' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled()
@@ -106,7 +106,7 @@ describe('BenchmarkView', () => {
 
   it('a toggle that leaves none of the puzzle\'s providers ticked means none: hint, no fallback, providers= in the hash', () => {
     view()
-    fireEvent.click(screen.getByRole('radio', { name: '4x4 cube' })) // only Anthropic here
+    fireEvent.click(screen.getByRole('button', { name: '4x4 cube' })) // only Anthropic here
     fireEvent.click(on('Anthropic'))
     expect(off('Anthropic')).toBeInTheDocument()
     expect(screen.getByRole('tabpanel')).toHaveTextContent('Pick an AI provider to see results.')
@@ -117,10 +117,10 @@ describe('BenchmarkView', () => {
   it('keeps providers the current puzzle lacks ticked while toggling, across puzzle switches', () => {
     const three = [row('3x3', 'claude-a', 'anthropic'), row('3x3', 'gpt-a', 'openai'), row('4x4', 'claude-a', 'anthropic'), row('4x4', 'gem-a', 'google')]
     render(<BenchmarkView metrics={three} attemptsUrl="/a.json" />)
-    fireEvent.click(screen.getByRole('radio', { name: '4x4 cube' }))
+    fireEvent.click(screen.getByRole('button', { name: '4x4 cube' }))
     fireEvent.click(on('Google')) // 4x4 has no OpenAI: it stays ticked underneath
     expect(off('Google')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('radio', { name: '3x3 cube' }))
+    fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
     expect(on('OpenAI')).toBeInTheDocument()
     expect(on('Anthropic')).toBeInTheDocument()
   })
@@ -135,7 +135,7 @@ describe('BenchmarkView', () => {
     view()
     fireEvent.click(on('claude-a'))
     expect(off('claude-a')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('radio', { name: '4x4 cube' }))
+    fireEvent.click(screen.getByRole('button', { name: '4x4 cube' }))
     expect(on('claude-a')).toBeInTheDocument()
   })
 
@@ -224,18 +224,45 @@ describe('BenchmarkView', () => {
     fireEvent.click(off('Anthropic'))
     expect(location.hash).toBe('')
     fireEvent.click(screen.getByRole('tab', { name: 'Hallucination rate' }))
-    fireEvent.click(screen.getByRole('radio', { name: '4x4 cube' }))
+    fireEvent.click(screen.getByRole('button', { name: '4x4 cube' }))
     expect(location.hash).toBe('#puzzle=4x4&metric=hallucination')
     fireEvent.click(screen.getByRole('tab', { name: 'Precision' }))
-    fireEvent.click(screen.getByRole('radio', { name: '3x3 cube' }))
+    fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
     expect(location.hash).toBe('')
     expect(history.length).toBe(before)
+  })
+
+  it('leads the Source note with the attempts and tokens of the models shown, following the filter', () => {
+    const { container } = view()
+    const note = () => container.querySelector('.steps.source .body')!.textContent
+    expect(note()).toMatch(/^github\.com\/OWOX\/ai-ontology-benchmark \(opens in a new tab\)20 attempts and 2k tokens\. The repository/)
+    fireEvent.click(on('OpenAI'))
+    expect(note()).toMatch(/10 attempts and 1k tokens\./)
+    fireEvent.click(screen.getByRole('button', { name: '4x4 cube' }))
+    expect(note()).toMatch(/10 attempts and 1k tokens\./)
+  })
+
+  it('updates the Source note when a single model is unticked', () => {
+    const { container } = view()
+    fireEvent.click(on('gpt-a'))
+    expect(container.querySelector('.steps.source .body')!.textContent).toMatch(/10 attempts and 1k tokens\./)
+  })
+
+  it('without pooled rows, clicking the pressed puzzle changes nothing: still pressed, models stay unticked, no hash', () => {
+    view()
+    fireEvent.click(on('gpt-a'))
+    const hash = location.hash
+    expect(hash).toBe('#models=claude-a')
+    fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
+    expect(screen.getByRole('button', { name: '3x3 cube' })).toHaveAttribute('aria-pressed', 'true')
+    expect(off('gpt-a')).toBeInTheDocument()
+    expect(location.hash).toBe(hash)
   })
 
   it('starts from the hash, ignoring values that do not exist', () => {
     history.replaceState(null, '', '/#puzzle=4x4&providers=anthropic,nope&models=claude-a&metric=critical')
     view()
-    expect(screen.getByRole('radio', { name: '4x4 cube' })).toBeChecked()
+    expect(screen.getByRole('button', { name: '4x4 cube' })).toHaveAttribute('aria-pressed', 'true')
     expect(on('Anthropic')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Critical thinking' })).toHaveAttribute('aria-selected', 'true')
     cleanup()
@@ -245,7 +272,7 @@ describe('BenchmarkView', () => {
     cleanup()
     history.replaceState(null, '', '/#puzzle=9x9&providers=nope&models=zzz&metric=bogus')
     view()
-    expect(screen.getByRole('radio', { name: '3x3 cube' })).toBeChecked()
+    expect(screen.getByRole('button', { name: '3x3 cube' })).toHaveAttribute('aria-pressed', 'true')
     expect(on('OpenAI')).toBeInTheDocument()
     expect(on('gpt-a')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Precision' })).toHaveAttribute('aria-selected', 'true')
@@ -380,7 +407,7 @@ describe('BenchmarkView', () => {
       withDefs()
       const success = screen.getByRole('button', { name: 'What is Precision?' })
       fireEvent.click(success)
-      const other = screen.getByRole('radio', { name: '3x3 cube' })
+      const other = screen.getByRole('button', { name: '3x3 cube' })
       other.focus()
       fireEvent.keyDown(document, { key: 'Escape' })
       expect(document.getElementById('metric-popover')).toBeNull()
@@ -455,7 +482,7 @@ describe('BenchmarkView', () => {
     })
   })
 
-  describe('All puzzles', () => {
+  describe('No puzzle selected', () => {
     const pooled = [
       row('all', 'claude-a', 'anthropic', { precision: rate(0.4, 20) }),
       row('all', 'gpt-a', 'openai', { precision: rate(0.9, 8) }),
@@ -465,15 +492,28 @@ describe('BenchmarkView', () => {
     ]
     const all = () => render(<BenchmarkView metrics={pooled} attemptsUrl="/a.json" />)
 
-    it('is the first option and the default, named "All puzzles", drawn as a one-sticker-per-face cube', () => {
+    it('has no All option: with none selected every puzzle is unpressed and the pooled rows are shown', () => {
       all()
-      const radios = screen.getAllByRole('radio')
-      expect(radios[0]).toHaveAccessibleName('All puzzles')
-      expect(radios[0]).toBeChecked()
-      expect(radios.map((r) => r.getAttribute('aria-label'))).toEqual(['All puzzles', '2x2 cube', '3x3 cube', '4x4 cube'])
-      const svg = radios[0].querySelector('svg.cube-view')!
-      expect(svg.querySelectorAll('polygon.sticker')).toHaveLength(3)
+      const buttons = screen.getAllByRole('button', { name: /cube$/ })
+      expect(buttons.map((r) => r.getAttribute('aria-label'))).toEqual(['2x2 cube', '3x3 cube', '4x4 cube'])
+      for (const b of buttons) expect(b).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.queryByRole('button', { name: 'All puzzles' })).toBeNull()
       expect(location.hash).toBe('')
+    })
+
+    it('selects a puzzle on click, replaces it with another, and returns to all when the selected one is clicked again', () => {
+      all()
+      const pressed = () => screen.getAllByRole('button', { name: /cube$/ }).filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.getAttribute('aria-label'))
+      fireEvent.click(screen.getByRole('button', { name: '4x4 cube' }))
+      expect(pressed()).toEqual(['4x4 cube'])
+      expect(location.hash).toBe('#puzzle=4x4')
+      fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
+      expect(pressed()).toEqual(['3x3 cube'])
+      expect(location.hash).toBe('#puzzle=3x3')
+      fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
+      expect(pressed()).toEqual([])
+      expect(location.hash).toBe('')
+      expect(screen.getByRole('img', { name: /^Precision/ })).toHaveAccessibleName('Precision: claude-a 40% (worst), gpt-a 90% (best), gem-a 60%')
     })
 
     it('charts the pooled rows and lists every model and provider', () => {
@@ -483,20 +523,35 @@ describe('BenchmarkView', () => {
       expect(screen.getByRole('checkbox', { name: 'Google' })).toBeChecked()
     })
 
-    it('keeps the hash: a puzzle writes puzzle=, All writes none, puzzle=all and an unknown value read as All', () => {
+    it('describes the group: none selected shows all puzzles', () => {
       all()
-      fireEvent.click(screen.getByRole('radio', { name: '4x4 cube' }))
-      expect(location.hash).toBe('#puzzle=4x4')
-      fireEvent.click(screen.getByRole('radio', { name: 'All puzzles' }))
-      expect(location.hash).toBe('')
-      cleanup()
-      history.replaceState(null, '', '/#puzzle=all')
+      const group = screen.getByRole('group', { name: 'Puzzle' })
+      expect(group).toHaveAccessibleDescription('None selected shows all puzzles.')
+    })
+
+    it('resets the experiment example when the selected puzzle is unselected', async () => {
+      resetAttempts()
+      const a = (model: string) => ({ model, puzzle: '3x3', validity: 'valid', setup: 'descriptive', attempt: 1, state: '', moves: [], outcome: 'failure', mismatch: false })
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ attempts: { '3x3': [a('claude-a'), a('gpt-a')] }, prompts: {} }) })))
       all()
-      expect(screen.getByRole('radio', { name: 'All puzzles' })).toBeChecked()
-      cleanup()
-      history.replaceState(null, '', '/#puzzle=9x9')
-      all()
-      expect(screen.getByRole('radio', { name: 'All puzzles' })).toBeChecked()
+      fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+      await act(async () => {})
+      expect(screen.getByRole('button', { name: 'Re-run' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
+      expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Re-run' })).toBeNull()
+      vi.unstubAllGlobals()
+    })
+
+    it('reads a hash without a puzzle, puzzle=all, and an unknown puzzle as none selected', () => {
+      for (const hash of ['/', '/#metric=critical', '/#puzzle=all', '/#puzzle=9x9']) {
+        history.replaceState(null, '', hash)
+        all()
+        expect(screen.getAllByRole('button', { name: /cube$/ }).filter((b) => b.getAttribute('aria-pressed') === 'true')).toEqual([])
+        expect(screen.getByRole('img', { name: /^Precision|^Critical/ })).toBeInTheDocument()
+        cleanup()
+      }
     })
   })
 })

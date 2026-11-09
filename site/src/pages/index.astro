@@ -25,7 +25,7 @@ const jsonLd = {
 
 <Layout title={page.title} description={page.description} jsonLd={jsonLd}>
   <h1>{page.title}</h1>
-  <div class="prose"><p>{page.intro} <a href={`${REPO}#readme`}>About the project</a>.</p></div>
+  <div class="prose"><p>{page.intro}</p><p><a href={`${REPO}#readme`}>About the project</a>.</p></div>
   <BenchmarkView client:only="react" metrics={metrics} attemptsUrl={attemptsUrl} legalMoves={legalMoves} definitions={definitions} />
 </Layout>
 
@@ -86,8 +86,10 @@ const jsonLd = {
   :global(.cube-solver.benchmark .steps.filter > li:nth-child(2)) { justify-self: end; }
   /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only. Unselected: a transparent border of the same width, 50% transparent. */
   :global(.benchmark .options button.square) { width: 3.9rem; height: 3.9rem; padding: 0.26rem; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
+  /* With none pressed (all puzzles) the options are not faded: they are not disabled, only unselected. */
+  :global(.benchmark .options:not(:has(button.square[aria-pressed='true'])) button.square) { opacity: 1; }
   :global(.benchmark .options button.square:hover) { opacity: 1; }
-  :global(.benchmark .options button.square[aria-checked='true']) { border-color: var(--text); opacity: 1; }
+  :global(.benchmark .options button.square[aria-pressed='true']) { border-color: var(--text); opacity: 1; }
   /* Keyboard focus: a dashed outline drawn inside the button, so it is never clipped by the scrolling row. */
   :global(.benchmark .options button.square:focus-visible) { outline: 2px dashed var(--text); outline-offset: -4px; opacity: 1; }
   :global(.benchmark .options button.square span) { display: block; width: 100%; line-height: 0; }
@@ -163,11 +165,8 @@ const jsonLd = {
   :global(.benchmark .facts) { display: grid; gap: 0.25rem; margin: 0; }
   :global(.benchmark .facts dt), :global(.benchmark .facts dd) { display: inline; margin: 0; }
   :global(.benchmark .facts dt) { font-weight: var(--weight-medium); }
-  /* The label and the result never break inside ("Result: Mismatch not detected"); the ". Source" after them may wrap on a narrow screen. */
+  /* The label, the result and the Source icon never break ("Result: Mismatch not detected"). */
   :global(.benchmark .facts .one-line) { white-space: nowrap; }
-  :global(.benchmark .facts .after-result) { white-space: normal; }
-  /* Room for ". Source" on its own line where it wraps, so the run never moves Run down. */
-  @media (max-width: 48rem) { :global(.benchmark .facts .one-line) { min-height: 2lh; } }
   /* The exact prompt the model received: monospace, wrapped, scrolling past 20rem. */
   :global(.benchmark .facts .prompt-text) { margin: 0; max-height: min(20rem, 60vh); overflow: auto; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
   /* "not solvable" and "Prompt": buttons styled as text with a dashed underline, each opening a popover under the facts. The popover is out of flow (it sits at its static position, over the Run button), so opening it moves nothing. */
@@ -195,21 +194,22 @@ const jsonLd = {
     20%, 40%, 60%, 80% { transform: translateX(6px); }
   }
   :global(.benchmark .player .actions) { display: flex; align-items: center; gap: 1rem; }
-  /* ". Source" after the result: the study repo, a plain content link. */
-  :global(.benchmark .player .source) { color: var(--link); text-decoration: underline; text-underline-offset: 0.2em; }
+  /* The Source icon after the result: a link to the case's raw results, at least 24px square (the padding grows the hit area, and the negative margin keeps the line where it was). */
+  :global(.benchmark .player .source) { color: var(--link); text-decoration: none; display: inline-block; padding: 0.3rem; margin: -0.3rem; }
+  :global(.benchmark .player .source .external-icon) { vertical-align: -0.15em; }
   /* The result and its tick or cross: green when the attempt's outcome is success, red otherwise. */
   :global(.benchmark .facts [data-verdict='correct'] .result .value) { color: var(--ok); }
   :global(.benchmark .facts [data-verdict='wrong'] .result .value) { color: var(--danger); }
   :global(.benchmark .facts .result .value) { font-weight: var(--weight-medium); }
   :global(.benchmark .facts .verdict-icon) { vertical-align: -0.15em; margin-right: 0.3rem; }
-  /* Another case: a bare icon button after the state, its keyboard focus a dashed ring like the puzzle squares. */
-  :global(.cube-solver.benchmark .facts button.another) {
-    display: inline-flex; align-items: center; justify-content: center; vertical-align: -0.2em; width: 1.4rem; height: 1.4rem; padding: 0; margin-left: 0.15rem;
-    border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer;
+  /* Another case: a bare icon button in the title row, after the heading. Its icon is 1em of the title's font size (1rem), and the button is as tall as the row (the circle, 1.6rem). Keyboard focus is a dashed ring like the puzzle squares. */
+  :global(.cube-solver.benchmark .steps.experiment .title button.another) {
+    display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; padding: 0;
+    border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer; font: inherit; line-height: inherit;
   }
-  :global(.cube-solver.benchmark .facts button.another:hover) { background: var(--code-bg); }
-  :global(.cube-solver.benchmark .facts button.another:disabled) { opacity: 0.4; cursor: default; background: transparent; }
-  :global(.cube-solver.benchmark .facts button.another:focus-visible) { outline: 2px dashed var(--text); outline-offset: 1px; }
+  :global(.cube-solver.benchmark .steps.experiment .title button.another:hover) { background: var(--code-bg); }
+  :global(.cube-solver.benchmark .steps.experiment .title button.another:disabled) { opacity: 0.4; cursor: default; background: transparent; }
+  :global(.cube-solver.benchmark .steps.experiment .title button.another:focus-visible) { outline: 2px dashed var(--text); outline-offset: 1px; }
   @media (max-width: 36rem) {
     :global(.benchmark .player) { grid-template-columns: minmax(0, 1fr); }
     /* The folder tabs get smaller type and padding. */

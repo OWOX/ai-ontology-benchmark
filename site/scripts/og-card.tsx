@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { chromium } from '@playwright/test'
-import { OneCube } from '../src/components/islands/benchmark/OneCube'
+import { OneCube } from './OneCube'
 import { ALL } from '../src/lib/benchmark'
 import { loadSiteData } from '../src/lib/site-data'
 

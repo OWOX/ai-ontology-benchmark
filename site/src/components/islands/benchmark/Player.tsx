@@ -6,7 +6,7 @@ import type { BenchmarkAttempt } from '../../../lib/types'
 import { loadAttempts } from './attempts'
 import { corruptionSentence, whyUnsolvable } from './unsolvable'
 import { replayFrame, type ReplayFrame } from './replay'
-import { CheckCircleIcon, CrossCircleIcon, FlaskIcon, RefreshIcon } from './icons'
+import { CheckCircleIcon, ExternalLinkIcon, CrossCircleIcon, FlaskIcon, RefreshIcon } from './icons'
 
 /** An attempt as /ai-ontology-benchmark/attempts.json carries it: `inputId` and `depth` are dropped, its experiment's `release` and `experimentId` added. */
 export type ReplayAttempt = Omit<BenchmarkAttempt, 'inputId' | 'depth'> & { release?: string; experimentId?: string; branch?: string; prompt?: string; decision?: boolean }
@@ -60,7 +60,7 @@ interface Props {
   legalMoves: Readonly<Record<string, readonly string[]>>
 }
 
-/** Shows one random attempt of the selected puzzle (any puzzle under "all") and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). The refresh button next to the state picks another attempt. The parent keys it by the filter, so a change resets it. */
+/** Shows one random attempt of the selected puzzle (any puzzle under "all") and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). The refresh button in the title row picks another attempt. The parent keys it by the filter, so a change resets it. */
 export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
   const titleId = useId()
   const alive = useRef(true)
@@ -185,6 +185,9 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
           <div className="title">
             <span className="num" aria-hidden="true"><FlaskIcon /></span>
             <span className="label" id={titleId}>Experiment Example</span>
+            {attempt && pool.length > 1 && (
+              <button type="button" className="another square" onClick={another} disabled={playing} aria-label="Show another case" title="Show another case"><RefreshIcon /></button>
+            )}
           </div>
           <div className="body">
             {attempt && (
@@ -200,10 +203,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
                         </span>
                       </>
                     )}
-                  </dd>{' '}
-                  {pool.length > 1 && (
-                    <button type="button" className="another square" onClick={another} disabled={playing} aria-label="Show another case" title="Show another case"><RefreshIcon /></button>
-                  )}
+                  </dd>
                   {/* Always in the DOM (hidden while closed), so the button's aria-controls points at an element that exists. */}
                   {attempt.validity === 'invalid' && (
                     <div className="pop pop-wrap" id={`${popId}-why`} role="dialog" aria-label="Why this state is not solvable" hidden={open !== 'why'}>
@@ -231,12 +231,12 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
                     </div>
                   )}
                 </div>
-                {/* Always laid out (two lines on a narrow screen, where ". Source" wraps), so Run never moves the button down; visibility: hidden (which also keeps it from screen readers) until Run. */}
+                {/* Always laid out (its height is fixed by the result row, with or without the Source icon), so Run never moves the button down; visibility: hidden (which also keeps it from screen readers) until Run. */}
                 <div className="one-line" data-verdict={result ? verdict : undefined} style={run > 0 ? undefined : { visibility: 'hidden' }}>
                   <dt>Result:</dt>{' '}
                   <dd className="result">
                     {result ? <span className="value">{verdict === 'correct' ? <CheckCircleIcon /> : <CrossCircleIcon />}{resultText(result, attempt!)}</span> : run > 0 ? <span className="muted">running… {donePct}%</span> : '\u00a0'}
-                    {result && <span className="after-result">. <a className="source" href={sourceUrl(attempt!)} target="_blank" rel="noopener noreferrer">Source<span className="sr-only"> (opens in a new tab)</span></a></span>}
+                    {result && <>{' '}<a className="source" href={sourceUrl(attempt!)} target="_blank" rel="noopener noreferrer" aria-label="Source (opens in a new tab)" title="Source"><ExternalLinkIcon /></a></>}
                   </dd>
                 </div>
               </dl>
