@@ -179,6 +179,23 @@ describe('BenchmarkView', () => {
     vi.restoreAllMocks()
   })
 
+  it('closes the open popover when its tab scrolls out of the tablist', () => {
+    render(<BenchmarkView metrics={metrics} attemptsUrl="/a.json" definitions={[{ key: 'precision', name: 'Balanced precision', definition: 'd' }]} />)
+    const list = screen.getByRole('tablist')
+    const tab = screen.getByRole('tab', { name: 'Precision' })
+    const rect = (left: number, right: number) => ({ left, right, top: 0, bottom: 10, width: right - left, height: 10, x: left, y: 0, toJSON() {} }) as DOMRect
+    const at = { right: 100 }
+    vi.spyOn(list, 'getBoundingClientRect').mockReturnValue(rect(0, 200))
+    vi.spyOn(tab, 'getBoundingClientRect').mockImplementation(() => rect(at.right - 100, at.right))
+    fireEvent.scroll(list)
+    fireEvent.click(screen.getByRole('button', { name: 'What is Precision?' }))
+    expect(document.getElementById('metric-popover')).not.toBeNull()
+    at.right = 300
+    fireEvent.scroll(list)
+    expect(document.getElementById('metric-popover')).toBeNull()
+    vi.restoreAllMocks()
+  })
+
   it('marks the best and worst bars by the metric\'s direction', () => {
     const { container } = view()
     const ranks = () => [...container.querySelectorAll('.chart .row')].map((r) => r.getAttribute('data-rank'))
@@ -220,6 +237,10 @@ describe('BenchmarkView', () => {
     view()
     expect(screen.getByRole('radio', { name: '4x4 cube' })).toBeChecked()
     expect(on('Anthropic')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Critical thinking' })).toHaveAttribute('aria-selected', 'true')
+    cleanup()
+    history.replaceState(null, '', '/#metric=detection')
+    view()
     expect(screen.getByRole('tab', { name: 'Critical thinking' })).toHaveAttribute('aria-selected', 'true')
     cleanup()
     history.replaceState(null, '', '/#puzzle=9x9&providers=nope&models=zzz&metric=bogus')

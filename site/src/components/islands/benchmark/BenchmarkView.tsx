@@ -71,7 +71,9 @@ function restore(hash: string, metrics: ModelMetrics[]): FilterState {
     const keep = h.models.filter((n) => ticked.some((m) => m.model === n))
     if (h.models.length === 0 || keep.length > 0) for (const m of ticked) if (!keep.includes(m.model)) modelOff.add(m.model)
   }
-  const metric = METRICS.find((m) => m.id === h.metric)?.id ?? 'precision'
+  // `detection`, the old id of the critical thinking tab, keeps old shared links working.
+  const wanted = h.metric === 'detection' ? 'critical' : h.metric
+  const metric = METRICS.find((m) => m.id === wanted)?.id ?? 'precision'
   return { puzzle, providerOn, modelOff, metric }
 }
 
@@ -123,6 +125,8 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
         }
       }
       setSpots((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
+      // The open popover's tab scrolled out of the tablist: its "?" is gone, so the popover goes too.
+      if (openHelp && !next[openHelp]) setHelpOpen(null)
       const w = pop.current?.offsetWidth ?? 0
       const h = pop.current?.offsetHeight ?? 0
       const gap = 6.4
@@ -150,6 +154,16 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
       ro?.disconnect()
     }
   }, [metric, openHelp, spotKey, puzzle])
+  // Selecting a tab brings it fully into the tablist (only the tablist scrolls, never the page), so its "?" shows.
+  useEffect(() => {
+    const tab = document.getElementById(`metric-${metric}`)
+    const list = tab?.closest('[role="tablist"]') as HTMLElement | null | undefined
+    if (!tab || !list) return
+    const t = tab.getBoundingClientRect()
+    const l = list.getBoundingClientRect()
+    if (t.right > l.right) list.scrollLeft += t.right - l.right
+    else if (t.left < l.left) list.scrollLeft -= l.left - t.left
+  }, [metric])
   // After a mouse leaves the "?" or the box it closes once the grace delay passes, unless it was pinned by a click or the pointer came back.
   const hoverLeave = (e: { pointerType: string }) => {
     if (e.pointerType !== 'mouse' || pinned.current) return
