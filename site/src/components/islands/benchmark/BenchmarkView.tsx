@@ -6,7 +6,6 @@ import { BarChart } from './BarChart'
 import { Choice } from './Choice'
 import { Filter, type Option } from './Filter'
 import { parseHash, serializeHash } from './hash'
-import { OneCube } from './OneCube'
 import { Player } from './Player'
 import { Source } from './Source'
 
@@ -55,11 +54,11 @@ const effectiveTicked = (providerOn: ReadonlySet<string>, here: readonly ModelMe
   return ticked.size > 0 || providerOn.size === 0 ? ticked : present
 }
 
-/** The filter as the URL hash describes it; a key that is missing, or holds nothing that exists, falls back to its default (All puzzles, every provider, every model, Precision). */
+/** The filter as the URL hash describes it; a key that is missing, or holds nothing that exists, falls back to its default (no puzzle selected, which pools all of them, every provider, every model, Precision). */
 function restore(hash: string, metrics: ModelMetrics[]): FilterState {
   const h = parseHash(hash)
   const withData = new Set(metrics.map((m) => m.puzzle))
-  // "All" is the default; without pooled rows (older data) the first puzzle with data stands in.
+  // No puzzle selected (the pooled rows) is the default; without pooled rows (older data) the first puzzle with data stands in.
   const first = withData.has(ALL) ? ALL : PUZZLES.find((p) => withData.has(p)) ?? null
   const puzzle = h.puzzle && (h.puzzle === ALL || PUZZLES.includes(h.puzzle)) && withData.has(h.puzzle) ? h.puzzle : first
   const known = new Set(metrics.map((m) => m.provider))
@@ -231,7 +230,12 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
     return () => window.removeEventListener('hashchange', onHash)
   }, [metrics])
 
-  const choosePuzzle = (id: string) => (setPuzzle(id), setModelOff(new Set()))
+  // Clicking the selected puzzle again switches it off, back to all puzzles (when the data has pooled rows to show); clicking another replaces it.
+  const choosePuzzle = (id: string) => {
+    const next = id === puzzle ? (withData.has(ALL) ? ALL : puzzle) : id
+    setPuzzle(next)
+    setModelOff(new Set())
+  }
   const toggleProvider = (id: string, on: boolean) => {
     // Edit providerOn itself so providers this puzzle lacks stay ticked; only the fallback (all absent) starts from what is shown.
     // A toggle that leaves none of this puzzle's providers ticked is a deliberate "none": clear the absent ones too, so the click shows and the fallback does not re-tick.
@@ -250,9 +254,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
       return next
     })
 
-  const puzzles: Option[] = [ALL, ...PUZZLES]
-    .filter((p) => withData.has(p))
-    .map((p) => (p === ALL ? { id: ALL, label: 'All', name: 'All puzzles', icon: <OneCube /> } : { id: p, label: p, name: `${p} cube`, icon: <Preview puzzle={p} /> }))
+  const puzzles: Option[] = PUZZLES.filter((p) => withData.has(p)).map((p) => ({ id: p, label: p, name: `${p} cube`, icon: <Preview puzzle={p} /> }))
   const providers: Option[] = PROVIDERS.filter((p) => providersHere.has(p.id)).map((p) => ({ id: p.id, label: p.label }))
   const models = available.map((m) => ({ id: m.model, label: m.model, provider: m.provider }))
   const modelOn = new Set(names)
@@ -260,7 +262,7 @@ export default function BenchmarkView({ metrics, attemptsUrl, legalMoves = {}, d
 
   return (
     <div className="benchmark cube-solver">
-      <Filter puzzles={puzzles} puzzle={puzzle} onPuzzle={choosePuzzle} providers={providers} providerOn={ticked} onProvider={toggleProvider} models={models} modelOn={modelOn} onModel={toggleModel} showModels={showModels} />
+      <Filter puzzles={puzzles} puzzle={puzzle === ALL ? null : puzzle} onPuzzle={choosePuzzle} providers={providers} providerOn={ticked} onProvider={toggleProvider} models={models} modelOn={modelOn} onModel={toggleModel} showModels={showModels} />
       {puzzle === null ? (
         <p>No results yet.</p>
       ) : (

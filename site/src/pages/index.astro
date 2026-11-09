@@ -87,7 +87,7 @@ const jsonLd = {
   /* A puzzle option is a small solved cube. Selected: a solid border in the text colour only. Unselected: a transparent border of the same width, 50% transparent. */
   :global(.benchmark .options button.square) { width: 3.9rem; height: 3.9rem; padding: 0.26rem; border: 2px solid transparent; background: transparent; cursor: pointer; opacity: 0.5; }
   :global(.benchmark .options button.square:hover) { opacity: 1; }
-  :global(.benchmark .options button.square[aria-checked='true']) { border-color: var(--text); opacity: 1; }
+  :global(.benchmark .options button.square[aria-pressed='true']) { border-color: var(--text); opacity: 1; }
   /* Keyboard focus: a dashed outline drawn inside the button, so it is never clipped by the scrolling row. */
   :global(.benchmark .options button.square:focus-visible) { outline: 2px dashed var(--text); outline-offset: -4px; opacity: 1; }
   :global(.benchmark .options button.square span) { display: block; width: 100%; line-height: 0; }

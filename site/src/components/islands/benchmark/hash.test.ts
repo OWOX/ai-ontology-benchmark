@@ -28,4 +28,10 @@ describe('benchmark hash', () => {
     expect(parseHash('#foo=1&&bar&puzzle=&metric=%E0%A4%A&providers=a,,b&models=ok')).toEqual({ models: ['ok'] })
     expect(parseHash('')).toEqual({})
   })
+
+  it('reads a hash without a puzzle key as no puzzle, and keeps puzzle=all as written for the view to treat as none', () => {
+    expect(parseHash('#metric=critical').puzzle).toBeUndefined()
+    expect(parseHash('#puzzle=all').puzzle).toBe('all')
+    expect(serializeHash({ metric: 'critical' })).toBe('#metric=critical')
+  })
 })
