@@ -84,6 +84,19 @@ class BatchTooLargeError(BatchRejectedError):
     was wrong with any request: `run` sends the attempts again in smaller chunks."""
 
 
+@dataclass
+class UnreadableReply:
+    """A batch result the provider answered, and so billed, that `run` can't read. Not an error to retry:
+    resending it would pay twice. Carries best-effort token counts from the raw usage fields, else 0."""
+    message: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+def _count(value) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
 def _request_error(provider: str, error: Exception, message: str | None = None) -> RequestError:
     """One line naming the provider, the HTTP status, and the message the API sent. `message` is
     the one the SDK already read from the body, when it keeps one."""
@@ -657,7 +670,15 @@ def _openai_batch_results(client, batch_id: str) -> dict:
             try:
                 results[cid] = _openai_batch_line(line)
             except Exception as error:  # one unreadable line must not stop the others
-                results[cid] = InfrastructureError(f"openai: an unreadable batch result: {' '.join(str(error).split())[:200]}")
+                message = f"openai: an unreadable batch result: {' '.join(str(error).split())[:200]}"
+                response = line.get("response") if isinstance(line, dict) else None
+                if isinstance(response, dict) and response.get("status_code") == 200:  # answered, so billed
+                    body = response.get("body")
+                    usage = body.get("usage") if isinstance(body, dict) and isinstance(body.get("usage"), dict) else {}
+                    results[cid] = UnreadableReply(message, _count(usage.get("prompt_tokens")),
+                                                   _count(usage.get("completion_tokens")))
+                else:
+                    results[cid] = InfrastructureError(message)
     if not results and batch.status == "failed":  # the file was rejected as a whole
         errors = getattr(getattr(batch, "errors", None), "data", None) or []
         detail = "; ".join(" ".join(str(item.message).split()) for item in errors)
@@ -686,8 +707,13 @@ def _google_batch_results(client, batch_id: str) -> dict:
         if item.response is not None:
             try:
                 results[key] = _google_reply(item.response, None)
-            except Exception as error:  # one unreadable item must not stop the others
-                results[key] = InfrastructureError(f"google: an unreadable batch result: {' '.join(str(error).split())[:200]}")
+            except Exception as error:  # one unreadable item must not stop the others: it was answered, so billed
+                usage = getattr(item.response, "usage_metadata", None)
+                results[key] = UnreadableReply(
+                    f"google: an unreadable batch result: {' '.join(str(error).split())[:200]}",
+                    _count(getattr(usage, "prompt_token_count", None)),
+                    _count(getattr(usage, "candidates_token_count", None))
+                    + _count(getattr(usage, "thoughts_token_count", None)))
             continue
         error = item.error
         code = error.code if error and isinstance(error.code, int) else None
@@ -704,7 +730,7 @@ def _google_batch_results(client, batch_id: str) -> dict:
 
 def batch_results(model: dict, batch_id: str) -> dict:
     """The results of a finished batch, keyed by custom_id: a Reply, or an InfrastructureError or RequestError
-    instance for a request that failed. A custom_id the provider left out is left out here too, and the
+    instance for a request that failed, or an UnreadableReply for one the provider billed but run can't read. A custom_id the provider left out is left out here too, and the
     caller retries it. An OpenAI batch that failed validation, or a Google job that failed with a permanent
     error code and no responses, raises BatchRejectedError (a RequestError) instead of returning instances. An OpenAI batch refused
     as token_limit_exceeded raises its subclass BatchTooLargeError."""

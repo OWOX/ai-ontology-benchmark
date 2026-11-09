@@ -987,7 +987,15 @@ def test_google_result_without_a_key_is_skipped_and_an_unreadable_one_fails_alon
     got = models.batch_results(batch_entry("google"), "b")
     assert set(got) == {"a", "broken"}
     assert got["a"].text == "hi"
-    assert isinstance(got["broken"], InfrastructureError)
+    assert got["broken"] == models.UnreadableReply(got["broken"].message, 0, 0)  # answered, so billed: not retried
+
+
+def test_google_unreadable_response_keeps_its_usage_tokens(monkeypatch):
+    client = batch_client(monkeypatch, "google")
+    usage = NS(prompt_token_count=12, candidates_token_count=5, thoughts_token_count=3)
+    client.batches.get.return_value = NS(dest=NS(inlined_responses=[inlined("broken", NS(usage_metadata=usage))]))
+    got = models.batch_results(batch_entry("google"), "b")
+    assert (got["broken"].input_tokens, got["broken"].output_tokens) == (12, 8)
 
 
 def test_openai_unreadable_lines_fail_alone_or_are_skipped(monkeypatch):
@@ -999,7 +1007,18 @@ def test_openai_unreadable_lines_fail_alone_or_are_skipped(monkeypatch):
     got = models.batch_results(batch_entry("openai"), "b")
     assert set(got) == {"ok", "broken"}
     assert got["ok"].text == "hi"
-    assert isinstance(got["broken"], InfrastructureError)
+    assert got["broken"] == models.UnreadableReply(got["broken"].message, 0, 0)  # answered, so billed: not retried
+
+
+def test_openai_unreadable_200_line_keeps_its_usage_tokens_and_a_500_is_retried(monkeypatch):
+    out = [openai_line("broken", body={"choices": "x", "usage": {"prompt_tokens": 40, "completion_tokens": 9}}),
+           openai_line("down", status=500, body={"error": {"message": "x"}})]
+    client = batch_client(monkeypatch, "openai")
+    client.batches.retrieve.return_value = NS(status="completed", output_file_id="out", error_file_id=None)
+    client.files.content.return_value = NS(text="\n".join(out) + "\n")
+    got = models.batch_results(batch_entry("openai"), "b")
+    assert (got["broken"].input_tokens, got["broken"].output_tokens) == (40, 9)
+    assert isinstance(got["down"], InfrastructureError)
 
 
 def test_google_job_without_responses_has_no_results(monkeypatch):
