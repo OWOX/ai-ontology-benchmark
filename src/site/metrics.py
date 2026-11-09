@@ -39,10 +39,17 @@ def critical(rows: list[dict]) -> dict:
     return value(mean_of_two(diagnosis, false_mismatch, True), len(reasoned))
 
 
+def tokens(rows: list[dict]) -> int:
+    """Input, output, retry input, and retry output tokens as stored in the raw records, summed."""
+    return sum(r["input_tokens"] + r["output_tokens"] + r["retry_input_tokens"] + r["retry_output_tokens"]
+               for r in rows)
+
+
 def metric_row(puzzle: str, model: str, provider: str, everything: list[dict]) -> dict:
     rows = [r for r in everything if r["outcome"] != "infrastructure_failure"]
     balanced, classified = precision(rows)
     return {"puzzle": puzzle, "model": model, "provider": provider,
+            "attempts": len(everything), "tokens": tokens(everything),
             "precision": value(balanced, classified), "hallucination": hallucination(rows),
             "critical": critical(rows)}
 

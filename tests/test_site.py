@@ -207,6 +207,21 @@ def test_attempts_sorted_filtered_and_revalidated(repo):
     assert data["legalMoves"] == {"2x2": list(get_engine("2x2").legal_moves())}
 
 
+def test_metrics_count_attempts_and_tokens_including_infrastructure_failures(repo):
+    write_experiment(repo, "a-exp", [
+        raw("m1", "v1", 1, solution("v1")),
+        raw("m1", "i1", 1, "MISMATCH", retry_input_tokens=10, retry_output_tokens=5),
+        raw("m1", "v1", 2, "", outcome="infrastructure_failure", stop="infrastructure_failure", input_tokens=0, output_tokens=0,
+            retry_input_tokens=100, retry_output_tokens=20),
+        raw("m2", "v1", 1, solution("v1")),
+    ])
+    _, _, metrics = exported(repo)
+    m1, m2 = metrics[("2x2", "m1")], metrics[("2x2", "m2")]
+    assert (m1["attempts"], m1["tokens"]) == (3, 1500 + 1515 + 120)
+    assert (m2["attempts"], m2["tokens"]) == (1, 1500)
+    assert (metrics[("all", "m1")]["attempts"], metrics[("all", "m1")]["tokens"]) == (3, 3135)
+
+
 def test_metrics_values_and_sort(repo):
     write_experiment(repo, "a-exp", [
         raw("m2", "v1", 1, solution("v1")),                      # tp
@@ -347,7 +362,8 @@ def test_all_row_pools_every_puzzle():
     def row(puzzle, validity, outcome, moves=("R",), mismatch=False, corruption=None):
         return {"puzzle": puzzle, "model": "m", "validity": validity, "outcome": outcome, "mismatch": mismatch,
                 "parsed_moves": list(moves), "reasons": False, "corruption": corruption,
-                "decision": False, "impossible_move": False}
+                "decision": False, "impossible_move": False, "input_tokens": 10, "output_tokens": 5,
+                "retry_input_tokens": 1, "retry_output_tokens": 0}
     rows = [
         row("2x2", "valid", "success"),                                                         # tp
         row("3x3", "valid", "failure"),                                                         # fp
@@ -361,6 +377,7 @@ def test_all_row_pools_every_puzzle():
     # valid precision 1 of 2, invalid 1 of 1; the failure is left out of precision
     assert got["all"]["precision"] == {"value": 0.75, "n": 3}
     assert got["all"]["provider"] == "openai"
+    assert (got["all"]["attempts"], got["all"]["tokens"]) == (4, 64)  # the infrastructure failure counts here
 
 
 def test_prompts_are_built_from_the_release_templates_once_per_release_setup_and_input(repo):

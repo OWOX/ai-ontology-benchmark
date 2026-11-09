@@ -24,6 +24,7 @@ Every raw record is scored again by the assessment in this checkout, whatever re
   "prompts": { "3.0.0/no_model/v1": "the exact prompt text" },
   "definitions": [ { "key": "precision", "name": "Balanced precision", "definition": "" } ],
   "metrics": [ { "puzzle": "2x2", "model": "", "provider": "",
+    "attempts": 10, "tokens": 12345,
     "precision": { "value": 0.5, "n": 10 }, "hallucination": { "value": null, "n": 0 },
     "critical": { "value": null, "n": 0 } } ],
   "experiments": [ { "experimentId": "", "release": "", "branch": "main", "puzzles": [], "models": [{ "name": "", "provider": "", "kind": "", "decision": false }],
@@ -44,9 +45,10 @@ An attempt's `outcome`, `mismatch`, and `moves` come from the scoring above (`ou
 
 `metrics` is built by `src/site/metrics.py`: one row per puzzle and AI model, sorted by puzzle then model, pooled over every setup, depth, and experiment, followed by one row per AI model, sorted by model, with `"puzzle": "all"`, pooled the same way and over every puzzle too. The three metrics follow the same rules on the pooled rows. `provider` is the first provider other than `unknown` in the experiments' `[[models]]`. With `everything` the group's scored rows and `rows` those whose outcome is not `infrastructure_failure`, every `value` is null when it is n/a, and `n` is its denominator:
 
-1. `precision`: [balanced precision](../definitions.md#metrics) over the classified answers of `rows`. `n` is the number of classified answers.
-2. `hallucination`: the [hallucination rate](../definitions.md#metrics), over the rows that gave moves. Null, with `n` 0, when none did and when every row is a decision-model row.
-3. `critical`: [critical thinking](../definitions.md#metrics), over the rows from releases with mismatch reasons only. Null when either validity label has none of them. `n` is the number of those rows.
+1. `attempts` and `tokens`: the number of `everything` (every scored row of the group, infrastructure failures included, so unlike the three metrics it leaves none out), and the sum over `everything` of `input_tokens`, `output_tokens`, `retry_input_tokens`, and `retry_output_tokens` as stored in the raw records. The page sums them over the rows its filter shows, for the Source note.
+2. `precision`: [balanced precision](../definitions.md#metrics) over the classified answers of `rows`. `n` is the number of classified answers.
+3. `hallucination`: the [hallucination rate](../definitions.md#metrics), over the rows that gave moves. Null, with `n` 0, when none did and when every row is a decision-model row.
+4. `critical`: [critical thinking](../definitions.md#metrics), over the rows from releases with mismatch reasons only. Null when either validity label has none of them. `n` is the number of those rows.
 
 It prints one line: experiments, attempts, skipped.
 
