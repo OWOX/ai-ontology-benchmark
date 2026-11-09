@@ -26,7 +26,7 @@ from src.config import load_experiment_config, load_prices, max_moves, parse_exp
 from src.evaluate.metrics import attempt_cost
 from src.release.release import ReleaseError, latest_version, load_release
 from src.run.branch import BranchError, ResultsBranch, branch_copy
-from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend,
+from src.run.budget import (BudgetError, check_prices, check_request_budget, check_spend, is_batched,
                             print_estimate, spent_by_model, worst_case_request_cost, worst_request)
 from src.run.decision import DecisionResult, run_decision_attempt
 from src.run.models import DECISION_PROVIDERS, InfrastructureError, RequestError, call_model, log_infrastructure_error
@@ -287,7 +287,7 @@ def run(args: argparse.Namespace) -> int:
         with progress or nullcontext():
             play(args, config=config, manifest=manifest, results=results, prices=prices, versions=versions,
                  pending=pending, outcomes=outcomes, branch=branch, progress=progress, caps=caps,
-                 questions=questions, prompts=prompts, with_reasons=with_reasons)
+                 questions=questions, prompts=prompts, with_reasons=with_reasons, inputs=inputs, folder=folder)
     finally:
         if branch:
             finish(branch, config["experiment_id"])
@@ -419,10 +419,24 @@ def dry_run(pending, questions, prompts, with_reasons: bool = False) -> None:
 
 
 def play(args, *, config, manifest, results, prices, versions, pending, outcomes, branch, progress,
-         caps, questions, prompts, with_reasons=False) -> None:
+         caps, questions, prompts, with_reasons=False, inputs=(), folder=None) -> None:
     if args.dry_run:
         dry_run(pending, questions, prompts, with_reasons)
         return
+    batched = [item for item in pending if is_batched(config, item[1])]
+    if batched or any(is_batched(config, m) for m in config["models"]):
+        from src.run.batch import play_batched  # batch imports this module, so it loads here
+        by_id = {row["input_id"]: row for row in inputs}
+
+        def prompt_for(input_id: str, setup: str) -> str:
+            if (input_id, setup) not in prompts:
+                prompts[input_id, setup] = build_prompt(folder / "prompts", by_id[input_id], setup)
+            return prompts[input_id, setup]
+
+        play_batched(config=config, manifest=manifest, results=results, prices=prices, versions=versions,
+                     pending=batched, outcomes=outcomes, branch=branch, progress=progress,
+                     with_reasons=with_reasons, rows=by_id, prompt_for=prompt_for, only_model=args.model)
+        pending = [item for item in pending if not is_batched(config, item[1])]
     flight = Flight()
 
     def attempts():
