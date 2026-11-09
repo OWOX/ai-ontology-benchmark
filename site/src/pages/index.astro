@@ -150,8 +150,7 @@ const jsonLd = {
   :global(.benchmark .metric-popover .direction) { color: var(--head); }
   :global(.benchmark .chart-frame) { box-sizing: border-box; border: 1px solid var(--text); background: var(--panel); padding: 1rem 1.25rem 0.5rem; }
   :global(.benchmark .chart) { margin: 0; }
-  /* A chart section: the tabs and the framed panel. Two of them stack with the island's gap between. */
-  :global(.benchmark .chart-section .metrics) { margin-top: 0; }
+  /* A chart section: the tabs and the framed panel, with 2.5rem above the tabs (the .metrics margin plus the island gap) and 2.5rem under the panel, so the two sections and the filter above sit evenly apart. */
   /* The figure's numbered caption sits under the bars and ends in a "?" round icon button; its popover is the Player's, out of flow, opening upwards over the bars (`.below` flips it under the caption when there is no room above), so opening it moves nothing. */
   :global(.benchmark .chart-figure) { margin: 0; }
   :global(.benchmark .chart-head .chart-tools) { white-space: nowrap; }
@@ -172,10 +171,10 @@ const jsonLd = {
     position: absolute; z-index: 10; left: 0; bottom: 100%; box-sizing: border-box; width: min(32rem, 100%); margin-bottom: 0.35rem; padding: 0.6rem 0.8rem;
     background: var(--panel); border: 1px solid var(--code-rule); box-shadow: var(--pop-shadow); color: var(--text); font-size: 0.85rem; font-weight: var(--weight-regular); line-height: 1.4; white-space: normal;
   }
-  /* The copy icon: monochrome, beside the "?", about the caption's text height, with a 24px hit area. "Copied" is read out only; "Copy failed" is shown. */
+  /* The copy icon: monochrome, beside the "?", about 18px, a little larger than the round "?", with a 24px hit area. "Copied" is read out only; "Copy failed" is shown. */
   :global(.cube-solver.benchmark .chart-head button.copy-btn:not(.redo):not(.switch):not(.square)) {
     display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0 0 0 0.15rem; padding: 0;
-    border: 0; border-radius: 3px; background: none; color: var(--muted); font-size: 0.85rem; line-height: 1; cursor: pointer;
+    border: 0; border-radius: 3px; background: none; color: var(--muted); font-size: 1.15rem; line-height: 1; cursor: pointer;
   }
   :global(.cube-solver.benchmark .chart-head button.copy-btn:hover) { color: var(--text); }
   :global(.cube-solver.benchmark .chart-head button.copy-btn:focus-visible) { outline: 2px dashed var(--text); outline-offset: 1px; }
