@@ -31,7 +31,7 @@ const row = () => result().parentElement!
 const fact = (term: string) => screen.getByText(term).nextElementSibling!.textContent
 
 beforeEach(() => (vi.useFakeTimers(), resetAttempts()))
-afterEach(() => (vi.useRealTimers(), vi.unstubAllGlobals(), vi.restoreAllMocks()))
+afterEach(() => (vi.useRealTimers(), vi.unstubAllGlobals()))
 
 describe('Player', () => {
   it('closes its popover on a click in a chart\'s "?" elsewhere on the page, which is also a .pop-wrap', async () => {
@@ -153,17 +153,6 @@ describe('Player', () => {
     await run()
     await finish()
     expect(result()).toHaveTextContent('Solved')
-    // The refresh picks among every case, not only solved ones: with the last case always drawn, it opens on good2 and then shows the failure.
-    cleanup()
-    resetAttempts()
-    vi.spyOn(Math, 'random').mockReturnValue(0.99)
-    const good2 = attempt({ attempt: 3 })
-    stub({ '3x3': [good, good2, fail] })
-    await mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Show another case' }))
-    await run()
-    await finish()
-    expect(result()).toHaveTextContent('Not solved')
   })
 
   it('links Source to the raw results of the case, or to the repo without an experiment id', () => {

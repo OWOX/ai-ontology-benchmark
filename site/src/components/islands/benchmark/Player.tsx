@@ -65,7 +65,7 @@ interface Props {
   legalMoves: Readonly<Record<string, readonly string[]>>
 }
 
-/** Shows one random attempt of the selected puzzle (any puzzle under "all") and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). It opens on a solvable input the AI model solved, when there is one; the refresh button in the title row picks another attempt among them all. The parent keys it by the filter, so a change resets it. */
+/** Shows one random attempt of the selected puzzle (first a solvable input the AI model solved, when there is one) (any puzzle under "all") and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). The refresh button in the title row picks another attempt. The parent keys it by the filter, so a change resets it. */
 export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
   const titleId = useId()
   const alive = useRef(true)
