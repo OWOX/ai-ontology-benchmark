@@ -246,7 +246,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
             {/* Announces the result once, when the run ends; the row's running percentage is not read out. */}
             <p className="sr-only" aria-live="polite">{attempt && result ? `Result: ${resultText(result, attempt)}` : ''}</p>
             <div className="actions">
-              <button type="button" className="primary play" onClick={start} disabled={playing || models.length === 0}>{run > 0 ? 'Re-run' : 'Run'}</button>
+              <button type="button" className="primary play" onClick={start} disabled={playing || models.length === 0}>{run > 0 ? 'Re-play' : 'Run'}</button>
             </div>
             {failed && <p role="alert">Could not load an attempt to run.</p>}
           </div>

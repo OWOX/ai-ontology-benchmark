@@ -21,7 +21,7 @@ const mount = async () => {
   await act(async () => {})
   return r
 }
-const run = async (name: 'Run' | 'Re-run' = 'Run') => {
+const run = async (name: 'Run' | 'Re-play' = 'Run') => {
   fireEvent.click(screen.getByRole('button', { name }))
   await act(async () => {})
 }
@@ -107,7 +107,7 @@ describe('Player', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Run' }))
     await act(async () => {})
     expect(why).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('button', { name: 'Re-run' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Re-play' })).toBeInTheDocument()
     await finish()
     fireEvent.click(why)
     fireEvent.click(screen.getByRole('button', { name: 'Show another case' }))
@@ -176,13 +176,13 @@ describe('Player', () => {
     expect(live).toHaveTextContent('Result: Solved')
   })
 
-  it('shakes again on Re-run, and never under reduced motion', async () => {
+  it('shakes again on Re-play, and never under reduced motion', async () => {
     stub({ '3x3': [attempt({ outcome: 'hallucination', moves: ['Q'] })] })
     const first = await mount()
     await run()
     await finish()
     expect(document.querySelector('.cube-stage.shake')).not.toBeNull()
-    await run('Re-run')
+    await run('Re-play')
     expect(document.querySelector('.cube-stage.shake')).toBeNull()
     await finish()
     expect(document.querySelector('.cube-stage.shake')).not.toBeNull()
@@ -294,17 +294,17 @@ describe('Player', () => {
     expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
   })
 
-  it('ends a hallucinated attempt on its result with a cross, never lists the moves, and offers Re-run', async () => {
+  it('ends a hallucinated attempt on its result with a cross, never lists the moves, and offers Re-play', async () => {
     stub({ '3x3': [attempt({ outcome: 'hallucination', moves: ['U', 'Q', 'R'] })] })
     await mount()
     await run()
-    expect(screen.getByRole('button', { name: 'Re-run' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Re-play' })).toBeDisabled()
     expect(result()).toHaveTextContent('running… 0%')
     await finish()
     expect(result()).toHaveTextContent('Hallucinated')
     expect(row()).toHaveAttribute('data-verdict', 'wrong')
     expect(row().querySelector('dd .verdict-icon')).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Re-run' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Re-play' })).toBeEnabled()
     expect(screen.queryByText(/\bQ\b/)).toBeNull()
   })
 
@@ -357,7 +357,7 @@ describe('Player', () => {
     await mount()
     await run()
     await finish()
-    await run('Re-run')
+    await run('Re-play')
     expect(row()).not.toHaveAttribute('data-verdict')
     await finish()
     expect(result()).toHaveTextContent('Solved')
@@ -388,7 +388,7 @@ describe('Player', () => {
     const before = fact('State:')
     await run()
     await act(async () => void vi.advanceTimersByTime(300))
-    expect(screen.getByRole('button', { name: 'Re-run' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Re-play' })).toBeDisabled()
     expect(result()).toHaveTextContent(/running/)
     const refresh = screen.getByRole('button', { name: 'Show another case' })
     expect(refresh).toBeEnabled()
