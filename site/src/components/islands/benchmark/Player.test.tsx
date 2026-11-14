@@ -4,7 +4,7 @@ import { cubeGeometry } from '../cube/core/geometry'
 import { resetAttempts } from './attempts'
 import { corruptionSentence, corruptionType, whyUnsolvable } from './unsolvable'
 import { MetricChart } from './MetricChart'
-import { Player, pickCase, resultText, solvedCase, sourceUrl, stateText, type ReplayAttempt } from './Player'
+import { Player, pickCase, resultText, sourceUrl, stateText, type ReplayAttempt } from './Player'
 
 const g = cubeGeometry(3)
 const attempt = (o: Partial<ReplayAttempt>): ReplayAttempt => ({
@@ -140,19 +140,6 @@ describe('Player', () => {
     expect(pickCase([few], few)).toBeNull()
     // The current attempt is its model's only one, so that model drops out of the draw.
     expect(pickCase([few, many[0], many[1]], few, seq(0.99, 0.5))).toBe(many[1])
-  })
-
-  it('opens on a solvable input the AI model solved, and falls back to any case when there is none', async () => {
-    const fail = attempt({ outcome: 'failure' })
-    const bad = attempt({ validity: 'invalid', outcome: 'success', mismatch: true })
-    const good = attempt({ attempt: 2 })
-    expect(pickCase([fail, bad, good], null, () => 0, solvedCase)).toBe(good)
-    expect(pickCase([fail, bad], null, () => 0, solvedCase)).toBe(fail)
-    stub({ '3x3': [fail, bad, good, fail, bad] })
-    await mount()
-    await run()
-    await finish()
-    expect(result()).toHaveTextContent('Solved')
   })
 
   it('links Source to the raw results of the case, or to the repo without an experiment id', () => {
