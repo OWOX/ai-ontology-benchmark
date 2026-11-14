@@ -537,10 +537,10 @@ describe('BenchmarkView', () => {
       fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
       fireEvent.click(screen.getByRole('button', { name: 'Run' }))
       await act(async () => {})
-      expect(screen.getByRole('button', { name: 'Re-run' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Re-play' })).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: '3x3 cube' }))
       expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Re-run' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Re-play' })).toBeNull()
       vi.unstubAllGlobals()
     })
 

@@ -4,7 +4,7 @@ import { cubeGeometry } from '../cube/core/geometry'
 import { resetAttempts } from './attempts'
 import { corruptionSentence, corruptionType, whyUnsolvable } from './unsolvable'
 import { MetricChart } from './MetricChart'
-import { Player, pickCase, resultText, sourceUrl, stateText, type ReplayAttempt } from './Player'
+import { Player, pickCase, resultText, solvedCase, sourceUrl, stateText, type ReplayAttempt } from './Player'
 
 const g = cubeGeometry(3)
 const attempt = (o: Partial<ReplayAttempt>): ReplayAttempt => ({
@@ -21,7 +21,7 @@ const mount = async () => {
   await act(async () => {})
   return r
 }
-const run = async (name: 'Run' | 'Re-run' = 'Run') => {
+const run = async (name: 'Run' | 'Re-play' = 'Run') => {
   fireEvent.click(screen.getByRole('button', { name }))
   await act(async () => {})
 }
@@ -31,7 +31,7 @@ const row = () => result().parentElement!
 const fact = (term: string) => screen.getByText(term).nextElementSibling!.textContent
 
 beforeEach(() => (vi.useFakeTimers(), resetAttempts()))
-afterEach(() => (vi.useRealTimers(), vi.unstubAllGlobals()))
+afterEach(() => (vi.useRealTimers(), vi.unstubAllGlobals(), vi.restoreAllMocks()))
 
 describe('Player', () => {
   it('closes its popover on a click in a chart\'s "?" elsewhere on the page, which is also a .pop-wrap', async () => {
@@ -107,7 +107,7 @@ describe('Player', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Run' }))
     await act(async () => {})
     expect(why).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('button', { name: 'Re-run' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Re-play' })).toBeInTheDocument()
     await finish()
     fireEvent.click(why)
     fireEvent.click(screen.getByRole('button', { name: 'Show another case' }))
@@ -140,6 +140,30 @@ describe('Player', () => {
     expect(pickCase([few], few)).toBeNull()
     // The current attempt is its model's only one, so that model drops out of the draw.
     expect(pickCase([few, many[0], many[1]], few, seq(0.99, 0.5))).toBe(many[1])
+  })
+
+  it('opens on a solvable input the AI model solved, and falls back to any case when there is none', async () => {
+    const fail = attempt({ outcome: 'failure' })
+    const bad = attempt({ validity: 'invalid', outcome: 'success', mismatch: true })
+    const good = attempt({ attempt: 2 })
+    expect(pickCase([fail, bad, good], null, () => 0, solvedCase)).toBe(good)
+    expect(pickCase([fail, bad], null, () => 0, solvedCase)).toBe(fail)
+    stub({ '3x3': [fail, bad, good, fail, bad] })
+    await mount()
+    await run()
+    await finish()
+    expect(result()).toHaveTextContent('Solved')
+    // The refresh picks among every case, not only solved ones: with the last case always drawn, it opens on good2 and then shows the failure.
+    cleanup()
+    resetAttempts()
+    vi.spyOn(Math, 'random').mockReturnValue(0.99)
+    const good2 = attempt({ attempt: 3 })
+    stub({ '3x3': [good, good2, fail] })
+    await mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Show another case' }))
+    await run()
+    await finish()
+    expect(result()).toHaveTextContent('Not solved')
   })
 
   it('links Source to the raw results of the case, or to the repo without an experiment id', () => {
@@ -176,13 +200,13 @@ describe('Player', () => {
     expect(live).toHaveTextContent('Result: Solved')
   })
 
-  it('shakes again on Re-run, and never under reduced motion', async () => {
+  it('shakes again on Re-play, and never under reduced motion', async () => {
     stub({ '3x3': [attempt({ outcome: 'hallucination', moves: ['Q'] })] })
     const first = await mount()
     await run()
     await finish()
     expect(document.querySelector('.cube-stage.shake')).not.toBeNull()
-    await run('Re-run')
+    await run('Re-play')
     expect(document.querySelector('.cube-stage.shake')).toBeNull()
     await finish()
     expect(document.querySelector('.cube-stage.shake')).not.toBeNull()
@@ -294,17 +318,17 @@ describe('Player', () => {
     expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument()
   })
 
-  it('ends a hallucinated attempt on its result with a cross, never lists the moves, and offers Re-run', async () => {
+  it('ends a hallucinated attempt on its result with a cross, never lists the moves, and offers Re-play', async () => {
     stub({ '3x3': [attempt({ outcome: 'hallucination', moves: ['U', 'Q', 'R'] })] })
     await mount()
     await run()
-    expect(screen.getByRole('button', { name: 'Re-run' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Re-play' })).toBeDisabled()
     expect(result()).toHaveTextContent('running… 0%')
     await finish()
     expect(result()).toHaveTextContent('Hallucinated')
     expect(row()).toHaveAttribute('data-verdict', 'wrong')
     expect(row().querySelector('dd .verdict-icon')).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Re-run' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Re-play' })).toBeEnabled()
     expect(screen.queryByText(/\bQ\b/)).toBeNull()
   })
 
@@ -357,7 +381,7 @@ describe('Player', () => {
     await mount()
     await run()
     await finish()
-    await run('Re-run')
+    await run('Re-play')
     expect(row()).not.toHaveAttribute('data-verdict')
     await finish()
     expect(result()).toHaveTextContent('Solved')
@@ -388,7 +412,7 @@ describe('Player', () => {
     const before = fact('State:')
     await run()
     await act(async () => void vi.advanceTimersByTime(300))
-    expect(screen.getByRole('button', { name: 'Re-run' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Re-play' })).toBeDisabled()
     expect(result()).toHaveTextContent(/running/)
     const refresh = screen.getByRole('button', { name: 'Show another case' })
     expect(refresh).toBeEnabled()

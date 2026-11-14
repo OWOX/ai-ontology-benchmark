@@ -38,9 +38,14 @@ export function resultText(sign: ResultSign, a: Pick<ReplayAttempt, 'validity'>)
   return RESULT[sign]
 }
 
-/** A case to show: a model picked at random first (each ticked model as likely as any other, however many attempts it has), then one of its attempts; never `current` when there is another. */
-export function pickCase(pool: readonly ReplayAttempt[], current: ReplayAttempt | null, random: () => number = Math.random): ReplayAttempt | null {
-  const rest = pool.filter((a) => a !== current)
+/** The first case shown: a solvable input the AI model solved, so the page opens on a success. */
+export const solvedCase = (a: ReplayAttempt): boolean => a.validity === 'valid' && a.outcome === 'success'
+
+/** A case to show: a model picked at random first (each ticked model as likely as any other, however many attempts it has), then one of its attempts; never `current` when there is another. With `prefer`, only the cases it accepts, unless it accepts none. */
+export function pickCase(pool: readonly ReplayAttempt[], current: ReplayAttempt | null, random: () => number = Math.random, prefer?: (a: ReplayAttempt) => boolean): ReplayAttempt | null {
+  const others = pool.filter((a) => a !== current)
+  const preferred = prefer ? others.filter(prefer) : []
+  const rest = preferred.length > 0 ? preferred : others
   if (rest.length === 0) return null
   const names = [...new Set(rest.map((a) => a.model))]
   const name = names[Math.floor(random() * names.length)]
@@ -60,7 +65,7 @@ interface Props {
   legalMoves: Readonly<Record<string, readonly string[]>>
 }
 
-/** Shows one random attempt of the selected puzzle (any puzzle under "all") and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). The refresh button in the title row picks another attempt. The parent keys it by the filter, so a change resets it. */
+/** Shows one random attempt of the selected puzzle (any puzzle under "all") and models: its state and model at once, its result only once Run has replayed it (0.5 s a move). It opens on a solvable input the AI model solved, when there is one; the refresh button in the title row picks another attempt among them all. The parent keys it by the filter, so a change resets it. */
 export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
   const titleId = useId()
   const alive = useRef(true)
@@ -134,7 +139,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
       const wanted = new Set(models)
       const found = (puzzle === ALL ? Object.values(all).flat() : (all[puzzle] ?? [])).filter((a) => wanted.has(a.model))
       if (found.length === 0) throw new Error('no attempts')
-      const a = pickCase(found, null)!
+      const a = pickCase(found, null, Math.random, solvedCase)!
       setPool(found)
       setPrompts(texts ?? {})
       setAttempt(a)
@@ -246,7 +251,7 @@ export function Player({ puzzle, models, attemptsUrl, legalMoves }: Props) {
             {/* Announces the result once, when the run ends; the row's running percentage is not read out. */}
             <p className="sr-only" aria-live="polite">{attempt && result ? `Result: ${resultText(result, attempt)}` : ''}</p>
             <div className="actions">
-              <button type="button" className="primary play" onClick={start} disabled={playing || models.length === 0}>{run > 0 ? 'Re-run' : 'Run'}</button>
+              <button type="button" className="primary play" onClick={start} disabled={playing || models.length === 0}>{run > 0 ? 'Re-play' : 'Run'}</button>
             </div>
             {failed && <p role="alert">Could not load an attempt to run.</p>}
           </div>
